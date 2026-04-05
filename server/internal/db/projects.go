@@ -49,6 +49,21 @@ func (d *DB) CreateProject(ctx context.Context, userID, name, subdomain, framewo
 	return &p, err
 }
 
+func (d *DB) GetProjectBySubdomain(ctx context.Context, subdomain string) (*Project, error) {
+	var p Project
+	var envJSON []byte
+	err := d.Pool.QueryRow(ctx,
+		`SELECT id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at
+		 FROM projects WHERE subdomain = $1`,
+		subdomain,
+	).Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	json.Unmarshal(envJSON, &p.EnvVars)
+	return &p, err
+}
+
 func (d *DB) GetProject(ctx context.Context, projectID string) (*Project, error) {
 	var p Project
 	var envJSON []byte

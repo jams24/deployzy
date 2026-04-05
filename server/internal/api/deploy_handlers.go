@@ -43,8 +43,14 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	project, err := s.db.CreateProject(r.Context(), u.ID, req.Name, req.Subdomain, req.Framework)
 	if err != nil {
-		writeError(w, http.StatusConflict, "subdomain already taken")
-		return
+		// If the user already has a project with this subdomain, return it
+		existing, _ := s.db.GetProjectBySubdomain(r.Context(), req.Subdomain)
+		if existing != nil && existing.UserID == u.ID {
+			project = existing
+		} else {
+			writeError(w, http.StatusConflict, "subdomain already taken")
+			return
+		}
 	}
 
 	// If repo info was provided, set it immediately
