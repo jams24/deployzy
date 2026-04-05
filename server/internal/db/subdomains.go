@@ -40,11 +40,25 @@ func (d *DB) CheckSubdomainAvailable(ctx context.Context, subdomain, userID stri
 	).Scan(&ownerID)
 
 	if err == nil {
-		// Subdomain exists — check if same user owns it
+		// Subdomain reserved — check if same user owns it
 		if ownerID == userID {
 			return true, "" // User owns it
 		}
-		return false, fmt.Sprintf("subdomain '%s' is already taken", subdomain)
+		return false, "subdomain already taken"
+	}
+
+	// Check if an existing project already uses this subdomain
+	var projectOwnerID string
+	err = d.Pool.QueryRow(ctx,
+		`SELECT user_id FROM projects WHERE subdomain = $1`,
+		subdomain,
+	).Scan(&projectOwnerID)
+
+	if err == nil {
+		if projectOwnerID == userID {
+			return true, "" // User's own project
+		}
+		return false, "subdomain already taken"
 	}
 
 	// Subdomain is free — check if user has reached their limit
