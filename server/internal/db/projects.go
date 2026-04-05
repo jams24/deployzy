@@ -104,6 +104,9 @@ func (d *DB) UpdateProjectConfig(ctx context.Context, projectID, repoURL, branch
 }
 
 func (d *DB) DeleteProject(ctx context.Context, projectID, userID string) error {
+	// Delete deploy logs first (foreign key constraint)
+	d.Pool.Exec(ctx, `DELETE FROM deploy_logs WHERE project_id = $1`, projectID)
+
 	tag, err := d.Pool.Exec(ctx, `DELETE FROM projects WHERE id = $1 AND user_id = $2`, projectID, userID)
 	if err != nil {
 		return err

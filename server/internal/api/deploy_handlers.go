@@ -15,9 +15,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	var req struct {
-		Name      string `json:"name"`
-		Subdomain string `json:"subdomain"`
-		Framework string `json:"framework"`
+		Name       string `json:"name"`
+		Subdomain  string `json:"subdomain"`
+		Framework  string `json:"framework"`
+		RepoURL    string `json:"repo_url"`
+		Branch     string `json:"branch"`
+		GitHubRepo string `json:"github_repo"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Subdomain == "" {
 		writeError(w, http.StatusBadRequest, "name and subdomain required")
@@ -26,6 +29,9 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	if req.Framework == "" {
 		req.Framework = "node"
+	}
+	if req.Branch == "" {
+		req.Branch = "main"
 	}
 
 	// Check subdomain availability
@@ -39,6 +45,16 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusConflict, "subdomain already taken")
 		return
+	}
+
+	// If repo info was provided, set it immediately
+	if req.RepoURL != "" {
+		s.db.UpdateProjectConfig(r.Context(), project.ID, req.RepoURL, req.Branch, "", "", nil)
+		project.RepoURL = req.RepoURL
+		project.Branch = req.Branch
+	}
+	if req.GitHubRepo != "" {
+		s.db.UpdateProjectGitHub(r.Context(), project.ID, req.GitHubRepo, req.Branch, true)
 	}
 
 	// Auto-reserve the subdomain so no tunnel can use it
@@ -198,13 +214,22 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	subdomain := project.Subdomain
+
+	// Stop and remove container
 	if s.deployer != nil {
 		s.deployer.Delete(r.Context(), project)
 	}
-	s.db.DeleteProject(r.Context(), projectID, u.ID)
+
+	// Delete project (also cleans up deploy_logs)
+	if err := s.db.DeleteProject(r.Context(), projectID, u.ID); err != nil {
+		s.log.Error().Err(err).Str("project", projectID).Msg("failed to delete project")
+		writeError(w, http.StatusInternalServerError, "failed to delete project")
+		return
+	}
 
 	// Release the subdomain so it can be reused
-	s.db.ReleaseSubdomain(r.Context(), u.ID, project.Subdomain)
+	s.db.ReleaseSubdomain(r.Context(), u.ID, subdomain)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

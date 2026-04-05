@@ -126,9 +126,17 @@ function ProjectsContent() {
     setImporting(true);
     const framework = detectFramework(importRepo.language);
 
+    // Create project with repo info in a single call
     const res = await fetch(`${API}/api/v1/projects`, {
       method: "POST", headers: headers(),
-      body: JSON.stringify({ name: importName, subdomain: importSubdomain, framework }),
+      body: JSON.stringify({
+        name: importName,
+        subdomain: importSubdomain,
+        framework,
+        repo_url: importRepo.html_url + ".git",
+        branch: importRepo.default_branch || "main",
+        github_repo: importRepo.full_name,
+      }),
     });
 
     if (!res.ok) {
@@ -140,23 +148,7 @@ function ProjectsContent() {
 
     const project = await res.json();
 
-    // Set repo URL — must succeed before deploying
-    const updateRes = await fetch(`${API}/api/v1/projects/${project.id}`, {
-      method: "PUT", headers: headers(),
-      body: JSON.stringify({
-        repo_url: importRepo.html_url + ".git",
-        branch: importRepo.default_branch || "main",
-        github_repo: importRepo.full_name,
-      }),
-    });
-
-    if (!updateRes.ok) {
-      alert("Project created but failed to link repo. Try setting the repo URL in environment variables.");
-      setImporting(false);
-      load();
-      return;
-    }
-
+    // Deploy immediately
     await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
       method: "POST", headers: headers(),
     });
