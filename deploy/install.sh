@@ -115,16 +115,27 @@ echo "  Domain:   ${DOMAIN}"
 echo "  Email:    ${EMAIL}"
 echo ""
 
-# ─── Step 1: System packages ────────────────────────────────
-step "1/7 — Installing system packages"
+# ─── Step 1: System packages + Docker ──────────────────────
+step "1/8 — Installing system packages"
 
 apt-get update -qq
-apt-get install -y -qq curl wget tar gzip openssl > /dev/null 2>&1
+apt-get install -y -qq curl wget tar gzip openssl git > /dev/null 2>&1
 log "System packages ready"
+
+# Install Docker if not present (needed for ServerMe Deploy)
+if ! command -v docker &> /dev/null; then
+  log "Installing Docker..."
+  curl -fsSL https://get.docker.com | sh > /dev/null 2>&1
+  systemctl enable docker > /dev/null 2>&1
+  systemctl start docker
+  log "Docker installed"
+else
+  log "Docker already installed"
+fi
 
 # ─── Step 2: PostgreSQL ─────────────────────────────────────
 if [[ "$SKIP_DB" == false ]]; then
-  step "2/7 — Installing PostgreSQL"
+  step "2/8 — Installing PostgreSQL"
 
   if ! command -v psql &> /dev/null; then
     apt-get install -y -qq postgresql postgresql-contrib > /dev/null 2>&1
@@ -139,11 +150,11 @@ if [[ "$SKIP_DB" == false ]]; then
 
   log "PostgreSQL ready (user: serverme, db: serverme)"
 else
-  step "2/7 — Skipping PostgreSQL (--skip-db)"
+  step "2/8 — Skipping PostgreSQL (--skip-db)"
 fi
 
 # ─── Step 3: Download ServerMe binaries ─────────────────────
-step "3/7 — Downloading ServerMe"
+step "3/8 — Downloading ServerMe"
 
 mkdir -p "${INSTALL_DIR}"
 
@@ -200,7 +211,7 @@ log "Binaries installed"
 
 # ─── Step 4: Caddy ──────────────────────────────────────────
 if [[ "$SKIP_CADDY" == false ]]; then
-  step "4/7 — Installing Caddy"
+  step "4/8 — Installing Caddy"
 
   if ! command -v caddy &> /dev/null; then
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
@@ -227,11 +238,11 @@ CADDY
 
   log "Caddy installed and configured"
 else
-  step "4/7 — Skipping Caddy (--skip-caddy)"
+  step "4/8 — Skipping Caddy (--skip-caddy)"
 fi
 
 # ─── Step 5: Create systemd services ────────────────────────
-step "5/7 — Creating systemd services"
+step "5/8 — Creating systemd services"
 
 # Build Google OAuth flags if provided
 GOOGLE_FLAGS=""
@@ -279,7 +290,7 @@ else
 fi
 
 # ─── Step 6: Firewall ───────────────────────────────────────
-step "6/7 — Configuring firewall"
+step "6/8 — Configuring firewall"
 
 if command -v ufw &> /dev/null; then
   ufw allow 22/tcp   > /dev/null 2>&1 || true
@@ -293,7 +304,7 @@ else
 fi
 
 # ─── Step 7: Done! ──────────────────────────────────────────
-step "7/7 — Verifying installation"
+step "7/8 — Verifying installation"
 
 HEALTH=$(curl -s http://localhost:9080/health 2>/dev/null || echo "")
 if echo "$HEALTH" | grep -q "ok"; then

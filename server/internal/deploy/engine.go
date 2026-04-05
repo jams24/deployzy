@@ -97,7 +97,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "-t", imageName, buildCtx)
+	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "--memory=1g", "--cpu-quota=50000", "-t", imageName, buildCtx)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Extract the actual error from build output

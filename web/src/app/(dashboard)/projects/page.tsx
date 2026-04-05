@@ -59,6 +59,12 @@ function ProjectsContent() {
   const [editingEnv, setEditingEnv] = useState<string | null>(null);
   const [envText, setEnvText] = useState("");
   const [projectDetail, setProjectDetail] = useState<Project | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteText, setDeleteText] = useState("");
+  const [importRepo, setImportRepo] = useState<GitHubRepo | null>(null);
+  const [importName, setImportName] = useState("");
+  const [importSubdomain, setImportSubdomain] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -109,35 +115,42 @@ function ProjectsContent() {
     setLoading(false);
   }
 
-  async function createFromRepo(repo: GitHubRepo) {
-    const subdomain = repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
-    const framework = detectFramework(repo.language);
+  function selectRepoForImport(repo: GitHubRepo) {
+    setImportRepo(repo);
+    setImportName(repo.name);
+    setImportSubdomain(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-"));
+  }
+
+  async function createFromRepo() {
+    if (!importRepo || !importName || !importSubdomain) return;
+    setImporting(true);
+    const framework = detectFramework(importRepo.language);
 
     const res = await fetch(`${API}/api/v1/projects`, {
       method: "POST", headers: headers(),
-      body: JSON.stringify({ name: repo.name, subdomain, framework }),
+      body: JSON.stringify({ name: importName, subdomain: importSubdomain, framework }),
     });
 
     if (res.ok) {
       const project = await res.json();
-      // Set repo URL and GitHub repo link
       await fetch(`${API}/api/v1/projects/${project.id}`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify({
-          repo_url: repo.html_url + ".git",
-          branch: repo.default_branch || "main",
-          github_repo: repo.full_name,
+          repo_url: importRepo.html_url + ".git",
+          branch: importRepo.default_branch || "main",
+          github_repo: importRepo.full_name,
         }),
       });
-      // Auto-deploy
       await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
         method: "POST", headers: headers(),
       });
       setShowRepoPicker(false);
+      setImportRepo(null);
       setDeploying(project.id);
       setTimeout(() => setDeploying(null), 5000);
       load();
     }
+    setImporting(false);
   }
 
   async function deploy(id: string) {
@@ -154,9 +167,10 @@ function ProjectsContent() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this project and its container?")) return;
     await fetch(`${API}/api/v1/projects/${id}`, { method: "DELETE", headers: headers() });
     setSelectedProject(null);
+    setConfirmDelete(null);
+    setDeleteText("");
     load();
   }
 
@@ -276,7 +290,7 @@ function ProjectsContent() {
                         <p className="text-[11px] text-muted-foreground truncate">{repo.description || repo.full_name}</p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0 ml-2" onClick={() => createFromRepo(repo)}>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0 ml-2" onClick={() => selectRepoForImport(repo)}>
                       <Rocket className="h-3 w-3" /> Import
                     </Button>
                   </div>
@@ -284,6 +298,59 @@ function ProjectsContent() {
                 {filteredRepos.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No repos found</p>}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Import customization modal */}
+      {importRepo && (
+        <Card className="mt-4 border-primary/30">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Configure Project</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setImportRepo(null)}>Cancel</Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3 rounded-lg border border-border/30 p-3 bg-accent/10">
+              {importRepo.language && (
+                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${langColor[importRepo.language] || "bg-gray-400"}`} />
+              )}
+              <div className="min-w-0">
+                <span className="text-sm font-medium">{importRepo.full_name}</span>
+                {importRepo.private && <Badge variant="outline" className="ml-2 text-[9px]">private</Badge>}
+                <p className="text-[11px] text-muted-foreground truncate">{importRepo.description || ""}</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Project Name</label>
+              <Input
+                value={importName}
+                onChange={(e) => setImportName(e.target.value)}
+                placeholder="my-project"
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Subdomain</label>
+              <div className="flex items-center gap-0">
+                <Input
+                  value={importSubdomain}
+                  onChange={(e) => setImportSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  placeholder="my-project"
+                  className="h-9 text-sm rounded-r-none font-mono"
+                />
+                <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.serverme.site</span>
+              </div>
+            </div>
+            <Button
+              className="w-full gap-2"
+              onClick={createFromRepo}
+              disabled={importing || !importName || !importSubdomain}
+            >
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Deploy Project
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -356,11 +423,49 @@ function ProjectsContent() {
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => remove(p.id)}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
+
+                {/* Delete confirmation */}
+                {confirmDelete === p.id && (
+                  <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium text-red-500">Delete Project</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      This will permanently delete <span className="font-semibold text-foreground">{p.name}</span> and its container. This action cannot be undone.
+                    </p>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">
+                        Type <span className="font-mono font-semibold text-foreground">{p.name}</span> to confirm:
+                      </label>
+                      <Input
+                        value={deleteText}
+                        onChange={(e) => setDeleteText(e.target.value)}
+                        placeholder={p.name}
+                        className="h-8 text-sm font-mono"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-500"
+                        disabled={deleteText !== p.name}
+                        onClick={() => remove(p.id)}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" /> Delete Forever
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setConfirmDelete(null); setDeleteText(""); }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Env Vars */}
                 {selectedProject === p.id && (
