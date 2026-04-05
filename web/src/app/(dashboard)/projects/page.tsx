@@ -131,25 +131,40 @@ function ProjectsContent() {
       body: JSON.stringify({ name: importName, subdomain: importSubdomain, framework }),
     });
 
-    if (res.ok) {
-      const project = await res.json();
-      await fetch(`${API}/api/v1/projects/${project.id}`, {
-        method: "PUT", headers: headers(),
-        body: JSON.stringify({
-          repo_url: importRepo.html_url + ".git",
-          branch: importRepo.default_branch || "main",
-          github_repo: importRepo.full_name,
-        }),
-      });
-      await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
-        method: "POST", headers: headers(),
-      });
-      setShowRepoPicker(false);
-      setImportRepo(null);
-      setDeploying(project.id);
-      setTimeout(() => setDeploying(null), 5000);
-      load();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create project" }));
+      alert(err.error || "Failed to create project");
+      setImporting(false);
+      return;
     }
+
+    const project = await res.json();
+
+    // Set repo URL — must succeed before deploying
+    const updateRes = await fetch(`${API}/api/v1/projects/${project.id}`, {
+      method: "PUT", headers: headers(),
+      body: JSON.stringify({
+        repo_url: importRepo.html_url + ".git",
+        branch: importRepo.default_branch || "main",
+        github_repo: importRepo.full_name,
+      }),
+    });
+
+    if (!updateRes.ok) {
+      alert("Project created but failed to link repo. Try setting the repo URL in environment variables.");
+      setImporting(false);
+      load();
+      return;
+    }
+
+    await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
+      method: "POST", headers: headers(),
+    });
+    setShowRepoPicker(false);
+    setImportRepo(null);
+    setDeploying(project.id);
+    setTimeout(() => setDeploying(null), 5000);
+    load();
     setImporting(false);
   }
 
