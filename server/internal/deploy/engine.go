@@ -39,8 +39,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
 	e.db.UpdateProjectStatus(ctx, project.ID, "building", "", 0)
 
-	// Stop existing container
+	// Stop and remove existing container
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
+	exec.Command("docker", "stop", containerName).Run()
 	exec.Command("docker", "rm", "-f", containerName).Run()
 
 	// Ensure data directory exists for persistence
