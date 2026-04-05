@@ -67,15 +67,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		buildCtx = cloneDir
 	}
 
-	// Determine framework
+	// Determine framework — always prefer existing Dockerfile
 	framework := project.Framework
-	if framework == "" {
+	if fileExists(buildCtx + "/Dockerfile") {
+		framework = "docker"
+	} else if framework == "" {
 		framework = e.detectFramework(buildCtx)
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Framework: %s", framework), "build")
 
-	// Generate Dockerfile if repo doesn't have one
-	if framework != "docker" || !fileExists(buildCtx+"/Dockerfile") {
+	// Generate Dockerfile only if repo doesn't already have one
+	if !fileExists(buildCtx + "/Dockerfile") {
 		dockerfile := e.generateDockerfile(project, framework)
 		if dockerfile != "" {
 			os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
