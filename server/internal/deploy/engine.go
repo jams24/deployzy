@@ -99,7 +99,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "--memory=1g", "--cpu-quota=50000", "-t", imageName, buildCtx)
+	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Extract the actual error from build output
@@ -382,6 +382,7 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN if [ -d "prisma" ]; then npx prisma generate; fi
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npm run build
 EXPOSE 3000
 CMD ["npm", "start"]`
