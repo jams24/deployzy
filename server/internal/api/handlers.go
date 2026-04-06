@@ -304,29 +304,50 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DNS CNAME lookup
-	cnames, err := net.LookupCNAME(targetDomain.Domain)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "DNS lookup failed: "+err.Error())
-		return
-	}
+	// Try CNAME lookup first
+	verified := false
+	method := ""
 
-	// Check if CNAME points to our target (with or without trailing dot)
+	cnames, _ := net.LookupCNAME(targetDomain.Domain)
 	expected := targetDomain.CnameTarget
 	if cnames == expected || cnames == expected+"." {
+		verified = true
+		method = "cname"
+	}
+
+	// Fallback: check if domain resolves to our server IP (Cloudflare flattens root CNAMEs to A records)
+	if !verified {
+		ips, _ := net.LookupHost(targetDomain.Domain)
+		serverIPs, _ := net.LookupHost(expected)
+		for _, ip := range ips {
+			for _, sip := range serverIPs {
+				if ip == sip {
+					verified = true
+					method = "a-record"
+					break
+				}
+			}
+			if verified {
+				break
+			}
+		}
+	}
+
+	if verified {
 		if err := s.db.VerifyDomain(r.Context(), domID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to verify")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"verified": true,
-			"cname":    cnames,
+			"method":   method,
 		})
 	} else {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"verified":  false,
-			"found":     cnames,
-			"expected":  expected,
+			"verified": false,
+			"found":    cnames,
+			"expected": expected,
+			"hint":     "If using Cloudflare, make sure the CNAME/A record points to serverme.site",
 		})
 	}
 }
