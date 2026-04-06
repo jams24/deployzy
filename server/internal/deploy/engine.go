@@ -119,12 +119,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		hostPort = 10100 + rand.Intn(900)
 	}
 
-	// Build env var flags (skip comments and empty keys)
+	// Build env var flags (skip comments, strip quotes)
 	var envFlags []string
 	for k, v := range project.EnvVars {
 		if strings.HasPrefix(k, "#") || strings.TrimSpace(k) == "" {
 			continue
 		}
+		// Strip surrounding quotes that users often copy from .env files
+		v = strings.TrimPrefix(v, "\"")
+		v = strings.TrimSuffix(v, "\"")
+		v = strings.TrimPrefix(v, "'")
+		v = strings.TrimSuffix(v, "'")
 		envFlags = append(envFlags, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
 	// Always set PORT env var
