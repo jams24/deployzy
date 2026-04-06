@@ -93,6 +93,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Post("/domains", s.handleCreateDomain)
 			r.Delete("/domains/{id}", s.handleDeleteDomain)
 			r.Post("/domains/{id}/verify", s.handleVerifyDomain)
+			r.Put("/domains/{id}/bind", s.handleBindDomain)
 
 			// Tunnels
 			r.Get("/tunnels", s.handleListTunnels)

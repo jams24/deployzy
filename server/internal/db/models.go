@@ -36,12 +36,14 @@ type APIKey struct {
 
 // Domain represents a custom domain.
 type Domain struct {
-	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
-	Domain      string    `json:"domain"`
-	Verified    bool      `json:"verified"`
-	CnameTarget string    `json:"cname_target"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	UserID          string    `json:"user_id"`
+	Domain          string    `json:"domain"`
+	Verified        bool      `json:"verified"`
+	CnameTarget     string    `json:"cname_target"`
+	TargetType      string    `json:"target_type"`      // "tunnel" or "project"
+	TargetSubdomain string    `json:"target_subdomain"` // subdomain to route to
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // ReservedSubdomain represents a reserved subdomain.
@@ -225,9 +227,9 @@ func (d *DB) CreateDomain(ctx context.Context, userID, domainName, cnameTarget s
 	var dom Domain
 	err := d.Pool.QueryRow(ctx,
 		`INSERT INTO domains (user_id, domain, cname_target) VALUES ($1, $2, $3)
-		 RETURNING id, user_id, domain, verified, cname_target, created_at`,
+		 RETURNING id, user_id, domain, verified, cname_target, target_type, target_subdomain, created_at`,
 		userID, domainName, cnameTarget,
-	).Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.CreatedAt)
+	).Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.TargetType, &dom.TargetSubdomain, &dom.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +246,7 @@ func (d *DB) VerifyDomain(ctx context.Context, domainID string) error {
 // ListDomains returns all domains for a user.
 func (d *DB) ListDomains(ctx context.Context, userID string) ([]Domain, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, domain, verified, cname_target, created_at FROM domains WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT id, user_id, domain, verified, cname_target, target_type, target_subdomain, created_at FROM domains WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -255,7 +257,7 @@ func (d *DB) ListDomains(ctx context.Context, userID string) ([]Domain, error) {
 	var domains []Domain
 	for rows.Next() {
 		var dom Domain
-		if err := rows.Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.CreatedAt); err != nil {
+		if err := rows.Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.TargetType, &dom.TargetSubdomain, &dom.CreatedAt); err != nil {
 			return nil, err
 		}
 		domains = append(domains, dom)
@@ -280,9 +282,9 @@ func (d *DB) DeleteDomain(ctx context.Context, userID, domainID string) error {
 func (d *DB) GetDomainByName(ctx context.Context, domainName string) (*Domain, error) {
 	var dom Domain
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, domain, verified, cname_target, created_at FROM domains WHERE domain = $1`,
+		`SELECT id, user_id, domain, verified, cname_target, target_type, target_subdomain, created_at FROM domains WHERE domain = $1`,
 		domainName,
-	).Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.CreatedAt)
+	).Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.TargetType, &dom.TargetSubdomain, &dom.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -290,6 +292,33 @@ func (d *DB) GetDomainByName(ctx context.Context, domainName string) (*Domain, e
 		return nil, err
 	}
 	return &dom, nil
+}
+
+// LookupVerifiedDomain looks up a verified custom domain with a bound target for routing.
+func (d *DB) LookupVerifiedDomain(ctx context.Context, hostname string) (targetType, targetSubdomain string, ok bool) {
+	err := d.Pool.QueryRow(ctx,
+		`SELECT target_type, target_subdomain FROM domains WHERE domain = $1 AND verified = true AND target_subdomain != ''`,
+		hostname,
+	).Scan(&targetType, &targetSubdomain)
+	if err != nil {
+		return "", "", false
+	}
+	return targetType, targetSubdomain, true
+}
+
+// BindDomain binds a verified domain to a tunnel or project subdomain.
+func (d *DB) BindDomain(ctx context.Context, domainID, userID, targetType, targetSubdomain string) error {
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE domains SET target_type = $3, target_subdomain = $4 WHERE id = $1 AND user_id = $2 AND verified = true`,
+		domainID, userID, targetType, targetSubdomain,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("domain not found or not verified")
+	}
+	return nil
 }
 
 // --- Reserved Subdomain operations ---

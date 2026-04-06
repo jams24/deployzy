@@ -25,13 +25,20 @@ type ProjectLookup interface {
 	GetProjectPort(subdomain string) (int, bool)
 }
 
+// DomainResolver resolves a verified custom domain to its target.
+type DomainResolver interface {
+	ResolveDomain(hostname string) (targetType, targetSubdomain string, ok bool)
+}
+
 // HTTPProxy handles incoming HTTP requests and forwards them through tunnels.
 type HTTPProxy struct {
-	registry *tunnel.Registry
-	manager  *control.Manager
-	store    *inspect.Store
-	projects ProjectLookup
-	log      zerolog.Logger
+	registry   *tunnel.Registry
+	manager    *control.Manager
+	store      *inspect.Store
+	projects   ProjectLookup
+	domains    DomainResolver
+	baseDomain string
+	log        zerolog.Logger
 }
 
 // NewHTTPProxy creates a new HTTP proxy handler.
@@ -47,6 +54,12 @@ func NewHTTPProxy(registry *tunnel.Registry, manager *control.Manager, store *in
 // SetProjectLookup sets the project lookup for deployed containers.
 func (p *HTTPProxy) SetProjectLookup(pl ProjectLookup) {
 	p.projects = pl
+}
+
+// SetDomainResolver sets the custom domain resolver.
+func (p *HTTPProxy) SetDomainResolver(dr DomainResolver, baseDomain string) {
+	p.domains = dr
+	p.baseDomain = baseDomain
 }
 
 // ServeHTTP handles an incoming HTTP request by routing it through the appropriate tunnel.
@@ -76,9 +89,44 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		p.log.Debug().Str("host", hostname).Msg("no tunnel found")
-		http.Error(w, "Tunnel not found. If you're trying to connect, make sure your tunnel is active.", http.StatusNotFound)
-		return
+		// Check if this is a verified custom domain
+		if p.domains != nil {
+			targetType, targetSub, ok := p.domains.ResolveDomain(hostname)
+			if ok {
+				switch targetType {
+				case "tunnel":
+					fullHost := targetSub + "." + p.baseDomain
+					if t := p.registry.LookupByHost(fullHost); t != nil {
+						tun = t
+						// Fall through to the tunnel proxy path below
+					}
+				case "project":
+					if p.projects != nil {
+						if port, pok := p.projects.GetProjectPort(targetSub); pok {
+							rp := &httputil.ReverseProxy{
+								Director: func(req *http.Request) {
+									req.URL.Scheme = "http"
+									req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
+									req.Host = r.Host
+								},
+							}
+							rp.ServeHTTP(w, r)
+							return
+						}
+					}
+				}
+				if tun == nil {
+					http.Error(w, "Domain is configured but the target service is not running.", http.StatusBadGateway)
+					return
+				}
+			}
+		}
+
+		if tun == nil {
+			p.log.Debug().Str("host", hostname).Msg("no tunnel found")
+			http.Error(w, "Tunnel not found. If you're trying to connect, make sure your tunnel is active.", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Check basic auth if configured

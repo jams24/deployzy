@@ -117,6 +117,13 @@ class ApiClient {
     );
   }
 
+  bindDomain(id: string, targetType: string, targetSubdomain: string) {
+    return this.request<{ status: string }>(
+      `/api/v1/domains/${id}/bind`,
+      { method: "PUT", body: JSON.stringify({ target_type: targetType, target_subdomain: targetSubdomain }) }
+    );
+  }
+
   // Tunnels
   listTunnels() {
     return this.request<Tunnel[]>("/api/v1/tunnels" + this.teamQ());
@@ -153,6 +160,8 @@ export interface Domain {
   domain: string;
   verified: boolean;
   cname_target: string;
+  target_type: string;
+  target_subdomain: string;
   created_at: string;
 }
 

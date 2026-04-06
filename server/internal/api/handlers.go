@@ -251,7 +251,7 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cnameTarget := "tunnel.serverme.dev"
+	cnameTarget := "serverme.site"
 	dom, err := s.db.CreateDomain(r.Context(), u.ID, req.Domain, cnameTarget)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create domain")
@@ -329,6 +329,56 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 			"expected":  expected,
 		})
 	}
+}
+
+func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	domID := chi.URLParam(r, "id")
+
+	var req struct {
+		TargetType      string `json:"target_type"`
+		TargetSubdomain string `json:"target_subdomain"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.TargetType != "tunnel" && req.TargetType != "project" {
+		writeError(w, http.StatusBadRequest, "target_type must be 'tunnel' or 'project'")
+		return
+	}
+	if req.TargetSubdomain == "" {
+		writeError(w, http.StatusBadRequest, "target_subdomain required")
+		return
+	}
+
+	// Verify the user owns the target
+	if req.TargetType == "project" {
+		projects, _ := s.db.ListProjects(r.Context(), u.ID)
+		found := false
+		for _, p := range projects {
+			if p.Subdomain == req.TargetSubdomain {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, "you don't own a project with that subdomain")
+			return
+		}
+	}
+
+	if err := s.db.BindDomain(r.Context(), domID, u.ID, req.TargetType, req.TargetSubdomain); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to bind domain — is it verified?")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":           "bound",
+		"target_type":      req.TargetType,
+		"target_subdomain": req.TargetSubdomain,
+	})
 }
 
 // --- Tunnels ---

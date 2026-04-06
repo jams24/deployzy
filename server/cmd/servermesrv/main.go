@@ -185,6 +185,9 @@ func main() {
 			httpProxy.SetProjectLookup(deployEngine)
 		}
 
+		// Enable custom domain routing
+		httpProxy.SetDomainResolver(proxy.NewDBDomainResolver(database), *domain)
+
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,
