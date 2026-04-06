@@ -68,12 +68,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		buildCtx = cloneDir
 	}
 
-	// Determine framework — always prefer existing Dockerfile
-	framework := project.Framework
-	if fileExists(buildCtx + "/Dockerfile") {
-		framework = "docker"
-	} else if framework == "" {
-		framework = e.detectFramework(buildCtx)
+	// Determine framework — always auto-detect from repo contents
+	framework := e.detectFramework(buildCtx)
+	if framework == "node" && project.Framework != "" && project.Framework != "node" {
+		// If auto-detect says generic "node" but DB has a more specific framework, use DB
+		framework = project.Framework
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Framework: %s", framework), "build")
 
