@@ -102,7 +102,10 @@ function ProjectsContent() {
     setLoadingRepos(true);
     try {
       const res = await fetch(`${API}/api/v1/github/repos`, { headers: headers() });
-      if (res.ok) setGhRepos(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setGhRepos(Array.isArray(data) ? data : []);
+      }
     } catch {}
     setLoadingRepos(false);
   }
@@ -228,7 +231,7 @@ function ProjectsContent() {
     return () => clearInterval(t);
   }, [selectedProject]);
 
-  const filteredRepos = ghRepos.filter((r) =>
+  const filteredRepos = (ghRepos || []).filter((r) =>
     !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
 
