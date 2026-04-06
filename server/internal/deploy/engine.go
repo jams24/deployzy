@@ -119,9 +119,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		hostPort = 10100 + rand.Intn(900)
 	}
 
-	// Build env var flags
+	// Build env var flags (skip comments and empty keys)
 	var envFlags []string
 	for k, v := range project.EnvVars {
+		if strings.HasPrefix(k, "#") || strings.TrimSpace(k) == "" {
+			continue
+		}
 		envFlags = append(envFlags, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
 	// Always set PORT env var
