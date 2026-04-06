@@ -71,6 +71,22 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── Video Preview ────────────────────────────── */}
+      <section className="py-20 sm:py-28">
+        <div className="mx-auto max-w-5xl px-5 sm:px-6">
+          <ScrollReveal>
+            <div className="text-center max-w-lg mx-auto mb-12">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">See it in action</p>
+              <h2 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">From terminal to production</h2>
+              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">One command to expose your local server. A full dashboard to manage everything.</p>
+            </div>
+          </ScrollReveal>
+          <ScrollReveal delay={150}>
+            <DashboardPreview />
+          </ScrollReveal>
+        </div>
+      </section>
+
       {/* ── Protocols ────────────────────────────────── */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
@@ -226,6 +242,114 @@ function Metric({ value, suffix, prefix, label }: { value: number; suffix?: stri
     </div>
   );
 }
+function DashboardPreview() {
+  return (
+    <div className="relative rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20">
+      {/* Browser chrome */}
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3 bg-zinc-950">
+        <div className="flex gap-1.5">
+          <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
+          <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/60" />
+          <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
+        </div>
+        <div className="flex-1 mx-4">
+          <div className="mx-auto max-w-xs h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-[10px] text-zinc-600 font-mono">
+            serverme.site/tunnels
+          </div>
+        </div>
+      </div>
+
+      {/* Dashboard content */}
+      <div className="flex min-h-[380px] sm:min-h-[440px]">
+        {/* Sidebar */}
+        <div className="hidden sm:flex flex-col w-48 border-r border-white/[0.04] p-3 gap-0.5 shrink-0">
+          <div className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-zinc-600 font-mono font-medium mb-2">
+            <div className="h-5 w-5 rounded bg-white/5 flex items-center justify-center text-[9px]">S</div>
+            ServerMe
+          </div>
+          {["Tunnels", "Projects", "Analytics", "Inspector", "Domains", "Team"].map((item, i) => (
+            <div key={item} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[11px] font-mono transition-colors ${i === 0 ? "bg-white/[0.06] text-zinc-300" : "text-zinc-600 hover:text-zinc-400"}`}>
+              <div className={`h-1 w-1 rounded-full ${i === 0 ? "bg-emerald-500" : "bg-transparent"}`} />
+              {item}
+            </div>
+          ))}
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 p-4 sm:p-6 overflow-hidden">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="text-sm font-medium text-zinc-200">Active Tunnels</div>
+              <div className="text-[11px] text-zinc-600 mt-0.5">3 tunnels running</div>
+            </div>
+            <div className="h-7 px-3 rounded-md bg-white/[0.06] text-[10px] text-zinc-400 flex items-center gap-1.5 font-mono">
+              + New Tunnel
+            </div>
+          </div>
+
+          {/* Tunnel cards - animated entrance */}
+          <div className="space-y-2.5">
+            {[
+              { name: "api-dev", url: "api-dev.serverme.site", proto: "HTTP", port: "3000", status: "active", delay: "0s" },
+              { name: "postgres", url: "tcp://serverme.site:41923", proto: "TCP", port: "5432", status: "active", delay: "0.15s" },
+              { name: "my-saas", url: "my-saas.serverme.site", proto: "HTTP", port: "8080", status: "active", delay: "0.3s" },
+            ].map((t) => (
+              <div key={t.name} className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] p-3 animate-fade-in-up" style={{ animationDelay: t.delay }}>
+                <div className={`flex h-8 w-8 items-center justify-center rounded-md text-[10px] font-mono font-medium shrink-0 ${t.proto === "TCP" ? "bg-green-500/10 text-green-400" : "bg-blue-500/10 text-blue-400"}`}>
+                  {t.proto}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-medium text-zinc-300 truncate">{t.url}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-600 font-mono mt-0.5">→ localhost:{t.port}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                  <span className="text-[10px] text-emerald-500 font-medium">Active</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Live request stream */}
+          <div className="mt-5 rounded-lg border border-white/[0.04] bg-white/[0.01] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/[0.04] px-3 py-1.5">
+              <div className="text-[10px] text-zinc-600 font-mono flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500" /></span>
+                Live Traffic
+              </div>
+              <div className="text-[9px] text-zinc-700 font-mono">12 req/s</div>
+            </div>
+            <div className="p-2 space-y-0.5 font-mono text-[10px]">
+              {[
+                { method: "GET", path: "/api/users", status: "200", time: "12ms", color: "text-emerald-400" },
+                { method: "POST", path: "/api/webhooks/stripe", status: "201", time: "45ms", color: "text-emerald-400" },
+                { method: "GET", path: "/api/products?page=2", status: "200", time: "8ms", color: "text-emerald-400" },
+                { method: "DELETE", path: "/api/sessions/expired", status: "204", time: "3ms", color: "text-emerald-400" },
+                { method: "POST", path: "/api/auth/login", status: "401", time: "6ms", color: "text-red-400" },
+              ].map((req, i) => (
+                <div key={i} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/[0.02] animate-fade-in-up" style={{ animationDelay: `${0.5 + i * 0.12}s` }}>
+                  <span className={`w-10 shrink-0 font-medium ${req.method === "GET" ? "text-blue-400" : req.method === "POST" ? "text-amber-400" : "text-red-400"}`}>{req.method}</span>
+                  <span className="flex-1 text-zinc-400 truncate">{req.path}</span>
+                  <span className={`w-6 text-right ${req.color}`}>{req.status}</span>
+                  <span className="w-10 text-right text-zinc-600">{req.time}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Glow effect */}
+      <div className="absolute inset-0 pointer-events-none rounded-xl ring-1 ring-inset ring-white/[0.03]" />
+    </div>
+  );
+}
+
 function CodeCard({ lang, code }: { lang: string; code: string }) {
   return (
     <div className="rounded-lg border border-border/40 bg-[#09090b] overflow-hidden transition-colors hover:border-border/60">
