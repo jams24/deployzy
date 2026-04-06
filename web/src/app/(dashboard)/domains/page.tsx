@@ -179,7 +179,26 @@ export default function DomainsPage() {
                   </div>
 
                   {/* Binding status */}
-                  {d.verified && d.target_subdomain ? (
+                  {d.verified && bindingId === d.id ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        value={selectedTarget}
+                        onChange={(e) => setSelectedTarget(e.target.value)}
+                      >
+                        <option value="">Select a target...</option>
+                        {targets.map((t) => (
+                          <option key={`${t.type}:${t.subdomain}`} value={`${t.type}:${t.subdomain}`}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                      <Button size="sm" className="h-8 text-xs gap-1" onClick={() => bind(d.id)} disabled={!selectedTarget}>
+                        <Link2 className="h-3 w-3" /> Bind
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setBindingId(null)}>Cancel</Button>
+                    </div>
+                  ) : d.verified && d.target_subdomain ? (
                     <div className="flex items-center gap-2 rounded-md bg-accent/30 px-3 py-2 text-xs">
                       <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-muted-foreground">Routes to</span>
@@ -192,31 +211,10 @@ export default function DomainsPage() {
                         Change
                       </Button>
                     </div>
-                  ) : d.verified && !d.target_subdomain ? (
-                    bindingId === d.id ? (
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs"
-                          value={selectedTarget}
-                          onChange={(e) => setSelectedTarget(e.target.value)}
-                        >
-                          <option value="">Select a target...</option>
-                          {targets.map((t) => (
-                            <option key={`${t.type}:${t.subdomain}`} value={`${t.type}:${t.subdomain}`}>
-                              {t.label}
-                            </option>
-                          ))}
-                        </select>
-                        <Button size="sm" className="h-8 text-xs gap-1" onClick={() => bind(d.id)} disabled={!selectedTarget}>
-                          <Link2 className="h-3 w-3" /> Bind
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setBindingId(null)}>Cancel</Button>
-                      </div>
-                    ) : (
-                      <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => startBinding(d.id)}>
-                        <Link2 className="h-3 w-3" /> Bind to Tunnel or Project
-                      </Button>
-                    )
+                  ) : d.verified ? (
+                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => startBinding(d.id)}>
+                      <Link2 className="h-3 w-3" /> Bind to Tunnel or Project
+                    </Button>
                   ) : null}
                 </div>
               ))}
