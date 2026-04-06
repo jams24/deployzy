@@ -30,7 +30,7 @@ export function ScrollReveal({
       transition={{
         duration: 0.7,
         delay: delay / 1000,
-        ease: [0.21, 0.47, 0.32, 0.98],
+        ease: [0.21, 0.47, 0.32, 0.98] as const,
       }}
       className={className}
     >

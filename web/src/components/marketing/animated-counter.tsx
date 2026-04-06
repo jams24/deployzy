@@ -21,7 +21,7 @@ export function AnimatedCounter({
 
     const controls = animate(0, value, {
       duration,
-      ease: [0.21, 0.47, 0.32, 0.98],
+      ease: [0.21, 0.47, 0.32, 0.98] as const,
       onUpdate: (v) => setDisplay(Math.floor(v).toLocaleString()),
     });
 

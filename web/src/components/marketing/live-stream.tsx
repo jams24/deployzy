@@ -68,7 +68,7 @@ export function LiveStream() {
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{
                 duration: 0.35,
-                ease: [0.21, 0.47, 0.32, 0.98],
+                ease: [0.21, 0.47, 0.32, 0.98] as const,
                 layout: { duration: 0.3 },
               }}
               className="flex items-center gap-3 px-3 py-2 text-[11px] font-mono rounded transition-colors hover:bg-white/[0.02]"
