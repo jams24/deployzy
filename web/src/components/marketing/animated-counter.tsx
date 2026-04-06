@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { useInView, useMotionValue, useTransform, animate, motion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useInView, animate } from "framer-motion";
 
 export function AnimatedCounter({
   value,
@@ -15,22 +14,24 @@ export function AnimatedCounter({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const isInView = useInView(ref, { once: true, margin: "-40px" });
-  const motionValue = useMotionValue(0);
-  const rounded = useTransform(motionValue, (v) => Math.floor(v).toLocaleString());
+  const [display, setDisplay] = useState("0");
 
   useEffect(() => {
-    if (isInView) {
-      animate(motionValue, value, {
-        duration,
-        ease: [0.21, 0.47, 0.32, 0.98],
-      });
-    }
-  }, [isInView, value, duration, motionValue]);
+    if (!isInView) return;
+
+    const controls = animate(0, value, {
+      duration,
+      ease: [0.21, 0.47, 0.32, 0.98],
+      onUpdate: (v) => setDisplay(Math.floor(v).toLocaleString()),
+    });
+
+    return () => controls.stop();
+  }, [isInView, value, duration]);
 
   return (
-    <motion.span ref={ref}>
-      {rounded}
+    <span ref={ref}>
+      {display}
       {suffix}
-    </motion.span>
+    </span>
   );
 }
