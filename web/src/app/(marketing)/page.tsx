@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatedCounter } from "@/components/marketing/animated-counter";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
+import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
   Activity, BarChart3,
@@ -15,22 +16,28 @@ export default function HomePage() {
       <section className="relative border-b border-border/40">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 py-20 sm:py-28 lg:py-36">
-            <div className="flex flex-col justify-center animate-fade-in-up">
-              <div className="inline-flex items-center gap-2 self-start rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
-                <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>
-                v1.0 — Now open source
-              </div>
-              <h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">Expose localhost<br />to the internet</h1>
-              <p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">Secure tunnels from the public internet to your local machine. HTTP, TCP, TLS — with real-time request inspection.</p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                <Button className="h-10 px-5 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Get started <ArrowRight className="h-3.5 w-3.5" /></Button>
-                <Button variant="outline" className="h-10 px-5 text-sm" nativeButton={false} render={<Link href="/docs" />}>Read docs</Button>
-              </div>
-              <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground">
-                {["Free tier", "No credit card", "Self-hostable"].map((t) => (<span key={t} className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" />{t}</span>))}
-              </div>
-            </div>
-            <div className="flex items-center animate-slide-in-right" style={{ animationDelay: "200ms" }}>
+            <FadeIn className="flex flex-col justify-center">
+              <FadeIn delay={0.1}>
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
+                  <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>
+                  v1.0 — Now open source
+                </div>
+              </FadeIn>
+              <FadeIn delay={0.2}><h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">Expose localhost<br />to the internet</h1></FadeIn>
+              <FadeIn delay={0.35}><p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">Secure tunnels from the public internet to your local machine. HTTP, TCP, TLS — with real-time request inspection.</p></FadeIn>
+              <FadeIn delay={0.5}>
+                <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                  <HoverScale><Button className="h-10 px-5 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Get started <ArrowRight className="h-3.5 w-3.5" /></Button></HoverScale>
+                  <HoverScale><Button variant="outline" className="h-10 px-5 text-sm" nativeButton={false} render={<Link href="/docs" />}>Read docs</Button></HoverScale>
+                </div>
+              </FadeIn>
+              <FadeIn delay={0.6}>
+                <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground">
+                  {["Free tier", "No credit card", "Self-hostable"].map((t) => (<span key={t} className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" />{t}</span>))}
+                </div>
+              </FadeIn>
+            </FadeIn>
+            <SlideIn delay={0.3} className="flex items-center">
               <div className="w-full rounded-lg border border-border/60 bg-[#09090b] overflow-hidden">
                 <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
                   <div className="h-2.5 w-2.5 rounded-full bg-white/10" /><div className="h-2.5 w-2.5 rounded-full bg-white/10" /><div className="h-2.5 w-2.5 rounded-full bg-white/10" />
@@ -43,7 +50,7 @@ export default function HomePage() {
                   <div className="mt-2 text-zinc-500">  HTTP  <span className="text-emerald-400 font-medium">https://myapp.serverme.site</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
                 </div>
               </div>
-            </div>
+            </SlideIn>
           </div>
         </div>
       </section>
@@ -91,15 +98,17 @@ export default function HomePage() {
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
           <ScrollReveal><SectionHeader label="Protocols" title="HTTP. TCP. TLS." desc="Not just web traffic. Expose databases, game servers, or any TCP service." /></ScrollReveal>
-          <div className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-3 stagger-children">
+          <StaggerContainer className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-3">
             {protocols.map((p) => (
-              <div key={p.name} className="bg-card/30 p-6 sm:p-8 transition-colors hover:bg-accent/20">
-                <div className="font-mono text-xs font-medium text-muted-foreground uppercase tracking-wider">{p.name}</div>
-                <p className="mt-3 text-sm text-foreground/80 leading-relaxed">{p.desc}</p>
-                <code className="mt-4 block font-mono text-[11px] text-muted-foreground">{p.cmd}</code>
-              </div>
+              <StaggerItem key={p.name}>
+                <GlowCard className="bg-card/30 p-6 sm:p-8 transition-colors hover:bg-accent/20 h-full">
+                  <div className="font-mono text-xs font-medium text-muted-foreground uppercase tracking-wider">{p.name}</div>
+                  <p className="mt-3 text-sm text-foreground/80 leading-relaxed">{p.desc}</p>
+                  <code className="mt-4 block font-mono text-[11px] text-muted-foreground">{p.cmd}</code>
+                </GlowCard>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
@@ -124,15 +133,17 @@ export default function HomePage() {
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
           <ScrollReveal><SectionHeader label="Platform" title="Everything you need" desc="A complete tunneling platform — not just a port forwarder." /></ScrollReveal>
-          <div className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-2 lg:grid-cols-3 stagger-children">
+          <StaggerContainer className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f) => (
-              <div key={f.title} className="bg-card/30 p-6 group transition-colors hover:bg-accent/20">
-                <f.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                <h3 className="mt-3 text-sm font-medium">{f.title}</h3>
-                <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
-              </div>
+              <StaggerItem key={f.title}>
+                <GlowCard className="bg-card/30 p-6 group transition-colors hover:bg-accent/20 h-full">
+                  <f.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  <h3 className="mt-3 text-sm font-medium">{f.title}</h3>
+                  <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
+                </GlowCard>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const allRequests = [
   { time: "12:04:31", method: "POST", path: "/api/webhook", status: 200, ms: 12 },
@@ -57,20 +58,31 @@ export function LiveStream() {
         </span>
       </div>
       <div className="p-1">
-        {requests.map((r, i) => (
-          <div
-            key={`${r.time}-${r.path}-${i}`}
-            className={`flex items-center gap-3 px-3 py-2 text-[11px] font-mono rounded transition-colors hover:bg-white/[0.02] ${i === 0 ? "animate-stream" : ""}`}
-          >
-            <span className="text-zinc-600 w-16 shrink-0">{r.time}</span>
-            <span className={`font-medium w-12 shrink-0 ${methodColor[r.method] || "text-zinc-400"}`}>{r.method}</span>
-            <span className={`w-7 text-center text-[10px] rounded px-1 py-0.5 shrink-0 ${r.status < 400 ? "bg-emerald-500/10 text-emerald-400/80" : "bg-red-500/10 text-red-400/80"}`}>
-              {r.status}
-            </span>
-            <span className="text-zinc-500 flex-1 truncate">{r.path}</span>
-            <span className="text-zinc-700 shrink-0">{r.ms}ms</span>
-          </div>
-        ))}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {requests.map((r, i) => (
+            <motion.div
+              key={`${r.time}-${r.path}-${i}`}
+              layout
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{
+                duration: 0.35,
+                ease: [0.21, 0.47, 0.32, 0.98],
+                layout: { duration: 0.3 },
+              }}
+              className="flex items-center gap-3 px-3 py-2 text-[11px] font-mono rounded transition-colors hover:bg-white/[0.02]"
+            >
+              <span className="text-zinc-600 w-16 shrink-0">{r.time}</span>
+              <span className={`font-medium w-12 shrink-0 ${methodColor[r.method] || "text-zinc-400"}`}>{r.method}</span>
+              <span className={`w-7 text-center text-[10px] rounded px-1 py-0.5 shrink-0 ${r.status < 400 ? "bg-emerald-500/10 text-emerald-400/80" : "bg-red-500/10 text-red-400/80"}`}>
+                {r.status}
+              </span>
+              <span className="text-zinc-500 flex-1 truncate">{r.path}</span>
+              <span className="text-zinc-700 shrink-0">{r.ms}ms</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );

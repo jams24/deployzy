@@ -1,59 +1,36 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { useInView, useMotionValue, useTransform, animate, motion } from "framer-motion";
+import { useEffect } from "react";
 
 export function AnimatedCounter({
   value,
   suffix = "",
-  duration = 1500,
+  duration = 1.5,
 }: {
   value: number;
   suffix?: string;
   duration?: number;
 }) {
-  const [count, setCount] = useState(0);
-  const [started, setStarted] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true, margin: "-40px" });
+  const motionValue = useMotionValue(0);
+  const rounded = useTransform(motionValue, (v) => Math.floor(v).toLocaleString());
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !started) {
-          setStarted(true);
-        }
-      },
-      { threshold: 0.5 }
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [started]);
-
-  useEffect(() => {
-    if (!started) return;
-
-    let start = 0;
-    const increment = value / (duration / 16);
-    const timer = setInterval(() => {
-      start += increment;
-      if (start >= value) {
-        setCount(value);
-        clearInterval(timer);
-      } else {
-        setCount(Math.floor(start));
-      }
-    }, 16);
-
-    return () => clearInterval(timer);
-  }, [started, value, duration]);
+    if (isInView) {
+      animate(motionValue, value, {
+        duration,
+        ease: [0.21, 0.47, 0.32, 0.98],
+      });
+    }
+  }, [isInView, value, duration, motionValue]);
 
   return (
-    <span ref={ref}>
-      {started ? count.toLocaleString() : "0"}
+    <motion.span ref={ref}>
+      {rounded}
       {suffix}
-    </span>
+    </motion.span>
   );
 }
