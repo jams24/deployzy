@@ -91,8 +91,8 @@ export default function NewResourcePage() {
   useEffect(() => {
     // Check GitHub connection
     fetch(`${API}/api/v1/github/status`, { headers: headers() })
-      .then(r => r.ok ? r.json() : {})
-      .then(data => setGhConnected(!!data.connected))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setGhConnected(!!data.connected); })
       .catch(() => {});
     // Load BYOC servers
     fetch(`${API}/api/v1/servers`, { headers: headers() })
