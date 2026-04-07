@@ -29,6 +29,7 @@ import {
   useRouter } from "next/navigation";
 
 const navItems = [
+  { href: "/overview", icon: BarChart3, label: "Overview" },
   { href: "/projects", icon: Rocket, label: "Projects" },
   { href: "/tunnels", icon: Waypoints, label: "Tunnels" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
