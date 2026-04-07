@@ -65,6 +65,7 @@ function ProjectsContent() {
   const [importName, setImportName] = useState("");
   const [importSubdomain, setImportSubdomain] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importEnvText, setImportEnvText] = useState("");
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
   const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string } | null>>({});
@@ -132,6 +133,7 @@ function ProjectsContent() {
     setImportName(repo.name);
     setImportSubdomain(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-"));
     setSelectedServer("");
+    setImportEnvText("");
     // Load user's BYOC servers
     fetch(`${API}/api/v1/servers`, { headers: headers() })
       .then(r => r.ok ? r.json() : [])
@@ -167,7 +169,20 @@ function ProjectsContent() {
 
     const project = await res.json();
 
-    // Deploy immediately
+    // Set env vars if provided
+    if (importEnvText.trim()) {
+      const envVars: Record<string, string> = {};
+      importEnvText.split("\n").forEach((line) => {
+        const eq = line.indexOf("=");
+        if (eq > 0) envVars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+      });
+      await fetch(`${API}/api/v1/projects/${project.id}`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ env_vars: envVars }),
+      });
+    }
+
+    // Deploy
     await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
       method: "POST", headers: headers(),
     });
@@ -467,6 +482,16 @@ function ProjectsContent() {
                 </select>
               </div>
             )}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Environment Variables <span className="text-[10px] text-muted-foreground font-normal">(optional)</span></label>
+              <textarea
+                value={importEnvText}
+                onChange={(e) => setImportEnvText(e.target.value)}
+                placeholder={"DATABASE_URL=postgresql://...\nAPI_KEY=sk_live_...\nNODE_ENV=production"}
+                className="w-full h-24 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. You can edit these anytime after deployment.</p>
+            </div>
             <Button
               className="w-full gap-2"
               onClick={createFromRepo}
