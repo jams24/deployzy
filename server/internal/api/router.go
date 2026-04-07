@@ -149,6 +149,15 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
 			r.Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
 
+			// Database Backups
+			r.Post("/projects/{projectId}/backups", s.handleCreateBackup)
+			r.Get("/projects/{projectId}/backups", s.handleListBackups)
+			r.Get("/projects/{projectId}/backups/{backupId}/download", s.handleDownloadBackup)
+			r.Post("/projects/{projectId}/backups/{backupId}/restore", s.handleRestoreBackup)
+			r.Delete("/projects/{projectId}/backups/{backupId}", s.handleDeleteBackup)
+			r.Get("/projects/{projectId}/backup-schedule", s.handleGetBackupSchedule)
+			r.Put("/projects/{projectId}/backup-schedule", s.handleUpdateBackupSchedule)
+
 			// Subdomains
 			r.Get("/subdomains", s.handleListSubdomains)
 			r.Post("/subdomains", s.handleAddSubdomain)

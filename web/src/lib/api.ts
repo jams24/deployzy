@@ -130,6 +130,33 @@ class ApiClient {
     return this.request(`/api/v1/projects/${projectId}/database`, { method: "DELETE" });
   }
 
+  // Database Backups
+  createBackup(projectId: string) {
+    return this.request<DatabaseBackup>(`/api/v1/projects/${projectId}/backups`, { method: "POST" });
+  }
+
+  listBackups(projectId: string) {
+    return this.request<DatabaseBackup[]>(`/api/v1/projects/${projectId}/backups`);
+  }
+
+  deleteBackup(projectId: string, backupId: string) {
+    return this.request(`/api/v1/projects/${projectId}/backups/${backupId}`, { method: "DELETE" });
+  }
+
+  restoreBackup(projectId: string, backupId: string) {
+    return this.request(`/api/v1/projects/${projectId}/backups/${backupId}/restore`, { method: "POST" });
+  }
+
+  getBackupSchedule(projectId: string) {
+    return this.request<BackupSchedule>(`/api/v1/projects/${projectId}/backup-schedule`);
+  }
+
+  updateBackupSchedule(projectId: string, schedule: BackupSchedule) {
+    return this.request(`/api/v1/projects/${projectId}/backup-schedule`, {
+      method: "PUT", body: JSON.stringify(schedule),
+    });
+  }
+
   bindDomain(id: string, targetType: string, targetSubdomain: string) {
     return this.request<{ status: string }>(
       `/api/v1/domains/${id}/bind`,
@@ -187,6 +214,23 @@ export interface ProjectDatabase {
   host: string;
   port: number;
   created_at: string;
+}
+
+export interface DatabaseBackup {
+  id: string;
+  project_id: string;
+  file_name: string;
+  file_size: number;
+  status: string;
+  created_at: string;
+}
+
+export interface BackupSchedule {
+  enabled: boolean;
+  schedule: string;
+  time: string;
+  retention: number;
+  last_backup_at: string | null;
 }
 
 export interface DnsInstructions {

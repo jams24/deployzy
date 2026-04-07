@@ -188,6 +188,10 @@ func main() {
 		// Enable custom domain routing
 		httpProxy.SetDomainResolver(proxy.NewDBDomainResolver(database), *domain)
 
+		// Start backup scheduler
+		backupScheduler := deploy.NewBackupScheduler(database, log)
+		go backupScheduler.Start(context.Background())
+
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,

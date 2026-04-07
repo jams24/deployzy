@@ -68,6 +68,10 @@ function ProjectsContent() {
   const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string } | null>>({});
   const [creatingDB, setCreatingDB] = useState<string | null>(null);
   const [showDBPass, setShowDBPass] = useState<Record<string, boolean>>({});
+  const [backups, setBackups] = useState<Record<string, { id: string; file_name: string; file_size: number; created_at: string }[]>>({});
+  const [backingUp, setBackingUp] = useState<string | null>(null);
+  const [showSchedule, setShowSchedule] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<{ enabled: boolean; schedule: string; time: string; retention: number }>({ enabled: false, schedule: "daily", time: "03:00", retention: 7 });
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -254,6 +258,51 @@ function ProjectsContent() {
     } catch {}
   }
 
+  async function loadBackups(id: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/backups`, { headers: headers() });
+      if (res.ok) setBackups((prev) => ({ ...prev, [id]: await res.json() }));
+    } catch {}
+  }
+
+  async function createBackup(id: string) {
+    setBackingUp(id);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/backups`, { method: "POST", headers: headers() });
+      if (res.ok) loadBackups(id);
+      else alert("Backup failed");
+    } catch {}
+    setBackingUp(null);
+  }
+
+  async function deleteBackup(projectId: string, backupId: string) {
+    await fetch(`${API}/api/v1/projects/${projectId}/backups/${backupId}`, { method: "DELETE", headers: headers() });
+    loadBackups(projectId);
+  }
+
+  async function restoreBackup(projectId: string, backupId: string) {
+    if (!confirm("Restore this backup? Current data will be overwritten.")) return;
+    const res = await fetch(`${API}/api/v1/projects/${projectId}/backups/${backupId}/restore`, { method: "POST", headers: headers() });
+    if (res.ok) alert("Database restored successfully");
+    else alert("Restore failed");
+  }
+
+  async function loadSchedule(id: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/backup-schedule`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) setSchedule({ enabled: data.enabled, schedule: data.schedule, time: data.time, retention: data.retention });
+      }
+    } catch {}
+    setShowSchedule(id);
+  }
+
+  async function saveSchedule(id: string) {
+    await fetch(`${API}/api/v1/projects/${id}/backup-schedule`, { method: "PUT", headers: headers(), body: JSON.stringify(schedule) });
+    setShowSchedule(null);
+  }
+
   async function disconnectGH() {
     await fetch(`${API}/api/v1/github`, { method: "DELETE", headers: headers() });
     setGhConnected(false); setGhUsername(""); setGhRepos([]);
@@ -264,6 +313,7 @@ function ProjectsContent() {
     if (!selectedProject) return;
     loadLogs(selectedProject);
     loadDatabase(selectedProject);
+    loadBackups(selectedProject);
     const t = setInterval(() => loadLogs(selectedProject), 5000);
     return () => clearInterval(t);
   }, [selectedProject]);
@@ -581,6 +631,67 @@ function ProjectsContent() {
                               <Copy className="h-3 w-3" />
                             </Button>
                           </div>
+                        </div>
+
+                        {/* Backups */}
+                        <div className="border-t border-border/30 pt-3 mt-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-medium text-muted-foreground">Backups</span>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => loadSchedule(p.id)}>Schedule</Button>
+                              <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => createBackup(p.id)} disabled={backingUp === p.id}>
+                                {backingUp === p.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Database className="h-2.5 w-2.5" />} Backup Now
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Schedule editor */}
+                          {showSchedule === p.id && (
+                            <div className="rounded-md border border-border/30 bg-[#09090b] p-3 space-y-2">
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1.5 text-[10px]">
+                                  <input type="checkbox" checked={schedule.enabled} onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })} className="rounded" />
+                                  Enabled
+                                </label>
+                                <select className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.schedule} onChange={(e) => setSchedule({ ...schedule, schedule: e.target.value })}>
+                                  <option value="every6h">Every 6 hours</option>
+                                  <option value="every12h">Every 12 hours</option>
+                                  <option value="daily">Daily</option>
+                                  <option value="weekly">Weekly</option>
+                                </select>
+                                <input type="time" className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.time} onChange={(e) => setSchedule({ ...schedule, time: e.target.value })} />
+                                <select className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.retention} onChange={(e) => setSchedule({ ...schedule, retention: parseInt(e.target.value) })}>
+                                  {[3, 7, 14, 30].map((d) => <option key={d} value={d}>Keep {d} days</option>)}
+                                </select>
+                              </div>
+                              <div className="flex gap-1">
+                                <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => saveSchedule(p.id)}>Save</Button>
+                                <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setShowSchedule(null)}>Cancel</Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Backup list */}
+                          {(backups[p.id] || []).length > 0 ? (
+                            <div className="space-y-1">
+                              {(backups[p.id] || []).map((b) => (
+                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[10px]">
+                                  <div className="flex items-center gap-2 font-mono text-zinc-400">
+                                    <Database className="h-3 w-3 text-zinc-600" />
+                                    <span>{new Date(b.created_at).toLocaleString()}</span>
+                                    <span className="text-zinc-600">{(b.file_size / 1024).toFixed(1)} KB</span>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px]" nativeButton={false} render={<a href={`${API}/api/v1/projects/${p.id}/backups/${b.id}/download`} />}>Download</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-blue-400" onClick={() => restoreBackup(p.id, b.id)}>Restore</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-destructive" onClick={() => deleteBackup(p.id, b.id)}>Delete</Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-zinc-600">No backups yet</p>
+                          )}
                         </div>
                       </div>
                     ) : (
