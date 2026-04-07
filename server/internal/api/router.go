@@ -164,6 +164,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Delete("/subdomains", s.handleReleaseSubdomain)
 			r.Get("/subdomains/check", s.handleCheckSubdomain)
 
+			// Standalone Services (databases, Redis, etc.)
+			r.Get("/services", s.handleListServices)
+			r.Post("/services", s.handleCreateService)
+			r.Get("/services/{serviceId}", s.handleGetService)
+			r.Delete("/services/{serviceId}", s.handleDeleteService)
+
 			// User BYOC Servers
 			r.Get("/servers", s.handleListUserServers)
 			r.Post("/servers", s.handleAddUserServer)

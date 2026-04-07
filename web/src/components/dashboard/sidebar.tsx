@@ -24,6 +24,7 @@ import {
   CreditCard,
   Server,
   LayoutDashboard,
+  Database,
 } from "lucide-react";
 import {
   api } from "@/lib/api";
@@ -33,6 +34,7 @@ import {
 const navItems = [
   { href: "/overview", icon: LayoutDashboard, label: "Overview" },
   { href: "/projects", icon: Rocket, label: "Projects" },
+  { href: "/services", icon: Database, label: "Services" },
   { href: "/tunnels", icon: Waypoints, label: "Tunnels" },
   { href: "/servers", icon: Server, label: "Servers" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
