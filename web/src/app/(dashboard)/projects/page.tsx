@@ -65,6 +65,8 @@ function ProjectsContent() {
   const [importName, setImportName] = useState("");
   const [importSubdomain, setImportSubdomain] = useState("");
   const [importing, setImporting] = useState(false);
+  const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
+  const [selectedServer, setSelectedServer] = useState("");
   const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string } | null>>({});
   const [creatingDB, setCreatingDB] = useState<string | null>(null);
   const [showDBPass, setShowDBPass] = useState<Record<string, boolean>>({});
@@ -129,6 +131,12 @@ function ProjectsContent() {
     setImportRepo(repo);
     setImportName(repo.name);
     setImportSubdomain(repo.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-"));
+    setSelectedServer("");
+    // Load user's BYOC servers
+    fetch(`${API}/api/v1/servers`, { headers: headers() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setUserServers(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }
 
   async function createFromRepo() {
@@ -146,6 +154,7 @@ function ProjectsContent() {
         repo_url: importRepo.html_url + ".git",
         branch: importRepo.default_branch || "main",
         github_repo: importRepo.full_name,
+        worker_server_id: selectedServer || undefined,
       }),
     });
 
@@ -443,6 +452,21 @@ function ProjectsContent() {
                 <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.serverme.site</span>
               </div>
             </div>
+            {userServers.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Deploy to</label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedServer}
+                  onChange={(e) => setSelectedServer(e.target.value)}
+                >
+                  <option value="">ServerMe Cloud (default)</option>
+                  {userServers.filter(s => s.status === "active").map((s) => (
+                    <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <Button
               className="w-full gap-2"
               onClick={createFromRepo}

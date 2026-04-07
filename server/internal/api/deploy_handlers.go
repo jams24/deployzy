@@ -15,12 +15,13 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	var req struct {
-		Name       string `json:"name"`
-		Subdomain  string `json:"subdomain"`
-		Framework  string `json:"framework"`
-		RepoURL    string `json:"repo_url"`
-		Branch     string `json:"branch"`
-		GitHubRepo string `json:"github_repo"`
+		Name           string `json:"name"`
+		Subdomain      string `json:"subdomain"`
+		Framework      string `json:"framework"`
+		RepoURL        string `json:"repo_url"`
+		Branch         string `json:"branch"`
+		GitHubRepo     string `json:"github_repo"`
+		WorkerServerID string `json:"worker_server_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Subdomain == "" {
 		writeError(w, http.StatusBadRequest, "name and subdomain required")
@@ -61,6 +62,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GitHubRepo != "" {
 		s.db.UpdateProjectGitHub(r.Context(), project.ID, req.GitHubRepo, req.Branch, true)
+	}
+
+	// Assign worker server if specified, or auto-select
+	if req.WorkerServerID != "" {
+		s.db.AssignProjectServer(r.Context(), project.ID, req.WorkerServerID)
+		project.WorkerServerID = req.WorkerServerID
 	}
 
 	// Auto-reserve the subdomain so no tunnel can use it

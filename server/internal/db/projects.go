@@ -162,6 +162,15 @@ func (d *DB) GetDeployLogs(ctx context.Context, projectID string, limit int) ([]
 	return logs, nil
 }
 
+// AssignProjectServer links a project to a worker server.
+func (d *DB) AssignProjectServer(ctx context.Context, projectID, serverID string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET worker_server_id = $2 WHERE id = $1`,
+		projectID, serverID,
+	)
+	return err
+}
+
 func (d *DB) UpdateProjectEnvVars(ctx context.Context, projectID string, envVars map[string]string) error {
 	envJSON, _ := json.Marshal(envVars)
 	_, err := d.Pool.Exec(ctx,
