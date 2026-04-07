@@ -144,6 +144,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Delete("/projects/{projectId}", s.handleDeleteProject)
 			r.Get("/projects/{projectId}/logs", s.handleGetDeployLogs)
 
+			// Project Databases
+			r.Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
+			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
+			r.Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
+
 			// Subdomains
 			r.Get("/subdomains", s.handleListSubdomains)
 			r.Post("/subdomains", s.handleAddSubdomain)

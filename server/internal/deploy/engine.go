@@ -119,6 +119,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		hostPort = 10100 + rand.Intn(900)
 	}
 
+	// Auto-inject DATABASE_URL if project has a managed database
+	projDB, _ := e.db.GetProjectDatabase(ctx, project.ID)
+	if projDB != nil {
+		if project.EnvVars == nil {
+			project.EnvVars = make(map[string]string)
+		}
+		project.EnvVars["DATABASE_URL"] = projDB.ConnectionURL()
+	}
+
 	// Build env var flags (skip comments, strip quotes)
 	var envFlags []string
 	for k, v := range project.EnvVars {

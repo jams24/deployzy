@@ -117,6 +117,19 @@ class ApiClient {
     );
   }
 
+  // Project Databases
+  getProjectDatabase(projectId: string) {
+    return this.request<{ database: ProjectDatabase | null; connection_url?: string }>(`/api/v1/projects/${projectId}/database`);
+  }
+
+  createProjectDatabase(projectId: string) {
+    return this.request<{ database: ProjectDatabase; connection_url: string }>(`/api/v1/projects/${projectId}/database`, { method: "POST" });
+  }
+
+  deleteProjectDatabase(projectId: string) {
+    return this.request(`/api/v1/projects/${projectId}/database`, { method: "DELETE" });
+  }
+
   bindDomain(id: string, targetType: string, targetSubdomain: string) {
     return this.request<{ status: string }>(
       `/api/v1/domains/${id}/bind`,
@@ -162,6 +175,17 @@ export interface Domain {
   cname_target: string;
   target_type: string;
   target_subdomain: string;
+  created_at: string;
+}
+
+export interface ProjectDatabase {
+  id: string;
+  project_id: string;
+  db_name: string;
+  db_user: string;
+  db_password: string;
+  host: string;
+  port: number;
   created_at: string;
 }
 

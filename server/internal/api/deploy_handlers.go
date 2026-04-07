@@ -227,6 +227,9 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		s.deployer.Delete(r.Context(), project)
 	}
 
+	// Drop managed database if one exists
+	s.db.DeleteProjectDatabase(r.Context(), projectID)
+
 	// Delete project (also cleans up deploy_logs)
 	if err := s.db.DeleteProject(r.Context(), projectID, u.ID); err != nil {
 		s.log.Error().Err(err).Str("project", projectID).Msg("failed to delete project")

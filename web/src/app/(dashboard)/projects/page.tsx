@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -65,6 +65,9 @@ function ProjectsContent() {
   const [importName, setImportName] = useState("");
   const [importSubdomain, setImportSubdomain] = useState("");
   const [importing, setImporting] = useState(false);
+  const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string } | null>>({});
+  const [creatingDB, setCreatingDB] = useState<string | null>(null);
+  const [showDBPass, setShowDBPass] = useState<Record<string, boolean>>({});
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -218,6 +221,39 @@ function ProjectsContent() {
     load();
   }
 
+  async function loadDatabase(id: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/database`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setDbInfo((prev) => ({ ...prev, [id]: data.database ? { ...data.database, connection_url: data.connection_url } : null }));
+      }
+    } catch {}
+  }
+
+  async function createDatabase(id: string) {
+    setCreatingDB(id);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/database`, { method: "POST", headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setDbInfo((prev) => ({ ...prev, [id]: { ...data.database, connection_url: data.connection_url } }));
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        alert(err.error || "Failed to create database");
+      }
+    } catch {}
+    setCreatingDB(null);
+  }
+
+  async function deleteDatabase(id: string) {
+    if (!confirm("Delete this database? All data will be permanently lost.")) return;
+    try {
+      await fetch(`${API}/api/v1/projects/${id}/database`, { method: "DELETE", headers: headers() });
+      setDbInfo((prev) => ({ ...prev, [id]: null }));
+    } catch {}
+  }
+
   async function disconnectGH() {
     await fetch(`${API}/api/v1/github`, { method: "DELETE", headers: headers() });
     setGhConnected(false); setGhUsername(""); setGhRepos([]);
@@ -227,6 +263,7 @@ function ProjectsContent() {
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
+    loadDatabase(selectedProject);
     const t = setInterval(() => loadLogs(selectedProject), 5000);
     return () => clearInterval(t);
   }, [selectedProject]);
@@ -503,6 +540,53 @@ function ProjectsContent() {
                         {p.env_vars && Object.keys(p.env_vars).length > 0 && (
                           <Badge variant="outline" className="ml-1 text-[9px]">{Object.keys(p.env_vars).length}</Badge>
                         )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Database */}
+                {selectedProject === p.id && (
+                  <div className="mt-4">
+                    {dbInfo[p.id] ? (
+                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Database className="h-4 w-4 text-blue-400" />
+                            <span className="text-xs font-medium">PostgreSQL Database</span>
+                            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20">Active</Badge>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => deleteDatabase(p.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div><span className="text-muted-foreground">Database:</span> <span className="font-mono">{dbInfo[p.id]!.db_name}</span></div>
+                          <div><span className="text-muted-foreground">User:</span> <span className="font-mono">{dbInfo[p.id]!.db_user}</span></div>
+                          <div><span className="text-muted-foreground">Host:</span> <span className="font-mono">{dbInfo[p.id]!.host}</span></div>
+                          <div><span className="text-muted-foreground">Port:</span> <span className="font-mono">{dbInfo[p.id]!.port}</span></div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">Connection URL</span>
+                          <div className="flex items-center gap-1">
+                            <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
+                              {showDBPass[p.id]
+                                ? dbInfo[p.id]!.connection_url
+                                : dbInfo[p.id]!.connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
+                            </code>
+                            <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                              {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.connection_url); }}>
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => createDatabase(p.id)} disabled={creatingDB === p.id}>
+                        {creatingDB === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Database className="h-3 w-3" />}
+                        Add PostgreSQL Database
                       </Button>
                     )}
                   </div>
