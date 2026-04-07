@@ -261,7 +261,10 @@ function ProjectsContent() {
   async function loadBackups(id: string) {
     try {
       const res = await fetch(`${API}/api/v1/projects/${id}/backups`, { headers: headers() });
-      if (res.ok) setBackups((prev) => ({ ...prev, [id]: await res.json() }));
+      if (res.ok) {
+        const data = await res.json();
+        setBackups((prev) => ({ ...prev, [id]: Array.isArray(data) ? data : [] }));
+      }
     } catch {}
   }
 
