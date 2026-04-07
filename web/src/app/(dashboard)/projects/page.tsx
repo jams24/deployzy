@@ -685,7 +685,14 @@ function ProjectsContent() {
                                     <span className="text-zinc-600">{(b.file_size / 1024).toFixed(1)} KB</span>
                                   </div>
                                   <div className="flex gap-1">
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px]" nativeButton={false} render={<a href={`${API}/api/v1/projects/${p.id}/backups/${b.id}/download`} />}>Download</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px]" onClick={async () => {
+                                      const res = await fetch(`${API}/api/v1/projects/${p.id}/backups/${b.id}/download`, { headers: headers() });
+                                      if (res.ok) {
+                                        const blob = await res.blob();
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement("a"); a.href = url; a.download = b.file_name; a.click(); URL.revokeObjectURL(url);
+                                      }
+                                    }}>Download</Button>
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-blue-400" onClick={() => restoreBackup(p.id, b.id)}>Restore</Button>
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-destructive" onClick={() => deleteBackup(p.id, b.id)}>Delete</Button>
                                   </div>
