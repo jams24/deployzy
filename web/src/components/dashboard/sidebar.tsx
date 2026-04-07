@@ -22,6 +22,8 @@ import {
   Bell,
   ShieldCheck,
   CreditCard,
+  Server,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   api } from "@/lib/api";
@@ -29,9 +31,10 @@ import {
   useRouter } from "next/navigation";
 
 const navItems = [
-  { href: "/overview", icon: BarChart3, label: "Overview" },
+  { href: "/overview", icon: LayoutDashboard, label: "Overview" },
   { href: "/projects", icon: Rocket, label: "Projects" },
   { href: "/tunnels", icon: Waypoints, label: "Tunnels" },
+  { href: "/servers", icon: Server, label: "Servers" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
   { href: "/subdomains", icon: Link2, label: "Subdomains" },
   { href: "/domains", icon: Globe, label: "Domains" },

@@ -164,6 +164,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Delete("/subdomains", s.handleReleaseSubdomain)
 			r.Get("/subdomains/check", s.handleCheckSubdomain)
 
+			// User BYOC Servers
+			r.Get("/servers", s.handleListUserServers)
+			r.Post("/servers", s.handleAddUserServer)
+			r.Delete("/servers/{serverId}", s.handleDeleteUserServer)
+
 			// Admin routes
 			r.Route("/admin", func(r chi.Router) {
 				r.Use(s.adminOnly)
@@ -171,6 +176,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/users", s.handleAdminListUsers)
 				r.Put("/users/{userId}", s.handleAdminUpdateUser)
 				r.Delete("/users/{userId}", s.handleAdminDeleteUser)
+
+				// Infrastructure management
+				r.Get("/servers", s.handleAdminListServers)
+				r.Post("/servers", s.handleAdminAddServer)
+				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
+				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
 			})
 		})
 	})
