@@ -39,18 +39,31 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
 	e.db.UpdateProjectStatus(ctx, project.ID, "building", "", 0)
 
+	// Determine if deploying locally or to a remote server
+	var runner *Runner
+	if project.WorkerServerID != "" {
+		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		if server != nil {
+			runner = NewRemoteRunner(server)
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", server.Label, server.Host), "deploy")
+		}
+	}
+	if runner == nil {
+		runner = NewLocalRunner()
+	}
+
 	// Stop and remove existing container
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-	exec.Command("docker", "stop", containerName).Run()
-	exec.Command("docker", "rm", "-f", containerName).Run()
+	runner.Exec(ctx, "docker", "stop", containerName)
+	runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 	// Ensure data directory exists for persistence
-	exec.Command("mkdir", "-p", fmt.Sprintf("/opt/serverme/project-data/%s", project.ID[:8])).Run()
+	runner.Exec(ctx, "mkdir", "-p", fmt.Sprintf("/opt/serverme/project-data/%s", project.ID[:8]))
 
 	// Clean build directory
 	buildDir := fmt.Sprintf("/tmp/serverme-build/%s", project.ID)
-	exec.Command("rm", "-rf", buildDir).Run()
-	exec.Command("mkdir", "-p", buildDir).Run()
+	runner.Exec(ctx, "rm", "-rf", buildDir)
+	runner.Exec(ctx, "mkdir", "-p", buildDir)
 
 	// Clone repo if URL provided
 	buildCtx := buildDir
@@ -58,8 +71,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Cloning %s (branch: %s)...", maskToken(project.RepoURL), project.Branch), "build")
 
 		cloneDir := buildDir + "/app"
-		cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", project.Branch, project.RepoURL, cloneDir)
-		output, err := cmd.CombinedOutput()
+		output, err := runner.Run(ctx, "git", "clone", "--depth", "1", "--branch", project.Branch, project.RepoURL, cloneDir)
 		if err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Clone failed: %s", string(output)), "error")
 			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
@@ -68,41 +80,85 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		buildCtx = cloneDir
 	}
 
-	// Determine framework — always auto-detect from repo contents
-	framework := e.detectFramework(buildCtx)
+	// Determine framework — for remote, check via runner; for local, use filesystem
+	var framework string
+	if runner.IsRemote() {
+		// Remote: check files via SSH
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("ls %s/Dockerfile %s/next.config.* %s/package.json %s/requirements.txt %s/go.mod %s/index.html 2>/dev/null", buildCtx, buildCtx, buildCtx, buildCtx, buildCtx, buildCtx))
+		files := string(out)
+		if strings.Contains(files, "Dockerfile") {
+			framework = "docker"
+		} else if strings.Contains(files, "next.config") {
+			framework = "nextjs"
+		} else if strings.Contains(files, "package.json") {
+			framework = "node"
+		} else if strings.Contains(files, "requirements.txt") {
+			framework = "python"
+		} else if strings.Contains(files, "index.html") {
+			framework = "static"
+		} else {
+			framework = "node"
+		}
+	} else {
+		framework = e.detectFramework(buildCtx)
+	}
 	if framework == "node" && project.Framework != "" && project.Framework != "node" {
-		// If auto-detect says generic "node" but DB has a more specific framework, use DB
 		framework = project.Framework
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Framework: %s", framework), "build")
 
 	// Generate Dockerfile only if repo doesn't already have one
-	if !fileExists(buildCtx + "/Dockerfile") {
-		dockerfile := e.generateDockerfile(project, framework)
-		if dockerfile != "" {
-			os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
+	if runner.IsRemote() {
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
+		if strings.TrimSpace(string(out)) != "yes" {
+			dockerfile := e.generateDockerfile(project, framework)
+			if dockerfile != "" {
+				runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
+			}
+		}
+	} else {
+		if !fileExists(buildCtx + "/Dockerfile") {
+			dockerfile := e.generateDockerfile(project, framework)
+			if dockerfile != "" {
+				os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
+			}
 		}
 	}
 
 	// Verify Dockerfile exists
-	if !fileExists(buildCtx + "/Dockerfile") {
-		e.logMsg(ctx, project.ID, "No Dockerfile found in repository. Add a Dockerfile or select a framework.", "error")
+	if runner.IsRemote() {
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
+		if strings.TrimSpace(string(out)) != "yes" {
+			e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
+			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+			return fmt.Errorf("no Dockerfile")
+		}
+	} else if !fileExists(buildCtx + "/Dockerfile") {
+		e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
 		return fmt.Errorf("no Dockerfile")
 	}
 
 	// Auto-detect exposed port from Dockerfile
-	containerPort := detectExposedPort(buildCtx + "/Dockerfile")
+	containerPort := 3000
+	if runner.IsRemote() {
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/Dockerfile | head -1 | grep -oE '[0-9]+'", buildCtx))
+		if p := strings.TrimSpace(string(out)); p != "" {
+			if pp, err := strconv.Atoi(p); err == nil {
+				containerPort = pp
+			}
+		}
+	} else {
+		containerPort = detectExposedPort(buildCtx + "/Dockerfile")
+	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Detected container port: %d", containerPort), "build")
 
-	// Build Docker image — always --no-cache to avoid stale layers
+	// Build Docker image
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
-	output, err := cmd.CombinedOutput()
+	output, err := runner.Run(ctx, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
 	if err != nil {
-		// Extract the actual error from build output
 		errMsg := extractBuildError(string(output))
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
@@ -172,8 +228,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	args = append(args, envFlags...)
 	args = append(args, imageName)
 
-	cmd = exec.CommandContext(ctx, "docker", args...)
-	containerOutput, err := cmd.CombinedOutput()
+	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
@@ -187,31 +242,32 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// Wait and check health
 	time.Sleep(5 * time.Second)
-	healthy := e.checkContainerHealth(containerName)
+	healthOut, _ := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+	healthy := strings.TrimSpace(string(healthOut)) == "running"
 
 	if healthy {
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
 	} else {
-		// Get crash logs
-		crashLogs := getContainerLogs(containerName, 10)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", crashLogs), "error")
+		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "10", containerName)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", string(crashOut)), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", containerID, hostPort)
 	}
 
 	e.registerRoute(project.Subdomain, hostPort)
 
 	// Cleanup
-	exec.Command("rm", "-rf", buildDir).Run()
+	runner.Exec(ctx, "rm", "-rf", buildDir)
 
 	return nil
 }
 
 // Stop stops a project's container.
 func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
+	runner := e.getRunner(ctx, project)
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-	exec.Command("docker", "stop", containerName).Run()
-	exec.Command("docker", "rm", "-f", containerName).Run()
+	runner.Exec(ctx, "docker", "stop", containerName)
+	runner.Exec(ctx, "docker", "rm", "-f", containerName)
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
 	e.logMsg(ctx, project.ID, "Project stopped", "deploy")
 	return nil
@@ -220,8 +276,20 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 // Delete stops and removes a project completely.
 func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	e.Stop(ctx, project)
-	exec.Command("docker", "rmi", fmt.Sprintf("sm-project-%s", project.ID[:8])).Run()
+	runner := e.getRunner(ctx, project)
+	runner.Exec(ctx, "docker", "rmi", fmt.Sprintf("sm-project-%s", project.ID[:8]))
 	return nil
+}
+
+// getRunner returns a local or remote runner based on the project's worker server.
+func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
+	if project.WorkerServerID != "" {
+		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		if server != nil {
+			return NewRemoteRunner(server)
+		}
+	}
+	return NewLocalRunner()
 }
 
 // GetProjectPort returns the container port for a deployed project by subdomain.

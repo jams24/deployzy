@@ -10,22 +10,23 @@ import (
 )
 
 type Project struct {
-	ID            string            `json:"id"`
-	UserID        string            `json:"user_id"`
-	Name          string            `json:"name"`
-	Subdomain     string            `json:"subdomain"`
-	RepoURL       string            `json:"repo_url"`
-	Branch        string            `json:"branch"`
-	Framework     string            `json:"framework"`
-	BuildCmd      string            `json:"build_cmd"`
-	StartCmd      string            `json:"start_cmd"`
-	EnvVars       map[string]string `json:"env_vars"`
-	Status        string            `json:"status"`
-	ContainerID   string            `json:"container_id"`
-	ContainerPort int               `json:"container_port"`
-	LastDeployAt  *time.Time        `json:"last_deploy_at"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
+	ID              string            `json:"id"`
+	UserID          string            `json:"user_id"`
+	Name            string            `json:"name"`
+	Subdomain       string            `json:"subdomain"`
+	RepoURL         string            `json:"repo_url"`
+	Branch          string            `json:"branch"`
+	Framework       string            `json:"framework"`
+	BuildCmd        string            `json:"build_cmd"`
+	StartCmd        string            `json:"start_cmd"`
+	EnvVars         map[string]string `json:"env_vars"`
+	Status          string            `json:"status"`
+	ContainerID     string            `json:"container_id"`
+	ContainerPort   int               `json:"container_port"`
+	WorkerServerID  string            `json:"worker_server_id"`
+	LastDeployAt    *time.Time        `json:"last_deploy_at"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
 type DeployLog struct {
