@@ -258,6 +258,20 @@ export default function NewResourcePage() {
 
         {loadingRepos ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : filteredRepos.length === 0 ? (
+          <div className="flex flex-col items-center py-12 space-y-3">
+            <GitBranch className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No repos found</p>
+            <p className="text-xs text-muted-foreground text-center max-w-xs">Your GitHub token may have expired. Reconnect to refresh access.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => loadRepos()}>
+                <Loader2 className="h-3 w-3" /> Retry
+              </Button>
+              <Button size="sm" className="gap-1 text-xs" onClick={() => { window.location.href = `${API}/api/v1/github/connect`; }}>
+                <GitBranch className="h-3 w-3" /> Reconnect GitHub
+              </Button>
+            </div>
+          </div>
         ) : (
           <div className="max-h-96 overflow-y-auto space-y-1">
             {filteredRepos.map((repo) => (
@@ -275,7 +289,6 @@ export default function NewResourcePage() {
                 <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </button>
             ))}
-            {filteredRepos.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No repos found</p>}
           </div>
         )}
       </div>
