@@ -17,12 +17,12 @@ type Service struct {
 	Name        string    `json:"name"`
 	Type        string    `json:"type"`
 	Status      string    `json:"status"`
-	DBName      string    `json:"db_name"`
-	DBUser      string    `json:"db_user"`
-	DBPassword  string    `json:"db_password"`
+	DBName      *string   `json:"db_name"`
+	DBUser      *string   `json:"db_user"`
+	DBPassword  *string   `json:"db_password"`
 	Host        string    `json:"host"`
 	Port        int       `json:"port"`
-	ContainerID string    `json:"container_id"`
+	ContainerID *string   `json:"container_id"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -30,7 +30,11 @@ type Service struct {
 func (s *Service) ConnectionURL() string {
 	switch s.Type {
 	case "postgres":
-		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", s.DBUser, s.DBPassword, s.Host, s.Port, s.DBName)
+		dbName, dbUser, dbPass := "", "", ""
+		if s.DBName != nil { dbName = *s.DBName }
+		if s.DBUser != nil { dbUser = *s.DBUser }
+		if s.DBPassword != nil { dbPass = *s.DBPassword }
+		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUser, dbPass, s.Host, s.Port, dbName)
 	case "redis":
 		return fmt.Sprintf("redis://%s:%d", s.Host, s.Port)
 	default:
