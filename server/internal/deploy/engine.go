@@ -41,14 +41,31 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// Determine if deploying locally or to a remote server
 	var runner *Runner
+	var assignedServer *db.WorkerServer
+
 	if project.WorkerServerID != "" {
+		// Project already assigned to a server (BYOC or previously assigned)
 		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
 		if server != nil {
-			runner = NewRemoteRunner(server)
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", server.Label, server.Host), "deploy")
+			assignedServer = server
 		}
 	}
-	if runner == nil {
+
+	// If no server assigned, try to auto-select a platform server
+	if assignedServer == nil {
+		server, _ := e.db.SelectServerForProject(ctx, nil)
+		if server != nil {
+			assignedServer = server
+			e.db.AssignProjectServer(ctx, project.ID, server.ID)
+			e.db.AllocateServerResources(ctx, server.ID, 0.5, 512)
+			project.WorkerServerID = server.ID
+		}
+	}
+
+	if assignedServer != nil {
+		runner = NewRemoteRunner(assignedServer)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
+	} else {
 		runner = NewLocalRunner()
 	}
 

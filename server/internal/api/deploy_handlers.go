@@ -234,6 +234,11 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		s.deployer.Delete(r.Context(), project)
 	}
 
+	// Release server resources if assigned to a worker
+	if project.WorkerServerID != "" {
+		s.db.ReleaseServerResources(r.Context(), project.WorkerServerID, 0.5, 512)
+	}
+
 	// Drop managed database if one exists
 	s.db.DeleteProjectDatabase(r.Context(), projectID)
 
