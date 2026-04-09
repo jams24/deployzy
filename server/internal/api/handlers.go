@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os/exec"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/proto"
@@ -304,18 +306,19 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try CNAME lookup first
+	// Try multiple verification methods
 	verified := false
 	method := ""
-
-	cnames, _ := net.LookupCNAME(targetDomain.Domain)
 	expected := targetDomain.CnameTarget
+
+	// Method 1: CNAME lookup
+	cnames, _ := net.LookupCNAME(targetDomain.Domain)
 	if cnames == expected || cnames == expected+"." {
 		verified = true
 		method = "cname"
 	}
 
-	// Fallback: check if domain resolves to our server IP (Cloudflare flattens root CNAMEs to A records)
+	// Method 2: A-record comparison (Cloudflare flattens root CNAMEs)
 	if !verified {
 		ips, _ := net.LookupHost(targetDomain.Domain)
 		serverIPs, _ := net.LookupHost(expected)
@@ -330,6 +333,34 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 			if verified {
 				break
 			}
+		}
+	}
+
+	// Method 3: Check against known server IP using external DNS (dig)
+	if !verified {
+		out, err := exec.Command("dig", "+short", targetDomain.Domain, "@8.8.8.8").Output()
+		if err == nil {
+			domainIP := strings.TrimSpace(string(out))
+			out2, err2 := exec.Command("dig", "+short", expected, "@8.8.8.8").Output()
+			if err2 == nil {
+				serverIP := strings.TrimSpace(string(out2))
+				if domainIP != "" && serverIP != "" && domainIP == serverIP {
+					verified = true
+					method = "dig"
+				}
+			}
+		}
+	}
+
+	// Method 4: Direct IP check using curl (last resort)
+	if !verified {
+		out, _ := exec.Command("dig", "+short", targetDomain.Domain).Output()
+		domainIP := strings.TrimSpace(string(out))
+		out2, _ := exec.Command("dig", "+short", expected).Output()
+		serverIP := strings.TrimSpace(string(out2))
+		if domainIP != "" && serverIP != "" && domainIP == serverIP {
+			verified = true
+			method = "dig-local"
 		}
 	}
 
