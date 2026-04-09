@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import {
   api } from "@/lib/api";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   useRouter } from "next/navigation";
 
@@ -134,7 +135,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         })}
       </nav>
 
-      <div className="border-t border-border/40 p-3">
+      <div className="border-t border-border/40 p-3 space-y-1">
+        <div className="flex items-center justify-between px-3 py-1">
+          <span className="text-xs text-muted-foreground">Theme</span>
+          <ThemeToggle />
+        </div>
         <button
           onClick={() => {
             api.logout();

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { AuthGuard } from "@/components/dashboard/auth-guard";
 import { Menu, X, Terminal } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 
 export default function DashboardLayout({
@@ -30,12 +31,15 @@ export default function DashboardLayout({
             </div>
             ServerMe
           </Link>
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent"
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent"
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </header>
 
         {/* Mobile sidebar */}

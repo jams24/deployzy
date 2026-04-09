@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Menu, X, Terminal, LayoutDashboard } from "lucide-react";
 
 const links = [
@@ -51,6 +52,7 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-3 md:flex">
+          <ThemeToggle />
           {loggedIn ? (
             <Button size="sm" nativeButton={false} render={<Link href="/tunnels" />} className="gap-2">
               <LayoutDashboard className="h-3.5 w-3.5" />
