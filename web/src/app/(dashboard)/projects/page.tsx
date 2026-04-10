@@ -16,7 +16,8 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 interface Project {
   id: string; name: string; subdomain: string; framework: string;
-  repo_url: string; github_repo: string; status: string;
+  repo_url: string; branch: string; github_repo: string; github_branch: string;
+  auto_deploy: boolean; status: string;
   env_vars: Record<string, string>;
   last_deploy_at: string | null; created_at: string;
 }
@@ -75,6 +76,7 @@ function ProjectsContent() {
   const [backingUp, setBackingUp] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<{ enabled: boolean; schedule: string; time: string; retention: number }>({ enabled: false, schedule: "daily", time: "03:00", retention: 7 });
+  const [togglingAutoDeploy, setTogglingAutoDeploy] = useState<string | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -333,6 +335,18 @@ function ProjectsContent() {
   async function disconnectGH() {
     await fetch(`${API}/api/v1/github`, { method: "DELETE", headers: headers() });
     setGhConnected(false); setGhUsername(""); setGhRepos([]);
+  }
+
+  async function toggleAutoDeploy(id: string, enabled: boolean) {
+    setTogglingAutoDeploy(id);
+    try {
+      await fetch(`${API}/api/v1/projects/${id}/auto-deploy`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ enabled }),
+      });
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, auto_deploy: enabled } : p));
+    } catch {}
+    setTogglingAutoDeploy(null);
   }
 
   useEffect(() => { load(); loadGHStatus(); }, []);
@@ -613,6 +627,34 @@ function ProjectsContent() {
                         Cancel
                       </Button>
                     </div>
+                  </div>
+                )}
+
+                {/* Auto-Deploy Toggle */}
+                {selectedProject === p.id && p.github_repo && (
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border/40 bg-card/30 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="text-sm font-medium">Auto-Deploy</span>
+                        <p className="text-[11px] text-muted-foreground">
+                          Automatically redeploy when you push to <span className="font-mono font-medium text-foreground">{p.github_branch || p.branch || "main"}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toggleAutoDeploy(p.id, !p.auto_deploy)}
+                      disabled={togglingAutoDeploy === p.id}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${
+                        p.auto_deploy ? "bg-emerald-500" : "bg-zinc-700"
+                      } ${togglingAutoDeploy === p.id ? "opacity-50" : ""}`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform duration-200 ${
+                          p.auto_deploy ? "translate-x-[18px]" : "translate-x-[3px]"
+                        }`}
+                      />
+                    </button>
                   </div>
                 )}
 

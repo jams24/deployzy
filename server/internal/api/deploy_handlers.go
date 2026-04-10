@@ -62,6 +62,14 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GitHubRepo != "" {
 		s.db.UpdateProjectGitHub(r.Context(), project.ID, req.GitHubRepo, req.Branch, true)
+		// Auto-register webhook for auto-deploy
+		if s.deployer != nil && s.deployer.GitHub != nil {
+			gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
+			if gc != nil {
+				webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
+				s.deployer.GitHub.EnsureWebhook(gc.AccessToken, req.GitHubRepo, webhookURL)
+			}
+		}
 	}
 
 	// Assign worker server if specified, or auto-select
@@ -198,6 +206,52 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "deploying"})
+}
+
+func (s *Server) handleToggleAutoDeploy(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	// Must have a GitHub repo linked
+	if project.GitHubRepo == "" {
+		writeError(w, http.StatusBadRequest, "no GitHub repo linked to this project")
+		return
+	}
+
+	if err := s.db.SetProjectAutoDeploy(r.Context(), projectID, req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update auto-deploy")
+		return
+	}
+
+	// Auto-register webhook on GitHub when enabling
+	if req.Enabled && s.deployer != nil && s.deployer.GitHub != nil {
+		gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
+		if gc != nil {
+			webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
+			if err := s.deployer.GitHub.EnsureWebhook(gc.AccessToken, project.GitHubRepo, webhookURL); err != nil {
+				s.log.Warn().Err(err).Str("repo", project.GitHubRepo).Msg("failed to register webhook — user may need to add it manually")
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"auto_deploy": req.Enabled,
+		"status":      "updated",
+	})
 }
 
 func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {

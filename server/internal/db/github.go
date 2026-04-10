@@ -46,23 +46,50 @@ func (d *DB) DeleteGitHubConnection(ctx context.Context, userID string) error {
 }
 
 func (d *DB) GetProjectByGitHubRepo(ctx context.Context, repoFullName string) (*Project, error) {
-	var p Project
-	var envJSON []byte
-	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at
-		 FROM projects WHERE github_repo = $1 AND auto_deploy = true LIMIT 1`,
+	p, err := scanProject(d.Pool.QueryRow(ctx,
+		`SELECT `+projectCols+` FROM projects WHERE github_repo = $1 AND auto_deploy = true LIMIT 1`,
 		repoFullName,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	).Scan)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	return &p, err
 }
 
+// GetProjectsByGitHubRepo returns all projects linked to a repo with auto_deploy enabled.
+func (d *DB) GetProjectsByGitHubRepo(ctx context.Context, repoFullName string) ([]Project, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT `+projectCols+` FROM projects WHERE github_repo = $1 AND auto_deploy = true`,
+		repoFullName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []Project
+	for rows.Next() {
+		p, err := scanProject(rows.Scan)
+		if err != nil {
+			continue
+		}
+		projects = append(projects, p)
+	}
+	return projects, nil
+}
+
 func (d *DB) UpdateProjectGitHub(ctx context.Context, projectID, githubRepo, branch string, autoDeploy bool) error {
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE projects SET github_repo = $2, github_branch = $3, auto_deploy = $4, updated_at = now() WHERE id = $1`,
 		projectID, githubRepo, branch, autoDeploy,
+	)
+	return err
+}
+
+func (d *DB) SetProjectAutoDeploy(ctx context.Context, projectID string, enabled bool) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET auto_deploy = $2, updated_at = now() WHERE id = $1`,
+		projectID, enabled,
 	)
 	return err
 }

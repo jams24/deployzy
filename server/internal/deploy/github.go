@@ -1,7 +1,10 @@
 package deploy
 
 import (
+	"crypto/hmac"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -188,4 +191,82 @@ func (g *GitHubApp) GetInstallations() ([]map[string]interface{}, error) {
 func (g *GitHubApp) GetOAuthURL(state, redirectURI string) string {
 	return fmt.Sprintf("https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=repo",
 		g.ClientID, state, url.QueryEscape(redirectURI))
+}
+
+// EnsureWebhook creates a push webhook on the repo if one doesn't already exist.
+func (g *GitHubApp) EnsureWebhook(accessToken, repoFullName, webhookURL string) error {
+	// Check if webhook already exists
+	req, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/hooks", repoFullName), nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var hooks []struct {
+		Config struct {
+			URL string `json:"url"`
+		} `json:"config"`
+	}
+	json.NewDecoder(resp.Body).Decode(&hooks)
+
+	for _, h := range hooks {
+		if h.Config.URL == webhookURL {
+			return nil // already registered
+		}
+	}
+
+	// Create webhook
+	payload := map[string]interface{}{
+		"name":   "web",
+		"active": true,
+		"events": []string{"push"},
+		"config": map[string]string{
+			"url":          webhookURL,
+			"content_type": "json",
+			"secret":       g.WebhookSecret,
+		},
+	}
+	body, _ := json.Marshal(payload)
+
+	req, _ = http.NewRequest("POST", fmt.Sprintf("https://api.github.com/repos/%s/hooks", repoFullName), strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp2, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp2.Body)
+		return fmt.Errorf("create webhook: %s %s", resp2.Status, string(respBody))
+	}
+	return nil
+}
+
+// VerifyWebhookSignature verifies the X-Hub-Signature-256 header.
+func (g *GitHubApp) VerifyWebhookSignature(payload []byte, signature string) bool {
+	if g.WebhookSecret == "" || signature == "" {
+		return g.WebhookSecret == "" // allow if no secret configured
+	}
+
+	sig := strings.TrimPrefix(signature, "sha256=")
+	mac := hmacSHA256([]byte(g.WebhookSecret), payload)
+	return hmacEqual(mac, sig)
+}
+
+func hmacSHA256(key, data []byte) string {
+	h := hmac.New(sha256.New, key)
+	h.Write(data)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func hmacEqual(a, b string) bool {
+	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

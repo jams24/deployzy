@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/serverme/serverme/server/internal/auth"
 )
@@ -150,6 +152,28 @@ func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 
+	// Verify webhook signature if secret is configured
+	if s.deployer != nil && s.deployer.GitHub != nil {
+		sig := r.Header.Get("X-Hub-Signature-256")
+		if !s.deployer.GitHub.VerifyWebhookSignature(body, sig) {
+			s.log.Warn().Msg("GitHub webhook signature verification failed")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+	}
+
+	// Only handle push events
+	event := r.Header.Get("X-GitHub-Event")
+	if event == "ping" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"pong"}`))
+		return
+	}
+	if event != "" && event != "push" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	var payload struct {
 		Ref        string `json:"ref"`
 		Repository struct {
@@ -164,33 +188,59 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.log.Info().Str("repo", payload.Repository.FullName).Str("ref", payload.Ref).Msg("GitHub push webhook")
+	// Extract pushed branch name from ref (refs/heads/main → main)
+	pushedBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
 
-	// Find project linked to this repo
-	project, _ := s.db.GetProjectByGitHubRepo(r.Context(), payload.Repository.FullName)
-	if project == nil {
+	s.log.Info().Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Msg("GitHub push webhook")
+
+	// Find all projects linked to this repo with auto_deploy enabled
+	projects, _ := s.db.GetProjectsByGitHubRepo(r.Context(), payload.Repository.FullName)
+	if len(projects) == 0 {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	// Get the user's GitHub token for cloning
-	gc, _ := s.db.GetGitHubConnection(r.Context(), project.UserID)
-	if gc != nil && s.deployer != nil && s.deployer.GitHub != nil {
-		// Update the repo URL with auth token for private repos
-		project.RepoURL = s.deployer.GitHub.GetCloneURL(gc.AccessToken, payload.Repository.FullName)
+	deployed := 0
+	for _, project := range projects {
+		// Branch filter: only deploy if the pushed branch matches the project's configured branch
+		projectBranch := project.GitHubBranch
+		if projectBranch == "" {
+			projectBranch = project.Branch
+		}
+		if projectBranch == "" {
+			projectBranch = "main"
+		}
+		if pushedBranch != projectBranch {
+			s.log.Debug().Str("project", project.ID).Str("pushed", pushedBranch).Str("expected", projectBranch).Msg("skipping — branch mismatch")
+			continue
+		}
+
+		// Get the user's GitHub token for cloning private repos
+		p := project // capture for goroutine
+		gc, _ := s.db.GetGitHubConnection(r.Context(), p.UserID)
+		if gc != nil && s.deployer != nil && s.deployer.GitHub != nil {
+			// Prefer installation token (auto-refreshes), fall back to user token
+			token := gc.AccessToken
+			if gc.InstallationID > 0 {
+				if instToken, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && instToken != "" {
+					token = instToken
+				}
+			}
+			p.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, payload.Repository.FullName)
+		}
+
+		s.log.Info().Str("project", p.ID).Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Msg("auto-deploying on push")
+		go func() {
+			ctx := context.Background()
+			if err := s.deployer.Deploy(ctx, &p); err != nil {
+				s.log.Error().Err(err).Str("project", p.ID).Msg("auto-deploy failed")
+			}
+		}()
+		deployed++
 	}
 
-	// Auto-deploy
-	s.log.Info().Str("project", project.ID).Str("repo", payload.Repository.FullName).Msg("auto-deploying on push")
-	go func() {
-		ctx := r.Context()
-		if err := s.deployer.Deploy(ctx, project); err != nil {
-			s.log.Error().Err(err).Str("project", project.ID).Msg("auto-deploy failed")
-		}
-	}()
-
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"deploying"}`))
+	w.Write([]byte(fmt.Sprintf(`{"status":"deploying","count":%d}`, deployed)))
 }
 
 type ghUser struct {

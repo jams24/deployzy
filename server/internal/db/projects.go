@@ -24,6 +24,9 @@ type Project struct {
 	ContainerID     string            `json:"container_id"`
 	ContainerPort   int               `json:"container_port"`
 	WorkerServerID  string            `json:"worker_server_id"`
+	GitHubRepo      string            `json:"github_repo"`
+	GitHubBranch    string            `json:"github_branch"`
+	AutoDeploy      bool              `json:"auto_deploy"`
 	LastDeployAt    *time.Time        `json:"last_deploy_at"`
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
@@ -37,53 +40,54 @@ type DeployLog struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func (d *DB) CreateProject(ctx context.Context, userID, name, subdomain, framework string) (*Project, error) {
+// projectCols is the standard column list for project queries.
+const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
+
+// scanProject scans a row into a Project struct. The row must match projectCols order.
+func scanProject(scan func(dest ...any) error) (Project, error) {
 	var p Project
+	var envJSON []byte
+	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	if err == nil {
+		json.Unmarshal(envJSON, &p.EnvVars)
+	}
+	return p, err
+}
+
+func (d *DB) CreateProject(ctx context.Context, userID, name, subdomain, framework string) (*Project, error) {
 	envJSON, _ := json.Marshal(map[string]string{})
-	err := d.Pool.QueryRow(ctx,
+	p, err := scanProject(d.Pool.QueryRow(ctx,
 		`INSERT INTO projects (user_id, name, subdomain, framework, env_vars)
 		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at`,
+		 RETURNING `+projectCols,
 		userID, name, subdomain, framework, envJSON,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
-	json.Unmarshal(envJSON, &p.EnvVars)
+	).Scan)
 	return &p, err
 }
 
 func (d *DB) GetProjectBySubdomain(ctx context.Context, subdomain string) (*Project, error) {
-	var p Project
-	var envJSON []byte
-	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at
-		 FROM projects WHERE subdomain = $1`,
-		subdomain,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	p, err := scanProject(d.Pool.QueryRow(ctx,
+		`SELECT `+projectCols+` FROM projects WHERE subdomain = $1`, subdomain,
+	).Scan)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
-	json.Unmarshal(envJSON, &p.EnvVars)
 	return &p, err
 }
 
 func (d *DB) GetProject(ctx context.Context, projectID string) (*Project, error) {
-	var p Project
-	var envJSON []byte
-	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at
-		 FROM projects WHERE id = $1`,
-		projectID,
-	).Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	p, err := scanProject(d.Pool.QueryRow(ctx,
+		`SELECT `+projectCols+` FROM projects WHERE id = $1`, projectID,
+	).Scan)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
-	json.Unmarshal(envJSON, &p.EnvVars)
 	return &p, err
 }
 
 func (d *DB) ListProjects(ctx context.Context, userID string) ([]Project, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, last_deploy_at, created_at, updated_at
-		 FROM projects WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT `+projectCols+` FROM projects WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -93,10 +97,10 @@ func (d *DB) ListProjects(ctx context.Context, userID string) ([]Project, error)
 
 	var projects []Project
 	for rows.Next() {
-		var p Project
-		var envJSON []byte
-		rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
-		json.Unmarshal(envJSON, &p.EnvVars)
+		p, err := scanProject(rows.Scan)
+		if err != nil {
+			continue
+		}
 		projects = append(projects, p)
 	}
 	return projects, nil
