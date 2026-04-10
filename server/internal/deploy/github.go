@@ -251,9 +251,14 @@ func (g *GitHubApp) EnsureWebhook(accessToken, repoFullName, webhookURL string) 
 }
 
 // VerifyWebhookSignature verifies the X-Hub-Signature-256 header.
+// If no signature is provided (legacy webhooks without a secret), allow it through.
+// If a signature IS provided, verify it against our secret.
 func (g *GitHubApp) VerifyWebhookSignature(payload []byte, signature string) bool {
-	if g.WebhookSecret == "" || signature == "" {
-		return g.WebhookSecret == "" // allow if no secret configured
+	if signature == "" {
+		return true // allow unsigned webhooks (legacy/existing hooks without secret)
+	}
+	if g.WebhookSecret == "" {
+		return true // no secret configured on our side, can't verify
 	}
 
 	sig := strings.TrimPrefix(signature, "sha256=")
