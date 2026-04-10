@@ -67,6 +67,13 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	hostname := extractHostname(r.Host)
 
+	// Strip www. prefix — redirect to non-www
+	if strings.HasPrefix(hostname, "www.") {
+		target := "https://" + strings.TrimPrefix(hostname, "www.") + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		return
+	}
+
 	tun := p.registry.LookupByHost(hostname)
 	if tun == nil {
 		// Check if this is a deployed project
