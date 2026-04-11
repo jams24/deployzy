@@ -69,7 +69,7 @@ function ProjectsContent() {
   const [importEnvText, setImportEnvText] = useState("");
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
-  const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string } | null>>({});
+  const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string; external_connection_url: string } | null>>({});
   const [creatingDB, setCreatingDB] = useState<string | null>(null);
   const [showDBPass, setShowDBPass] = useState<Record<string, boolean>>({});
   const [backups, setBackups] = useState<Record<string, { id: string; file_name: string; file_size: number; created_at: string }[]>>({});
@@ -256,7 +256,7 @@ function ProjectsContent() {
       const res = await fetch(`${API}/api/v1/projects/${id}/database`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        setDbInfo((prev) => ({ ...prev, [id]: data.database ? { ...data.database, connection_url: data.connection_url } : null }));
+        setDbInfo((prev) => ({ ...prev, [id]: data.database ? { ...data.database, connection_url: data.connection_url, external_connection_url: data.external_connection_url } : null }));
       }
     } catch {}
   }
@@ -267,7 +267,7 @@ function ProjectsContent() {
       const res = await fetch(`${API}/api/v1/projects/${id}/database`, { method: "POST", headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        setDbInfo((prev) => ({ ...prev, [id]: { ...data.database, connection_url: data.connection_url } }));
+        setDbInfo((prev) => ({ ...prev, [id]: { ...data.database, connection_url: data.connection_url, external_connection_url: data.external_connection_url } }));
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
         alert(err.error || "Failed to create database");
@@ -710,20 +710,38 @@ function ProjectsContent() {
                           <div><span className="text-muted-foreground">Host:</span> <span className="font-mono">{dbInfo[p.id]!.host}</span></div>
                           <div><span className="text-muted-foreground">Port:</span> <span className="font-mono">{dbInfo[p.id]!.port}</span></div>
                         </div>
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-muted-foreground">Connection URL</span>
-                          <div className="flex items-center gap-1">
-                            <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
-                              {showDBPass[p.id]
-                                ? dbInfo[p.id]!.connection_url
-                                : dbInfo[p.id]!.connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
-                            </code>
-                            <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
-                              {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.connection_url); }}>
-                              <Copy className="h-3 w-3" />
-                            </Button>
+                        <div className="space-y-2">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground">Internal URL <span className="text-zinc-600">(used by your app)</span></span>
+                            <div className="flex items-center gap-1">
+                              <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
+                                {showDBPass[p.id]
+                                  ? dbInfo[p.id]!.connection_url
+                                  : dbInfo[p.id]!.connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
+                              </code>
+                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                                {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.connection_url); }}>
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-muted-foreground">External URL <span className="text-zinc-600">(for local dev / external tools)</span></span>
+                            <div className="flex items-center gap-1">
+                              <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
+                                {showDBPass[p.id]
+                                  ? dbInfo[p.id]!.external_connection_url
+                                  : dbInfo[p.id]!.external_connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
+                              </code>
+                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
+                                {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.external_connection_url); }}>
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
 

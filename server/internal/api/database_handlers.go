@@ -1,11 +1,26 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/db"
 )
+
+func (s *Server) resolveDBPublicHost(ctx context.Context, project *db.Project) string {
+	if project.WorkerServerID != "" {
+		if server, _ := s.db.GetWorkerServer(ctx, project.WorkerServerID); server != nil {
+			return server.Host
+		}
+	}
+	// Fallback: use the deployer's domain or platform host
+	if s.deployer != nil && s.deployer.Domain != "" {
+		return s.deployer.Domain
+	}
+	return "localhost"
+}
 
 func (s *Server) handleCreateProjectDatabase(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
@@ -32,9 +47,11 @@ func (s *Server) handleCreateProjectDatabase(w http.ResponseWriter, r *http.Requ
 	envVars["DATABASE_URL"] = pdb.ConnectionURL()
 	s.db.UpdateProjectEnvVars(r.Context(), projectID, envVars)
 
+	publicHost := s.resolveDBPublicHost(r.Context(), project)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"database":       pdb,
-		"connection_url": pdb.ConnectionURL(),
+		"database":                pdb,
+		"connection_url":          pdb.ConnectionURL(),
+		"external_connection_url": pdb.ExternalConnectionURL(publicHost),
 	})
 }
 
@@ -58,9 +75,11 @@ func (s *Server) handleGetProjectDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	publicHost := s.resolveDBPublicHost(r.Context(), project)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"database":       pdb,
-		"connection_url": pdb.ConnectionURL(),
+		"database":                pdb,
+		"connection_url":          pdb.ConnectionURL(),
+		"external_connection_url": pdb.ExternalConnectionURL(publicHost),
 	})
 }
 

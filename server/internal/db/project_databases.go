@@ -24,9 +24,14 @@ type ProjectDatabase struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// ConnectionURL returns the full PostgreSQL connection string.
+// ConnectionURL returns the internal PostgreSQL connection string (for containers).
 func (pdb *ProjectDatabase) ConnectionURL() string {
 	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", pdb.DBUser, pdb.DBPassword, pdb.Host, pdb.Port, pdb.DBName)
+}
+
+// ExternalConnectionURL returns the external PostgreSQL connection string (for external tools).
+func (pdb *ProjectDatabase) ExternalConnectionURL(publicHost string) string {
+	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", pdb.DBUser, pdb.DBPassword, publicHost, pdb.Port, pdb.DBName)
 }
 
 var safeNameRe = regexp.MustCompile(`[^a-z0-9]`)
