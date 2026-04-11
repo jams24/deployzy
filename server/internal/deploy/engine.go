@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -18,10 +19,11 @@ import (
 
 // Engine handles building and deploying projects as Docker containers.
 type Engine struct {
-	db     *db.DB
-	Domain string
-	GitHub *GitHubApp
-	log    zerolog.Logger
+	db          *db.DB
+	Domain      string
+	GitHub      *GitHubApp
+	log         zerolog.Logger
+	deployLocks sync.Map // per-project mutex to prevent concurrent deploys
 }
 
 // NewEngine creates a new deploy engine.
@@ -36,6 +38,12 @@ func NewEngine(database *db.DB, domain string, github *GitHubApp, log zerolog.Lo
 
 // Deploy builds and runs a project.
 func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
+	// Per-project lock: prevent concurrent deploys for the same project
+	val, _ := e.deployLocks.LoadOrStore(project.ID, &sync.Mutex{})
+	mu := val.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
 	e.db.UpdateProjectStatus(ctx, project.ID, "building", "", 0)
 
