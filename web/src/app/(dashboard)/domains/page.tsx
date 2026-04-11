@@ -118,15 +118,22 @@ export default function DomainsPage() {
           </div>
 
           {instructions && (
-            <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm">
-              <p className="font-medium text-blue-500 mb-2">Add this DNS record:</p>
-              <div className="rounded-md bg-background p-3 font-mono text-xs">
+            <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm space-y-3">
+              <p className="font-medium text-blue-500">Add these DNS records:</p>
+              <div className="rounded-md bg-background p-3 font-mono text-xs space-y-1">
+                <p className="text-[10px] text-muted-foreground font-sans font-medium uppercase tracking-wider mb-1">Required — points your domain to ServerMe</p>
                 <span className="text-muted-foreground">Type:</span> CNAME<br />
                 <span className="text-muted-foreground">Name:</span> {instructions.name}<br />
                 <span className="text-muted-foreground">Target:</span> {instructions.target}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                After adding the record, click Verify on your domain below. Then bind it to a tunnel or project.
+              <div className="rounded-md bg-background p-3 font-mono text-xs space-y-1">
+                <p className="text-[10px] text-muted-foreground font-sans font-medium uppercase tracking-wider mb-1">Recommended — so www.yourdomain.com also works</p>
+                <span className="text-muted-foreground">Type:</span> CNAME<br />
+                <span className="text-muted-foreground">Name:</span> www<br />
+                <span className="text-muted-foreground">Target:</span> {instructions.target}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                After adding the records, click Verify on your domain below. Then bind it to a tunnel or project. Visitors using www. will be automatically redirected.
               </p>
             </div>
           )}
