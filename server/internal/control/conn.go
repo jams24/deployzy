@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	pingInterval = 30 * time.Second
-	pingTimeout  = 10 * time.Second
+	pingInterval = 10 * time.Second
+	pingTimeout  = 25 * time.Second // close connection if no pong within this window
 )
 
 // TCPAllocator is the interface for allocating TCP tunnel ports.
@@ -54,6 +54,8 @@ type Conn struct {
 	proxyCh      chan *smux.Stream // incoming data streams from client
 	closeCh      chan struct{}
 	closeOnce    sync.Once
+	lastPong     time.Time
+	pongMu       sync.Mutex
 }
 
 // NewConn creates a control connection from an accepted smux session.
@@ -76,6 +78,7 @@ func NewConn(session *smux.Session, registry *tunnel.Registry, tcpAlloc TCPAlloc
 		log:              log,
 		proxyCh:          make(chan *smux.Stream, 64),
 		closeCh:          make(chan struct{}),
+		lastPong:         time.Now(),
 	}, nil
 }
 
@@ -221,7 +224,10 @@ func (c *Conn) Run() error {
 			c.handleReqTunnel(&req)
 
 		case proto.TypePong:
-			// keepalive response, nothing to do
+			// keepalive response — record so we can detect dead connections
+			c.pongMu.Lock()
+			c.lastPong = time.Now()
+			c.pongMu.Unlock()
 
 		case proto.TypeCloseTunnel:
 			var ct proto.CloseTunnel
@@ -453,6 +459,16 @@ func (c *Conn) pingLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			// Check if client has been silent for too long (dead connection)
+			c.pongMu.Lock()
+			silent := time.Since(c.lastPong)
+			c.pongMu.Unlock()
+			if silent > pingTimeout {
+				c.log.Info().Dur("silent", silent).Msg("ping timeout — closing dead connection")
+				c.Close()
+				return
+			}
+
 			if err := proto.WriteMsg(c.ctrlStr, proto.TypePing, &proto.Ping{}); err != nil {
 				c.log.Debug().Err(err).Msg("ping failed")
 				c.Close()
