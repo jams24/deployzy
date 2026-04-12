@@ -50,15 +50,26 @@ func (r *Registry) Register(t *Tunnel) error {
 	}
 
 	if host != "" {
-		if _, exists := r.byHost[host]; exists {
-			return fmt.Errorf("hostname %q already in use", host)
+		if existing, exists := r.byHost[host]; exists {
+			// Same-user reconnect: evict the old (likely dead) tunnel so the new one wins.
+			// This fixes the case where a client disconnects uncleanly and reconnects with
+				// the same subdomain before the ping-timeout has detected the old as dead.
+			if t.UserID != "" && existing.UserID == t.UserID {
+				r.removeTunnelLocked(existing)
+			} else {
+				return fmt.Errorf("hostname %q already in use", host)
+			}
 		}
 		r.byHost[host] = t
 	}
 
 	if t.RemotePort > 0 {
-		if _, exists := r.byPort[t.RemotePort]; exists {
-			return fmt.Errorf("port %d already in use", t.RemotePort)
+		if existing, exists := r.byPort[t.RemotePort]; exists {
+			if t.UserID != "" && existing.UserID == t.UserID {
+				r.removeTunnelLocked(existing)
+			} else {
+				return fmt.Errorf("port %d already in use", t.RemotePort)
+			}
 		}
 		r.byPort[t.RemotePort] = t
 	}
@@ -101,6 +112,31 @@ func (r *Registry) RemoveByClient(clientID string) []*Tunnel {
 	}
 	delete(r.byClient, clientID)
 	return tunnels
+}
+
+// removeTunnelLocked removes a single tunnel from all indexes.
+// Caller must hold r.mu.
+func (r *Registry) removeTunnelLocked(t *Tunnel) {
+	host := t.Subdomain
+	if t.Hostname != "" {
+		host = t.Hostname
+	}
+	if host != "" {
+		delete(r.byHost, host)
+	}
+	if t.RemotePort > 0 {
+		delete(r.byPort, t.RemotePort)
+	}
+	tunnels := r.byClient[t.ClientID]
+	for i, ct := range tunnels {
+		if ct == t {
+			r.byClient[t.ClientID] = append(tunnels[:i], tunnels[i+1:]...)
+			break
+		}
+	}
+	if len(r.byClient[t.ClientID]) == 0 {
+		delete(r.byClient, t.ClientID)
+	}
 }
 
 // RemoveByURL removes a specific tunnel by URL.
