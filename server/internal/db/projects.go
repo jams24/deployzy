@@ -17,8 +17,14 @@ type Project struct {
 	RepoURL         string            `json:"repo_url"`
 	Branch          string            `json:"branch"`
 	Framework       string            `json:"framework"`
+	InstallCmd      string            `json:"install_cmd"`
 	BuildCmd        string            `json:"build_cmd"`
 	StartCmd        string            `json:"start_cmd"`
+	RootDir         string            `json:"root_dir"`
+	NodeVersion     string            `json:"node_version"`
+	PortOverride    int               `json:"port_override"`
+	MemoryMB        int               `json:"memory_mb"`
+	CPUs            float64           `json:"cpus"`
 	EnvVars         map[string]string `json:"env_vars"`
 	Status          string            `json:"status"`
 	ContainerID     string            `json:"container_id"`
@@ -41,13 +47,13 @@ type DeployLog struct {
 }
 
 // projectCols is the standard column list for project queries.
-const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, build_cmd, start_cmd, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
+const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
 
 // scanProject scans a row into a Project struct. The row must match projectCols order.
 func scanProject(scan func(dest ...any) error) (Project, error) {
 	var p Project
 	var envJSON []byte
-	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.BuildCmd, &p.StartCmd, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride, &p.MemoryMB, &p.CPUs, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
 	if err == nil {
 		json.Unmarshal(envJSON, &p.EnvVars)
 	}
@@ -132,6 +138,38 @@ func (d *DB) UpdateProjectConfig(ctx context.Context, projectID, repoURL, branch
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE projects SET repo_url = $2, branch = $3, build_cmd = $4, start_cmd = $5, env_vars = $6, updated_at = now() WHERE id = $1`,
 		projectID, repoURL, branch, buildCmd, startCmd, envJSON,
+	)
+	return err
+}
+
+// BuildConfig bundles all the advanced build settings a user can override.
+type BuildConfig struct {
+	InstallCmd   string
+	BuildCmd     string
+	StartCmd     string
+	RootDir      string
+	NodeVersion  string
+	PortOverride int
+	MemoryMB     int
+	CPUs         float64
+}
+
+// UpdateProjectBuildConfig updates the advanced build/run settings for a project.
+func (d *DB) UpdateProjectBuildConfig(ctx context.Context, projectID string, cfg BuildConfig) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET
+		   install_cmd = $2,
+		   build_cmd = $3,
+		   start_cmd = $4,
+		   root_dir = $5,
+		   node_version = $6,
+		   port_override = $7,
+		   memory_mb = $8,
+		   cpus = $9,
+		   updated_at = now()
+		 WHERE id = $1`,
+		projectID, cfg.InstallCmd, cfg.BuildCmd, cfg.StartCmd, cfg.RootDir,
+		cfg.NodeVersion, cfg.PortOverride, cfg.MemoryMB, cfg.CPUs,
 	)
 	return err
 }

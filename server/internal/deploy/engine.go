@@ -105,6 +105,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		buildCtx = cloneDir
 	}
 
+	// Apply root_dir (for monorepos: build from a subdirectory of the repo)
+	if project.RootDir != "" {
+		trimmed := strings.Trim(project.RootDir, "/")
+		if trimmed != "" {
+			buildCtx = buildCtx + "/" + trimmed
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Root directory: %s", trimmed), "build")
+		}
+	}
+
 	// Determine framework — for remote, check via runner; for local, use filesystem
 	var framework string
 	if runner.IsRemote() {
@@ -164,7 +173,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		return fmt.Errorf("no Dockerfile")
 	}
 
-	// Auto-detect exposed port from Dockerfile
+	// Determine container port: user override > Dockerfile EXPOSE > default 3000
 	containerPort := 3000
 	if runner.IsRemote() {
 		out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/Dockerfile | head -1 | grep -oE '[0-9]+'", buildCtx))
@@ -176,7 +185,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	} else {
 		containerPort = detectExposedPort(buildCtx + "/Dockerfile")
 	}
-	e.logMsg(ctx, project.ID, fmt.Sprintf("Detected container port: %d", containerPort), "build")
+	if project.PortOverride > 0 {
+		containerPort = project.PortOverride
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Using custom port: %d", containerPort), "build")
+	} else {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Detected container port: %d", containerPort), "build")
+	}
 
 	// Build Docker image with a 20-minute cap so a hung build can't wedge the project in "building" forever.
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
@@ -251,7 +265,16 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	args = append(args, "--restart", "unless-stopped", "--memory", "512m", "--cpus", "0.5")
+	// Resource limits: user override > defaults (512m / 0.5 CPU)
+	memLimit := "512m"
+	if project.MemoryMB > 0 {
+		memLimit = fmt.Sprintf("%dm", project.MemoryMB)
+	}
+	cpuLimit := "0.5"
+	if project.CPUs > 0 {
+		cpuLimit = strconv.FormatFloat(project.CPUs, 'f', -1, 64)
+	}
+	args = append(args, "--restart", "unless-stopped", "--memory", memLimit, "--cpus", cpuLimit)
 
 	// Add data volume for persistence
 	args = append(args, "-v", fmt.Sprintf("/opt/serverme/project-data/%s:/app/data", project.ID[:8]))
@@ -489,34 +512,68 @@ func fileExists(path string) bool {
 
 // generateDockerfile creates a Dockerfile based on framework.
 func (e *Engine) generateDockerfile(project *db.Project, framework string) string {
+	// Node version (default 20)
+	nodeVer := "20"
+	if project.NodeVersion != "" {
+		nodeVer = project.NodeVersion
+	}
+
+	// Prisma push snippet — reused by node + nextjs
+	prismaPush := `if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] pushing Prisma schema..."; npx prisma db push --accept-data-loss || echo "[serverme] prisma db push failed — continuing anyway"; fi`
+
 	switch framework {
 	case "nextjs":
-		return `FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN if [ -d "prisma" ]; then npx prisma generate; fi
-ENV NODE_OPTIONS="--max-old-space-size=1536"
-RUN npm run build
-EXPOSE 3000
-CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] pushing Prisma schema..."; npx prisma db push --accept-data-loss || echo "[serverme] prisma db push failed — continuing anyway"; fi && npm start'`
-
-	case "node":
+		installCmd := project.InstallCmd
+		if installCmd == "" {
+			installCmd = "npm ci"
+		}
+		buildCmd := project.BuildCmd
+		if buildCmd == "" {
+			buildCmd = "npm run build"
+		}
 		startCmd := project.StartCmd
 		if startCmd == "" {
 			startCmd = "npm start"
 		}
-		return fmt.Sprintf(`FROM node:20-alpine
+		return fmt.Sprintf(`FROM node:%s-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --production
+RUN %s
 COPY . .
 RUN if [ -d "prisma" ]; then npx prisma generate; fi
+ENV NODE_OPTIONS="--max-old-space-size=1536"
+RUN %s
 EXPOSE 3000
-CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] pushing Prisma schema..."; npx prisma db push --accept-data-loss || echo "[serverme] prisma db push failed — continuing anyway"; fi && %s'`, startCmd)
+CMD sh -c '%s && %s'`, nodeVer, installCmd, buildCmd, prismaPush, startCmd)
+
+	case "node":
+		installCmd := project.InstallCmd
+		if installCmd == "" {
+			installCmd = "npm ci --production"
+		}
+		startCmd := project.StartCmd
+		if startCmd == "" {
+			startCmd = "npm start"
+		}
+		// Build step is optional for plain Node
+		buildLine := ""
+		if project.BuildCmd != "" {
+			buildLine = "RUN " + project.BuildCmd + "\n"
+		}
+		return fmt.Sprintf(`FROM node:%s-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN %s
+COPY . .
+RUN if [ -d "prisma" ]; then npx prisma generate; fi
+%sEXPOSE 3000
+CMD sh -c '%s && %s'`, nodeVer, installCmd, buildLine, prismaPush, startCmd)
 
 	case "python":
+		installCmd := project.InstallCmd
+		if installCmd == "" {
+			installCmd = "pip install --no-cache-dir -r requirements.txt 2>/dev/null || true"
+		}
 		startCmd := project.StartCmd
 		if startCmd == "" {
 			startCmd = "python app.py"
@@ -524,10 +581,10 @@ CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] p
 		return fmt.Sprintf(`FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt* ./
-RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+RUN %s
 COPY . .
 EXPOSE 3000
-CMD %s`, formatCmd(startCmd))
+CMD %s`, installCmd, formatCmd(startCmd))
 
 	case "static":
 		return `FROM nginx:alpine

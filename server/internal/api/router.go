@@ -139,6 +139,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Post("/projects", s.handleCreateProject)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.Put("/projects/{projectId}", s.handleUpdateProject)
+			r.Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
 			r.Post("/projects/{projectId}/deploy", s.handleDeployProject)
 			r.Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
 			r.Post("/projects/{projectId}/stop", s.handleStopProject)

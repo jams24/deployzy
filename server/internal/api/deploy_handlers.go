@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/db"
 )
 
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +161,74 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		if req.GitHubRepo != "" {
 			s.db.UpdateProjectGitHub(r.Context(), projectID, req.GitHubRepo, req.Branch, true)
 		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// handleUpdateBuildConfig updates the advanced build settings for a project.
+// Distinct endpoint from handleUpdateProject so users can tweak build knobs
+// without also having to re-send repo_url / branch / env_vars.
+func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var req struct {
+		InstallCmd   string  `json:"install_cmd"`
+		BuildCmd     string  `json:"build_cmd"`
+		StartCmd     string  `json:"start_cmd"`
+		RootDir      string  `json:"root_dir"`
+		NodeVersion  string  `json:"node_version"`
+		PortOverride int     `json:"port_override"`
+		MemoryMB     int     `json:"memory_mb"`
+		CPUs         float64 `json:"cpus"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	// Basic sanity clamps so a bad input can't crash docker run
+	if req.PortOverride < 0 || req.PortOverride > 65535 {
+		writeError(w, http.StatusBadRequest, "port_override must be 0-65535")
+		return
+	}
+	if req.MemoryMB < 0 || req.MemoryMB > 16384 {
+		writeError(w, http.StatusBadRequest, "memory_mb must be 0-16384")
+		return
+	}
+	if req.CPUs < 0 || req.CPUs > 8 {
+		writeError(w, http.StatusBadRequest, "cpus must be 0-8")
+		return
+	}
+	// Only allow a small allowlist of node versions so users can't pass "; rm -rf /" as a tag
+	if req.NodeVersion != "" {
+		allowed := map[string]bool{"18": true, "20": true, "22": true}
+		if !allowed[req.NodeVersion] {
+			writeError(w, http.StatusBadRequest, "node_version must be 18, 20, or 22")
+			return
+		}
+	}
+
+	err := s.db.UpdateProjectBuildConfig(r.Context(), projectID, db.BuildConfig{
+		InstallCmd:   req.InstallCmd,
+		BuildCmd:     req.BuildCmd,
+		StartCmd:     req.StartCmd,
+		RootDir:      req.RootDir,
+		NodeVersion:  req.NodeVersion,
+		PortOverride: req.PortOverride,
+		MemoryMB:     req.MemoryMB,
+		CPUs:         req.CPUs,
+	})
+	if err != nil {
+		s.log.Error().Err(err).Str("project", projectID).Msg("update build config failed")
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -19,7 +19,15 @@ interface Project {
   repo_url: string; branch: string; github_repo: string; github_branch: string;
   auto_deploy: boolean; status: string;
   env_vars: Record<string, string>;
+  install_cmd?: string; build_cmd?: string; start_cmd?: string;
+  root_dir?: string; node_version?: string;
+  port_override?: number; memory_mb?: number; cpus?: number;
   last_deploy_at: string | null; created_at: string;
+}
+interface BuildConfig {
+  install_cmd: string; build_cmd: string; start_cmd: string;
+  root_dir: string; node_version: string;
+  port_override: number; memory_mb: number; cpus: number;
 }
 interface DeployLog {
   message: string; level: string; created_at: string;
@@ -77,6 +85,13 @@ function ProjectsContent() {
   const [showSchedule, setShowSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<{ enabled: boolean; schedule: string; time: string; retention: number }>({ enabled: false, schedule: "daily", time: "03:00", retention: 7 });
   const [togglingAutoDeploy, setTogglingAutoDeploy] = useState<string | null>(null);
+  const [editingBuild, setEditingBuild] = useState<string | null>(null);
+  const [buildCfg, setBuildCfg] = useState<BuildConfig>({
+    install_cmd: "", build_cmd: "", start_cmd: "",
+    root_dir: "", node_version: "",
+    port_override: 0, memory_mb: 0, cpus: 0,
+  });
+  const [savingBuild, setSavingBuild] = useState(false);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -249,6 +264,42 @@ function ProjectsContent() {
     });
     setEditingEnv(null);
     load();
+  }
+
+  function openBuildConfig(p: Project) {
+    setBuildCfg({
+      install_cmd: p.install_cmd || "",
+      build_cmd: p.build_cmd || "",
+      start_cmd: p.start_cmd || "",
+      root_dir: p.root_dir || "",
+      node_version: p.node_version || "",
+      port_override: p.port_override || 0,
+      memory_mb: p.memory_mb || 0,
+      cpus: p.cpus || 0,
+    });
+    setEditingBuild(p.id);
+  }
+
+  async function saveBuildConfig(id: string, redeploy: boolean) {
+    setSavingBuild(true);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}/build-config`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify(buildCfg),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        alert(err.error || "Failed to save build config");
+        setSavingBuild(false);
+        return;
+      }
+      setEditingBuild(null);
+      if (redeploy) deploy(id);
+      load();
+    } catch {
+      alert("Failed to save build config");
+    }
+    setSavingBuild(false);
   }
 
   async function loadDatabase(id: string) {
@@ -684,6 +735,76 @@ function ProjectsContent() {
                         {p.env_vars && Object.keys(p.env_vars).length > 0 && (
                           <Badge variant="outline" className="ml-1 text-[9px]">{Object.keys(p.env_vars).length}</Badge>
                         )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Build Config */}
+                {selectedProject === p.id && (
+                  <div className="mt-3">
+                    {editingBuild === p.id ? (
+                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Build &amp; Runtime Settings</span>
+                          <span className="text-[10px] text-muted-foreground">Leave blank to use defaults</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
+                            <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Node Version</label>
+                            <select value={buildCfg.node_version} onChange={(e) => setBuildCfg({ ...buildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                              <option value="">Default (20)</option>
+                              <option value="18">Node 18</option>
+                              <option value="20">Node 20</option>
+                              <option value="22">Node 22</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Install Command</label>
+                            <input type="text" placeholder="npm ci" value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Build Command</label>
+                            <input type="text" placeholder="npm run build" value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Start Command</label>
+                            <input type="text" placeholder="npm start" value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Port Override <span className="text-zinc-600">(0 = auto)</span></label>
+                            <input type="number" min="0" max="65535" value={buildCfg.port_override || ""} onChange={(e) => setBuildCfg({ ...buildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
+                            <input type="number" min="0" max="16384" step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
+                            <input type="number" min="0" max="8" step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <Button size="sm" className="h-7 text-xs" onClick={() => saveBuildConfig(p.id, true)} disabled={savingBuild}>
+                            {savingBuild ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                            Save &amp; Redeploy
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => saveBuildConfig(p.id, false)} disabled={savingBuild}>Save Only</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingBuild(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
+                        <Settings2 className="h-3 w-3" /> Build &amp; Runtime
+                        {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus) ? (
+                          <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">customized</Badge>
+                        ) : null}
                       </Button>
                     )}
                   </div>
