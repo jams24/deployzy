@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -45,6 +45,11 @@ interface Cron {
   created_at: string;
 }
 interface LiveLog { t: string; line: string; }
+interface MetricSample {
+  ts: string; cpu_pct: number;
+  memory_mb: number; memory_limit_mb: number;
+  net_rx_bytes: number; net_tx_bytes: number;
+}
 interface Commit {
   sha: string; message: string; author: string; date: string;
 }
@@ -70,6 +75,23 @@ const langColor: Record<string, string> = {
   Go: "bg-cyan-400", Rust: "bg-orange-400", Java: "bg-red-400",
   Ruby: "bg-red-500", PHP: "bg-violet-400", HTML: "bg-orange-500",
 };
+
+// Sparkline renders a tiny inline SVG line chart. Keeps us free of a heavy
+// charting dep for the dashboard — one file, zero deps.
+function Sparkline({ values, color, height = 32 }: { values: number[]; color: string; height?: number }) {
+  if (!values.length) return <div style={{ height }} className="w-full rounded bg-white/[0.02]" />;
+  const w = 160;
+  const max = Math.max(...values, 0.0001);
+  const min = Math.min(...values, 0);
+  const range = Math.max(max - min, 0.0001);
+  const step = values.length > 1 ? w / (values.length - 1) : 0;
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(height - ((v - min) / range) * (height - 2) - 1).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+      <polyline fill="none" stroke={color} strokeWidth="1.5" points={pts} />
+    </svg>
+  );
+}
 
 function ProjectsContent() {
   const searchParams = useSearchParams();
@@ -129,7 +151,18 @@ function ProjectsContent() {
   // Live container logs (WebSocket)
   const [liveLogs, setLiveLogs] = useState<Record<string, LiveLog[]>>({});
   const [liveOn, setLiveOn] = useState<Record<string, boolean>>({});
+  const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({}); // panel visibility
+  const [liveMin, setLiveMin] = useState<Record<string, boolean>>({});   // minimized (header only)
+  const [liveAutoscroll, setLiveAutoscroll] = useState<Record<string, boolean>>({});
   const wsRef = useRef<Record<string, WebSocket>>({});
+  const liveScrollRef = useRef<Record<string, HTMLDivElement | null>>({});
+  // Panel collapse states (metrics + crons) — default collapsed so opening a
+  // project doesn't blast the user with every panel at once.
+  const [showMetrics, setShowMetrics] = useState<Record<string, boolean>>({});
+  const [showCrons, setShowCrons] = useState<Record<string, boolean>>({});
+  // Metrics
+  const [metrics, setMetrics] = useState<Record<string, MetricSample[]>>({});
+  const [metricsRange, setMetricsRange] = useState<Record<string, string>>({});
   // Cron jobs
   const [crons, setCrons] = useState<Record<string, Cron[]>>({});
   const [editingCron, setEditingCron] = useState<string | null>(null); // projectId currently editing
@@ -461,6 +494,11 @@ function ProjectsContent() {
     wsRef.current[projectId] = ws;
     setLiveLogs((prev) => ({ ...prev, [projectId]: [] }));
     setLiveOn((prev) => ({ ...prev, [projectId]: true }));
+    setLiveOpen((prev) => ({ ...prev, [projectId]: true }));
+    setLiveMin((prev) => ({ ...prev, [projectId]: false }));
+    if (liveAutoscroll[projectId] === undefined) {
+      setLiveAutoscroll((prev) => ({ ...prev, [projectId]: true }));
+    }
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
@@ -486,6 +524,16 @@ function ProjectsContent() {
     Object.values(wsRef.current).forEach((ws) => { try { ws.close(); } catch {} });
   }, []);
 
+  // Auto-scroll live log panes to bottom when new lines arrive (unless the
+  // user has turned autoscroll off).
+  useEffect(() => {
+    Object.entries(liveLogs).forEach(([pid, lines]) => {
+      if (!lines || !liveAutoscroll[pid]) return;
+      const el = liveScrollRef.current[pid];
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }, [liveLogs, liveAutoscroll]);
+
   // ── Cron jobs ──
   async function loadCrons(projectId: string) {
     try {
@@ -493,6 +541,17 @@ function ProjectsContent() {
       if (res.ok) {
         const data = await res.json();
         setCrons((prev) => ({ ...prev, [projectId]: Array.isArray(data) ? data : [] }));
+      }
+    } catch {}
+  }
+
+  async function loadMetrics(projectId: string, range: string = "1h") {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${projectId}/metrics?range=${range}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setMetrics((prev) => ({ ...prev, [projectId]: Array.isArray(data.samples) ? data.samples : [] }));
+        setMetricsRange((prev) => ({ ...prev, [projectId]: range }));
       }
     } catch {}
   }
@@ -653,8 +712,11 @@ function ProjectsContent() {
     loadDatabase(selectedProject);
     loadBackups(selectedProject);
     loadCrons(selectedProject);
+    loadMetrics(selectedProject, metricsRange[selectedProject] || "1h");
     const t = setInterval(() => loadLogs(selectedProject), 5000);
-    return () => clearInterval(t);
+    // Refresh metrics at 30s (matches scraper cadence).
+    const m = setInterval(() => loadMetrics(selectedProject, metricsRange[selectedProject] || "1h"), 30000);
+    return () => { clearInterval(t); clearInterval(m); };
   }, [selectedProject]);
 
   const filteredRepos = (ghRepos || []).filter((r) =>
@@ -1389,8 +1451,84 @@ function ProjectsContent() {
                   </div>
                 )}
 
+                {/* Metrics */}
+                {selectedProject === p.id && p.status === "running" && !showMetrics[p.id] && (
+                  <div className="mt-4">
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setShowMetrics((prev) => ({ ...prev, [p.id]: true }))}>
+                      <Activity className="h-3 w-3" /> Resource Metrics
+                    </Button>
+                  </div>
+                )}
+                {selectedProject === p.id && p.status === "running" && showMetrics[p.id] && (() => {
+                  const samples = metrics[p.id] || [];
+                  const range = metricsRange[p.id] || "1h";
+                  const latest = samples.length ? samples[samples.length - 1] : null;
+                  const cpuArr = samples.map((s) => s.cpu_pct);
+                  const memArr = samples.map((s) => s.memory_mb);
+                  const netInArr = samples.map((s) => s.net_rx_bytes);
+                  const netOutArr = samples.map((s) => s.net_tx_bytes);
+                  const fmtBytes = (n: number) => n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} kB` : `${n} B`;
+                  return (
+                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium">Resource Metrics</span>
+                          {samples.length === 0 && <span className="text-[10px] text-zinc-600">(collecting...)</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            {(["1h", "6h", "24h", "7d"] as const).map((r) => (
+                              <button key={r} onClick={() => loadMetrics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{r}</button>
+                            ))}
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => setShowMetrics((prev) => ({ ...prev, [p.id]: false }))} title="Close">
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[10px] text-muted-foreground">CPU</span>
+                            <span className="text-xs font-mono text-emerald-400">{latest ? `${latest.cpu_pct.toFixed(1)}%` : "—"}</span>
+                          </div>
+                          <Sparkline values={cpuArr} color="#10b981" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[10px] text-muted-foreground">Memory</span>
+                            <span className="text-xs font-mono text-blue-400">{latest ? `${latest.memory_mb} / ${latest.memory_limit_mb} MB` : "—"}</span>
+                          </div>
+                          <Sparkline values={memArr} color="#60a5fa" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[10px] text-muted-foreground">Network</span>
+                            <span className="text-xs font-mono text-amber-400">{latest ? `↓ ${fmtBytes(latest.net_rx_bytes)}` : "—"}</span>
+                          </div>
+                          <Sparkline values={netInArr} color="#fbbf24" />
+                          <div className="flex items-baseline justify-between pt-1">
+                            <span className="text-[10px] text-muted-foreground">Out</span>
+                            <span className="text-xs font-mono text-orange-400">{latest ? `↑ ${fmtBytes(latest.net_tx_bytes)}` : "—"}</span>
+                          </div>
+                          <Sparkline values={netOutArr} color="#fb923c" height={20} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Cron Jobs */}
-                {selectedProject === p.id && (
+                {selectedProject === p.id && !showCrons[p.id] && (
+                  <div className="mt-3">
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setShowCrons((prev) => ({ ...prev, [p.id]: true }))}>
+                      <Clock className="h-3 w-3" /> Scheduled Jobs
+                      {(crons[p.id] || []).length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{(crons[p.id] || []).length}</Badge>}
+                    </Button>
+                  </div>
+                )}
+                {selectedProject === p.id && showCrons[p.id] && (
                   <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1398,9 +1536,14 @@ function ProjectsContent() {
                         <span className="text-xs font-medium">Scheduled Jobs</span>
                         {(crons[p.id] || []).length > 0 && <Badge variant="outline" className="text-[9px]">{(crons[p.id] || []).length}</Badge>}
                       </div>
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => setEditingCron(editingCron === p.id ? null : p.id)}>
-                        <Plus className="h-3 w-3" /> New job
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => setEditingCron(editingCron === p.id ? null : p.id)}>
+                          <Plus className="h-3 w-3" /> New job
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => setShowCrons((prev) => ({ ...prev, [p.id]: false }))} title="Close">
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                     {(crons[p.id] || []).map((c) => (
                       <div key={c.id} className="rounded-md bg-[#09090b] px-2.5 py-2 space-y-1">
@@ -1449,22 +1592,53 @@ function ProjectsContent() {
                   </div>
                 )}
 
-                {/* Live Container Logs */}
-                {selectedProject === p.id && p.status === "running" && (
+                {/* Live Container Logs — show only when user opens it. */}
+                {selectedProject === p.id && p.status === "running" && !liveOpen[p.id] && (
+                  <div className="mt-4">
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => startLiveLogs(p.id)}>
+                      <Terminal className="h-3 w-3" /> Live Logs
+                    </Button>
+                  </div>
+                )}
+                {selectedProject === p.id && p.status === "running" && liveOpen[p.id] && (
                   <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.04] text-[10px] text-zinc-600 font-mono">
-                      <div className="flex items-center gap-2">
-                        <Terminal className="h-3 w-3" /> Live Container Logs
-                        {liveOn[p.id] && <span className="flex items-center gap-1 text-emerald-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> streaming</span>}
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.04] text-[10px] text-zinc-600 font-mono">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Terminal className="h-3 w-3 shrink-0" /> <span className="shrink-0">Live Container Logs</span>
+                        {liveOn[p.id] && <span className="flex items-center gap-1 text-emerald-500 shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> streaming</span>}
+                        <span className="text-zinc-700 shrink-0">• {(liveLogs[p.id] || []).length} lines</span>
                       </div>
-                      {liveOn[p.id] ? (
-                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => stopLiveLogs(p.id)}>Stop</Button>
-                      ) : (
-                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => startLiveLogs(p.id)}>Start stream</Button>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {liveOn[p.id] ? (
+                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => stopLiveLogs(p.id)} title="Stop streaming (keeps buffer)">Pause</Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => startLiveLogs(p.id)} title="Resume streaming">Resume</Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => setLiveLogs((prev) => ({ ...prev, [p.id]: [] }))} title="Clear buffer">Clear</Button>
+                        <label className="flex items-center gap-1 text-[10px] text-zinc-500 select-none cursor-pointer" title="Auto-scroll to bottom on new output">
+                          <input type="checkbox" checked={!!liveAutoscroll[p.id]} onChange={(e) => setLiveAutoscroll((prev) => ({ ...prev, [p.id]: e.target.checked }))} className="accent-emerald-500 h-3 w-3" />
+                          auto
+                        </label>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setLiveMin((prev) => ({ ...prev, [p.id]: !prev[p.id] }))} title={liveMin[p.id] ? "Expand" : "Minimize"}>
+                          {liveMin[p.id] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => { stopLiveLogs(p.id); setLiveOpen((prev) => ({ ...prev, [p.id]: false })); }} title="Close (stops stream)">
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
-                    {liveOn[p.id] || (liveLogs[p.id] && liveLogs[p.id].length > 0) ? (
-                      <div className="p-2 font-mono text-[11px] space-y-0.5 max-h-80 overflow-y-auto">
+                    {!liveMin[p.id] && (
+                      <div
+                        ref={(el) => { liveScrollRef.current[p.id] = el; }}
+                        className="p-2 font-mono text-[11px] space-y-0.5 max-h-80 overflow-y-auto"
+                        onScroll={(e) => {
+                          const el = e.currentTarget;
+                          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
+                          if (liveAutoscroll[p.id] !== atBottom) {
+                            setLiveAutoscroll((prev) => ({ ...prev, [p.id]: atBottom }));
+                          }
+                        }}
+                      >
                         {(liveLogs[p.id] || []).map((l, i) => (
                           <div key={i} className="px-2 py-0.5 text-zinc-300">
                             <span className="text-zinc-700">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span> {l.line}
@@ -1473,9 +1647,10 @@ function ProjectsContent() {
                         {(liveLogs[p.id] || []).length === 0 && liveOn[p.id] && (
                           <div className="px-2 py-1 text-zinc-600">Waiting for output...</div>
                         )}
+                        {(liveLogs[p.id] || []).length === 0 && !liveOn[p.id] && (
+                          <div className="px-2 py-1 text-zinc-600">Stream paused. Click Resume to start again.</div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="px-3 py-2 text-[10px] text-zinc-600">Click &quot;Start stream&quot; to tail the container.</div>
                     )}
                   </div>
                 )}

@@ -125,6 +125,28 @@ func (d *DB) UpdateProjectStatus(ctx context.Context, projectID, status, contain
 	return err
 }
 
+// ListRunningProjects returns every project currently in 'running' status.
+// Used by the metrics scraper to know which containers to poll. Separate from
+// the user-scoped ListProjects because the scraper runs as a system process.
+func (d *DB) ListRunningProjects(ctx context.Context) ([]Project, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT `+projectCols+` FROM projects WHERE status = 'running'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Project
+	for rows.Next() {
+		p, err := scanProject(rows.Scan)
+		if err != nil {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // ResetStuckBuilds marks any projects still in "building" state as "failed".
 // Called at server startup so deploys interrupted by a restart don't hang forever.
 // Returns the number of projects reset.

@@ -142,6 +142,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Put("/projects/{projectId}", s.handleUpdateProject)
 			r.Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
 			r.Put("/projects/{projectId}/labels", s.handleUpdateLabels)
+			// Metrics
+			r.Get("/projects/{projectId}/metrics", s.handleGetMetrics)
 			// Cron jobs
 			r.Get("/projects/{projectId}/crons", s.handleListCrons)
 			r.Post("/projects/{projectId}/crons", s.handleCreateCron)

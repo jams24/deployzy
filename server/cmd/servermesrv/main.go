@@ -204,6 +204,10 @@ func main() {
 		if deployEngine != nil {
 			cronScheduler := deploy.NewCronScheduler(database, deployEngine, log)
 			go cronScheduler.Start(context.Background())
+
+			// Metrics scraper also needs the engine's runner.
+			metricsScraper := deploy.NewMetricsScraper(database, deployEngine, log)
+			go metricsScraper.Start(context.Background())
 		}
 
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
