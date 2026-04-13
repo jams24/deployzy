@@ -500,7 +500,7 @@ RUN if [ -d "prisma" ]; then npx prisma generate; fi
 ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npm run build
 EXPOSE 3000
-CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then npx prisma db push --skip-generate 2>/dev/null || true; fi && npm start'`
+CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] pushing Prisma schema..."; npx prisma db push --accept-data-loss || echo "[serverme] prisma db push failed — continuing anyway"; fi && npm start'`
 
 	case "node":
 		startCmd := project.StartCmd
@@ -514,7 +514,7 @@ RUN npm ci --production
 COPY . .
 RUN if [ -d "prisma" ]; then npx prisma generate; fi
 EXPOSE 3000
-CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then npx prisma db push --skip-generate 2>/dev/null || true; fi && %s'`, startCmd)
+CMD sh -c 'if [ -d "prisma" ] && [ -n "$DATABASE_URL" ]; then echo "[serverme] pushing Prisma schema..."; npx prisma db push --accept-data-loss || echo "[serverme] prisma db push failed — continuing anyway"; fi && %s'`, startCmd)
 
 	case "python":
 		startCmd := project.StartCmd
