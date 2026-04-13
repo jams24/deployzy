@@ -148,6 +148,43 @@ func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, repos)
 }
 
+// handleGitHubCommits lists the 20 most recent commits for a repo+branch.
+// Used by the UI's "Select Commit" dropdown for pin/rollback deploys.
+func (s *Server) handleGitHubCommits(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	repo := r.URL.Query().Get("repo")
+	branch := r.URL.Query().Get("branch")
+	if repo == "" || branch == "" {
+		writeError(w, http.StatusBadRequest, "repo and branch are required")
+		return
+	}
+
+	gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
+	if gc == nil {
+		writeError(w, http.StatusBadRequest, "GitHub not connected")
+		return
+	}
+	if s.deployer == nil || s.deployer.GitHub == nil {
+		writeError(w, http.StatusServiceUnavailable, "GitHub not configured")
+		return
+	}
+
+	// Prefer the installation token (auto-refreshing); fall back to the user's OAuth token.
+	token := gc.AccessToken
+	if gc.InstallationID > 0 {
+		if instToken, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && instToken != "" {
+			token = instToken
+		}
+	}
+
+	commits, err := s.deployer.GitHub.ListCommits(token, repo, branch)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list commits")
+		return
+	}
+	writeJSON(w, http.StatusOK, commits)
+}
+
 // handleGitHubWebhook processes push events for auto-deploy.
 func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)

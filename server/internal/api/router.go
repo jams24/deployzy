@@ -133,6 +133,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Post("/github/connect", s.handleGitHubSaveConnection)
 			r.Delete("/github", s.handleGitHubDisconnect)
 			r.Get("/github/repos", s.handleGitHubRepos)
+			r.Get("/github/commits", s.handleGitHubCommits)
 
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)

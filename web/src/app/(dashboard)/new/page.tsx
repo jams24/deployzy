@@ -83,6 +83,8 @@ export default function NewResourcePage() {
   const [portOverride, setPortOverride] = useState(0);
   const [memoryMB, setMemoryMB] = useState(0);
   const [cpus, setCpus] = useState(0);
+  const [healthCheckPath, setHealthCheckPath] = useState("");
+  const [releaseCmd, setReleaseCmd] = useState("");
 
   // Docker image
   const [dockerImage, setDockerImage] = useState("");
@@ -136,6 +138,7 @@ export default function NewResourcePage() {
     setInstallCmd(""); setBuildCmd(""); setStartCmd("");
     setRootDir(""); setNodeVersion("");
     setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setHealthCheckPath(""); setReleaseCmd("");
     setShowAdvanced(false);
     setStep("configure");
   }
@@ -152,6 +155,7 @@ export default function NewResourcePage() {
     setInstallCmd(""); setBuildCmd(""); setStartCmd("");
     setRootDir(""); setNodeVersion("");
     setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setHealthCheckPath(""); setReleaseCmd("");
     setShowAdvanced(false);
     setStep("configure");
   }
@@ -166,6 +170,7 @@ export default function NewResourcePage() {
     setInstallCmd(""); setBuildCmd(""); setStartCmd("");
     setRootDir(""); setNodeVersion("");
     setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setHealthCheckPath(""); setReleaseCmd("");
     setShowAdvanced(false);
     setStep("docker");
   }
@@ -213,13 +218,14 @@ export default function NewResourcePage() {
 
     // Set build config if any advanced setting was customized — must happen
     // before /deploy so the first build picks it up.
-    if (installCmd || buildCmd || startCmd || rootDir || nodeVersion || portOverride || memoryMB || cpus) {
+    if (installCmd || buildCmd || startCmd || rootDir || nodeVersion || portOverride || memoryMB || cpus || healthCheckPath || releaseCmd) {
       await fetch(`${API}/api/v1/projects/${project.id}/build-config`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify({
           install_cmd: installCmd, build_cmd: buildCmd, start_cmd: startCmd,
           root_dir: rootDir, node_version: nodeVersion,
           port_override: portOverride, memory_mb: memoryMB, cpus,
+          health_check_path: healthCheckPath, release_cmd: releaseCmd,
         }),
       });
     }
@@ -459,6 +465,14 @@ export default function NewResourcePage() {
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
                     <input type="number" min="0" max="8" step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
+                    <input type="text" placeholder="/health" value={healthCheckPath} onChange={(e) => setHealthCheckPath(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
+                    <input type="text" placeholder="npx prisma migrate deploy" value={releaseCmd} onChange={(e) => setReleaseCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. You can also change these later from the project settings.</p>

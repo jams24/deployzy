@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -96,13 +97,36 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Cloning %s (branch: %s)...", maskToken(project.RepoURL), project.Branch), "build")
 
 		cloneDir := buildDir + "/app"
-		output, err := runner.Run(ctx, "git", "clone", "--depth", "1", "--branch", project.Branch, project.RepoURL, cloneDir)
+		// If a specific commit is pinned we need full history; otherwise shallow clone is plenty.
+		cloneArgs := []string{"clone", "--branch", project.Branch, project.RepoURL, cloneDir}
+		if project.CommitSHA == "" {
+			cloneArgs = []string{"clone", "--depth", "1", "--branch", project.Branch, project.RepoURL, cloneDir}
+		}
+		output, err := runner.Run(ctx, "git", cloneArgs...)
 		if err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Clone failed: %s", string(output)), "error")
 			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
 			return fmt.Errorf("git clone: %w", err)
 		}
 		buildCtx = cloneDir
+
+		// Check out a specific commit if requested (rollbacks / pinned deploys).
+		if project.CommitSHA != "" {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Checking out commit %s...", project.CommitSHA[:min(8, len(project.CommitSHA))]), "build")
+			out, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.CommitSHA))
+			if err != nil {
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out)), "error")
+				e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+				return fmt.Errorf("git checkout: %w", err)
+			}
+		}
+
+		// Record the SHA we actually built (HEAD after checkout) so the UI can show it.
+		if shaOut, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git rev-parse HEAD", cloneDir)); err == nil {
+			if sha := strings.TrimSpace(string(shaOut)); sha != "" {
+				e.db.UpdateProjectCommitSHA(ctx, project.ID, sha)
+			}
+		}
 	}
 
 	// Apply root_dir (for monorepos: build from a subdirectory of the repo)
@@ -279,6 +303,29 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Add data volume for persistence
 	args = append(args, "-v", fmt.Sprintf("/opt/serverme/project-data/%s:/app/data", project.ID[:8]))
 	args = append(args, envFlags...)
+
+	// Release command: runs once before the app container starts (e.g. migrations).
+	// Uses the same image + env vars, in a one-shot --rm container. If it fails, we
+	// abort the deploy so broken migrations don't take the running site down.
+	if project.ReleaseCmd != "" {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Running release command: %s", project.ReleaseCmd), "deploy")
+		releaseArgs := []string{"run", "--rm"}
+		releaseArgs = append(releaseArgs, envFlags...)
+		releaseArgs = append(releaseArgs, imageName, "sh", "-c", project.ReleaseCmd)
+		relCtx, relCancel := context.WithTimeout(ctx, 10*time.Minute)
+		relOut, relErr := runner.Run(relCtx, "docker", releaseArgs...)
+		relCancel()
+		if relErr != nil {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Release command failed:\n%s", trimLogs(string(relOut), 2000)), "error")
+			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+			return fmt.Errorf("release cmd: %w", relErr)
+		}
+		if out := strings.TrimSpace(string(relOut)); out != "" {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Release output:\n%s", trimLogs(out, 1000)), "build")
+		}
+		e.logMsg(ctx, project.ID, "Release command succeeded", "deploy")
+	}
+
 	args = append(args, imageName)
 
 	containerOutput, err := runner.Run(ctx, "docker", args...)
@@ -293,17 +340,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		containerID = containerID[:12]
 	}
 
-	// Wait and check health
-	time.Sleep(5 * time.Second)
-	healthOut, _ := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
-	healthy := strings.TrimSpace(string(healthOut)) == "running"
+	// Health check: poll the app until it responds 2xx (or timeout).
+	// If health_check_path is set, we HTTP-probe that path on the host port.
+	// Otherwise we fall back to the old "container still running after 5s" check.
+	healthy := e.waitForHealthy(ctx, project, runner, containerName, hostPort)
 
 	if healthy {
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
 	} else {
-		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "10", containerName)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", string(crashOut)), "error")
+		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", containerName)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", trimLogs(string(crashOut), 2000)), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", containerID, hostPort)
 	}
 
@@ -486,6 +533,62 @@ func extractBuildError(output string) string {
 		start = 0
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+// trimLogs truncates a log string to at most n characters, keeping the tail
+// (where errors usually are).
+func trimLogs(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "... (truncated) ...\n" + s[len(s)-n:]
+}
+
+// waitForHealthy polls the project until it's healthy, or returns false on timeout.
+// If a health_check_path is configured we HTTP-probe the host port; otherwise we
+// fall back to the previous behaviour of "container is in 'running' state after 5s".
+func (e *Engine) waitForHealthy(ctx context.Context, project *db.Project, runner *Runner, containerName string, hostPort int) bool {
+	deadline := time.Now().Add(60 * time.Second)
+
+	// Quick sanity: if the container exited within the first 2s, no point polling HTTP.
+	time.Sleep(2 * time.Second)
+	statusOut, _ := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+	status := strings.TrimSpace(string(statusOut))
+	if status != "running" {
+		return false
+	}
+
+	// No path configured → keep the old, lenient "container still up after 5s" behaviour.
+	if project.HealthCheckPath == "" {
+		time.Sleep(3 * time.Second) // total ~5s, matches previous behaviour
+		statusOut, _ := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+		return strings.TrimSpace(string(statusOut)) == "running"
+	}
+
+	// HTTP health check: poll the path until it responds 2xx or we run out of time.
+	e.logMsg(ctx, project.ID, fmt.Sprintf("Health-checking %s ...", project.HealthCheckPath), "deploy")
+	healthClient := &http.Client{Timeout: 3 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", hostPort, project.HealthCheckPath)
+
+	for time.Now().Before(deadline) {
+		// Abort fast if the container has already crashed.
+		statusOut, _ := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+		if strings.TrimSpace(string(statusOut)) != "running" {
+			return false
+		}
+		resp, err := healthClient.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Health check passed (%d)", resp.StatusCode), "deploy")
+				return true
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	e.logMsg(ctx, project.ID, "Health check timed out after 60s", "error")
+	return false
 }
 
 // maskToken hides tokens in URLs for logging.

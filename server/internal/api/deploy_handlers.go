@@ -179,14 +179,16 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		InstallCmd   string  `json:"install_cmd"`
-		BuildCmd     string  `json:"build_cmd"`
-		StartCmd     string  `json:"start_cmd"`
-		RootDir      string  `json:"root_dir"`
-		NodeVersion  string  `json:"node_version"`
-		PortOverride int     `json:"port_override"`
-		MemoryMB     int     `json:"memory_mb"`
-		CPUs         float64 `json:"cpus"`
+		InstallCmd      string  `json:"install_cmd"`
+		BuildCmd        string  `json:"build_cmd"`
+		StartCmd        string  `json:"start_cmd"`
+		RootDir         string  `json:"root_dir"`
+		NodeVersion     string  `json:"node_version"`
+		PortOverride    int     `json:"port_override"`
+		MemoryMB        int     `json:"memory_mb"`
+		CPUs            float64 `json:"cpus"`
+		HealthCheckPath string  `json:"health_check_path"`
+		ReleaseCmd      string  `json:"release_cmd"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -215,15 +217,23 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// Validate health check path: must start with / or be empty
+	if req.HealthCheckPath != "" && !strings.HasPrefix(req.HealthCheckPath, "/") {
+		writeError(w, http.StatusBadRequest, "health_check_path must start with /")
+		return
+	}
+
 	err := s.db.UpdateProjectBuildConfig(r.Context(), projectID, db.BuildConfig{
-		InstallCmd:   req.InstallCmd,
-		BuildCmd:     req.BuildCmd,
-		StartCmd:     req.StartCmd,
-		RootDir:      req.RootDir,
-		NodeVersion:  req.NodeVersion,
-		PortOverride: req.PortOverride,
-		MemoryMB:     req.MemoryMB,
-		CPUs:         req.CPUs,
+		InstallCmd:      req.InstallCmd,
+		BuildCmd:        req.BuildCmd,
+		StartCmd:        req.StartCmd,
+		RootDir:         req.RootDir,
+		NodeVersion:     req.NodeVersion,
+		PortOverride:    req.PortOverride,
+		MemoryMB:        req.MemoryMB,
+		CPUs:            req.CPUs,
+		HealthCheckPath: req.HealthCheckPath,
+		ReleaseCmd:      req.ReleaseCmd,
 	})
 	if err != nil {
 		s.log.Error().Err(err).Str("project", projectID).Msg("update build config failed")
@@ -246,6 +256,23 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	if s.deployer == nil {
 		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
 		return
+	}
+
+	// Optional: pin this deploy to a specific commit (for rollbacks / reverts).
+	// Body is optional; ignore decode errors so existing callers that POST empty
+	// bodies keep working.
+	var body struct {
+		CommitSHA string `json:"commit_sha"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.CommitSHA != "" {
+		project.CommitSHA = body.CommitSHA
+		// Persist so the logs show which commit is running even if the deploy crashes.
+		s.db.UpdateProjectCommitSHA(r.Context(), projectID, body.CommitSHA)
+	} else {
+		// Clear any previous pin so we track HEAD of the branch.
+		project.CommitSHA = ""
+		s.db.UpdateProjectCommitSHA(r.Context(), projectID, "")
 	}
 
 	// For private repos, inject GitHub token into clone URL

@@ -22,12 +22,17 @@ interface Project {
   install_cmd?: string; build_cmd?: string; start_cmd?: string;
   root_dir?: string; node_version?: string;
   port_override?: number; memory_mb?: number; cpus?: number;
+  health_check_path?: string; release_cmd?: string; commit_sha?: string;
   last_deploy_at: string | null; created_at: string;
 }
 interface BuildConfig {
   install_cmd: string; build_cmd: string; start_cmd: string;
   root_dir: string; node_version: string;
   port_override: number; memory_mb: number; cpus: number;
+  health_check_path: string; release_cmd: string;
+}
+interface Commit {
+  sha: string; message: string; author: string; date: string;
 }
 interface DeployLog {
   message: string; level: string; created_at: string;
@@ -90,14 +95,20 @@ function ProjectsContent() {
     install_cmd: "", build_cmd: "", start_cmd: "",
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
+    health_check_path: "", release_cmd: "",
   });
   const [savingBuild, setSavingBuild] = useState(false);
+  // Commits dropdown (for rollback / pinned deploys) — per-project
+  const [commits, setCommits] = useState<Record<string, Commit[]>>({});
+  const [loadingCommits, setLoadingCommits] = useState<string | null>(null);
+  const [selectedCommit, setSelectedCommit] = useState<Record<string, string>>({});
   // Advanced build settings for the inline import-from-repo flow
   const [importShowAdvanced, setImportShowAdvanced] = useState(false);
   const [importBuildCfg, setImportBuildCfg] = useState<BuildConfig>({
     install_cmd: "", build_cmd: "", start_cmd: "",
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
+    health_check_path: "", release_cmd: "",
   });
 
   const headers = () => {
@@ -224,6 +235,7 @@ function ProjectsContent() {
       install_cmd: "", build_cmd: "", start_cmd: "",
       root_dir: "", node_version: "",
       port_override: 0, memory_mb: 0, cpus: 0,
+      health_check_path: "", release_cmd: "",
     });
     setImportShowAdvanced(false);
     setShowRepoPicker(false);
@@ -299,8 +311,33 @@ function ProjectsContent() {
       port_override: p.port_override || 0,
       memory_mb: p.memory_mb || 0,
       cpus: p.cpus || 0,
+      health_check_path: p.health_check_path || "",
+      release_cmd: p.release_cmd || "",
     });
     setEditingBuild(p.id);
+  }
+
+  async function loadCommits(p: Project) {
+    if (!p.github_repo) return;
+    setLoadingCommits(p.id);
+    try {
+      const branch = p.github_branch || p.branch || "main";
+      const res = await fetch(`${API}/api/v1/github/commits?repo=${encodeURIComponent(p.github_repo)}&branch=${encodeURIComponent(branch)}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setCommits((prev) => ({ ...prev, [p.id]: Array.isArray(data) ? data : [] }));
+      }
+    } catch {}
+    setLoadingCommits(null);
+  }
+
+  async function deployCommit(projectId: string, sha: string) {
+    setDeploying(projectId);
+    await fetch(`${API}/api/v1/projects/${projectId}/deploy`, {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ commit_sha: sha }),
+    });
+    setTimeout(() => { setDeploying(null); load(); }, 3000);
   }
 
   async function saveBuildConfig(id: string, redeploy: boolean) {
@@ -631,6 +668,14 @@ function ProjectsContent() {
                       <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
                       <input type="number" min="0" max="8" step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
+                      <input type="text" placeholder="/health" value={importBuildCfg.health_check_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
+                      <input type="text" placeholder="npx prisma migrate deploy" value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. Editable anytime after deployment.</p>
                 </div>
@@ -868,6 +913,14 @@ function ProjectsContent() {
                             <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
                             <input type="number" min="0" max="8" step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
+                            <input type="text" placeholder="/health" value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
+                            <input type="text" placeholder="npx prisma migrate deploy" value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
                         </div>
 
                         <div className="flex gap-2 pt-1">
@@ -880,12 +933,52 @@ function ProjectsContent() {
                         </div>
                       </div>
                     ) : (
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
-                        <Settings2 className="h-3 w-3" /> Build &amp; Runtime
-                        {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus) ? (
-                          <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">customized</Badge>
-                        ) : null}
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
+                          <Settings2 className="h-3 w-3" /> Build &amp; Runtime
+                          {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd) ? (
+                            <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">customized</Badge>
+                          ) : null}
+                        </Button>
+                        {p.github_repo && (
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => loadCommits(p)} disabled={loadingCommits === p.id}>
+                            <GitBranch className="h-3 w-3" />
+                            {loadingCommits === p.id ? "Loading..." : "Deploy Commit"}
+                          </Button>
+                        )}
+                        {p.commit_sha && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            @ {p.commit_sha.slice(0, 7)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Commits dropdown (rollback / pinned deploy) */}
+                    {selectedProject === p.id && commits[p.id] && commits[p.id].length > 0 && editingBuild !== p.id && (
+                      <div className="mt-2 rounded-lg border border-border/40 p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium">Recent commits on {p.github_branch || p.branch || "main"}</span>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; })}>Close</Button>
+                        </div>
+                        <div className="space-y-1 max-h-64 overflow-y-auto">
+                          {commits[p.id].map((c) => (
+                            <label key={c.sha} className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-white/[0.03] ${selectedCommit[p.id] === c.sha ? "bg-white/[0.05]" : ""}`}>
+                              <input type="radio" name={`commit-${p.id}`} checked={selectedCommit[p.id] === c.sha} onChange={() => setSelectedCommit((prev) => ({ ...prev, [p.id]: c.sha }))} className="accent-emerald-500" />
+                              <code className="text-[10px] text-emerald-500">{c.sha.slice(0, 7)}</code>
+                              <span className="flex-1 truncate">{c.message}</span>
+                              <span className="text-[10px] text-muted-foreground hidden md:inline">{c.author}</span>
+                              {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">current</Badge>}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <Button size="sm" className="h-7 text-xs" disabled={!selectedCommit[p.id] || deploying === p.id} onClick={() => { deployCommit(p.id, selectedCommit[p.id]); setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; }); }}>
+                            {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
+                            Deploy selected
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

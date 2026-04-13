@@ -1,0 +1,9 @@
+-- +goose Up
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS health_check_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS release_cmd TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS commit_sha TEXT NOT NULL DEFAULT '';
+
+-- +goose Down
+ALTER TABLE projects DROP COLUMN IF EXISTS health_check_path;
+ALTER TABLE projects DROP COLUMN IF EXISTS release_cmd;
+ALTER TABLE projects DROP COLUMN IF EXISTS commit_sha;

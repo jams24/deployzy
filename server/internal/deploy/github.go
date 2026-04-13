@@ -159,6 +159,58 @@ func (g *GitHubApp) ListUserRepos(accessToken string) ([]GitHubRepo, error) {
 	return repos, nil
 }
 
+// GitHubCommit is a minimal commit summary returned to the UI.
+type GitHubCommit struct {
+	SHA     string `json:"sha"`
+	Message string `json:"message"`
+	Author  string `json:"author"`
+	Date    string `json:"date"`
+}
+
+// ListCommits returns the most recent commits on a branch (up to 20).
+func (g *GitHubApp) ListCommits(accessToken, repoFullName, branch string) ([]GitHubCommit, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/commits?sha=%s&per_page=20", repoFullName, branch)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var raw []struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Message string `json:"message"`
+			Author  struct {
+				Name string `json:"name"`
+				Date string `json:"date"`
+			} `json:"author"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+
+	out := make([]GitHubCommit, 0, len(raw))
+	for _, c := range raw {
+		// Only take the first line of the message — commit bodies can be huge.
+		msg := c.Commit.Message
+		if nl := strings.IndexByte(msg, '\n'); nl >= 0 {
+			msg = msg[:nl]
+		}
+		out = append(out, GitHubCommit{
+			SHA:     c.SHA,
+			Message: msg,
+			Author:  c.Commit.Author.Name,
+			Date:    c.Commit.Author.Date,
+		})
+	}
+	return out, nil
+}
+
 // GetCloneURL returns an authenticated clone URL for a private repo.
 func (g *GitHubApp) GetCloneURL(accessToken, repoFullName string) string {
 	return fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", accessToken, repoFullName)
