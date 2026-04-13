@@ -181,6 +181,13 @@ func main() {
 				}
 			}
 			deployEngine = deploy.NewEngine(database, *domain, githubApp, log)
+			// Reset any projects stuck in "building" from a previous process that was
+			// killed mid-deploy — otherwise they'd show as building forever.
+			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
+				log.Warn().Err(err).Msg("reset stuck builds failed")
+			} else if n > 0 {
+				log.Info().Int64("count", n).Msg("reset stuck 'building' projects to 'failed'")
+			}
 			log.Info().Msg("Deploy engine enabled")
 			httpProxy.SetProjectLookup(deployEngine)
 		}

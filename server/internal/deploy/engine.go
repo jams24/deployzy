@@ -178,13 +178,18 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Detected container port: %d", containerPort), "build")
 
-	// Build Docker image
+	// Build Docker image with a 20-minute cap so a hung build can't wedge the project in "building" forever.
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
-	output, err := runner.Run(ctx, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
+	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
+	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
+	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
+		if buildCtx2.Err() == context.DeadlineExceeded {
+			errMsg = "build timed out after 20 minutes"
+		}
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
 		return fmt.Errorf("docker build: %w", err)

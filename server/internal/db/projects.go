@@ -114,6 +114,19 @@ func (d *DB) UpdateProjectStatus(ctx context.Context, projectID, status, contain
 	return err
 }
 
+// ResetStuckBuilds marks any projects still in "building" state as "failed".
+// Called at server startup so deploys interrupted by a restart don't hang forever.
+// Returns the number of projects reset.
+func (d *DB) ResetStuckBuilds(ctx context.Context) (int64, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET status = 'failed', updated_at = now() WHERE status = 'building'`,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (d *DB) UpdateProjectConfig(ctx context.Context, projectID, repoURL, branch, buildCmd, startCmd string, envVars map[string]string) error {
 	envJSON, _ := json.Marshal(envVars)
 	_, err := d.Pool.Exec(ctx,
