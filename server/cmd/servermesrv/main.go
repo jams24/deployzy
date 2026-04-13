@@ -199,6 +199,13 @@ func main() {
 		backupScheduler := deploy.NewBackupScheduler(database, log)
 		go backupScheduler.Start(context.Background())
 
+		// Start cron scheduler (only once a deploy engine is available — crons
+		// run inside the project's built image and need the engine's runner).
+		if deployEngine != nil {
+			cronScheduler := deploy.NewCronScheduler(database, deployEngine, log)
+			go cronScheduler.Start(context.Background())
+		}
+
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,

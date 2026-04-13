@@ -142,6 +142,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Put("/projects/{projectId}", s.handleUpdateProject)
 			r.Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
 			r.Put("/projects/{projectId}/labels", s.handleUpdateLabels)
+			// Cron jobs
+			r.Get("/projects/{projectId}/crons", s.handleListCrons)
+			r.Post("/projects/{projectId}/crons", s.handleCreateCron)
+			r.Put("/projects/{projectId}/crons/{cronId}", s.handleUpdateCron)
+			r.Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
 			r.Post("/projects/{projectId}/deploy", s.handleDeployProject)
 			r.Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
 			r.Post("/projects/{projectId}/stop", s.handleStopProject)
@@ -209,6 +214,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 	// WebSocket (separate auth via query param)
 	r.Get("/api/v1/ws/traffic/{url}", s.handleTrafficWebSocket)
+	r.Get("/api/v1/ws/projects/{projectId}/logs", s.handleProjectLogsWS)
 
 	return r
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -38,6 +38,13 @@ interface Domain {
   target_type: string; target_subdomain: string;
   cname_target: string;
 }
+interface Cron {
+  id: string; project_id: string; name: string;
+  schedule: string; command: string; enabled: boolean;
+  last_run_at: string | null; last_status: string; last_output: string;
+  created_at: string;
+}
+interface LiveLog { t: string; line: string; }
 interface Commit {
   sha: string; message: string; author: string; date: string;
 }
@@ -119,6 +126,14 @@ function ProjectsContent() {
   const [allDomains, setAllDomains] = useState<Domain[]>([]);
   const [newDomain, setNewDomain] = useState<Record<string, string>>({});
   const [addingDomain, setAddingDomain] = useState<string | null>(null);
+  // Live container logs (WebSocket)
+  const [liveLogs, setLiveLogs] = useState<Record<string, LiveLog[]>>({});
+  const [liveOn, setLiveOn] = useState<Record<string, boolean>>({});
+  const wsRef = useRef<Record<string, WebSocket>>({});
+  // Cron jobs
+  const [crons, setCrons] = useState<Record<string, Cron[]>>({});
+  const [editingCron, setEditingCron] = useState<string | null>(null); // projectId currently editing
+  const [cronForm, setCronForm] = useState<{ name: string; schedule: string; command: string }>({ name: "", schedule: "0 3 * * *", command: "" });
   const [importShowAdvanced, setImportShowAdvanced] = useState(false);
   const [importBuildCfg, setImportBuildCfg] = useState<BuildConfig>({
     install_cmd: "", build_cmd: "", start_cmd: "",
@@ -436,6 +451,81 @@ function ProjectsContent() {
     loadDomains();
   }
 
+  // ── Live logs (WebSocket) ──
+  function startLiveLogs(projectId: string) {
+    if (liveOn[projectId]) return;
+    const token = localStorage.getItem("sm_token");
+    if (!token) return;
+    const base = (API || "").replace(/^http/, "ws");
+    const ws = new WebSocket(`${base}/api/v1/ws/projects/${projectId}/logs?token=${encodeURIComponent(token)}`);
+    wsRef.current[projectId] = ws;
+    setLiveLogs((prev) => ({ ...prev, [projectId]: [] }));
+    setLiveOn((prev) => ({ ...prev, [projectId]: true }));
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.line !== undefined) {
+          setLiveLogs((prev) => {
+            const cur = prev[projectId] || [];
+            const next = cur.length >= 500 ? cur.slice(-499) : cur;
+            return { ...prev, [projectId]: [...next, { t: msg.t, line: msg.line }] };
+          });
+        }
+      } catch {}
+    };
+    ws.onclose = () => { setLiveOn((prev) => ({ ...prev, [projectId]: false })); delete wsRef.current[projectId]; };
+    ws.onerror = () => { setLiveOn((prev) => ({ ...prev, [projectId]: false })); };
+  }
+  function stopLiveLogs(projectId: string) {
+    const ws = wsRef.current[projectId];
+    if (ws) ws.close();
+    setLiveOn((prev) => ({ ...prev, [projectId]: false }));
+  }
+  // Clean up all sockets on unmount.
+  useEffect(() => () => {
+    Object.values(wsRef.current).forEach((ws) => { try { ws.close(); } catch {} });
+  }, []);
+
+  // ── Cron jobs ──
+  async function loadCrons(projectId: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${projectId}/crons`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setCrons((prev) => ({ ...prev, [projectId]: Array.isArray(data) ? data : [] }));
+      }
+    } catch {}
+  }
+  async function addCron(projectId: string) {
+    if (!cronForm.schedule || !cronForm.command) { alert("Schedule and command are required"); return; }
+    const res = await fetch(`${API}/api/v1/projects/${projectId}/crons`, {
+      method: "POST", headers: headers(),
+      body: JSON.stringify(cronForm),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed" }));
+      alert(err.error || "Failed to create cron");
+      return;
+    }
+    setCronForm({ name: "", schedule: "0 3 * * *", command: "" });
+    setEditingCron(null);
+    loadCrons(projectId);
+  }
+  async function toggleCron(c: Cron) {
+    await fetch(`${API}/api/v1/projects/${c.project_id}/crons/${c.id}`, {
+      method: "PUT", headers: headers(),
+      body: JSON.stringify({ name: c.name, schedule: c.schedule, command: c.command, enabled: !c.enabled }),
+    });
+    loadCrons(c.project_id);
+  }
+  async function deleteCron(c: Cron) {
+    if (!confirm(`Delete cron "${c.name}"?`)) return;
+    await fetch(`${API}/api/v1/projects/${c.project_id}/crons/${c.id}`, {
+      method: "DELETE", headers: headers(),
+    });
+    loadCrons(c.project_id);
+  }
+
   async function saveBuildConfig(id: string, redeploy: boolean) {
     setSavingBuild(true);
     try {
@@ -562,6 +652,7 @@ function ProjectsContent() {
     loadLogs(selectedProject);
     loadDatabase(selectedProject);
     loadBackups(selectedProject);
+    loadCrons(selectedProject);
     const t = setInterval(() => loadLogs(selectedProject), 5000);
     return () => clearInterval(t);
   }, [selectedProject]);
@@ -1298,7 +1389,98 @@ function ProjectsContent() {
                   </div>
                 )}
 
-                {/* Logs */}
+                {/* Cron Jobs */}
+                {selectedProject === p.id && (
+                  <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium">Scheduled Jobs</span>
+                        {(crons[p.id] || []).length > 0 && <Badge variant="outline" className="text-[9px]">{(crons[p.id] || []).length}</Badge>}
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => setEditingCron(editingCron === p.id ? null : p.id)}>
+                        <Plus className="h-3 w-3" /> New job
+                      </Button>
+                    </div>
+                    {(crons[p.id] || []).map((c) => (
+                      <div key={c.id} className="rounded-md bg-[#09090b] px-2.5 py-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/10 text-emerald-500" : "bg-zinc-700/30 text-zinc-500"}`}>{c.enabled ? "on" : "off"}</span>
+                            <span className="text-xs font-medium truncate">{c.name}</span>
+                            <code className="text-[10px] text-blue-400 font-mono">{c.schedule}</code>
+                            {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">success</Badge>}
+                            {c.last_status === "failed" && <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/20">failed</Badge>}
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleCron(c)}>{c.enabled ? "Pause" : "Resume"}</Button>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => deleteCron(c)}>Delete</Button>
+                          </div>
+                        </div>
+                        <code className="block text-[10px] text-zinc-400 font-mono truncate">$ {c.command}</code>
+                        {c.last_run_at && (
+                          <div className="text-[10px] text-zinc-600">Last run: {new Date(c.last_run_at).toLocaleString()}</div>
+                        )}
+                      </div>
+                    ))}
+                    {editingCron === p.id && (
+                      <div className="rounded-md border border-border/40 bg-[#09090b] p-2.5 space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Name</label>
+                            <input type="text" placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Schedule <span className="text-zinc-600">(cron: min hour day month dow)</span></label>
+                            <input type="text" placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Command</label>
+                          <input type="text" placeholder="node scripts/cleanup.js" value={cronForm.command} onChange={(e) => setCronForm({ ...cronForm, command: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" className="h-7 text-xs" onClick={() => addCron(p.id)}>Create</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingCron(null)}>Cancel</Button>
+                        </div>
+                        <p className="text-[10px] text-zinc-600">Runs in a fresh container built from this project&apos;s image, with the same env vars. Stdout/stderr is captured and shown above.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Live Container Logs */}
+                {selectedProject === p.id && p.status === "running" && (
+                  <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.04] text-[10px] text-zinc-600 font-mono">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="h-3 w-3" /> Live Container Logs
+                        {liveOn[p.id] && <span className="flex items-center gap-1 text-emerald-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> streaming</span>}
+                      </div>
+                      {liveOn[p.id] ? (
+                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => stopLiveLogs(p.id)}>Stop</Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => startLiveLogs(p.id)}>Start stream</Button>
+                      )}
+                    </div>
+                    {liveOn[p.id] || (liveLogs[p.id] && liveLogs[p.id].length > 0) ? (
+                      <div className="p-2 font-mono text-[11px] space-y-0.5 max-h-80 overflow-y-auto">
+                        {(liveLogs[p.id] || []).map((l, i) => (
+                          <div key={i} className="px-2 py-0.5 text-zinc-300">
+                            <span className="text-zinc-700">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span> {l.line}
+                          </div>
+                        ))}
+                        {(liveLogs[p.id] || []).length === 0 && liveOn[p.id] && (
+                          <div className="px-2 py-1 text-zinc-600">Waiting for output...</div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 text-[10px] text-zinc-600">Click &quot;Start stream&quot; to tail the container.</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Deploy Logs */}
                 {selectedProject === p.id && logs.length > 0 && (
                   <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden max-h-64 overflow-y-auto">
                     <div className="border-b border-white/[0.04] px-3 py-1.5 text-[10px] text-zinc-600 font-mono flex items-center gap-2">
