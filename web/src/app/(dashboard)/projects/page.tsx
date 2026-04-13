@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -92,6 +92,13 @@ function ProjectsContent() {
     port_override: 0, memory_mb: 0, cpus: 0,
   });
   const [savingBuild, setSavingBuild] = useState(false);
+  // Advanced build settings for the inline import-from-repo flow
+  const [importShowAdvanced, setImportShowAdvanced] = useState(false);
+  const [importBuildCfg, setImportBuildCfg] = useState<BuildConfig>({
+    install_cmd: "", build_cmd: "", start_cmd: "",
+    root_dir: "", node_version: "",
+    port_override: 0, memory_mb: 0, cpus: 0,
+  });
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -199,10 +206,26 @@ function ProjectsContent() {
       });
     }
 
+    // Apply build config before deploy if any advanced setting was customized
+    const c = importBuildCfg;
+    if (c.install_cmd || c.build_cmd || c.start_cmd || c.root_dir || c.node_version || c.port_override || c.memory_mb || c.cpus) {
+      await fetch(`${API}/api/v1/projects/${project.id}/build-config`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify(c),
+      });
+    }
+
     // Deploy
     await fetch(`${API}/api/v1/projects/${project.id}/deploy`, {
       method: "POST", headers: headers(),
     });
+    // Reset advanced form for next import
+    setImportBuildCfg({
+      install_cmd: "", build_cmd: "", start_cmd: "",
+      root_dir: "", node_version: "",
+      port_override: 0, memory_mb: 0, cpus: 0,
+    });
+    setImportShowAdvanced(false);
     setShowRepoPicker(false);
     setImportRepo(null);
     setDeploying(project.id);
@@ -557,6 +580,63 @@ function ProjectsContent() {
               />
               <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. You can edit these anytime after deployment.</p>
             </div>
+
+            {/* Advanced Build & Runtime Settings */}
+            <div className="rounded-lg border border-border/40 overflow-hidden">
+              <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs font-medium">Advanced Build &amp; Runtime Settings</span>
+                  <span className="text-[10px] text-muted-foreground">(optional)</span>
+                </div>
+                {importShowAdvanced ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              </button>
+              {importShowAdvanced && (
+                <div className="border-t border-border/40 p-4 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
+                      <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">Node Version</label>
+                      <select value={importBuildCfg.node_version} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                        <option value="">Default (20)</option>
+                        <option value="18">Node 18</option>
+                        <option value="20">Node 20</option>
+                        <option value="22">Node 22</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Install Command</label>
+                      <input type="text" placeholder="npm ci" value={importBuildCfg.install_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Build Command</label>
+                      <input type="text" placeholder="npm run build" value={importBuildCfg.build_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Start Command</label>
+                      <input type="text" placeholder="npm start" value={importBuildCfg.start_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
+                      <input type="number" min="0" max="65535" value={importBuildCfg.port_override || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
+                      <input type="number" min="0" max="16384" step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
+                      <input type="number" min="0" max="8" step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. Editable anytime after deployment.</p>
+                </div>
+              )}
+            </div>
+
             <Button
               className="w-full gap-2"
               onClick={createFromRepo}
