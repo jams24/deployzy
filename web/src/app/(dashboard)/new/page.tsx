@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   GitBranch, Database, Container, Layers, Search, Rocket,
-  ChevronRight, Loader2, Globe, Server, Check, ArrowLeft,
+  ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -73,6 +73,17 @@ export default function NewResourcePage() {
   const [framework, setFramework] = useState("node");
   const [githubRepo, setGithubRepo] = useState("");
 
+  // Advanced build settings (optional)
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [installCmd, setInstallCmd] = useState("");
+  const [buildCmd, setBuildCmd] = useState("");
+  const [startCmd, setStartCmd] = useState("");
+  const [rootDir, setRootDir] = useState("");
+  const [nodeVersion, setNodeVersion] = useState("");
+  const [portOverride, setPortOverride] = useState(0);
+  const [memoryMB, setMemoryMB] = useState(0);
+  const [cpus, setCpus] = useState(0);
+
   // Docker image
   const [dockerImage, setDockerImage] = useState("");
 
@@ -122,6 +133,10 @@ export default function NewResourcePage() {
     setGithubRepo(repo.full_name);
     setFramework(detectFramework(repo.language));
     setEnvText("");
+    setInstallCmd(""); setBuildCmd(""); setStartCmd("");
+    setRootDir(""); setNodeVersion("");
+    setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setShowAdvanced(false);
     setStep("configure");
   }
 
@@ -134,6 +149,10 @@ export default function NewResourcePage() {
     setGithubRepo("");
     setFramework(t.framework);
     setEnvText("");
+    setInstallCmd(""); setBuildCmd(""); setStartCmd("");
+    setRootDir(""); setNodeVersion("");
+    setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setShowAdvanced(false);
     setStep("configure");
   }
 
@@ -144,6 +163,10 @@ export default function NewResourcePage() {
     setRepoUrl("");
     setDockerImage("");
     setEnvText("");
+    setInstallCmd(""); setBuildCmd(""); setStartCmd("");
+    setRootDir(""); setNodeVersion("");
+    setPortOverride(0); setMemoryMB(0); setCpus(0);
+    setShowAdvanced(false);
     setStep("docker");
   }
 
@@ -185,6 +208,19 @@ export default function NewResourcePage() {
       await fetch(`${API}/api/v1/projects/${project.id}`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify({ env_vars: envVars }),
+      });
+    }
+
+    // Set build config if any advanced setting was customized — must happen
+    // before /deploy so the first build picks it up.
+    if (installCmd || buildCmd || startCmd || rootDir || nodeVersion || portOverride || memoryMB || cpus) {
+      await fetch(`${API}/api/v1/projects/${project.id}/build-config`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({
+          install_cmd: installCmd, build_cmd: buildCmd, start_cmd: startCmd,
+          root_dir: rootDir, node_version: nodeVersion,
+          port_override: portOverride, memory_mb: memoryMB, cpus,
+        }),
       });
     }
 
@@ -368,6 +404,66 @@ export default function NewResourcePage() {
               className="w-full h-28 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Editable anytime after deployment.</p>
+          </div>
+
+          {/* Advanced Build & Runtime Settings */}
+          <div className="rounded-lg border border-border/40 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-medium">Advanced Build &amp; Runtime Settings</span>
+                <span className="text-[10px] text-muted-foreground">(optional)</span>
+              </div>
+              {showAdvanced ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {showAdvanced && (
+              <div className="border-t border-border/40 p-4 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
+                    <input type="text" placeholder="apps/web" value={rootDir} onChange={(e) => setRootDir(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">Node Version</label>
+                    <select value={nodeVersion} onChange={(e) => setNodeVersion(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="">Default (20)</option>
+                      <option value="18">Node 18</option>
+                      <option value="20">Node 20</option>
+                      <option value="22">Node 22</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-[10px] text-muted-foreground">Install Command</label>
+                    <input type="text" placeholder="npm ci" value={installCmd} onChange={(e) => setInstallCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-[10px] text-muted-foreground">Build Command</label>
+                    <input type="text" placeholder="npm run build" value={buildCmd} onChange={(e) => setBuildCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-[10px] text-muted-foreground">Start Command</label>
+                    <input type="text" placeholder="npm start" value={startCmd} onChange={(e) => setStartCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
+                    <input type="number" min="0" max="65535" value={portOverride || ""} onChange={(e) => setPortOverride(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
+                    <input type="number" min="0" max="16384" step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
+                    <input type="number" min="0" max="8" step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. You can also change these later from the project settings.</p>
+              </div>
+            )}
           </div>
 
           <Button className="w-full gap-2" onClick={deployProject} disabled={creating || !projectName || !subdomain}>
