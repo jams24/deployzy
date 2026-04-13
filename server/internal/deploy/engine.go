@@ -140,11 +140,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// Determine framework — for remote, check via runner; for local, use filesystem
 	var framework string
+	// ignore_dockerfile: pretend the repo's Dockerfile doesn't exist. Useful when
+	// a project's checked-in Dockerfile is stale or wrong and the user wants
+	// ServerMe's auto-generated one (with the configured node version, install
+	// command, prisma auto-push, etc.) to take over.
+	ignoreRepoDockerfile := project.BuildMode == "ignore_dockerfile"
+
 	if runner.IsRemote() {
 		// Remote: check files via SSH
 		out, _ := runner.RunShell(ctx, fmt.Sprintf("ls %s/Dockerfile %s/next.config.* %s/package.json %s/requirements.txt %s/go.mod %s/index.html 2>/dev/null", buildCtx, buildCtx, buildCtx, buildCtx, buildCtx, buildCtx))
 		files := string(out)
-		if strings.Contains(files, "Dockerfile") {
+		if !ignoreRepoDockerfile && strings.Contains(files, "Dockerfile") {
 			framework = "docker"
 		} else if strings.Contains(files, "next.config") {
 			framework = "nextjs"
@@ -158,24 +164,32 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			framework = "node"
 		}
 	} else {
-		framework = e.detectFramework(buildCtx)
+		if ignoreRepoDockerfile {
+			framework = e.detectFrameworkIgnoreDocker(buildCtx)
+		} else {
+			framework = e.detectFramework(buildCtx)
+		}
 	}
 	if framework == "node" && project.Framework != "" && project.Framework != "node" {
 		framework = project.Framework
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Framework: %s", framework), "build")
+	if ignoreRepoDockerfile {
+		e.logMsg(ctx, project.ID, "Ignoring repo Dockerfile (build_mode=ignore_dockerfile)", "build")
+	}
 
-	// Generate Dockerfile only if repo doesn't already have one
+	// Generate Dockerfile if repo doesn't have one, OR if user asked us to ignore theirs.
 	if runner.IsRemote() {
 		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
-		if strings.TrimSpace(string(out)) != "yes" {
+		exists := strings.TrimSpace(string(out)) == "yes"
+		if !exists || ignoreRepoDockerfile {
 			dockerfile := e.generateDockerfile(project, framework)
 			if dockerfile != "" {
 				runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
 			}
 		}
 	} else {
-		if !fileExists(buildCtx + "/Dockerfile") {
+		if !fileExists(buildCtx+"/Dockerfile") || ignoreRepoDockerfile {
 			dockerfile := e.generateDockerfile(project, framework)
 			if dockerfile != "" {
 				os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
@@ -427,6 +441,13 @@ func (e *Engine) detectFramework(dir string) string {
 	if fileExists(dir + "/Dockerfile") {
 		return "docker"
 	}
+	return e.detectFrameworkIgnoreDocker(dir)
+}
+
+// detectFrameworkIgnoreDocker is like detectFramework but never returns "docker"
+// for the Dockerfile case — used when build_mode=ignore_dockerfile so we fall
+// back to our auto-generated Dockerfile instead of the repo's.
+func (e *Engine) detectFrameworkIgnoreDocker(dir string) string {
 	if fileExists(dir + "/next.config.js") || fileExists(dir + "/next.config.ts") || fileExists(dir + "/next.config.mjs") {
 		return "nextjs"
 	}

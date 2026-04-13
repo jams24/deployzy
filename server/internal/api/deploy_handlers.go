@@ -189,6 +189,7 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		CPUs            float64 `json:"cpus"`
 		HealthCheckPath string  `json:"health_check_path"`
 		ReleaseCmd      string  `json:"release_cmd"`
+		BuildMode       string  `json:"build_mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -222,6 +223,11 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "health_check_path must start with /")
 		return
 	}
+	// Validate build_mode: allowlist so the engine doesn't have to defend against junk
+	if req.BuildMode != "" && req.BuildMode != "auto" && req.BuildMode != "ignore_dockerfile" {
+		writeError(w, http.StatusBadRequest, "build_mode must be 'auto' or 'ignore_dockerfile'")
+		return
+	}
 
 	err := s.db.UpdateProjectBuildConfig(r.Context(), projectID, db.BuildConfig{
 		InstallCmd:      req.InstallCmd,
@@ -234,6 +240,7 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		CPUs:            req.CPUs,
 		HealthCheckPath: req.HealthCheckPath,
 		ReleaseCmd:      req.ReleaseCmd,
+		BuildMode:       req.BuildMode,
 	})
 	if err != nil {
 		s.log.Error().Err(err).Str("project", projectID).Msg("update build config failed")
@@ -241,6 +248,51 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// handleUpdateLabels sets the tag list for a project. Simple PUT with
+// {"labels": ["prod","api"]} — full replacement semantics (easier to undo
+// accidents than incremental add/remove).
+func (s *Server) handleUpdateLabels(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var req struct {
+		Labels []string `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	// Clean up: trim whitespace, lowercase, dedupe, cap length/count so a bad
+	// client can't shove a megabyte of tags into a row.
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(req.Labels))
+	for _, l := range req.Labels {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" || len(l) > 40 || seen[l] {
+			continue
+		}
+		seen[l] = true
+		cleaned = append(cleaned, l)
+		if len(cleaned) >= 10 {
+			break
+		}
+	}
+
+	if err := s.db.UpdateProjectLabels(r.Context(), projectID, cleaned); err != nil {
+		s.log.Error().Err(err).Str("project", projectID).Msg("update labels failed")
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"labels": cleaned})
 }
 
 func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {

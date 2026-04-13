@@ -23,6 +23,7 @@ interface Project {
   root_dir?: string; node_version?: string;
   port_override?: number; memory_mb?: number; cpus?: number;
   health_check_path?: string; release_cmd?: string; commit_sha?: string;
+  labels?: string[]; build_mode?: string;
   last_deploy_at: string | null; created_at: string;
 }
 interface BuildConfig {
@@ -30,6 +31,12 @@ interface BuildConfig {
   root_dir: string; node_version: string;
   port_override: number; memory_mb: number; cpus: number;
   health_check_path: string; release_cmd: string;
+  build_mode: string;
+}
+interface Domain {
+  id: string; domain: string; verified: boolean;
+  target_type: string; target_subdomain: string;
+  cname_target: string;
 }
 interface Commit {
   sha: string; message: string; author: string; date: string;
@@ -96,6 +103,7 @@ function ProjectsContent() {
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
     health_check_path: "", release_cmd: "",
+    build_mode: "",
   });
   const [savingBuild, setSavingBuild] = useState(false);
   // Commits dropdown (for rollback / pinned deploys) — per-project
@@ -103,12 +111,21 @@ function ProjectsContent() {
   const [loadingCommits, setLoadingCommits] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<Record<string, string>>({});
   // Advanced build settings for the inline import-from-repo flow
+  // Labels
+  const [editingLabels, setEditingLabels] = useState<string | null>(null);
+  const [labelsInput, setLabelsInput] = useState("");
+  const [labelFilter, setLabelFilter] = useState<string>("");
+  // Domains (inline per-project)
+  const [allDomains, setAllDomains] = useState<Domain[]>([]);
+  const [newDomain, setNewDomain] = useState<Record<string, string>>({});
+  const [addingDomain, setAddingDomain] = useState<string | null>(null);
   const [importShowAdvanced, setImportShowAdvanced] = useState(false);
   const [importBuildCfg, setImportBuildCfg] = useState<BuildConfig>({
     install_cmd: "", build_cmd: "", start_cmd: "",
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
     health_check_path: "", release_cmd: "",
+    build_mode: "",
   });
 
   const headers = () => {
@@ -236,6 +253,7 @@ function ProjectsContent() {
       root_dir: "", node_version: "",
       port_override: 0, memory_mb: 0, cpus: 0,
       health_check_path: "", release_cmd: "",
+      build_mode: "",
     });
     setImportShowAdvanced(false);
     setShowRepoPicker(false);
@@ -313,6 +331,7 @@ function ProjectsContent() {
       cpus: p.cpus || 0,
       health_check_path: p.health_check_path || "",
       release_cmd: p.release_cmd || "",
+      build_mode: p.build_mode || "",
     });
     setEditingBuild(p.id);
   }
@@ -338,6 +357,83 @@ function ProjectsContent() {
       body: JSON.stringify({ commit_sha: sha }),
     });
     setTimeout(() => { setDeploying(null); load(); }, 3000);
+  }
+
+  async function saveLabels(projectId: string) {
+    const labels = labelsInput.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    await fetch(`${API}/api/v1/projects/${projectId}/labels`, {
+      method: "PUT", headers: headers(),
+      body: JSON.stringify({ labels }),
+    });
+    setEditingLabels(null);
+    setLabelsInput("");
+    load();
+  }
+
+  async function loadDomains() {
+    try {
+      const res = await fetch(`${API}/api/v1/domains`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setAllDomains(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  }
+
+  async function addProjectDomain(p: Project) {
+    const d = (newDomain[p.id] || "").trim().toLowerCase();
+    if (!d) return;
+    setAddingDomain(p.id);
+    try {
+      // 1) Register domain
+      const regRes = await fetch(`${API}/api/v1/domains`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ domain: d }),
+      });
+      if (!regRes.ok && regRes.status !== 409) {
+        const err = await regRes.json().catch(() => ({ error: "Failed to add domain" }));
+        alert(err.error || "Failed to add domain");
+        setAddingDomain(null);
+        return;
+      }
+      // 2) Fetch domain list to find the one we just added (or existing)
+      const listRes = await fetch(`${API}/api/v1/domains`, { headers: headers() });
+      const list: Domain[] = listRes.ok ? await listRes.json() : [];
+      const row = list.find((x) => x.domain === d);
+      if (!row) {
+        alert("Domain registered but couldn't find it in the list — try again.");
+        setAddingDomain(null);
+        return;
+      }
+      // 3) If not verified yet, tell user to set the CNAME and verify from /domains.
+      if (!row.verified) {
+        alert(`Domain added. Now set a CNAME record:\n\n  ${d}  →  ${row.cname_target}\n\nThen go to /domains to click Verify.`);
+        setNewDomain((prev) => ({ ...prev, [p.id]: "" }));
+        loadDomains();
+        setAddingDomain(null);
+        return;
+      }
+      // 4) Already verified — bind it to this project.
+      await fetch(`${API}/api/v1/domains/${row.id}/bind`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ target_type: "project", target_subdomain: p.subdomain }),
+      });
+      setNewDomain((prev) => ({ ...prev, [p.id]: "" }));
+      loadDomains();
+    } catch {
+      alert("Failed to add domain");
+    }
+    setAddingDomain(null);
+  }
+
+  async function unbindDomain(domainId: string) {
+    // Unbinding = clearing target_subdomain. We do this by binding to empty,
+    // which the backend accepts as a clear (target_subdomain != '' is the routing filter).
+    await fetch(`${API}/api/v1/domains/${domainId}/bind`, {
+      method: "PUT", headers: headers(),
+      body: JSON.stringify({ target_type: "project", target_subdomain: "" }),
+    });
+    loadDomains();
   }
 
   async function saveBuildConfig(id: string, redeploy: boolean) {
@@ -460,7 +556,7 @@ function ProjectsContent() {
     setTogglingAutoDeploy(null);
   }
 
-  useEffect(() => { load(); loadGHStatus(); }, []);
+  useEffect(() => { load(); loadGHStatus(); loadDomains(); }, []);
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
@@ -716,7 +812,21 @@ function ProjectsContent() {
         </Card>
       ) : (
         <div className="mt-6 space-y-3">
-          {projects.map((p) => (
+          {/* Label filter bar — only show once there are any labels across projects */}
+          {(() => {
+            const allLabels = Array.from(new Set(projects.flatMap((p) => p.labels || []))).sort();
+            if (allLabels.length === 0) return null;
+            return (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] text-muted-foreground">Filter:</span>
+                <button onClick={() => setLabelFilter("")} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === "" ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground"}`}>All</button>
+                {allLabels.map((l) => (
+                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                ))}
+              </div>
+            );
+          })()}
+          {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => (
             <Card key={p.id} className={`transition-colors ${selectedProject === p.id ? "border-foreground/20" : ""}`}>
               <CardContent className="pt-4 pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -729,6 +839,9 @@ function ProjectsContent() {
                         <span className="text-sm font-medium">{p.name}</span>
                         <Badge variant="outline" className={`text-[10px] ${statusColor[p.status] || ""}`}>{p.status}</Badge>
                         <Badge variant="outline" className="text-[10px]">{p.framework}</Badge>
+                        {(p.labels || []).map((l) => (
+                          <Badge key={l} variant="outline" className="text-[10px] text-blue-400 border-blue-500/20 bg-blue-500/5">{l}</Badge>
+                        ))}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <Globe className="h-3 w-3 text-muted-foreground" />
@@ -834,6 +947,68 @@ function ProjectsContent() {
                   </div>
                 )}
 
+                {/* Labels editor */}
+                {selectedProject === p.id && (
+                  <div className="mt-4">
+                    {editingLabels === p.id ? (
+                      <div className="rounded-lg border border-border/40 p-3 space-y-2">
+                        <label className="text-[10px] text-muted-foreground">Labels <span className="text-zinc-600">(comma-separated, max 10)</span></label>
+                        <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="h-7 text-xs" onClick={() => saveLabels(p.id)}>Save</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingLabels(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditingLabels(p.id); setLabelsInput((p.labels || []).join(", ")); }}>
+                        <Code className="h-3 w-3" /> Labels
+                        {(p.labels || []).length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{(p.labels || []).length}</Badge>}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Custom Domains (inline) */}
+                {selectedProject === p.id && (
+                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs font-medium">Custom Domains</span>
+                    </div>
+                    {allDomains.filter((d) => d.target_type === "project" && d.target_subdomain === p.subdomain).map((d) => (
+                      <div key={d.id} className="flex items-center justify-between text-xs rounded-md bg-[#09090b] px-2.5 py-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="font-mono text-zinc-300 hover:text-foreground truncate">{d.domain}</a>
+                          {d.verified ? (
+                            <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">verified</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/20">needs CNAME</Badge>
+                          )}
+                        </div>
+                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive hover:text-destructive" onClick={() => unbindDomain(d.id)}>Unbind</Button>
+                      </div>
+                    ))}
+                    {/* Unverified domains owned by user, not yet bound — show as options to verify */}
+                    {allDomains.filter((d) => !d.verified && !d.target_subdomain).length > 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        <span>Pending verification — set CNAME, then verify at <a href="/domains" className="text-blue-400 hover:underline">/domains</a></span>
+                      </div>
+                    )}
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        placeholder="app.yourdomain.com"
+                        value={newDomain[p.id] || ""}
+                        onChange={(e) => setNewDomain((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                        className="flex-1 h-7 rounded-md border border-input bg-[#09090b] px-2 font-mono text-[11px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => addProjectDomain(p)} disabled={addingDomain === p.id || !newDomain[p.id]}>
+                        {addingDomain === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Env Vars */}
                 {selectedProject === p.id && (
                   <div className="mt-4">
@@ -920,6 +1095,13 @@ function ProjectsContent() {
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
                             <input type="text" placeholder="npx prisma migrate deploy" value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Build Mode</label>
+                            <select value={buildCfg.build_mode} onChange={(e) => setBuildCfg({ ...buildCfg, build_mode: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                              <option value="">Auto (use repo Dockerfile if present)</option>
+                              <option value="ignore_dockerfile">Ignore repo Dockerfile — always auto-generate</option>
+                            </select>
                           </div>
                         </div>
 
