@@ -12,7 +12,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 interface Service {
   id: string; name: string; type: string; status: string;
   db_name: string; db_user: string; db_password: string;
-  host: string; port: number; connection_url: string; created_at: string;
+  host: string; port: number; connection_url: string; external_connection_url: string; created_at: string;
 }
 
 export default function ServicesPage() {
@@ -103,22 +103,41 @@ export default function ServicesPage() {
                   <div><span className="text-muted-foreground">Port:</span> <span className="font-mono">{s.port}</span></div>
                 </div>
 
-                {/* Connection URL */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground font-medium">Connection URL</span>
-                    <span className="text-[10px] text-muted-foreground">Copy this into your project&apos;s DATABASE_URL</span>
+                {/* Connection URLs */}
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground font-medium">Internal URL</span>
+                      <span className="text-[10px] text-muted-foreground">Copy this into your project&apos;s DATABASE_URL</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <code className="flex-1 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                        {showPass[s.id] ? s.connection_url : s.connection_url.replace(`:${s.db_password}@`, ":****@")}
+                      </code>
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass(p => ({ ...p, [s.id]: !p[s.id] }))}>
+                        {showPass[s.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => navigator.clipboard.writeText(s.connection_url)}>
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <code className="flex-1 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
-                      {showPass[s.id] ? s.connection_url : s.connection_url.replace(`:${s.db_password}@`, ":****@")}
-                    </code>
-                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass(p => ({ ...p, [s.id]: !p[s.id] }))}>
-                      {showPass[s.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => navigator.clipboard.writeText(s.connection_url)}>
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground font-medium">External URL</span>
+                      <span className="text-[10px] text-muted-foreground">For local dev / external tools (pgAdmin, DBeaver, etc)</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <code className="flex-1 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                        {showPass[s.id] ? s.external_connection_url : s.external_connection_url.replace(`:${s.db_password}@`, ":****@")}
+                      </code>
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass(p => ({ ...p, [s.id]: !p[s.id] }))}>
+                        {showPass[s.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => navigator.clipboard.writeText(s.external_connection_url)}>
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

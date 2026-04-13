@@ -9,6 +9,15 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
+// resolveServicePublicHost returns the public host users should use to connect
+// to standalone services from outside Docker (local dev, pgAdmin, etc).
+func (s *Server) resolveServicePublicHost() string {
+	if s.deployer != nil && s.deployer.Domain != "" {
+		return s.deployer.Domain
+	}
+	return "localhost"
+}
+
 func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
@@ -34,9 +43,11 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	publicHost := s.resolveServicePublicHost()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"service":        svc,
-		"connection_url": svc.ConnectionURL(),
+		"service":                 svc,
+		"connection_url":          svc.ConnectionURL(),
+		"external_connection_url": svc.ExternalConnectionURL(publicHost),
 	})
 }
 
@@ -55,11 +66,17 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 	// Add connection URLs
 	type svcWithURL struct {
 		db.Service
-		ConnectionURL string `json:"connection_url"`
+		ConnectionURL         string `json:"connection_url"`
+		ExternalConnectionURL string `json:"external_connection_url"`
 	}
+	publicHost := s.resolveServicePublicHost()
 	result := make([]svcWithURL, len(svcs))
 	for i, svc := range svcs {
-		result[i] = svcWithURL{Service: svc, ConnectionURL: svc.ConnectionURL()}
+		result[i] = svcWithURL{
+			Service:               svc,
+			ConnectionURL:         svc.ConnectionURL(),
+			ExternalConnectionURL: svc.ExternalConnectionURL(publicHost),
+		}
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -75,9 +92,11 @@ func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	publicHost := s.resolveServicePublicHost()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"service":        svc,
-		"connection_url": svc.ConnectionURL(),
+		"service":                 svc,
+		"connection_url":          svc.ConnectionURL(),
+		"external_connection_url": svc.ExternalConnectionURL(publicHost),
 	})
 }
 

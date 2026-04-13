@@ -26,17 +26,26 @@ type Service struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// ConnectionURL returns the connection string for the service.
+// ConnectionURL returns the internal connection string (for containers on same host).
 func (s *Service) ConnectionURL() string {
+	return s.connectionURLWithHost(s.Host)
+}
+
+// ExternalConnectionURL returns the external connection string (for local dev / external tools).
+func (s *Service) ExternalConnectionURL(publicHost string) string {
+	return s.connectionURLWithHost(publicHost)
+}
+
+func (s *Service) connectionURLWithHost(host string) string {
 	switch s.Type {
 	case "postgres":
 		dbName, dbUser, dbPass := "", "", ""
 		if s.DBName != nil { dbName = *s.DBName }
 		if s.DBUser != nil { dbUser = *s.DBUser }
 		if s.DBPassword != nil { dbPass = *s.DBPassword }
-		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUser, dbPass, s.Host, s.Port, dbName)
+		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUser, dbPass, host, s.Port, dbName)
 	case "redis":
-		return fmt.Sprintf("redis://%s:%d", s.Host, s.Port)
+		return fmt.Sprintf("redis://%s:%d", host, s.Port)
 	default:
 		return ""
 	}
