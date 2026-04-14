@@ -1,10 +1,25 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 )
+
+// isFeatureAllowedForUser is a server-side convenience that wraps
+// billing.IsFeatureAllowed for code paths (like the WebSocket auth flow) that
+// only have a user ID in scope, not a full *auth.AuthenticatedUser.
+func (s *Server) isFeatureAllowedForUser(ctx context.Context, userID, feature string) bool {
+	user, err := s.db.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return false
+	}
+	return billing.IsFeatureAllowed(ctx, s.db, &auth.AuthenticatedUser{
+		ID: user.ID, Email: user.Email, Plan: user.Plan,
+	}, feature)
+}
 
 // handleGetMyLimits returns the user's current plan caps + their actual usage.
 // Used by the frontend so it can render "X of Y used" badges and disable

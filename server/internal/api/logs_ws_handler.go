@@ -49,6 +49,11 @@ func (s *Server) handleProjectLogsWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no container running", http.StatusConflict)
 		return
 	}
+	// Plan-gated: free tier doesn't get live log streaming.
+	if !s.isFeatureAllowedForUser(r.Context(), claims.UserID, "live_logs") {
+		http.Error(w, "live log streaming requires a paid plan", http.StatusPaymentRequired)
+		return
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

@@ -303,16 +303,29 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	// Resource limits: user override > defaults (512m / 0.5 CPU)
-	memLimit := "512m"
+	// Resource limits: clamped to the user's plan ceiling. Defaults are
+	// applied first (256MB / 0.25 CPU as a safe floor); user-set values
+	// take effect up to their plan max; admin (-1 plan ceiling) is uncapped.
+	planMemMax, planCPUMax := e.planResourceCeiling(ctx, project.UserID)
+	memMB := 512
 	if project.MemoryMB > 0 {
-		memLimit = fmt.Sprintf("%dm", project.MemoryMB)
+		memMB = project.MemoryMB
 	}
-	cpuLimit := "0.5"
+	if planMemMax > 0 && memMB > planMemMax {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Memory clamped to plan ceiling: %d MB (requested %d)", planMemMax, memMB), "build")
+		memMB = planMemMax
+	}
+	cpus := 0.5
 	if project.CPUs > 0 {
-		cpuLimit = strconv.FormatFloat(project.CPUs, 'f', -1, 64)
+		cpus = project.CPUs
 	}
-	args = append(args, "--restart", "unless-stopped", "--memory", memLimit, "--cpus", cpuLimit)
+	if planCPUMax > 0 && cpus > planCPUMax {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("CPU clamped to plan ceiling: %.2f vCPU (requested %.2f)", planCPUMax, cpus), "build")
+		cpus = planCPUMax
+	}
+	args = append(args, "--restart", "unless-stopped",
+		"--memory", fmt.Sprintf("%dm", memMB),
+		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64))
 
 	// Add data volume for persistence
 	args = append(args, "-v", fmt.Sprintf("/opt/serverme/project-data/%s:/app/data", project.ID[:8]))
@@ -563,6 +576,33 @@ func extractBuildError(output string) string {
 		start = 0
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+// planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or
+// (0, 0) for "unlimited" (admin / -1 sentinel) so the caller skips clamping.
+func (e *Engine) planResourceCeiling(ctx context.Context, userID string) (int, float64) {
+	if userID == "" {
+		return 0, 0
+	}
+	if isAdmin, _ := e.db.IsUserAdmin(ctx, userID); isAdmin {
+		return 0, 0
+	}
+	user, err := e.db.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return 0, 0
+	}
+	limits, err := e.db.GetPlanLimits(ctx, user.Plan)
+	if err != nil || limits == nil {
+		return 0, 0
+	}
+	memMax, cpuMax := limits.MaxMemoryMB, limits.MaxCPUs
+	if db.Unlimited(memMax) {
+		memMax = 0
+	}
+	if cpuMax < 0 {
+		cpuMax = 0
+	}
+	return memMax, cpuMax
 }
 
 // trimLogs truncates a log string to at most n characters, keeping the tail

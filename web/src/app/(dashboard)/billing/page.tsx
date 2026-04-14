@@ -24,8 +24,27 @@ interface BillingStatus {
   history: Subscription[];
 }
 
+interface PlanLimits {
+  plan: string;
+  max_subdomains: number; max_tunnels: number;
+  max_projects: number; max_databases: number; max_services: number;
+  max_custom_domains: number; max_crons: number; max_byoc_servers: number;
+  max_preview_deploys: number;
+  max_memory_mb: number; max_cpus: number;
+  max_bandwidth_gb: number; max_build_minutes_monthly: number;
+  allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
+  allow_private_repos: boolean; allow_tcp_tunnels: boolean; allow_live_logs: boolean;
+}
+interface UsageResponse {
+  plan: string;
+  is_admin: boolean;
+  limits: PlanLimits;
+  usage: Record<string, number>;
+}
+
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -36,8 +55,12 @@ export default function BillingPage() {
 
   async function loadStatus() {
     try {
-      const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
-      if (res.ok) setStatus(await res.json());
+      const [sRes, uRes] = await Promise.all([
+        fetch(`${API}/api/v1/billing/status`, { headers: headers() }),
+        fetch(`${API}/api/v1/users/me/limits`, { headers: headers() }),
+      ]);
+      if (sRes.ok) setStatus(await sRes.json());
+      if (uRes.ok) setUsage(await uRes.json());
     } catch {}
     setLoading(false);
   }
@@ -118,6 +141,84 @@ export default function BillingPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Manage your subscription and payment history.
       </p>
+
+      {/* Usage vs caps */}
+      {usage && (() => {
+        const fmt = (n: number) => n < 0 ? "∞" : String(n);
+        const pct = (used: number, max: number) => max <= 0 ? 0 : Math.min(100, Math.round((used / max) * 100));
+        const rows: { label: string; used: number; max: number }[] = [
+          { label: "Projects", used: usage.usage.projects ?? 0, max: usage.limits.max_projects },
+          { label: "Project databases", used: usage.usage.databases ?? 0, max: usage.limits.max_databases },
+          { label: "Standalone services", used: usage.usage.services ?? 0, max: usage.limits.max_services },
+          { label: "Subdomains", used: 0, max: usage.limits.max_subdomains },
+          { label: "Custom domains", used: usage.usage.custom_domains ?? 0, max: usage.limits.max_custom_domains },
+          { label: "Scheduled jobs", used: usage.usage.crons ?? 0, max: usage.limits.max_crons },
+          { label: "BYOC servers", used: usage.usage.byoc_servers ?? 0, max: usage.limits.max_byoc_servers },
+          { label: "Active PR previews", used: usage.usage.preview_deploys ?? 0, max: usage.limits.max_preview_deploys },
+        ];
+        return (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Usage on the {usage.is_admin ? "Admin (unlimited)" : usage.plan} plan</span>
+                {usage.is_admin && <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Unlimited</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {rows.map((r) => {
+                  const isUnl = r.max < 0;
+                  const p = isUnl ? 0 : pct(r.used, r.max);
+                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-emerald-500";
+                  return (
+                    <div key={r.label} className="space-y-1">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="text-muted-foreground">{r.label}</span>
+                        <span className="font-mono">{r.used} / {fmt(r.max)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+                        <div className={`h-full ${isUnl ? "bg-yellow-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div className="rounded bg-[#09090b] px-2 py-1.5">
+                  <div className="text-muted-foreground">Memory cap</div>
+                  <div className="font-mono">{usage.limits.max_memory_mb < 0 ? "∞" : `${usage.limits.max_memory_mb} MB`}</div>
+                </div>
+                <div className="rounded bg-[#09090b] px-2 py-1.5">
+                  <div className="text-muted-foreground">CPU cap</div>
+                  <div className="font-mono">{usage.limits.max_cpus < 0 ? "∞" : `${usage.limits.max_cpus} vCPU`}</div>
+                </div>
+                <div className="rounded bg-[#09090b] px-2 py-1.5">
+                  <div className="text-muted-foreground">Bandwidth/mo</div>
+                  <div className="font-mono">{usage.limits.max_bandwidth_gb < 0 ? "∞" : `${usage.limits.max_bandwidth_gb} GB`}</div>
+                </div>
+                <div className="rounded bg-[#09090b] px-2 py-1.5">
+                  <div className="text-muted-foreground">Build min/mo</div>
+                  <div className="font-mono">{usage.limits.max_build_minutes_monthly < 0 ? "∞" : usage.limits.max_build_minutes_monthly}</div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  ["Previews", usage.limits.allow_previews],
+                  ["Release cmds", usage.limits.allow_release_cmd],
+                  ["Health checks", usage.limits.allow_health_checks],
+                  ["Private repos", usage.limits.allow_private_repos],
+                  ["TCP tunnels", usage.limits.allow_tcp_tunnels],
+                  ["Live logs", usage.limits.allow_live_logs],
+                ].map(([label, on]) => (
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/20" : "text-zinc-600"}`}>
+                    {on ? "✓" : "✗"} {label}
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Current Plan */}
       <Card className="mt-6">

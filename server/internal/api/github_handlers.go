@@ -337,6 +337,27 @@ func (s *Server) deployPreview(parent db.Project, prNumber int, prTitle, branch,
 	// Find or create the preview child project.
 	preview, _ := s.db.GetPreviewByPR(ctx, parent.ID, prNumber)
 	if preview == nil {
+		// Plan-cap check: max active previews. Done before insert so we don't
+		// create a child project we can't deploy.
+		user, _ := s.db.GetUserByID(ctx, parent.UserID)
+		if user != nil {
+			isAdmin, _ := s.db.IsUserAdmin(ctx, user.ID)
+			if !isAdmin {
+				limits, _ := s.db.GetPlanLimits(ctx, user.Plan)
+				if limits != nil && !db.Unlimited(limits.MaxPreviewDeploys) {
+					active, _ := s.db.CountActivePreviewsForUser(ctx, user.ID)
+					if active >= limits.MaxPreviewDeploys {
+						s.log.Warn().Str("user", user.ID).Int("pr", prNumber).Int("active", active).Int("max", limits.MaxPreviewDeploys).Msg("preview cap reached — skipping")
+						return
+					}
+				}
+				// Per-plan feature flag: previews can be off entirely.
+				if limits != nil && !limits.AllowPreviews {
+					s.log.Debug().Str("user", user.ID).Msg("previews not allowed on this plan")
+					return
+				}
+			}
+		}
 		subdomain := previewSubdomain(parent.Subdomain, prNumber)
 		p, err := s.db.CreatePreviewProject(ctx, &parent, prNumber, prTitle, branch, subdomain)
 		if err != nil {

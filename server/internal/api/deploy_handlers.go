@@ -242,6 +242,15 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "build_mode must be 'auto' or 'ignore_dockerfile'")
 		return
 	}
+	// Plan-gated features: only paid plans can use these.
+	if req.HealthCheckPath != "" && !billing.IsFeatureAllowed(r.Context(), s.db, u, "health_checks") {
+		writeError(w, http.StatusPaymentRequired, "health checks require a paid plan")
+		return
+	}
+	if req.ReleaseCmd != "" && !billing.IsFeatureAllowed(r.Context(), s.db, u, "release_cmd") {
+		writeError(w, http.StatusPaymentRequired, "release commands require a paid plan")
+		return
+	}
 
 	err := s.db.UpdateProjectBuildConfig(r.Context(), projectID, db.BuildConfig{
 		InstallCmd:      req.InstallCmd,
