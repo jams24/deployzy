@@ -140,8 +140,10 @@ func main() {
 			}
 			// Abandoned build dirs — cleaned on successful deploy, but a
 			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
-			// behind. Remove anything older than 24h.
+			// behind. Remove anything older than 24h on the control plane
+			// AND on every active worker (both platform and BYOC).
 			pruneAbandonedBuildDirs(log)
+			pruneAbandonedBuildDirsOnWorkers(ctx, database, log)
 		}
 		// Run once at startup so a freshly-started server immediately reclaims
 		// anything an older version left behind.
@@ -255,6 +257,12 @@ func main() {
 			// Metrics scraper also needs the engine's runner.
 			metricsScraper := deploy.NewMetricsScraper(database, deployEngine, log)
 			go metricsScraper.Start(context.Background())
+
+			// Worker-health monitor: pings every active worker periodically
+			// and marks dead ones offline so SelectServerForProject can't
+			// schedule new deploys onto them. Also updates last_heartbeat
+			// so admins can see at a glance when a worker was last alive.
+			go monitorWorkerHealth(context.Background(), database, log)
 		}
 
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
@@ -371,6 +379,75 @@ func handleClient(conn net.Conn, smuxConfig *smux.Config, authToken, domain, sch
 
 	if err := ctrlConn.Run(); err != nil {
 		clientLog.Debug().Err(err).Msg("control connection ended")
+	}
+}
+
+// pruneAbandonedBuildDirsOnWorkers runs the same 24h cleanup as the local
+// control-plane sweep but against every active worker (platform + BYOC) via
+// the same SSH runner used for deploys. Prevents worker disks from silently
+// filling up when a remote deploy is interrupted.
+func pruneAbandonedBuildDirsOnWorkers(ctx context.Context, database *db.DB, log zerolog.Logger) {
+	workers, err := database.ListAllActiveWorkers(ctx)
+	if err != nil {
+		return
+	}
+	for i := range workers {
+		w := workers[i]
+		runner := deploy.NewRemoteRunner(&w)
+		// find /tmp/serverme-build -maxdepth 1 -type d -mmin +1440 -exec rm -rf {} +
+		// 1440 min = 24h. Older than our control-plane retention keeps things
+		// in sync across the whole fleet.
+		if _, err := runner.RunShell(ctx, "find /tmp/serverme-build -maxdepth 1 -mindepth 1 -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true"); err != nil {
+			log.Debug().Err(err).Str("worker", w.Label).Msg("remote build dir cleanup failed")
+		}
+	}
+}
+
+// monitorWorkerHealth pings every active worker every 2 minutes. After 3
+// consecutive failures it marks the worker as 'offline' so new deploys don't
+// get scheduled onto it; once SSH starts responding again the check on next
+// tick updates last_heartbeat and an admin can flip it back to 'active'.
+//
+// Uses the per-worker SSH config that's already stored for deploys, so no
+// extra credentials are required.
+func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logger) {
+	log.Info().Msg("worker health monitor started")
+	fails := map[string]int{}
+	const failThreshold = 3
+	check := func() {
+		workers, err := database.ListAllActiveWorkers(ctx)
+		if err != nil {
+			return
+		}
+		for i := range workers {
+			w := workers[i]
+			runner := deploy.NewRemoteRunner(&w)
+			pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			_, err := runner.RunShell(pingCtx, "echo ok")
+			cancel()
+			if err != nil {
+				fails[w.ID]++
+				if fails[w.ID] >= failThreshold {
+					log.Warn().Str("worker", w.Label).Str("host", w.Host).Int("fails", fails[w.ID]).Msg("worker offline — marking inactive")
+					database.UpdateWorkerServerStatus(ctx, w.ID, "offline")
+					delete(fails, w.ID) // reset so it can come back online later
+				}
+			} else {
+				database.UpdateWorkerHeartbeat(ctx, w.ID)
+				delete(fails, w.ID)
+			}
+		}
+	}
+	check()
+	t := time.NewTicker(2 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			check()
+		}
 	}
 }
 

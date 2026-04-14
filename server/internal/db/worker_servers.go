@@ -101,6 +101,30 @@ func (d *DB) UpdateWorkerHeartbeat(ctx context.Context, id string) error {
 	return err
 }
 
+// ListAllActiveWorkers returns every worker_server row currently marked active,
+// across both platform (user_id IS NULL) and BYOC. Used by background jobs
+// like the heartbeat monitor and remote build-dir cleanup — they need to
+// operate on every worker regardless of ownership.
+func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at
+		 FROM worker_servers WHERE status = 'active'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkerServer
+	for rows.Next() {
+		var s WorkerServer
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt); err != nil {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 // SelectServerForProject picks the best available server for a new project.
 // Prefers servers with the most available memory.
 func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*WorkerServer, error) {

@@ -59,14 +59,12 @@ func (ms *MetricsScraper) scrape(ctx context.Context) {
 		return
 	}
 	for _, p := range projects {
-		// Only scrape local projects for now — remote workers would need SSH exec
-		// and that's a separate refactor.
-		if p.WorkerServerID != "" {
-			continue
-		}
 		if p.ContainerID == "" {
 			continue
 		}
+		// Remote workers use the same runner abstraction as local, so we no
+		// longer skip them — getRunner() transparently SSHs for remote
+		// projects and runs docker commands there.
 		go ms.scrapeOne(ctx, p)
 	}
 }

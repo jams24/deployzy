@@ -280,6 +280,16 @@ func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber
 	if labels == nil {
 		labels = []string{}
 	}
+	// Inherit the parent's worker_server_id so a preview lands on the same
+	// worker as production — otherwise it falls through to auto-select and
+	// the PR preview can end up on a different machine from prod, which is
+	// surprising behaviour.
+	var workerID any
+	if parent.WorkerServerID != "" {
+		workerID = parent.WorkerServerID
+	} else {
+		workerID = nil
+	}
 	p, err := scanProject(d.Pool.QueryRow(ctx,
 		`INSERT INTO projects (
 			user_id, name, subdomain, repo_url, branch, framework,
@@ -287,9 +297,9 @@ func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber
 			port_override, memory_mb, cpus, health_check_path, release_cmd,
 			labels, build_mode,
 			parent_project_id, pr_number, pr_title,
-			github_repo, github_branch,
+			github_repo, github_branch, worker_server_id,
 			env_vars
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
 		RETURNING `+projectCols,
 		parent.UserID,
 		fmt.Sprintf("%s PR #%d", parent.Name, prNumber),
@@ -301,7 +311,7 @@ func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber
 		parent.PortOverride, parent.MemoryMB, parent.CPUs, parent.HealthCheckPath, parent.ReleaseCmd,
 		labels, parent.BuildMode,
 		parent.ID, prNumber, prTitle,
-		parent.GitHubRepo, branch,
+		parent.GitHubRepo, branch, workerID,
 		envJSON,
 	).Scan)
 	if err != nil {
