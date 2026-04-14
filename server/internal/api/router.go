@@ -144,6 +144,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Put("/projects/{projectId}/labels", s.handleUpdateLabels)
 			// Metrics
 			r.Get("/projects/{projectId}/metrics", s.handleGetMetrics)
+			// Site analytics (server-side, cookieless)
+			r.Get("/projects/{projectId}/analytics", s.handleSiteOverview)
+			r.Get("/projects/{projectId}/analytics/top", s.handleSiteTop)
 			// Cron jobs
 			r.Get("/projects/{projectId}/crons", s.handleListCrons)
 			r.Post("/projects/{projectId}/crons", s.handleCreateCron)

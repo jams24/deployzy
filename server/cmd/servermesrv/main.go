@@ -20,6 +20,7 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/deploy"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/notify"
 	"github.com/serverme/serverme/server/internal/policy"
@@ -105,6 +106,20 @@ func main() {
 	// Initialize inspect store and HTTP proxy (after DB is available)
 	inspectStore = inspect.NewStore(database, log)
 	httpProxy = proxy.NewHTTPProxy(registry, manager, inspectStore, log)
+
+	// Site analytics collector — captures every request to a deployed project
+	// for dashboards. Non-blocking; drops events if saturated.
+	analyticsCollector := analytics.New(database.Pool, log)
+	go analyticsCollector.Start(context.Background())
+	httpProxy.SetAnalytics(analyticsCollector)
+	// Prune old site events hourly — 90-day retention.
+	go func() {
+		t := time.NewTicker(1 * time.Hour)
+		defer t.Stop()
+		for range t.C {
+			_ = database.PruneOldSiteEvents(context.Background(), time.Now().AddDate(0, 0, -90))
+		}
+	}()
 
 	// Context for graceful shutdown
 	_, cancel := context.WithCancel(context.Background())

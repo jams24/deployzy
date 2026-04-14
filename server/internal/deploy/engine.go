@@ -408,21 +408,30 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 
 // GetProjectPort returns the container port for a deployed project by subdomain.
 func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
+	port, _, ok := e.GetProjectRouting(subdomain)
+	return port, ok
+}
+
+// GetProjectRouting returns port + project ID in one query — used by the proxy
+// so it can both forward the request AND emit an analytics event tagged with
+// the right project without a second DB round trip.
+func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
 	ctx := context.Background()
 	rows, err := e.db.Pool.Query(ctx,
-		`SELECT container_port FROM projects WHERE subdomain = $1 AND status = 'running' AND container_port > 0`,
+		`SELECT container_port, id FROM projects WHERE subdomain = $1 AND status = 'running' AND container_port > 0`,
 		subdomain,
 	)
 	if err != nil {
-		return 0, false
+		return 0, "", false
 	}
 	defer rows.Close()
 	if rows.Next() {
 		var port int
-		rows.Scan(&port)
-		return port, port > 0
+		var id string
+		rows.Scan(&port, &id)
+		return port, id, port > 0
 	}
-	return 0, false
+	return 0, "", false
 }
 
 func (e *Engine) registerRoute(subdomain string, port int) {

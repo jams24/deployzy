@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/proto"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/tunnel"
@@ -23,6 +24,10 @@ const maxBodyCapture = 10 * 1024 // 10KB
 // ProjectLookup finds deployed projects by subdomain.
 type ProjectLookup interface {
 	GetProjectPort(subdomain string) (int, bool)
+	// GetProjectRouting returns (port, projectID, ok). Implementations that
+	// haven't been updated yet can return ("", "", false) — the proxy will
+	// just skip the analytics event in that case.
+	GetProjectRouting(subdomain string) (int, string, bool)
 }
 
 // DomainResolver resolves a verified custom domain to its target.
@@ -37,6 +42,7 @@ type HTTPProxy struct {
 	store      *inspect.Store
 	projects   ProjectLookup
 	domains    DomainResolver
+	analytics  *analytics.Collector
 	baseDomain string
 	log        zerolog.Logger
 }
@@ -54,6 +60,12 @@ func NewHTTPProxy(registry *tunnel.Registry, manager *control.Manager, store *in
 // SetProjectLookup sets the project lookup for deployed containers.
 func (p *HTTPProxy) SetProjectLookup(pl ProjectLookup) {
 	p.projects = pl
+}
+
+// SetAnalytics enables server-side analytics capture for deployed projects.
+// No-op if a nil collector is passed, so analytics is cleanly optional.
+func (p *HTTPProxy) SetAnalytics(c *analytics.Collector) {
+	p.analytics = c
 }
 
 // SetDomainResolver sets the custom domain resolver.
@@ -76,21 +88,12 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	tun := p.registry.LookupByHost(hostname)
 	if tun == nil {
-		// Check if this is a deployed project
+		// Check if this is a deployed project (subdomain path: myapp.serverme.site)
 		if p.projects != nil {
-			// Extract subdomain from hostname (e.g., "myapp" from "myapp.serverme.site")
 			parts := strings.SplitN(hostname, ".", 2)
 			if len(parts) >= 1 {
-				if port, ok := p.projects.GetProjectPort(parts[0]); ok {
-					// Reverse proxy to the deployed container
-					proxy := &httputil.ReverseProxy{
-						Director: func(req *http.Request) {
-							req.URL.Scheme = "http"
-							req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
-							req.Host = r.Host
-						},
-					}
-					proxy.ServeHTTP(w, r)
+				if port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
+					p.proxyToProject(w, r, port, projID)
 					return
 				}
 			}
@@ -109,15 +112,8 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				case "project":
 					if p.projects != nil {
-						if port, pok := p.projects.GetProjectPort(targetSub); pok {
-							rp := &httputil.ReverseProxy{
-								Director: func(req *http.Request) {
-									req.URL.Scheme = "http"
-									req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
-									req.Host = r.Host
-								},
-							}
-							rp.ServeHTTP(w, r)
+						if port, projID, pok := p.projects.GetProjectRouting(targetSub); pok {
+							p.proxyToProject(w, r, port, projID)
 							return
 						}
 					}
@@ -284,6 +280,105 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Int("status", resp.StatusCode).
 		Dur("duration", duration).
 		Msg("request proxied")
+}
+
+// proxyToProject reverse-proxies a request to a deployed project's container
+// and records an analytics event on the way out.
+func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port int, projectID string) {
+	start := time.Now()
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = "http"
+			req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
+			req.Host = r.Host
+		},
+	}
+	rw := &captureRW{ResponseWriter: w, status: 200}
+	proxy.ServeHTTP(rw, r)
+
+	// Skip analytics for asset requests — keeps the pageview count meaningful.
+	if p.analytics != nil && projectID != "" && isPageRequest(r.URL.Path) {
+		ip := clientIP(r)
+		ua := r.UserAgent()
+		device, browser, os, isBot := analytics.ParseUA(ua)
+		country := r.Header.Get("CF-IPCountry")
+		if country == "" {
+			country = r.Header.Get("X-Country")
+		}
+		p.analytics.Collect(analytics.Event{
+			ProjectID:   projectID,
+			TS:          start,
+			Path:        truncate(r.URL.Path, 200),
+			Method:      r.Method,
+			Status:      rw.status,
+			Bytes:       rw.bytes,
+			RefererHost: analytics.RefererHost(r.Referer()),
+			Country:     strings.ToUpper(country),
+			Device:      device,
+			Browser:     browser,
+			OS:          os,
+			VisitorHash: p.analytics.HashVisitor(ip, ua),
+			IsBot:       isBot,
+		})
+	}
+}
+
+// captureRW wraps http.ResponseWriter so we can record the final status code
+// and total bytes written — ReverseProxy doesn't expose these otherwise.
+type captureRW struct {
+	http.ResponseWriter
+	status      int
+	bytes       int64
+	wroteHeader bool
+}
+
+func (c *captureRW) WriteHeader(code int) {
+	if !c.wroteHeader {
+		c.status = code
+		c.wroteHeader = true
+	}
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *captureRW) Write(b []byte) (int, error) {
+	if !c.wroteHeader {
+		c.wroteHeader = true
+	}
+	n, err := c.ResponseWriter.Write(b)
+	c.bytes += int64(n)
+	return n, err
+}
+
+func (c *captureRW) Flush() {
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// isPageRequest filters out asset URLs so pageview counts reflect actual pages.
+// This is a heuristic — projects with dynamic routes that have extensions
+// (rare) would be undercounted, but the alternative is noisy dashboards.
+func isPageRequest(path string) bool {
+	dot := strings.LastIndexByte(path, '.')
+	if dot < 0 {
+		return true
+	}
+	ext := path[dot:]
+	switch ext {
+	case ".css", ".js", ".mjs", ".map", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif",
+		".woff", ".woff2", ".ttf", ".eot", ".otf",
+		".mp4", ".webm", ".mp3", ".ogg", ".wav",
+		".json", ".xml", ".txt", ".pdf":
+		return false
+	}
+	return true
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 // extractHostname removes the port from a host:port string.

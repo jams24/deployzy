@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -50,6 +50,12 @@ interface MetricSample {
   memory_mb: number; memory_limit_mb: number;
   net_rx_bytes: number; net_tx_bytes: number;
 }
+interface SiteOverview {
+  overview: { pageviews: number; visitors: number; bots: number };
+  timeseries: { ts: string; pageviews: number; visitors: number }[];
+  realtime: { visitors: number; pageviews: number };
+}
+interface SiteTopRow { key: string; count: number }
 interface Commit {
   sha: string; message: string; author: string; date: string;
 }
@@ -156,10 +162,15 @@ function ProjectsContent() {
   const [liveAutoscroll, setLiveAutoscroll] = useState<Record<string, boolean>>({});
   const wsRef = useRef<Record<string, WebSocket>>({});
   const liveScrollRef = useRef<Record<string, HTMLDivElement | null>>({});
-  // Panel collapse states (metrics + crons) — default collapsed so opening a
-  // project doesn't blast the user with every panel at once.
+  // Panel collapse states (metrics + crons + analytics) — default collapsed so
+  // opening a project doesn't blast the user with every panel at once.
   const [showMetrics, setShowMetrics] = useState<Record<string, boolean>>({});
   const [showCrons, setShowCrons] = useState<Record<string, boolean>>({});
+  const [showAnalytics, setShowAnalytics] = useState<Record<string, boolean>>({});
+  // Website analytics
+  const [siteData, setSiteData] = useState<Record<string, SiteOverview>>({});
+  const [siteRange, setSiteRange] = useState<Record<string, string>>({});
+  const [siteTop, setSiteTop] = useState<Record<string, Record<string, SiteTopRow[]>>>({}); // projectId → field → rows
   // Metrics
   const [metrics, setMetrics] = useState<Record<string, MetricSample[]>>({});
   const [metricsRange, setMetricsRange] = useState<Record<string, string>>({});
@@ -555,6 +566,31 @@ function ProjectsContent() {
       }
     } catch {}
   }
+
+  async function loadSiteAnalytics(projectId: string, range: string = "24h") {
+    try {
+      const [oRes, ...topReses] = await Promise.all([
+        fetch(`${API}/api/v1/projects/${projectId}/analytics?range=${range}`, { headers: headers() }),
+        ...["path", "referrer", "country", "browser", "device"].map((f) =>
+          fetch(`${API}/api/v1/projects/${projectId}/analytics/top?field=${f}&range=${range}`, { headers: headers() }),
+        ),
+      ]);
+      if (oRes.ok) {
+        const data = await oRes.json();
+        setSiteData((prev) => ({ ...prev, [projectId]: data }));
+        setSiteRange((prev) => ({ ...prev, [projectId]: range }));
+      }
+      const topByField: Record<string, SiteTopRow[]> = {};
+      const fields = ["path", "referrer", "country", "browser", "device"];
+      for (let i = 0; i < topReses.length; i++) {
+        if (topReses[i].ok) {
+          const rows = await topReses[i].json();
+          topByField[fields[i]] = Array.isArray(rows) ? rows : [];
+        }
+      }
+      setSiteTop((prev) => ({ ...prev, [projectId]: topByField }));
+    } catch {}
+  }
   async function addCron(projectId: string) {
     if (!cronForm.schedule || !cronForm.command) { alert("Schedule and command are required"); return; }
     const res = await fetch(`${API}/api/v1/projects/${projectId}/crons`, {
@@ -713,10 +749,13 @@ function ProjectsContent() {
     loadBackups(selectedProject);
     loadCrons(selectedProject);
     loadMetrics(selectedProject, metricsRange[selectedProject] || "1h");
+    loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h");
     const t = setInterval(() => loadLogs(selectedProject), 5000);
     // Refresh metrics at 30s (matches scraper cadence).
     const m = setInterval(() => loadMetrics(selectedProject, metricsRange[selectedProject] || "1h"), 30000);
-    return () => { clearInterval(t); clearInterval(m); };
+    // Refresh analytics every 30s too — realtime counter should feel live.
+    const a = setInterval(() => loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h"), 30000);
+    return () => { clearInterval(t); clearInterval(m); clearInterval(a); };
   }, [selectedProject]);
 
   const filteredRepos = (ghRepos || []).filter((r) =>
@@ -1515,6 +1554,112 @@ function ProjectsContent() {
                           <Sparkline values={netOutArr} color="#fb923c" height={20} />
                         </div>
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Website Analytics */}
+                {selectedProject === p.id && !showAnalytics[p.id] && (
+                  <div className="mt-3">
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setShowAnalytics((prev) => ({ ...prev, [p.id]: true }))}>
+                      <BarChart3 className="h-3 w-3" /> Website Analytics
+                      {siteData[p.id]?.realtime?.visitors ? (
+                        <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1" />
+                          {siteData[p.id].realtime.visitors} live
+                        </Badge>
+                      ) : null}
+                    </Button>
+                  </div>
+                )}
+                {selectedProject === p.id && showAnalytics[p.id] && (() => {
+                  const data = siteData[p.id];
+                  const range = siteRange[p.id] || "24h";
+                  const top = siteTop[p.id] || {};
+                  const tsPoints = data?.timeseries || [];
+                  const pvArr = tsPoints.map((t) => t.pageviews);
+                  const vArr = tsPoints.map((t) => t.visitors);
+                  const fmtNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+                  return (
+                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium">Website Analytics</span>
+                          {data?.realtime?.visitors ? (
+                            <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              {data.realtime.visitors} visitor{data.realtime.visitors === 1 ? "" : "s"} right now
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            {(["24h", "7d", "30d"] as const).map((r) => (
+                              <button key={r} onClick={() => loadSiteAnalytics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{r}</button>
+                            ))}
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => setShowAnalytics((prev) => ({ ...prev, [p.id]: false }))} title="Close">
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Headline metrics */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                          <div className="text-[10px] text-muted-foreground">Pageviews</div>
+                          <div className="text-lg font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
+                        </div>
+                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                          <div className="text-[10px] text-muted-foreground">Unique visitors</div>
+                          <div className="text-lg font-semibold font-mono text-emerald-400">{fmtNum(data?.overview?.visitors || 0)}</div>
+                        </div>
+                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                          <div className="text-[10px] text-muted-foreground">Bots filtered</div>
+                          <div className="text-lg font-semibold font-mono text-zinc-500">{fmtNum(data?.overview?.bots || 0)}</div>
+                        </div>
+                      </div>
+
+                      {/* Time series */}
+                      <div className="rounded-md bg-[#09090b] px-3 py-2 space-y-1">
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[10px] text-muted-foreground">Traffic over time</span>
+                          <span className="text-[10px] text-zinc-600">pageviews · visitors</span>
+                        </div>
+                        <Sparkline values={pvArr} color="#60a5fa" height={40} />
+                        <Sparkline values={vArr} color="#10b981" height={24} />
+                      </div>
+
+                      {/* Top tables */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                          { field: "path", label: "Top pages" },
+                          { field: "referrer", label: "Top referrers" },
+                          { field: "country", label: "Top countries" },
+                          { field: "browser", label: "Browsers" },
+                          { field: "device", label: "Devices" },
+                        ].map(({ field, label }) => {
+                          const rows = top[field] || [];
+                          const maxC = rows.length ? Math.max(...rows.map((r) => r.count)) : 1;
+                          return (
+                            <div key={field} className="rounded-md bg-[#09090b] px-3 py-2 space-y-1">
+                              <div className="text-[10px] text-muted-foreground">{label}</div>
+                              {rows.length === 0 && <div className="text-[10px] text-zinc-600 py-1">No data yet</div>}
+                              {rows.slice(0, 6).map((row) => (
+                                <div key={row.key} className="relative text-[11px] py-0.5">
+                                  <div className="absolute inset-y-0 left-0 bg-emerald-500/10 rounded" style={{ width: `${(row.count / maxC) * 100}%` }} />
+                                  <div className="relative flex justify-between items-baseline px-1.5 font-mono">
+                                    <span className="truncate pr-2 text-zinc-300">{row.key || "(direct)"}</span>
+                                    <span className="text-zinc-500 tabular-nums">{row.count}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-zinc-600">Cookieless, privacy-first. Visitor IDs rotate daily and can&apos;t be linked across days. Asset requests (CSS/JS/images) are excluded from pageview counts.</p>
                     </div>
                   );
                 })()}
