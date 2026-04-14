@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3, GitPullRequest,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -24,6 +24,8 @@ interface Project {
   port_override?: number; memory_mb?: number; cpus?: number;
   health_check_path?: string; release_cmd?: string; commit_sha?: string;
   labels?: string[]; build_mode?: string;
+  preview_enabled?: boolean;
+  parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
 }
 interface BuildConfig {
@@ -81,6 +83,15 @@ const langColor: Record<string, string> = {
   Go: "bg-cyan-400", Rust: "bg-orange-400", Java: "bg-red-400",
   Ruby: "bg-red-500", PHP: "bg-violet-400", HTML: "bg-orange-500",
 };
+
+// previewSubdomainExample mirrors the server's previewSubdomain() helper —
+// purely cosmetic so the UI hint shows the URL pattern users will get.
+function previewSubdomainExample(parent: string): string {
+  const suffix = "-pr-123";
+  const max = 63 - suffix.length;
+  const p = parent.length > max ? parent.slice(0, max) : parent;
+  return `${p}${suffix}.serverme.site`;
+}
 
 // Sparkline renders a tiny inline SVG line chart. Keeps us free of a heavy
 // charting dep for the dashboard — one file, zero deps.
@@ -160,6 +171,9 @@ function ProjectsContent() {
   const [showMetrics, setShowMetrics] = useState<Record<string, boolean>>({});
   const [showCrons, setShowCrons] = useState<Record<string, boolean>>({});
   const [showAnalytics, setShowAnalytics] = useState<Record<string, boolean>>({});
+  // Preview deployments (per-PR children)
+  const [previews, setPreviews] = useState<Record<string, Project[]>>({});
+  const [togglingPreview, setTogglingPreview] = useState<string | null>(null);
   // Website analytics
   const [siteData, setSiteData] = useState<Record<string, SiteOverview>>({});
   const [siteRange, setSiteRange] = useState<Record<string, string>>({});
@@ -560,6 +574,28 @@ function ProjectsContent() {
     } catch {}
   }
 
+  async function loadPreviews(projectId: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${projectId}/previews`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setPreviews((prev) => ({ ...prev, [projectId]: Array.isArray(data) ? data : [] }));
+      }
+    } catch {}
+  }
+
+  async function togglePreviewEnabled(projectId: string, enabled: boolean) {
+    setTogglingPreview(projectId);
+    try {
+      await fetch(`${API}/api/v1/projects/${projectId}/preview-enabled`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ enabled }),
+      });
+      setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, preview_enabled: enabled } : p));
+    } catch {}
+    setTogglingPreview(null);
+  }
+
   async function loadSiteAnalytics(projectId: string, range: string = "24h") {
     try {
       const [oRes, ...topReses] = await Promise.all([
@@ -661,6 +697,7 @@ function ProjectsContent() {
     if (!selectedProject) return;
     loadLogs(selectedProject);
     loadCrons(selectedProject);
+    loadPreviews(selectedProject);
     loadMetrics(selectedProject, metricsRange[selectedProject] || "1h");
     loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h");
     const t = setInterval(() => loadLogs(selectedProject), 5000);
@@ -1111,6 +1148,56 @@ function ProjectsContent() {
                         {addingDomain === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                       </Button>
                     </div>
+                  </div>
+                )}
+
+                {/* Preview Deployments (inline) — only for projects linked to GitHub */}
+                {selectedProject === p.id && p.github_repo && (
+                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium">Pull Request Previews</span>
+                        {(previews[p.id] || []).length > 0 && (
+                          <Badge variant="outline" className="text-[9px]">{(previews[p.id] || []).length} active</Badge>
+                        )}
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          className="accent-emerald-500 h-3 w-3"
+                          checked={!!p.preview_enabled}
+                          disabled={togglingPreview === p.id}
+                          onChange={(e) => togglePreviewEnabled(p.id, e.target.checked)}
+                        />
+                        Auto-deploy PRs
+                      </label>
+                    </div>
+                    {!p.preview_enabled ? (
+                      <p className="text-[10px] text-zinc-600">Turn on to auto-deploy every open PR to a <code className="font-mono text-zinc-500">{previewSubdomainExample(p.subdomain)}</code> URL. Closed PRs are torn down automatically.</p>
+                    ) : (previews[p.id] || []).length === 0 ? (
+                      <p className="text-[10px] text-zinc-600">No open PRs with a preview. Open a PR on <span className="font-mono">{p.github_repo}</span> and it&apos;ll appear here.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {(previews[p.id] || []).map((pv) => (
+                          <div key={pv.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[11px] gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/20 shrink-0">#{pv.pr_number}</Badge>
+                              <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColor[pv.status] || ""}`}>{pv.status}</Badge>
+                              <span className="truncate text-zinc-300">{pv.pr_title || pv.branch}</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {pv.commit_sha && <code className="text-[9px] text-zinc-600 font-mono">{pv.commit_sha.slice(0, 7)}</code>}
+                              {pv.status === "running" && (
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.serverme.site`} target="_blank" rel="noopener" />}>
+                                  <ExternalLink className="h-2.5 w-2.5" /> Visit
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

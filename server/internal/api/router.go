@@ -142,6 +142,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Put("/projects/{projectId}", s.handleUpdateProject)
 			r.Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
 			r.Put("/projects/{projectId}/labels", s.handleUpdateLabels)
+			// Preview deployments (one-per-PR)
+			r.Get("/projects/{projectId}/previews", s.handleListPreviews)
+			r.Put("/projects/{projectId}/preview-enabled", s.handleTogglePreviewEnabled)
 			// Metrics
 			r.Get("/projects/{projectId}/metrics", s.handleGetMetrics)
 			// Site analytics (server-side, cookieless)

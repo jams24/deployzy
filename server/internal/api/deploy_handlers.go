@@ -295,6 +295,55 @@ func (s *Server) handleUpdateLabels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"labels": cleaned})
 }
 
+// handleListPreviews returns all active preview deployments for a parent project.
+func (s *Server) handleListPreviews(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	previews, err := s.db.ListPreviewsForParent(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list previews")
+		return
+	}
+	if previews == nil {
+		previews = []db.Project{}
+	}
+	writeJSON(w, http.StatusOK, previews)
+}
+
+// handleTogglePreviewEnabled flips the preview-deployments flag for a project.
+// Off by default so users opt in.
+func (s *Server) handleTogglePreviewEnabled(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	if err := s.db.UpdateProjectPreviewEnabled(r.Context(), projectID, req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"preview_enabled": req.Enabled})
+}
+
 func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 	projectID := chi.URLParam(r, "projectId")

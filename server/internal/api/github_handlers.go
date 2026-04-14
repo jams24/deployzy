@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/db"
 )
 
 // handleGitHubConnect starts the GitHub OAuth flow.
@@ -199,11 +200,14 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Only handle push events
 	event := r.Header.Get("X-GitHub-Event")
 	if event == "ping" {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"pong"}`))
+		return
+	}
+	if event == "pull_request" {
+		s.handlePullRequestEvent(w, r, body)
 		return
 	}
 	if event != "" && event != "push" {
@@ -278,6 +282,192 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf(`{"status":"deploying","count":%d}`, deployed)))
+}
+
+// handlePullRequestEvent handles opened/reopened/synchronize/closed events to
+// manage preview deployments. One preview child-project per (parent, PR#).
+// Signature verification has already happened in the caller.
+func (s *Server) handlePullRequestEvent(w http.ResponseWriter, r *http.Request, body []byte) {
+	var payload struct {
+		Action      string `json:"action"`
+		Number      int    `json:"number"`
+		PullRequest struct {
+			Title string `json:"title"`
+			Head  struct {
+				Ref string `json:"ref"` // branch name on the fork/head repo
+				SHA string `json:"sha"`
+			} `json:"head"`
+		} `json:"pull_request"`
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if payload.Repository.FullName == "" || payload.Number == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	s.log.Info().Str("repo", payload.Repository.FullName).Int("pr", payload.Number).Str("action", payload.Action).Msg("PR event")
+
+	// Find parent projects linked to this repo that have previews enabled.
+	parents, _ := s.db.GetProjectsByGitHubRepo(r.Context(), payload.Repository.FullName)
+	for _, parent := range parents {
+		parent := parent
+		if !parent.PreviewEnabled || parent.ParentProjectID != nil {
+			continue // either disabled, or this IS a preview (no nested previews)
+		}
+		switch payload.Action {
+		case "opened", "reopened", "synchronize", "edited":
+			go s.deployPreview(parent, payload.Number, payload.PullRequest.Title, payload.PullRequest.Head.Ref, payload.PullRequest.Head.SHA, payload.Repository.FullName)
+		case "closed":
+			go s.teardownPreview(parent.ID, payload.Number)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// deployPreview creates (if needed) and redeploys the preview project for a PR.
+func (s *Server) deployPreview(parent db.Project, prNumber int, prTitle, branch, sha, repoFull string) {
+	ctx := context.Background()
+
+	// Find or create the preview child project.
+	preview, _ := s.db.GetPreviewByPR(ctx, parent.ID, prNumber)
+	if preview == nil {
+		subdomain := previewSubdomain(parent.Subdomain, prNumber)
+		p, err := s.db.CreatePreviewProject(ctx, &parent, prNumber, prTitle, branch, subdomain)
+		if err != nil {
+			s.log.Error().Err(err).Str("parent", parent.ID).Int("pr", prNumber).Msg("create preview failed")
+			return
+		}
+		preview = p
+	} else {
+		// Update branch + title if the PR was retargeted or renamed.
+		if preview.Branch != branch || preview.PRTitle != prTitle {
+			s.db.UpdateProjectConfig(ctx, preview.ID, preview.RepoURL, branch, preview.BuildCmd, preview.StartCmd, preview.EnvVars)
+			// pr_title isn't in UpdateProjectConfig — direct update:
+			s.db.Pool.Exec(ctx, `UPDATE projects SET pr_title = $2, branch = $3 WHERE id = $1`, preview.ID, prTitle, branch)
+			preview.Branch = branch
+			preview.PRTitle = prTitle
+		}
+	}
+
+	// Pin to the PR head SHA so subsequent pushes to the PR redeploy cleanly.
+	s.db.UpdateProjectCommitSHA(ctx, preview.ID, sha)
+	preview.CommitSHA = sha
+
+	// Inject auth token into repo URL for private repos (matches the push flow).
+	if s.deployer != nil && s.deployer.GitHub != nil {
+		gc, _ := s.db.GetGitHubConnection(ctx, preview.UserID)
+		if gc != nil {
+			token := gc.AccessToken
+			if gc.InstallationID > 0 {
+				if t, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && t != "" {
+					token = t
+				}
+			}
+			preview.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoFull)
+		}
+	}
+
+	if err := s.deployer.Deploy(ctx, preview); err != nil {
+		s.log.Error().Err(err).Str("preview", preview.ID).Msg("preview deploy failed")
+		return
+	}
+
+	// Refetch after deploy to get the post-deploy status + container_port.
+	fresh, _ := s.db.GetProject(ctx, preview.ID)
+	if fresh == nil {
+		return
+	}
+	s.postOrEditPRComment(ctx, fresh, repoFull)
+}
+
+// teardownPreview stops + removes the preview project (and its container) when
+// a PR closes. Leaves history in place by letting the existing delete path
+// handle container + DB cleanup.
+func (s *Server) teardownPreview(parentID string, prNumber int) {
+	ctx := context.Background()
+	preview, _ := s.db.GetPreviewByPR(ctx, parentID, prNumber)
+	if preview == nil {
+		return
+	}
+	s.log.Info().Str("preview", preview.ID).Int("pr", prNumber).Msg("tearing down preview")
+	// Stop container + remove
+	if s.deployer != nil {
+		_ = s.deployer.Stop(ctx, preview)
+	}
+	// Hard delete: removes DB row + cascades deploy_logs (FK ON DELETE CASCADE).
+	s.db.DeleteProject(ctx, preview.ID, preview.UserID)
+}
+
+// postOrEditPRComment posts (or edits) the preview-URL comment on the PR.
+// Uses pr_comment_id to decide whether to POST or PATCH.
+func (s *Server) postOrEditPRComment(ctx context.Context, preview *db.Project, repoFull string) {
+	if s.deployer == nil || s.deployer.GitHub == nil {
+		return
+	}
+	gc, _ := s.db.GetGitHubConnection(ctx, preview.UserID)
+	if gc == nil {
+		return
+	}
+	token := gc.AccessToken
+	if gc.InstallationID > 0 {
+		if t, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && t != "" {
+			token = t
+		}
+	}
+
+	domain := "serverme.site"
+	if s.deployer.Domain != "" {
+		domain = s.deployer.Domain
+	}
+	url := fmt.Sprintf("https://%s.%s", preview.Subdomain, domain)
+
+	statusEmoji := "🚀"
+	statusText := "Preview deployed"
+	if preview.Status != "running" {
+		statusEmoji = "⚠️"
+		statusText = fmt.Sprintf("Preview status: %s", preview.Status)
+	}
+	sha := preview.CommitSHA
+	if len(sha) > 7 {
+		sha = sha[:7]
+	}
+	body := fmt.Sprintf("%s **%s**\n\n- **URL**: %s\n- **Commit**: `%s`\n- **Status**: `%s`\n\n_Automatically deployed by [ServerMe](https://%s) when this PR is updated. Closed PRs are torn down automatically._",
+		statusEmoji, statusText, url, sha, preview.Status, domain,
+	)
+
+	if preview.PRCommentID > 0 {
+		if err := s.deployer.GitHub.UpdateIssueComment(token, repoFull, preview.PRCommentID, body); err == nil {
+			return
+		}
+		// Fall through and POST a new one if the update failed (e.g. user deleted it).
+	}
+	id, err := s.deployer.GitHub.PostIssueComment(token, repoFull, preview.PRNumber, body)
+	if err != nil {
+		s.log.Warn().Err(err).Int("pr", preview.PRNumber).Msg("post PR comment failed")
+		return
+	}
+	s.db.UpdatePreviewCommentID(ctx, preview.ID, id)
+}
+
+// previewSubdomain builds a safe subdomain for a PR's preview:
+//
+//	<parent-subdomain>-pr-<number>    e.g. "myapp-pr-42"
+//
+// Capped at 63 chars to stay within DNS limits; if the parent's subdomain is
+// too long we truncate it.
+func previewSubdomain(parent string, pr int) string {
+	suffix := fmt.Sprintf("-pr-%d", pr)
+	max := 63 - len(suffix)
+	if len(parent) > max {
+		parent = parent[:max]
+	}
+	return parent + suffix
 }
 
 type ghUser struct {

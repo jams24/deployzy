@@ -211,6 +211,52 @@ func (g *GitHubApp) ListCommits(accessToken, repoFullName, branch string) ([]Git
 	return out, nil
 }
 
+// PostIssueComment posts a new comment to an issue or PR. Returns the comment ID
+// so subsequent deploys can edit the existing comment instead of spamming new ones.
+func (g *GitHubApp) PostIssueComment(token, repoFullName string, issueNumber int, body string) (int64, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repoFullName, issueNumber)
+	reqBody, _ := json.Marshal(map[string]string{"body": body})
+	req, _ := http.NewRequest("POST", url, strings.NewReader(string(reqBody)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("github comment failed: %d", resp.StatusCode)
+	}
+	var result struct {
+		ID int64 `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.ID, nil
+}
+
+// UpdateIssueComment edits an existing comment by ID. Used when a preview
+// redeploys: we want the same comment to just update the commit SHA / status.
+func (g *GitHubApp) UpdateIssueComment(token, repoFullName string, commentID int64, body string) error {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/comments/%d", repoFullName, commentID)
+	reqBody, _ := json.Marshal(map[string]string{"body": body})
+	req, _ := http.NewRequest("PATCH", url, strings.NewReader(string(reqBody)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("github comment update failed: %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // GetCloneURL returns an authenticated clone URL for a private repo.
 func (g *GitHubApp) GetCloneURL(accessToken, repoFullName string) string {
 	return fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", accessToken, repoFullName)

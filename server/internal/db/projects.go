@@ -30,6 +30,12 @@ type Project struct {
 	CommitSHA       string            `json:"commit_sha"`
 	Labels          []string          `json:"labels"`
 	BuildMode       string            `json:"build_mode"` // "auto" | "ignore_dockerfile"
+	// Preview deployments — per-PR ephemeral children of a parent project.
+	ParentProjectID *string           `json:"parent_project_id"`
+	PRNumber        int               `json:"pr_number"`
+	PRTitle         string            `json:"pr_title"`
+	PreviewEnabled  bool              `json:"preview_enabled"`
+	PRCommentID     int64             `json:"pr_comment_id"`
 	EnvVars         map[string]string `json:"env_vars"`
 	Status          string            `json:"status"`
 	ContainerID     string            `json:"container_id"`
@@ -52,13 +58,13 @@ type DeployLog struct {
 }
 
 // projectCols is the standard column list for project queries.
-const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
+const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
 
 // scanProject scans a row into a Project struct. The row must match projectCols order.
 func scanProject(scan func(dest ...any) error) (Project, error) {
 	var p Project
 	var envJSON []byte
-	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride, &p.MemoryMB, &p.CPUs, &p.HealthCheckPath, &p.ReleaseCmd, &p.CommitSHA, &p.Labels, &p.BuildMode, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride, &p.MemoryMB, &p.CPUs, &p.HealthCheckPath, &p.ReleaseCmd, &p.CommitSHA, &p.Labels, &p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled, &p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
 	if err == nil {
 		json.Unmarshal(envJSON, &p.EnvVars)
 	}
@@ -97,8 +103,10 @@ func (d *DB) GetProject(ctx context.Context, projectID string) (*Project, error)
 }
 
 func (d *DB) ListProjects(ctx context.Context, userID string) ([]Project, error) {
+	// Hide preview children from the main project list — they appear
+	// under their parent via /projects/{id}/previews instead.
 	rows, err := d.Pool.Query(ctx,
-		`SELECT `+projectCols+` FROM projects WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT `+projectCols+` FROM projects WHERE user_id = $1 AND parent_project_id IS NULL ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -216,6 +224,108 @@ func (d *DB) UpdateProjectLabels(ctx context.Context, projectID string, labels [
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE projects SET labels = $2, updated_at = now() WHERE id = $1`,
 		projectID, labels,
+	)
+	return err
+}
+
+// ── Preview deployment helpers ──
+
+// GetPreviewByPR finds an existing preview project for a (parent, PR#) pair.
+// Returns nil if none exists yet.
+func (d *DB) GetPreviewByPR(ctx context.Context, parentID string, prNumber int) (*Project, error) {
+	p, err := scanProject(d.Pool.QueryRow(ctx,
+		`SELECT `+projectCols+` FROM projects
+		 WHERE parent_project_id = $1 AND pr_number = $2
+		 LIMIT 1`,
+		parentID, prNumber,
+	).Scan)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// ListPreviewsForParent returns all preview projects for a parent, newest first.
+func (d *DB) ListPreviewsForParent(ctx context.Context, parentID string) ([]Project, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT `+projectCols+` FROM projects
+		 WHERE parent_project_id = $1
+		 ORDER BY pr_number DESC`,
+		parentID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Project
+	for rows.Next() {
+		p, err := scanProject(rows.Scan)
+		if err != nil {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// CreatePreviewProject inserts a new preview-project row inheriting the parent's
+// build configuration. Called when a PR is first opened. Branch is the PR's
+// head ref; subdomain is derived from the parent's subdomain + PR number.
+func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber int, prTitle, branch, prSubdomain string) (*Project, error) {
+	envJSON, _ := json.Marshal(parent.EnvVars)
+	labels := parent.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+	p, err := scanProject(d.Pool.QueryRow(ctx,
+		`INSERT INTO projects (
+			user_id, name, subdomain, repo_url, branch, framework,
+			install_cmd, build_cmd, start_cmd, root_dir, node_version,
+			port_override, memory_mb, cpus, health_check_path, release_cmd,
+			labels, build_mode,
+			parent_project_id, pr_number, pr_title,
+			github_repo, github_branch,
+			env_vars
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		RETURNING `+projectCols,
+		parent.UserID,
+		fmt.Sprintf("%s PR #%d", parent.Name, prNumber),
+		prSubdomain,
+		parent.RepoURL,
+		branch,
+		parent.Framework,
+		parent.InstallCmd, parent.BuildCmd, parent.StartCmd, parent.RootDir, parent.NodeVersion,
+		parent.PortOverride, parent.MemoryMB, parent.CPUs, parent.HealthCheckPath, parent.ReleaseCmd,
+		labels, parent.BuildMode,
+		parent.ID, prNumber, prTitle,
+		parent.GitHubRepo, branch,
+		envJSON,
+	).Scan)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// UpdatePreviewCommentID records the GitHub comment ID once we've posted the
+// first preview URL to the PR — lets us edit the comment on subsequent
+// deploys instead of spamming new ones.
+func (d *DB) UpdatePreviewCommentID(ctx context.Context, previewID string, commentID int64) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET pr_comment_id = $2 WHERE id = $1`,
+		previewID, commentID,
+	)
+	return err
+}
+
+// UpdateProjectPreviewEnabled toggles whether preview deploys run for a project.
+func (d *DB) UpdateProjectPreviewEnabled(ctx context.Context, projectID string, enabled bool) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET preview_enabled = $2, updated_at = now() WHERE id = $1`,
+		projectID, enabled,
 	)
 	return err
 }
