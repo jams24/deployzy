@@ -114,26 +114,69 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
     : 0;
 
-  const freeFeatures = [
-    "10 active tunnels",
-    "HTTP, TCP & TLS tunnels",
-    "Reserved subdomains",
-    "Custom domains",
-    "Request inspection & replay",
-    "Analytics dashboard",
-    "100 req/s rate limit",
+  // Plan catalog — kept in sync with the plan_limits seed in migration 022.
+  type PlanCard = {
+    id: string;
+    name: string;
+    price: string;
+    accent: string;
+    tagline: string;
+    features: string[];
+  };
+  const planCards: PlanCard[] = [
+    {
+      id: "free",
+      name: "Free",
+      price: "$0",
+      accent: "border-zinc-700/40",
+      tagline: "Try ServerMe with a real side project",
+      features: [
+        "5 reserved subdomains, 5 active tunnels",
+        "3 projects, 2 databases, 1 BYOC server",
+        "1 custom domain",
+        "256 MB RAM / 0.25 vCPU per project",
+        "50 GB bandwidth, 60 build min / mo",
+        "7-day analytics retention",
+      ],
+    },
+    {
+      id: "pro",
+      name: "Pro",
+      price: "$12",
+      accent: "border-primary/30",
+      tagline: "For freelancers + indie hackers",
+      features: [
+        "10 reserved subdomains, 15 active tunnels",
+        "10 projects, 10 databases, 5 BYOC servers",
+        "5 custom domains, 5 standalone services",
+        "5 scheduled jobs, 5 active PR previews",
+        "1 GB RAM / 1 vCPU per project (configurable)",
+        "500 GB bandwidth, 600 build min / mo",
+        "Live container logs, release commands, health checks",
+        "Private GitHub repos, TCP tunnels, Telegram alerts",
+        "90-day analytics retention",
+      ],
+    },
+    {
+      id: "team",
+      name: "Team",
+      price: "$35",
+      accent: "border-yellow-500/30",
+      tagline: "For small teams shipping in production",
+      features: [
+        "Everything in Pro, plus:",
+        "50 subdomains / tunnels / projects / databases",
+        "15 BYOC servers, 25 custom domains + services",
+        "25 scheduled jobs, 25 active PR previews",
+        "Up to 8 GB RAM / 4 vCPU per project",
+        "1 TB bandwidth, 1800 build min / mo",
+        "30-day backup retention, 1-year analytics",
+        "Multi-user collaboration (min 2 seats)",
+        "Priority support",
+      ],
+    },
   ];
-
-  const premiumFeatures = [
-    "Everything in Free, plus:",
-    "Wildcard domains",
-    "OAuth at edge (Google, GitHub)",
-    "500 req/s rate limit",
-    "Team management & roles",
-    "Webhook verification",
-    "Traffic policies",
-    "Priority support & SLA",
-  ];
+  const currentPlan = usage?.plan || (isPremium ? "pro" : "free");
 
   return (
     <div>
@@ -226,18 +269,32 @@ export default function BillingPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                {isPremium ? (
+                {usage?.is_admin ? (
                   <Badge className="gap-1 bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
                     <Crown className="h-3 w-3" />
-                    Premium
+                    Admin (Unlimited)
+                  </Badge>
+                ) : currentPlan === "team" ? (
+                  <Badge className="gap-1 bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                    <Crown className="h-3 w-3" />
+                    Team
+                  </Badge>
+                ) : currentPlan === "pro" ? (
+                  <Badge className="gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                    <Zap className="h-3 w-3" />
+                    Pro
                   </Badge>
                 ) : (
                   <Badge variant="outline">Free</Badge>
                 )}
               </div>
-              {isPremium ? (
+              {usage?.is_admin ? (
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Your Premium subscription is active. {daysLeft} days remaining.
+                  You&apos;re an admin — all platform limits are bypassed for your account.
+                </p>
+              ) : isPremium ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Your subscription is active. {daysLeft} days remaining.
                   {activeSub?.period_end && (
                     <span className="block mt-0.5">
                       Expires {new Date(activeSub.period_end).toLocaleDateString()}
@@ -246,11 +303,11 @@ export default function BillingPage() {
                 </p>
               ) : (
                 <p className="mt-2 text-sm text-muted-foreground">
-                  You&apos;re on the Free plan. Upgrade to Premium for advanced features.
+                  You&apos;re on the Free plan. Upgrade for higher limits and advanced features.
                 </p>
               )}
             </div>
-            {!isPremium && (
+            {!isPremium && !usage?.is_admin && (
               <Button
                 onClick={checkout}
                 disabled={checkoutLoading}
@@ -261,63 +318,58 @@ export default function BillingPage() {
                 ) : (
                   <Zap className="h-4 w-4" />
                 )}
-                Upgrade to Premium — $10/mo
+                Upgrade to Pro — $12/mo
               </Button>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Plan Comparison */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className={!isPremium ? "border-primary/30" : ""}>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center justify-between">
-              Free
-              {!isPremium && <Badge variant="outline" className="text-[10px]">Current</Badge>}
-            </CardTitle>
-            <p className="text-2xl font-bold">$0</p>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {freeFeatures.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm">
-                  <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                  <span className="text-muted-foreground">{f}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        <Card className={isPremium ? "border-yellow-500/30" : ""}>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Crown className="h-4 w-4 text-yellow-500" />
-                Premium
-              </span>
-              {isPremium && <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-[10px]">Current</Badge>}
-            </CardTitle>
-            <p className="text-2xl font-bold">$10<span className="text-sm font-normal text-muted-foreground">/month</span></p>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {premiumFeatures.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm">
-                  <Check className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
-                  <span className="text-muted-foreground">{f}</span>
-                </li>
-              ))}
-            </ul>
-            {!isPremium && (
-              <Button onClick={checkout} disabled={checkoutLoading} className="mt-6 w-full gap-2">
-                {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                Pay with Crypto
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+      {/* Plan Comparison — three real tiers */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {planCards.map((plan) => {
+          const isCurrent = currentPlan === plan.id;
+          const canUpgradeToThis = !isCurrent && plan.id !== "free";
+          return (
+            <Card key={plan.id} className={isCurrent ? plan.accent : ""}>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    {plan.id === "team" && <Crown className="h-4 w-4 text-yellow-500" />}
+                    {plan.name}
+                  </span>
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current</Badge>}
+                </CardTitle>
+                <p className="text-2xl font-bold">
+                  {plan.price}
+                  {plan.id !== "free" && <span className="text-sm font-normal text-muted-foreground">/mo{plan.id === "team" && " per seat"}</span>}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{plan.tagline}</p>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm">
+                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" ? "text-yellow-500" : plan.id === "pro" ? "text-emerald-500" : "text-zinc-500"}`} />
+                      <span className="text-muted-foreground">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                {canUpgradeToThis && plan.id === "pro" && (
+                  <Button onClick={checkout} disabled={checkoutLoading} className="mt-6 w-full gap-2">
+                    {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                    Upgrade to Pro
+                  </Button>
+                )}
+                {canUpgradeToThis && plan.id === "team" && (
+                  <Button variant="outline" disabled className="mt-6 w-full gap-2" title="Team billing coming soon">
+                    Contact us for Team
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Payment info */}

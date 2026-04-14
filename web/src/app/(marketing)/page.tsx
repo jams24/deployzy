@@ -161,8 +161,8 @@ export default function HomePage() {
       {/* ── Pricing ──────────────────────────────────── */}
       <section id="pricing" className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal><SectionHeader label="Pricing" title="Generous free tier" desc="Most developers never need to pay. Upgrade when your team grows." /></ScrollReveal>
-          <div className="mt-12 grid gap-4 max-w-2xl mx-auto lg:grid-cols-2">
+          <ScrollReveal><SectionHeader label="Pricing" title="Start free, scale when ready" desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits." /></ScrollReveal>
+          <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3">
             {plans.map((plan, i) => (
               <ScrollReveal key={plan.name} delay={i * 150}>
                 <div className={`rounded-lg border p-6 sm:p-8 h-full transition-all hover:border-foreground/20 ${plan.popular ? "border-foreground/20" : "border-border/40"}`}>
@@ -216,8 +216,49 @@ const features = [
   { icon: Code, title: "Self-hostable", desc: "Deploy your own server with one command. MIT licensed." },
 ];
 const plans = [
-  { name: "Free", price: "$0", period: null, popular: true, desc: "Everything you need to build and ship.", cta: "Get started", features: ["10 tunnels", "10 subdomains", "HTTP, TCP, TLS", "Custom domains", "Inspection & replay", "Analytics", "100 req/s"] },
-  { name: "Premium", price: "$10", period: "mo", popular: false, desc: "For teams and power users.", cta: "Upgrade", features: ["10 tunnels", "50 subdomains", "Wildcard domains", "OAuth at edge", "500 req/s", "Team management", "Traffic policies", "Priority support"] },
+  {
+    name: "Free", price: "$0", period: null, popular: false,
+    desc: "Try ServerMe with a real side project.",
+    cta: "Get started",
+    features: [
+      "5 subdomains, 5 active tunnels",
+      "3 projects, 2 databases",
+      "1 custom domain, 1 BYOC server",
+      "256 MB RAM / 0.25 vCPU per project",
+      "50 GB bandwidth, 60 build min/mo",
+      "Cookieless website analytics (7d)",
+    ],
+  },
+  {
+    name: "Pro", price: "$12", period: "mo", popular: true,
+    desc: "For freelancers + indie hackers.",
+    cta: "Upgrade to Pro",
+    features: [
+      "10 subdomains, 15 tunnels, 10 projects",
+      "10 databases, 5 services, 5 BYOC servers",
+      "5 custom domains, 5 PR previews",
+      "1 GB RAM / 1 vCPU (configurable)",
+      "500 GB bandwidth, 600 build min/mo",
+      "Live logs, release commands, health checks",
+      "Private repos, TCP/TLS tunnels, Telegram alerts",
+      "90-day analytics retention",
+    ],
+  },
+  {
+    name: "Team", price: "$35", period: "mo per seat", popular: false,
+    desc: "For small teams shipping in production.",
+    cta: "Contact us",
+    features: [
+      "Everything in Pro, plus:",
+      "50 subdomains / projects / databases",
+      "15 BYOC servers, 25 custom domains",
+      "25 scheduled jobs, 25 active PR previews",
+      "Up to 8 GB RAM / 4 vCPU per project",
+      "1 TB bandwidth, 1800 build min/mo",
+      "30-day backups, 1-year analytics",
+      "Multi-user collaboration, priority support",
+    ],
+  },
 ];
 const tsCode = `import { ServerMe } from '@serverme/sdk';
 
