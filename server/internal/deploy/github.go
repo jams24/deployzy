@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,13 +23,33 @@ import (
 
 // GitHubApp handles GitHub App authentication and API calls.
 type GitHubApp struct {
-	AppID        string
-	ClientID     string
-	ClientSecret string
+	AppID         string
+	ClientID      string
+	ClientSecret  string
 	WebhookSecret string
-	PrivateKey   *rsa.PrivateKey
-	log          zerolog.Logger
-	client       *http.Client
+	PrivateKey    *rsa.PrivateKey
+	log           zerolog.Logger
+	client        *http.Client
+
+	// installTokenCache: installationID → (token, expiresAt).
+	// App installation tokens expire after ~1h. Previously we re-fetched on
+	// every API call (deploy, list commits, PR comment, ...) which meant
+	// one extra GitHub round-trip per operation AND a brittle failure mode
+	// if GitHub blipped during the fetch. Now we reuse the same token
+	// until it has <5min of life left.
+	installTokenCache sync.Map // key: int64 installationID, value: *cachedToken
+}
+
+// cachedToken holds an installation token + its expiry. Valid reports whether
+// the token is still usable (with a 5-minute grace window to avoid handing
+// out a token that'll expire mid-operation).
+type cachedToken struct {
+	token     string
+	expiresAt time.Time
+}
+
+func (c *cachedToken) Valid() bool {
+	return c != nil && c.token != "" && time.Until(c.expiresAt) > 5*time.Minute
 }
 
 type GitHubRepo struct {
@@ -45,10 +66,12 @@ type GitHubRepo struct {
 }
 
 type GitHubTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	Scope        string `json:"scope"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken           string `json:"access_token"`
+	TokenType             string `json:"token_type"`
+	Scope                 string `json:"scope"`
+	RefreshToken          string `json:"refresh_token"`
+	ExpiresIn             int    `json:"expires_in"`              // seconds, ~28800 (8h) for user tokens
+	RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"` // seconds, ~15552000 (6mo)
 }
 
 // NewGitHubApp creates a new GitHub App client.
@@ -92,8 +115,18 @@ func (g *GitHubApp) GenerateJWT() (string, error) {
 	return token.SignedString(g.PrivateKey)
 }
 
-// GetInstallationToken gets an access token for an installation.
+// GetInstallationToken returns a GitHub App installation access token, using
+// the in-memory cache when possible. First call for a given installation
+// fetches from GitHub; subsequent calls reuse the cached token until 5 min
+// before expiry. This is the single biggest reliability win in the GitHub
+// layer — we used to round-trip GitHub for every deploy/list/comment.
 func (g *GitHubApp) GetInstallationToken(installationID int64) (string, error) {
+	if cached, ok := g.installTokenCache.Load(installationID); ok {
+		if ct, _ := cached.(*cachedToken); ct.Valid() {
+			return ct.token, nil
+		}
+	}
+
 	jwtToken, err := g.GenerateJWT()
 	if err != nil {
 		return "", err
@@ -110,12 +143,72 @@ func (g *GitHubApp) GetInstallationToken(installationID int64) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		// Don't cache failures — next call should retry.
+		return "", fmt.Errorf("github installation token fetch failed: %d", resp.StatusCode)
+	}
 
 	var result struct {
-		Token string `json:"token"`
+		Token     string    `json:"token"`
+		ExpiresAt time.Time `json:"expires_at"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Token == "" {
+		return "", fmt.Errorf("github installation token empty")
+	}
+
+	// Default to 50min TTL if GitHub didn't include expires_at (hedges against
+	// API quirks — real value is always ~1h).
+	exp := result.ExpiresAt
+	if exp.IsZero() {
+		exp = time.Now().Add(50 * time.Minute)
+	}
+	g.installTokenCache.Store(installationID, &cachedToken{token: result.Token, expiresAt: exp})
 	return result.Token, nil
+}
+
+// InvalidateInstallationToken drops the cached token for an installation.
+// Call this after a 401 from GitHub so the next operation re-fetches instead
+// of handing out a dead token.
+func (g *GitHubApp) InvalidateInstallationToken(installationID int64) {
+	g.installTokenCache.Delete(installationID)
+}
+
+// RefreshOAuthToken exchanges a refresh_token for a fresh user access token.
+// GitHub OAuth App user tokens expire after 8h, refresh tokens after 6 months.
+// This is what's needed so users don't have to manually reconnect every
+// workday.
+func (g *GitHubApp) RefreshOAuthToken(refreshToken string) (*GitHubTokenResponse, error) {
+	if refreshToken == "" {
+		return nil, fmt.Errorf("no refresh token stored")
+	}
+	data := url.Values{
+		"client_id":     {g.ClientID},
+		"client_secret": {g.ClientSecret},
+		"refresh_token": {refreshToken},
+		"grant_type":    {"refresh_token"},
+	}
+	req, _ := http.NewRequest("POST", "https://github.com/login/oauth/access_token",
+		strings.NewReader(data.Encode()))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result GitHubTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.AccessToken == "" {
+		return nil, fmt.Errorf("refresh rejected — reconnect required")
+	}
+	return &result, nil
 }
 
 // ExchangeCodeForToken exchanges an OAuth code for a user access token.

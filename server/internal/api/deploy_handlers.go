@@ -77,12 +77,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GitHubRepo != "" {
 		s.db.UpdateProjectGitHub(r.Context(), project.ID, req.GitHubRepo, req.Branch, true)
-		// Auto-register webhook for auto-deploy
+		// Auto-register webhook for auto-deploy, using the freshest token.
 		if s.deployer != nil && s.deployer.GitHub != nil {
-			gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-			if gc != nil {
+			if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
 				webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
-				s.deployer.GitHub.EnsureWebhook(gc.AccessToken, req.GitHubRepo, webhookURL)
+				s.deployer.GitHub.EnsureWebhook(token, req.GitHubRepo, webhookURL)
 			}
 		}
 	}
@@ -399,19 +398,14 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 		s.db.UpdateProjectCommitSHA(r.Context(), projectID, "")
 	}
 
-	// For private repos, inject GitHub token into clone URL
+	// For private repos, inject a fresh GitHub token into the clone URL.
+	// bestGitHubToken auto-refreshes expired user tokens and re-uses the
+	// cached installation token, so deploys don't fail the day after a
+	// user connects GitHub.
 	if s.deployer.GitHub != nil && project.RepoURL != "" && !strings.Contains(project.RepoURL, "@github.com") {
-		gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-		if gc != nil {
-			repoName := extractRepoFullName(project.RepoURL)
-			if repoName != "" {
-				// Try installation token first (auto-refreshes), fall back to user token
-				token := gc.AccessToken
-				if gc.InstallationID > 0 {
-					if instToken, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && instToken != "" {
-						token = instToken
-					}
-				}
+		repoName := extractRepoFullName(project.RepoURL)
+		if repoName != "" {
+			if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
 				project.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoName)
 			}
 		}
@@ -459,10 +453,9 @@ func (s *Server) handleToggleAutoDeploy(w http.ResponseWriter, r *http.Request) 
 
 	// Auto-register webhook on GitHub when enabling
 	if req.Enabled && s.deployer != nil && s.deployer.GitHub != nil {
-		gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-		if gc != nil {
+		if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
 			webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
-			if err := s.deployer.GitHub.EnsureWebhook(gc.AccessToken, project.GitHubRepo, webhookURL); err != nil {
+			if err := s.deployer.GitHub.EnsureWebhook(token, project.GitHubRepo, webhookURL); err != nil {
 				s.log.Warn().Err(err).Str("repo", project.GitHubRepo).Msg("failed to register webhook — user may need to add it manually")
 			}
 		}

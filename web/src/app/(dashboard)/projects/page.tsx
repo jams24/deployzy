@@ -202,11 +202,23 @@ function ProjectsContent() {
   // Handle GitHub OAuth callback
   useEffect(() => {
     const ghToken = searchParams.get("github_token");
+    // New: refresh_token + expires_in come through so the backend can
+    // persist them and auto-refresh when the user's token expires.
+    const ghRefreshToken = searchParams.get("refresh_token") || "";
+    const ghExpiresIn = parseInt(searchParams.get("expires_in") || "0");
+    const ghRefreshExpiresIn = parseInt(searchParams.get("refresh_expires_in") || "0");
     const ghUser = searchParams.get("github_user");
     if (ghToken && ghUser) {
       fetch(`${API}/api/v1/github/connect`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ access_token: ghToken, github_username: ghUser, installation_id: parseInt(searchParams.get("installation_id") || "0") }),
+        body: JSON.stringify({
+          access_token: ghToken,
+          refresh_token: ghRefreshToken,
+          github_username: ghUser,
+          installation_id: parseInt(searchParams.get("installation_id") || "0"),
+          expires_in: ghExpiresIn,
+          refresh_token_expires_in: ghRefreshExpiresIn,
+        }),
       }).then(() => {
         setGhConnected(true);
         setGhUsername(ghUser);

@@ -73,8 +73,18 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	redirectURL := fmt.Sprintf("https://serverme.site/projects?github_connected=true&github_token=%s&github_user=%s&installation_id=%d",
-		url.QueryEscape(tokenResp.AccessToken), url.QueryEscape(ghUser.Login), installID)
+	// Include refresh token + expiry info so the subsequent
+	// POST /github/connect can persist a complete row (and the refresh
+	// path can kick in on the next expired-token call).
+	redirectURL := fmt.Sprintf(
+		"https://serverme.site/projects?github_connected=true&github_token=%s&github_user=%s&installation_id=%d&refresh_token=%s&expires_in=%d&refresh_expires_in=%d",
+		url.QueryEscape(tokenResp.AccessToken),
+		url.QueryEscape(ghUser.Login),
+		installID,
+		url.QueryEscape(tokenResp.RefreshToken),
+		tokenResp.ExpiresIn,
+		tokenResp.RefreshTokenExpiresIn,
+	)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
@@ -84,16 +94,19 @@ func (s *Server) handleGitHubSaveConnection(w http.ResponseWriter, r *http.Reque
 	u := auth.GetUser(r)
 
 	var req struct {
-		AccessToken    string `json:"access_token"`
-		GitHubUsername string `json:"github_username"`
-		InstallationID int64  `json:"installation_id"`
+		AccessToken           string `json:"access_token"`
+		RefreshToken          string `json:"refresh_token"`
+		GitHubUsername        string `json:"github_username"`
+		InstallationID        int64  `json:"installation_id"`
+		ExpiresIn             int    `json:"expires_in"`
+		RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AccessToken == "" {
 		writeError(w, http.StatusBadRequest, "access_token required")
 		return
 	}
 
-	err := s.db.SaveGitHubConnection(r.Context(), u.ID, req.GitHubUsername, req.AccessToken, "", req.InstallationID)
+	err := s.db.SaveGitHubConnection(r.Context(), u.ID, req.GitHubUsername, req.AccessToken, req.RefreshToken, req.InstallationID, req.ExpiresIn, req.RefreshTokenExpiresIn)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save connection")
 		return
@@ -103,19 +116,13 @@ func (s *Server) handleGitHubSaveConnection(w http.ResponseWriter, r *http.Reque
 }
 
 // handleGitHubStatus returns the user's GitHub connection status.
+// Also surfaces expiry + whether the user has to reconnect, so the UI can
+// show a proactive "your token expires in N hours" banner instead of
+// silently failing the next action.
 func (s *Server) handleGitHubStatus(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
-
 	gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-	if gc == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"connected": false})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"connected": true,
-		"username":  gc.GitHubUsername,
-	})
+	writeJSON(w, http.StatusOK, s.githubStatusFor(r.Context(), gc))
 }
 
 // handleGitHubDisconnect removes the GitHub connection.
@@ -128,20 +135,20 @@ func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) 
 // handleGitHubRepos lists the user's GitHub repos.
 func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
-
-	gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-	if gc == nil {
-		writeError(w, http.StatusBadRequest, "GitHub not connected")
+	token, ok := s.bestGitHubToken(r.Context(), u.ID)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "GitHub connection expired — please reconnect")
 		return
 	}
 
-	if s.deployer == nil || s.deployer.GitHub == nil {
-		writeError(w, http.StatusServiceUnavailable, "GitHub not configured")
-		return
-	}
-
-	repos, err := s.deployer.GitHub.ListUserRepos(gc.AccessToken)
+	repos, err := s.deployer.GitHub.ListUserRepos(token)
 	if err != nil {
+		// Refresh may have silently succeeded but list still failed — could be
+		// a revoked install or GitHub 5xx. If the error looks like a 401,
+		// invalidate the installation cache so next call re-fetches.
+		if gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID); gc != nil && gc.InstallationID > 0 {
+			s.deployer.GitHub.InvalidateInstallationToken(gc.InstallationID)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to list repos")
 		return
 	}
@@ -160,22 +167,10 @@ func (s *Server) handleGitHubCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID)
-	if gc == nil {
-		writeError(w, http.StatusBadRequest, "GitHub not connected")
+	token, ok := s.bestGitHubToken(r.Context(), u.ID)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "GitHub connection expired — please reconnect")
 		return
-	}
-	if s.deployer == nil || s.deployer.GitHub == nil {
-		writeError(w, http.StatusServiceUnavailable, "GitHub not configured")
-		return
-	}
-
-	// Prefer the installation token (auto-refreshing); fall back to the user's OAuth token.
-	token := gc.AccessToken
-	if gc.InstallationID > 0 {
-		if instToken, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && instToken != "" {
-			token = instToken
-		}
 	}
 
 	commits, err := s.deployer.GitHub.ListCommits(token, repo, branch)
@@ -256,17 +251,9 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Get the user's GitHub token for cloning private repos
+		// Get a fresh GitHub token for cloning (auto-refreshes + cached).
 		p := project // capture for goroutine
-		gc, _ := s.db.GetGitHubConnection(r.Context(), p.UserID)
-		if gc != nil && s.deployer != nil && s.deployer.GitHub != nil {
-			// Prefer installation token (auto-refreshes), fall back to user token
-			token := gc.AccessToken
-			if gc.InstallationID > 0 {
-				if instToken, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && instToken != "" {
-					token = instToken
-				}
-			}
+		if token, ok := s.bestGitHubToken(r.Context(), p.UserID); ok {
 			p.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, payload.Repository.FullName)
 		}
 
@@ -381,17 +368,8 @@ func (s *Server) deployPreview(parent db.Project, prNumber int, prTitle, branch,
 	preview.CommitSHA = sha
 
 	// Inject auth token into repo URL for private repos (matches the push flow).
-	if s.deployer != nil && s.deployer.GitHub != nil {
-		gc, _ := s.db.GetGitHubConnection(ctx, preview.UserID)
-		if gc != nil {
-			token := gc.AccessToken
-			if gc.InstallationID > 0 {
-				if t, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && t != "" {
-					token = t
-				}
-			}
-			preview.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoFull)
-		}
+	if token, ok := s.bestGitHubToken(ctx, preview.UserID); ok {
+		preview.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoFull)
 	}
 
 	if err := s.deployer.Deploy(ctx, preview); err != nil {
@@ -431,15 +409,9 @@ func (s *Server) postOrEditPRComment(ctx context.Context, preview *db.Project, r
 	if s.deployer == nil || s.deployer.GitHub == nil {
 		return
 	}
-	gc, _ := s.db.GetGitHubConnection(ctx, preview.UserID)
-	if gc == nil {
+	token, ok := s.bestGitHubToken(ctx, preview.UserID)
+	if !ok {
 		return
-	}
-	token := gc.AccessToken
-	if gc.InstallationID > 0 {
-		if t, err := s.deployer.GitHub.GetInstallationToken(gc.InstallationID); err == nil && t != "" {
-			token = t
-		}
 	}
 
 	domain := "serverme.site"
