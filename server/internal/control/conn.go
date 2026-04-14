@@ -30,10 +30,16 @@ type TCPAllocator interface {
 	CloseAllForClient(clientID string)
 }
 
-// SubdomainChecker validates and reserves subdomains.
+// SubdomainChecker validates, reserves, and plan-gates tunnel operations.
+// Implementations live in internal/db and internal/billing; the control
+// package stays dependency-free on those concrete packages.
 type SubdomainChecker interface {
 	CheckSubdomainAvailable(ctx context.Context, subdomain, userID string) (bool, string)
 	ReserveSubdomainAuto(ctx context.Context, userID, subdomain string) error
+	// CheckTunnelAllowed returns "" if the user can open another tunnel of the
+	// given protocol ("http"|"tcp"|"tls"), or a human-readable reason otherwise.
+	// Implementations should treat is_admin users as always allowed.
+	CheckTunnelAllowed(ctx context.Context, userID, protocol string, activeCount int) string
 }
 
 // Conn represents a single client's control connection.
@@ -258,7 +264,26 @@ func (c *Conn) handleReqTunnel(req *proto.ReqTunnel) {
 	}
 }
 
+// gateTunnel enforces plan-based limits before a new tunnel is registered.
+// Returns true if the tunnel should proceed; false + already-sent error if not.
+func (c *Conn) gateTunnel(protocol string) bool {
+	if c.subdomainChecker == nil || c.userID == "" {
+		return true // dev-token / anon path — no gating
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	active := len(c.registry.ListByUser(c.userID))
+	if reason := c.subdomainChecker.CheckTunnelAllowed(ctx, c.userID, protocol, active); reason != "" {
+		proto.WriteMsg(c.ctrlStr, proto.TypeNewTunnel, &proto.NewTunnel{Error: reason})
+		return false
+	}
+	return true
+}
+
 func (c *Conn) handleHTTPTunnel(req *proto.ReqTunnel) {
+	if !c.gateTunnel("http") {
+		return
+	}
 	subdomain := req.Subdomain
 	isCustom := subdomain != ""
 	if subdomain == "" {
@@ -318,6 +343,10 @@ func (c *Conn) handleHTTPTunnel(req *proto.ReqTunnel) {
 }
 
 func (c *Conn) handleTCPTunnel(req *proto.ReqTunnel) {
+	if !c.gateTunnel("tcp") {
+		return
+	}
+	_ = req // continue
 	t := &tunnel.Tunnel{
 		Protocol:  proto.ProtoTCP,
 		LocalAddr: req.LocalAddr,
@@ -368,6 +397,10 @@ func (c *Conn) handleTCPTunnel(req *proto.ReqTunnel) {
 }
 
 func (c *Conn) handleTLSTunnel(req *proto.ReqTunnel) {
+	if !c.gateTunnel("tls") {
+		return
+	}
+	_ = req // continue
 	subdomain := req.Subdomain
 	if subdomain == "" {
 		subdomain = tunnel.GenerateSubdomain()

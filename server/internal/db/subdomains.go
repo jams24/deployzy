@@ -43,6 +43,38 @@ type PlanLimit struct {
 // Centralised so admin-bypass logic only lives in one place.
 func Unlimited(v int) bool { return v < 0 }
 
+// CheckTunnelAllowed implements the control.SubdomainChecker side that
+// enforces per-plan tunnel caps + the TCP/TLS feature flag. Called from
+// the tunnel handshake before registering anything. Returns "" if allowed,
+// or a human-readable reason if not. Admin users always pass.
+func (d *DB) CheckTunnelAllowed(ctx context.Context, userID, protocol string, activeCount int) string {
+	if userID == "" {
+		// Dev-token / no-auth path — don't gate.
+		return ""
+	}
+	if isAdmin, _ := d.IsUserAdmin(ctx, userID); isAdmin {
+		return ""
+	}
+	user, err := d.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return ""
+	}
+	limits, err := d.GetPlanLimits(ctx, user.Plan)
+	if err != nil || limits == nil {
+		return ""
+	}
+	// TCP/TLS require a paid flag. Free tier is HTTP-only.
+	if (protocol == "tcp" || protocol == "tls") && !limits.AllowTCPTunnels {
+		return fmt.Sprintf("%s tunnels require a paid plan — upgrade to Pro to continue", protocol)
+	}
+	// Concurrent tunnel count cap. -1 = unlimited.
+	if !Unlimited(limits.MaxTunnels) && activeCount >= limits.MaxTunnels {
+		return fmt.Sprintf("tunnel limit reached (%d/%d on %s plan) — upgrade to add more",
+			activeCount, limits.MaxTunnels, user.Plan)
+	}
+	return ""
+}
+
 // GetPlanLimits returns the limits for a given plan, or the conservative
 // 'free' fallback if the plan name is unknown.
 func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error) {
