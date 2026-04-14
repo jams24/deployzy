@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -34,6 +35,19 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Branch == "" {
 		req.Branch = "main"
+	}
+
+	// Plan limit: max projects.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimProject); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
+		return
+	}
+	// Plan limit: BYOC server requires a paid plan.
+	if req.WorkerServerID != "" {
+		// User picked a specific BYOC server — they can only do so if they
+		// already own one (which means they passed the BYOC limit check earlier).
+		// No extra check needed here.
+		_ = req
 	}
 
 	// Check subdomain availability

@@ -7,24 +7,74 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// PlanLimit holds the limits for a plan.
+// PlanLimit holds every per-plan cap and feature flag. -1 in any int field
+// means "unlimited" — caller logic should check Unlimited(n) before comparing.
 type PlanLimit struct {
-	Plan           string `json:"plan"`
-	MaxSubdomains  int    `json:"max_subdomains"`
-	MaxTunnels     int    `json:"max_tunnels"`
-	MaxRate        int    `json:"max_rate"`
+	Plan                    string  `json:"plan"`
+	MaxSubdomains           int     `json:"max_subdomains"`
+	MaxTunnels              int     `json:"max_tunnels"`
+	MaxRate                 int     `json:"max_rate"`
+	MaxProjects             int     `json:"max_projects"`
+	MaxCustomDomains        int     `json:"max_custom_domains"`
+	MaxDatabases            int     `json:"max_databases"`
+	MaxServices             int     `json:"max_services"`
+	MaxCrons                int     `json:"max_crons"`
+	MaxBYOCServers          int     `json:"max_byoc_servers"`
+	MaxPreviewDeploys       int     `json:"max_preview_deploys"`
+	MaxMemoryMB             int     `json:"max_memory_mb"`
+	MaxCPUs                 float64 `json:"max_cpus"`
+	MaxBandwidthGB          int     `json:"max_bandwidth_gb"`
+	MaxBuildMinutesMonthly  int     `json:"max_build_minutes_monthly"`
+	AnalyticsRetentionDays  int     `json:"analytics_retention_days"`
+	MetricsRetentionDays    int     `json:"metrics_retention_days"`
+	DeployLogRetentionDays  int     `json:"deploy_log_retention_days"`
+	BackupRetentionDays     int     `json:"backup_retention_days"`
+	AllowPreviews           bool    `json:"allow_previews"`
+	AllowReleaseCmd         bool    `json:"allow_release_cmd"`
+	AllowHealthChecks       bool    `json:"allow_health_checks"`
+	AllowPrivateRepos       bool    `json:"allow_private_repos"`
+	AllowTCPTunnels         bool    `json:"allow_tcp_tunnels"`
+	AllowCustomEvents       bool    `json:"allow_custom_events"`
+	AllowLiveLogs           bool    `json:"allow_live_logs"`
+	AllowTelegram           bool    `json:"allow_telegram"`
 }
 
-// GetPlanLimits returns the limits for a given plan.
+// Unlimited reports whether a numeric limit field is set to "unlimited" (-1).
+// Centralised so admin-bypass logic only lives in one place.
+func Unlimited(v int) bool { return v < 0 }
+
+// GetPlanLimits returns the limits for a given plan, or the conservative
+// 'free' fallback if the plan name is unknown.
 func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error) {
 	var pl PlanLimit
 	err := d.Pool.QueryRow(ctx,
-		`SELECT plan, max_subdomains, max_tunnels, max_rate FROM plan_limits WHERE plan = $1`,
+		`SELECT plan, max_subdomains, max_tunnels, max_rate,
+		        max_projects, max_custom_domains, max_databases, max_services, max_crons,
+		        max_byoc_servers, max_preview_deploys, max_memory_mb, max_cpus,
+		        max_bandwidth_gb, max_build_minutes_monthly,
+		        analytics_retention_days, metrics_retention_days, deploy_log_retention_days, backup_retention_days,
+		        allow_previews, allow_release_cmd, allow_health_checks, allow_private_repos,
+		        allow_tcp_tunnels, allow_custom_events, allow_live_logs, allow_telegram
+		 FROM plan_limits WHERE plan = $1`,
 		plan,
-	).Scan(&pl.Plan, &pl.MaxSubdomains, &pl.MaxTunnels, &pl.MaxRate)
+	).Scan(
+		&pl.Plan, &pl.MaxSubdomains, &pl.MaxTunnels, &pl.MaxRate,
+		&pl.MaxProjects, &pl.MaxCustomDomains, &pl.MaxDatabases, &pl.MaxServices, &pl.MaxCrons,
+		&pl.MaxBYOCServers, &pl.MaxPreviewDeploys, &pl.MaxMemoryMB, &pl.MaxCPUs,
+		&pl.MaxBandwidthGB, &pl.MaxBuildMinutesMonthly,
+		&pl.AnalyticsRetentionDays, &pl.MetricsRetentionDays, &pl.DeployLogRetentionDays, &pl.BackupRetentionDays,
+		&pl.AllowPreviews, &pl.AllowReleaseCmd, &pl.AllowHealthChecks, &pl.AllowPrivateRepos,
+		&pl.AllowTCPTunnels, &pl.AllowCustomEvents, &pl.AllowLiveLogs, &pl.AllowTelegram,
+	)
 	if err == pgx.ErrNoRows {
-		// Default to free limits
-		return &PlanLimit{Plan: plan, MaxSubdomains: 10, MaxTunnels: 10, MaxRate: 100}, nil
+		// Unknown plan → conservative free defaults so the user still
+		// gets *some* access (and we never panic on a missing row).
+		return &PlanLimit{
+			Plan: "free", MaxSubdomains: 5, MaxTunnels: 5, MaxRate: 100,
+			MaxProjects: 3, MaxCustomDomains: 1, MaxDatabases: 2, MaxBYOCServers: 1,
+			MaxMemoryMB: 256, MaxCPUs: 0.25, MaxBandwidthGB: 50, MaxBuildMinutesMonthly: 60,
+			AnalyticsRetentionDays: 7, MetricsRetentionDays: 1, DeployLogRetentionDays: 3,
+		}, nil
 	}
 	return &pl, err
 }

@@ -1,0 +1,47 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/serverme/serverme/server/internal/auth"
+)
+
+// handleGetMyLimits returns the user's current plan caps + their actual usage.
+// Used by the frontend so it can render "X of Y used" badges and disable
+// "create" buttons proactively instead of letting the request fail with 402.
+func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	ctx := r.Context()
+
+	limits, err := s.db.GetPlanLimits(ctx, u.Plan)
+	if err != nil || limits == nil {
+		writeError(w, http.StatusInternalServerError, "plan lookup failed")
+		return
+	}
+
+	isAdmin, _ := s.db.IsUserAdmin(ctx, u.ID)
+
+	// Counts (cheap, all single-row aggregates).
+	projects, _ := s.db.CountProjectsForUser(ctx, u.ID)
+	previews, _ := s.db.CountActivePreviewsForUser(ctx, u.ID)
+	databases, _ := s.db.CountProjectDatabasesForUser(ctx, u.ID)
+	services, _ := s.db.CountServicesForUser(ctx, u.ID)
+	customDomains, _ := s.db.CountCustomDomainsForUser(ctx, u.ID)
+	crons, _ := s.db.CountCronsForUser(ctx, u.ID)
+	byoc, _ := s.db.CountBYOCServersForUser(ctx, u.ID)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"plan":     u.Plan,
+		"is_admin": isAdmin,
+		"limits":   limits,
+		"usage": map[string]int{
+			"projects":         projects,
+			"preview_deploys":  previews,
+			"databases":        databases,
+			"services":         services,
+			"custom_domains":   customDomains,
+			"crons":            crons,
+			"byoc_servers":     byoc,
+		},
+	})
+}

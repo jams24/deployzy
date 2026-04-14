@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/proto"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	db "github.com/serverme/serverme/server/internal/db"
 )
 
@@ -250,6 +251,12 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	existing, _ := s.db.GetDomainByName(r.Context(), req.Domain)
 	if existing != nil {
 		writeError(w, http.StatusConflict, "domain already registered")
+		return
+	}
+
+	// Plan limit: max custom domains.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimCustomDomain); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -33,6 +34,12 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	valid := map[string]bool{"postgres": true}
 	if !valid[req.Type] {
 		writeError(w, http.StatusBadRequest, "unsupported service type — available: postgres")
+		return
+	}
+
+	// Plan limit: max standalone services.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimService); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
 

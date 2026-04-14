@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -29,6 +30,12 @@ func (s *Server) handleCreateProjectDatabase(w http.ResponseWriter, r *http.Requ
 	project, _ := s.db.GetProject(r.Context(), projectID)
 	if project == nil || project.UserID != u.ID {
 		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	// Plan limit: max databases.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimDatabase); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
 

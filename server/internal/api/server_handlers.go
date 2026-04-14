@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -148,6 +149,12 @@ func (s *Server) handleAddUserServer(w http.ResponseWriter, r *http.Request) {
 
 	if req.Port == 0 { req.Port = 22 }
 	if req.SSHUser == "" { req.SSHUser = "root" }
+
+	// Plan limit: max BYOC servers.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimBYOCServer); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
+		return
+	}
 
 	ws := &db.WorkerServer{
 		UserID:        &u.ID,

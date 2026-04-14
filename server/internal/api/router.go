@@ -81,6 +81,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// User
 			r.Get("/users/me", s.handleGetMe)
+			r.Get("/users/me/limits", s.handleGetMyLimits)
 			r.Delete("/users/me", s.handleDeleteMe)
 
 			// API Keys
