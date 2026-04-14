@@ -1660,6 +1660,18 @@ function ProjectsContent() {
                         })}
                       </div>
                       <p className="text-[10px] text-zinc-600">Cookieless, privacy-first. Visitor IDs rotate daily and can&apos;t be linked across days. Asset requests (CSS/JS/images) are excluded from pageview counts.</p>
+
+                      {/* Optional JS snippet for SPA route changes + custom events */}
+                      <details className="text-[10px] text-zinc-500">
+                        <summary className="cursor-pointer hover:text-zinc-300 py-1">Track SPA routes &amp; custom events (optional JS snippet)</summary>
+                        <div className="mt-1 space-y-2 pl-2 border-l border-zinc-800">
+                          <p>Server-side capture covers every HTTP request automatically. For client-side routing (SPAs) and custom events, add this tag to your site:</p>
+                          <code className="block rounded bg-black px-2 py-1.5 font-mono text-[10px] text-zinc-400 break-all">
+                            &lt;script defer src=&quot;/__sm/analytics.js&quot;&gt;&lt;/script&gt;
+                          </code>
+                          <p>Then call <code className="text-emerald-400">window.sm.track(&quot;signup&quot;, {"{ plan: \"pro\" }"})</code> for custom events.</p>
+                        </div>
+                      </details>
                     </div>
                   );
                 })()}

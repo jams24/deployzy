@@ -3,6 +3,8 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +20,9 @@ import (
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/tunnel"
 )
+
+//go:embed sm_analytics.js
+var smAnalyticsJS []byte
 
 const maxBodyCapture = 10 * 1024 // 10KB
 
@@ -78,6 +83,21 @@ func (p *HTTPProxy) SetDomainResolver(dr DomainResolver, baseDomain string) {
 func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	hostname := extractHostname(r.Host)
+
+	// Reserved analytics endpoints — handle here and never forward to the container:
+	//   /__sm/analytics.js  → the client snippet
+	//   /__sm-ingest        → JS beacon POST target
+	if r.URL.Path == "/__sm/analytics.js" {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Write(smAnalyticsJS)
+		return
+	}
+	if r.URL.Path == "/__sm-ingest" {
+		p.handleAnalyticsIngest(w, r, hostname)
+		return
+	}
 
 	// Strip www. prefix — redirect to non-www
 	if strings.HasPrefix(hostname, "www.") {
@@ -282,6 +302,100 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Msg("request proxied")
 }
 
+// handleAnalyticsIngest accepts events POSTed by the JS snippet. Events are
+// attributed to whichever project the request's Host maps to, so no API key
+// or site ID is needed — the user just drops the snippet on their site.
+func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request, hostname string) {
+	// CORS for the snippet on the same origin — allow wildcards since this is
+	// a public ingest endpoint.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if p.analytics == nil || p.projects == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Resolve host → projectID.
+	var projectID string
+	// Subdomain first
+	parts := strings.SplitN(hostname, ".", 2)
+	if len(parts) >= 1 {
+		if _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
+			projectID = pid
+		}
+	}
+	// Fall back to custom domain
+	if projectID == "" && p.domains != nil {
+		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
+			if _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
+				projectID = pid
+			}
+		}
+	}
+	if projectID == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Read bounded body.
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	var payload struct {
+		Type     string                 `json:"type"`
+		Name     string                 `json:"name"`
+		Path     string                 `json:"path"`
+		Referrer string                 `json:"referrer"`
+		Props    map[string]interface{} `json:"props"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	ip := clientIP(r)
+	ua := r.UserAgent()
+	device, browser, os, isBot := analytics.ParseUA(ua)
+	country := r.Header.Get("CF-IPCountry")
+	if country == "" {
+		country = r.Header.Get("X-Country")
+	}
+
+	// For custom events we store the event name in the path column prefixed
+	// with "event:" — keeps the schema single-table and the top-pages query
+	// still meaningful (events show up in a separate "Top events" list if
+	// we add one later).
+	path := truncate(payload.Path, 200)
+	if payload.Type == "event" && payload.Name != "" {
+		path = "event:" + truncate(payload.Name, 190)
+	}
+
+	p.analytics.Collect(analytics.Event{
+		ProjectID:   projectID,
+		TS:          time.Now(),
+		Path:        path,
+		Method:      "JS",
+		Status:      200,
+		Bytes:       int64(len(body)),
+		RefererHost: analytics.RefererHost(payload.Referrer),
+		Country:     strings.ToUpper(country),
+		IP:          ip,
+		Device:      device,
+		Browser:     browser,
+		OS:          os,
+		VisitorHash: p.analytics.HashVisitor(ip, ua),
+		IsBot:       isBot,
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // proxyToProject reverse-proxies a request to a deployed project's container
 // and records an analytics event on the way out.
 func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port int, projectID string) {
@@ -313,7 +427,8 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port 
 			Status:      rw.status,
 			Bytes:       rw.bytes,
 			RefererHost: analytics.RefererHost(r.Referer()),
-			Country:     strings.ToUpper(country),
+			Country:     strings.ToUpper(country), // if header already provided it, skip GeoIP
+			IP:          ip,                       // for GeoIP lookup in flush loop
 			Device:      device,
 			Browser:     browser,
 			OS:          os,

@@ -10,14 +10,31 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/phuslu/iploc"
 	"github.com/rs/zerolog"
 )
+
+// LookupCountry returns the 2-letter ISO country code for an IP, or "" on
+// failure. Pure-Go, embedded data — no DB file, no MaxMind account.
+// Exposed so the proxy can use it too (not just the collector's flush loop).
+func LookupCountry(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ""
+	}
+	c := iploc.Country(parsed)
+	return strings.ToUpper(string(c))
+}
 
 // Event is a single captured request.
 type Event struct {
@@ -28,7 +45,8 @@ type Event struct {
 	Status      int
 	Bytes       int64
 	RefererHost string
-	Country     string
+	Country     string // if non-empty (e.g. from CF-IPCountry), skip GeoIP lookup
+	IP          string // used for GeoIP in the flush loop; never persisted
 	Device      string
 	Browser     string
 	OS          string
@@ -151,12 +169,17 @@ func (c *Collector) insertBatch(ctx context.Context, events []Event) error {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
+		// GeoIP lookup: only if not already set by a trusted header.
+		country := e.Country
+		if country == "" {
+			country = LookupCountry(e.IP)
+		}
 		base := i * 13
 		sb.WriteString(fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
 			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13))
 		args = append(args,
 			e.ProjectID, e.TS, e.Path, e.Method, e.Status, e.Bytes,
-			e.RefererHost, e.Country, e.Device, e.Browser, e.OS,
+			e.RefererHost, country, e.Device, e.Browser, e.OS,
 			e.VisitorHash, e.IsBot,
 		)
 	}
