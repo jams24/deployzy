@@ -124,13 +124,6 @@ function ProjectsContent() {
   const [importEnvText, setImportEnvText] = useState("");
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
-  const [dbInfo, setDbInfo] = useState<Record<string, { db_name: string; db_user: string; db_password: string; host: string; port: number; connection_url: string; external_connection_url: string } | null>>({});
-  const [creatingDB, setCreatingDB] = useState<string | null>(null);
-  const [showDBPass, setShowDBPass] = useState<Record<string, boolean>>({});
-  const [backups, setBackups] = useState<Record<string, { id: string; file_name: string; file_size: number; created_at: string }[]>>({});
-  const [backingUp, setBackingUp] = useState<string | null>(null);
-  const [showSchedule, setShowSchedule] = useState<string | null>(null);
-  const [schedule, setSchedule] = useState<{ enabled: boolean; schedule: string; time: string; retention: number }>({ enabled: false, schedule: "daily", time: "03:00", retention: 7 });
   const [togglingAutoDeploy, setTogglingAutoDeploy] = useState<string | null>(null);
   const [editingBuild, setEditingBuild] = useState<string | null>(null);
   const [buildCfg, setBuildCfg] = useState<BuildConfig>({
@@ -643,86 +636,8 @@ function ProjectsContent() {
     setSavingBuild(false);
   }
 
-  async function loadDatabase(id: string) {
-    try {
-      const res = await fetch(`${API}/api/v1/projects/${id}/database`, { headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        setDbInfo((prev) => ({ ...prev, [id]: data.database ? { ...data.database, connection_url: data.connection_url, external_connection_url: data.external_connection_url } : null }));
-      }
-    } catch {}
-  }
-
-  async function createDatabase(id: string) {
-    setCreatingDB(id);
-    try {
-      const res = await fetch(`${API}/api/v1/projects/${id}/database`, { method: "POST", headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        setDbInfo((prev) => ({ ...prev, [id]: { ...data.database, connection_url: data.connection_url, external_connection_url: data.external_connection_url } }));
-      } else {
-        const err = await res.json().catch(() => ({ error: "Failed" }));
-        alert(err.error || "Failed to create database");
-      }
-    } catch {}
-    setCreatingDB(null);
-  }
-
-  async function deleteDatabase(id: string) {
-    if (!confirm("Delete this database? All data will be permanently lost.")) return;
-    try {
-      await fetch(`${API}/api/v1/projects/${id}/database`, { method: "DELETE", headers: headers() });
-      setDbInfo((prev) => ({ ...prev, [id]: null }));
-    } catch {}
-  }
-
-  async function loadBackups(id: string) {
-    try {
-      const res = await fetch(`${API}/api/v1/projects/${id}/backups`, { headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        setBackups((prev) => ({ ...prev, [id]: Array.isArray(data) ? data : [] }));
-      }
-    } catch {}
-  }
-
-  async function createBackup(id: string) {
-    setBackingUp(id);
-    try {
-      const res = await fetch(`${API}/api/v1/projects/${id}/backups`, { method: "POST", headers: headers() });
-      if (res.ok) loadBackups(id);
-      else alert("Backup failed");
-    } catch {}
-    setBackingUp(null);
-  }
-
-  async function deleteBackup(projectId: string, backupId: string) {
-    await fetch(`${API}/api/v1/projects/${projectId}/backups/${backupId}`, { method: "DELETE", headers: headers() });
-    loadBackups(projectId);
-  }
-
-  async function restoreBackup(projectId: string, backupId: string) {
-    if (!confirm("Restore this backup? Current data will be overwritten.")) return;
-    const res = await fetch(`${API}/api/v1/projects/${projectId}/backups/${backupId}/restore`, { method: "POST", headers: headers() });
-    if (res.ok) alert("Database restored successfully");
-    else alert("Restore failed");
-  }
-
-  async function loadSchedule(id: string) {
-    try {
-      const res = await fetch(`${API}/api/v1/projects/${id}/backup-schedule`, { headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        if (data) setSchedule({ enabled: data.enabled, schedule: data.schedule, time: data.time, retention: data.retention });
-      }
-    } catch {}
-    setShowSchedule(id);
-  }
-
-  async function saveSchedule(id: string) {
-    await fetch(`${API}/api/v1/projects/${id}/backup-schedule`, { method: "PUT", headers: headers(), body: JSON.stringify(schedule) });
-    setShowSchedule(null);
-  }
+  // Database + backup helpers moved to /services page (one place to manage all
+  // databases, whether project-linked or standalone).
 
   async function disconnectGH() {
     await fetch(`${API}/api/v1/github`, { method: "DELETE", headers: headers() });
@@ -745,8 +660,6 @@ function ProjectsContent() {
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
-    loadDatabase(selectedProject);
-    loadBackups(selectedProject);
     loadCrons(selectedProject);
     loadMetrics(selectedProject, metricsRange[selectedProject] || "1h");
     loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h");
@@ -1357,138 +1270,9 @@ function ProjectsContent() {
                   </div>
                 )}
 
-                {/* Database */}
-                {selectedProject === p.id && (
-                  <div className="mt-4">
-                    {dbInfo[p.id] ? (
-                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Database className="h-4 w-4 text-blue-400" />
-                            <span className="text-xs font-medium">PostgreSQL Database</span>
-                            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20">Active</Badge>
-                          </div>
-                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => deleteDatabase(p.id)}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div><span className="text-muted-foreground">Database:</span> <span className="font-mono">{dbInfo[p.id]!.db_name}</span></div>
-                          <div><span className="text-muted-foreground">User:</span> <span className="font-mono">{dbInfo[p.id]!.db_user}</span></div>
-                          <div><span className="text-muted-foreground">Host:</span> <span className="font-mono">{dbInfo[p.id]!.host}</span></div>
-                          <div><span className="text-muted-foreground">Port:</span> <span className="font-mono">{dbInfo[p.id]!.port}</span></div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-muted-foreground">Internal URL <span className="text-zinc-600">(used by your app)</span></span>
-                            <div className="flex items-center gap-1">
-                              <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
-                                {showDBPass[p.id]
-                                  ? dbInfo[p.id]!.connection_url
-                                  : dbInfo[p.id]!.connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
-                              </code>
-                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
-                                {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.connection_url); }}>
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-muted-foreground">External URL <span className="text-zinc-600">(for local dev / external tools)</span></span>
-                            <div className="flex items-center gap-1">
-                              <code className="flex-1 rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-[10px] text-zinc-400 overflow-x-auto">
-                                {showDBPass[p.id]
-                                  ? dbInfo[p.id]!.external_connection_url
-                                  : dbInfo[p.id]!.external_connection_url.replace(`:${dbInfo[p.id]!.db_password}@`, ":****@")}
-                              </code>
-                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => setShowDBPass((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}>
-                                {showDBPass[p.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => { navigator.clipboard.writeText(dbInfo[p.id]!.external_connection_url); }}>
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Backups */}
-                        <div className="border-t border-border/30 pt-3 mt-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-medium text-muted-foreground">Backups</span>
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => loadSchedule(p.id)}>Schedule</Button>
-                              <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => createBackup(p.id)} disabled={backingUp === p.id}>
-                                {backingUp === p.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Database className="h-2.5 w-2.5" />} Backup Now
-                              </Button>
-                            </div>
-                          </div>
-
-                          {/* Schedule editor */}
-                          {showSchedule === p.id && (
-                            <div className="rounded-md border border-border/30 bg-[#09090b] p-3 space-y-2">
-                              <div className="flex items-center gap-3">
-                                <label className="flex items-center gap-1.5 text-[10px]">
-                                  <input type="checkbox" checked={schedule.enabled} onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })} className="rounded" />
-                                  Enabled
-                                </label>
-                                <select className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.schedule} onChange={(e) => setSchedule({ ...schedule, schedule: e.target.value })}>
-                                  <option value="every6h">Every 6 hours</option>
-                                  <option value="every12h">Every 12 hours</option>
-                                  <option value="daily">Daily</option>
-                                  <option value="weekly">Weekly</option>
-                                </select>
-                                <input type="time" className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.time} onChange={(e) => setSchedule({ ...schedule, time: e.target.value })} />
-                                <select className="h-6 rounded border border-input bg-background px-1.5 text-[10px]" value={schedule.retention} onChange={(e) => setSchedule({ ...schedule, retention: parseInt(e.target.value) })}>
-                                  {[3, 7, 14, 30].map((d) => <option key={d} value={d}>Keep {d} days</option>)}
-                                </select>
-                              </div>
-                              <div className="flex gap-1">
-                                <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => saveSchedule(p.id)}>Save</Button>
-                                <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setShowSchedule(null)}>Cancel</Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Backup list */}
-                          {(backups[p.id] || []).length > 0 ? (
-                            <div className="space-y-1">
-                              {(backups[p.id] || []).map((b) => (
-                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[10px]">
-                                  <div className="flex items-center gap-2 font-mono text-zinc-400">
-                                    <Database className="h-3 w-3 text-zinc-600" />
-                                    <span>{new Date(b.created_at).toLocaleString()}</span>
-                                    <span className="text-zinc-600">{(b.file_size / 1024).toFixed(1)} KB</span>
-                                  </div>
-                                  <div className="flex gap-1">
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px]" onClick={async () => {
-                                      const res = await fetch(`${API}/api/v1/projects/${p.id}/backups/${b.id}/download`, { headers: headers() });
-                                      if (res.ok) {
-                                        const blob = await res.blob();
-                                        const url = URL.createObjectURL(blob);
-                                        const a = document.createElement("a"); a.href = url; a.download = b.file_name; a.click(); URL.revokeObjectURL(url);
-                                      }
-                                    }}>Download</Button>
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-blue-400" onClick={() => restoreBackup(p.id, b.id)}>Restore</Button>
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-destructive" onClick={() => deleteBackup(p.id, b.id)}>Delete</Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[10px] text-zinc-600">No backups yet</p>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => createDatabase(p.id)} disabled={creatingDB === p.id}>
-                        {creatingDB === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Database className="h-3 w-3" />}
-                        Add PostgreSQL Database
-                      </Button>
-                    )}
-                  </div>
-                )}
+                {/* Database UI moved to /services — a project's DB now shows up there
+                    with a "linked to {project}" badge. If you still want to view or
+                    manage it, head to /services. */}
 
                 {/* Metrics */}
                 {selectedProject === p.id && p.status === "running" && !showMetrics[p.id] && (

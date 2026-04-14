@@ -83,6 +83,88 @@ func (s *Server) handleGetProjectDatabase(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// handleListAllDatabases returns a unified list of every database the user owns —
+// both standalone services and per-project databases — for the Services page.
+// Shape: {kind: "service"|"project", id, project_id, project_name, ...}
+// This lets us remove the per-project database UI and have one place to manage
+// everything, without moving any existing backend data.
+func (s *Server) handleListAllDatabases(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	ctx := r.Context()
+
+	out := []map[string]interface{}{}
+
+	// Standalone services
+	svcs, _ := s.db.ListServices(ctx, u.ID)
+	publicHost := ""
+	if s.deployer != nil && s.deployer.Domain != "" {
+		publicHost = s.deployer.Domain
+	} else {
+		publicHost = "localhost"
+	}
+	for _, svc := range svcs {
+		svc := svc
+		dbName, dbUser, dbPass := "", "", ""
+		if svc.DBName != nil {
+			dbName = *svc.DBName
+		}
+		if svc.DBUser != nil {
+			dbUser = *svc.DBUser
+		}
+		if svc.DBPassword != nil {
+			dbPass = *svc.DBPassword
+		}
+		out = append(out, map[string]interface{}{
+			"kind":                    "service",
+			"id":                      svc.ID,
+			"project_id":              nil,
+			"project_name":            nil,
+			"name":                    svc.Name,
+			"type":                    svc.Type,
+			"status":                  svc.Status,
+			"db_name":                 dbName,
+			"db_user":                 dbUser,
+			"db_password":             dbPass,
+			"host":                    svc.Host,
+			"port":                    svc.Port,
+			"connection_url":          svc.ConnectionURL(),
+			"external_connection_url": svc.ExternalConnectionURL(publicHost),
+			"created_at":              svc.CreatedAt,
+		})
+	}
+
+	// Per-project databases
+	projects, _ := s.db.ListProjects(ctx, u.ID)
+	for _, p := range projects {
+		p := p
+		pdb, _ := s.db.GetProjectDatabase(ctx, p.ID)
+		if pdb == nil {
+			continue
+		}
+		ph := s.resolveDBPublicHost(ctx, &p)
+		out = append(out, map[string]interface{}{
+			"kind":                    "project",
+			"id":                      pdb.ID,
+			"project_id":              p.ID,
+			"project_name":            p.Name,
+			"project_subdomain":       p.Subdomain,
+			"name":                    p.Name + " database",
+			"type":                    "postgres",
+			"status":                  "running",
+			"db_name":                 pdb.DBName,
+			"db_user":                 pdb.DBUser,
+			"db_password":             pdb.DBPassword,
+			"host":                    pdb.Host,
+			"port":                    pdb.Port,
+			"connection_url":          pdb.ConnectionURL(),
+			"external_connection_url": pdb.ExternalConnectionURL(ph),
+			"created_at":              pdb.CreatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleDeleteProjectDatabase(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 	projectID := chi.URLParam(r, "projectId")

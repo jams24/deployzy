@@ -178,6 +178,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Delete("/subdomains", s.handleReleaseSubdomain)
 			r.Get("/subdomains/check", s.handleCheckSubdomain)
 
+			// Unified database list — standalone services + per-project DBs
+			// (used by the Services page since we removed the project-level DB UI).
+			r.Get("/databases", s.handleListAllDatabases)
+
 			// Standalone Services (databases, Redis, etc.)
 			r.Get("/services", s.handleListServices)
 			r.Post("/services", s.handleCreateService)
