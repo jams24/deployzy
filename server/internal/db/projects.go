@@ -362,6 +362,30 @@ func (d *DB) AddDeployLog(ctx context.Context, projectID, message, level string)
 	)
 }
 
+// PruneOldDeployLogs drops deploy log rows older than cutoff. Called
+// periodically by the retention sweeper in main.go.
+func (d *DB) PruneOldDeployLogs(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`DELETE FROM deploy_logs WHERE created_at < $1`, cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// PruneOldCapturedRequests drops old inspector rows. Captured request bodies
+// can be 10KB each; a popular tunnel accumulates fast.
+func (d *DB) PruneOldCapturedRequests(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`DELETE FROM captured_requests WHERE timestamp < $1`, cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (d *DB) GetDeployLogs(ctx context.Context, projectID string, limit int) ([]DeployLog, error) {
 	if limit <= 0 {
 		limit = 100

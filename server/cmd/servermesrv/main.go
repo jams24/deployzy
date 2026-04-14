@@ -112,12 +112,44 @@ func main() {
 	analyticsCollector := analytics.New(database.Pool, log)
 	go analyticsCollector.Start(context.Background())
 	httpProxy.SetAnalytics(analyticsCollector)
-	// Prune old site events hourly — 90-day retention.
+	// Unified retention sweeper — runs every hour, covers everything that
+	// can grow unboundedly (analytics events, deploy logs, captured tunnel
+	// requests, abandoned build dirs). Keeps disk/DB usage predictable
+	// without needing manual intervention.
 	go func() {
+		run := func() {
+			ctx := context.Background()
+			now := time.Now()
+			// Site analytics: 90-day retention (privacy + usefulness window).
+			if err := database.PruneOldSiteEvents(ctx, now.AddDate(0, 0, -90)); err != nil {
+				log.Warn().Err(err).Msg("prune site_events failed")
+			}
+			// Deploy logs: 14-day retention per project — most useful during a
+			// recent build; older rows are just noise.
+			if n, err := database.PruneOldDeployLogs(ctx, now.AddDate(0, 0, -14)); err != nil {
+				log.Warn().Err(err).Msg("prune deploy_logs failed")
+			} else if n > 0 {
+				log.Debug().Int64("rows", n).Msg("pruned deploy_logs")
+			}
+			// Captured inspector requests: 7-day retention — bodies can be
+			// large (up to 10KB each); keeping a week is plenty for debugging.
+			if n, err := database.PruneOldCapturedRequests(ctx, now.AddDate(0, 0, -7)); err != nil {
+				log.Warn().Err(err).Msg("prune captured_requests failed")
+			} else if n > 0 {
+				log.Debug().Int64("rows", n).Msg("pruned captured_requests")
+			}
+			// Abandoned build dirs — cleaned on successful deploy, but a
+			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
+			// behind. Remove anything older than 24h.
+			pruneAbandonedBuildDirs(log)
+		}
+		// Run once at startup so a freshly-started server immediately reclaims
+		// anything an older version left behind.
+		run()
 		t := time.NewTicker(1 * time.Hour)
 		defer t.Stop()
 		for range t.C {
-			_ = database.PruneOldSiteEvents(context.Background(), time.Now().AddDate(0, 0, -90))
+			run()
 		}
 	}()
 
@@ -339,5 +371,31 @@ func handleClient(conn net.Conn, smuxConfig *smux.Config, authToken, domain, sch
 
 	if err := ctrlConn.Run(); err != nil {
 		clientLog.Debug().Err(err).Msg("control connection ended")
+	}
+}
+
+// pruneAbandonedBuildDirs removes any /tmp/serverme-build/<project-id>/
+// directory that hasn't been touched in 24h. The happy-path deploy cleans
+// up its own dir, so anything left this long was interrupted mid-build
+// (server restart, OOM, crashed docker daemon).
+func pruneAbandonedBuildDirs(log zerolog.Logger) {
+	const base = "/tmp/serverme-build"
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return // dir doesn't exist yet — nothing to clean
+	}
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		p := base + "/" + e.Name()
+		if err := os.RemoveAll(p); err == nil {
+			log.Debug().Str("path", p).Msg("pruned abandoned build dir")
+		}
 	}
 }
