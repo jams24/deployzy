@@ -1,258 +1,318 @@
 #!/usr/bin/env bash
 #
-# ServerMe — Self-Hosted Installation Script
+# ServerMe — Self-Hosted Installation Script (v2 — full platform)
+#
+# Installs everything the live serverme.site runs:
+#   • serverme (tunnel + API server)
+#   • serverme-web (Next.js dashboard)
+#   • PostgreSQL 16 (with external-access config for managed DBs)
+#   • Caddy (TLS, on-demand cert for user custom domains)
+#   • Docker (with icc=false + log rotation for multi-tenant safety)
+#   • iptables sandbox (blocks container → host internal services)
+#   • Daily cleanup cron
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/serverme/serverme/main/deploy/install.sh | bash -s -- \
-#     --domain tunnel.yourdomain.com \
-#     --email you@example.com
+#   sudo ./install.sh --domain serverme.site --email you@example.com
 #
-# Or download and run:
-#   chmod +x install.sh
-#   ./install.sh --domain tunnel.yourdomain.com --email you@example.com
+# Optional GitHub App / Billing / Telegram integrations — see --help.
 #
 # Requirements:
-#   - Ubuntu 22.04+ or Debian 12+
-#   - Root access
-#   - Domain pointing to this server (A record + wildcard)
+#   • Ubuntu 22.04+ or Debian 12+ (tested on 24.04)
+#   • Root access
+#   • Domain A record + wildcard CNAME pointing at this VPS
 #
 
 set -euo pipefail
 
-# ─── Colors ──────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
+# ─── Colours ─────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[ServerMe]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 step() { echo -e "\n${CYAN}━━━ ${BOLD}$*${NC}"; }
 
-# ─── Defaults ────────────────────────────────────────────────
+# ─── Defaults ────────────────────────────────────────────────────────
 DOMAIN=""
 EMAIL=""
 DB_PASS=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 32)
-AUTH_TOKEN=$(openssl rand -hex 16)
+AUTH_TOKEN="disabled-use-api-keys"
 INSTALL_DIR="/opt/serverme"
-VERSION="latest"
+WEB_DIR="/opt/serverme-web"
+
+# Optional integrations — all skipped by default
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
-FRONTEND_URL=""
-SKIP_CADDY=false
+GITHUB_APP_ID=""
+GITHUB_CLIENT_ID=""
+GITHUB_CLIENT_SECRET=""
+GITHUB_WEBHOOK_SECRET=""
+GITHUB_PRIVATE_KEY_PATH=""
+INVENTPAY_KEY=""
+INVENTPAY_WEBHOOK_SECRET=""
+TELEGRAM_TOKEN=""
+# Skippable steps
 SKIP_DB=false
+SKIP_CADDY=false
+SKIP_WEB=false
 
-# ─── Parse args ──────────────────────────────────────────────
+# ─── Parse args ──────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --domain)        DOMAIN="$2"; shift 2 ;;
-    --email)         EMAIL="$2"; shift 2 ;;
-    --db-pass)       DB_PASS="$2"; shift 2 ;;
-    --jwt-secret)    JWT_SECRET="$2"; shift 2 ;;
-    --auth-token)    AUTH_TOKEN="$2"; shift 2 ;;
-    --google-id)     GOOGLE_CLIENT_ID="$2"; shift 2 ;;
-    --google-secret) GOOGLE_CLIENT_SECRET="$2"; shift 2 ;;
-    --version)       VERSION="$2"; shift 2 ;;
-    --skip-caddy)    SKIP_CADDY=true; shift ;;
-    --skip-db)       SKIP_DB=true; shift ;;
+    --domain)               DOMAIN="$2"; shift 2 ;;
+    --email)                EMAIL="$2"; shift 2 ;;
+    --db-pass)              DB_PASS="$2"; shift 2 ;;
+    --jwt-secret)           JWT_SECRET="$2"; shift 2 ;;
+    --google-id)            GOOGLE_CLIENT_ID="$2"; shift 2 ;;
+    --google-secret)        GOOGLE_CLIENT_SECRET="$2"; shift 2 ;;
+    --github-app-id)        GITHUB_APP_ID="$2"; shift 2 ;;
+    --github-client-id)     GITHUB_CLIENT_ID="$2"; shift 2 ;;
+    --github-client-secret) GITHUB_CLIENT_SECRET="$2"; shift 2 ;;
+    --github-webhook-secret) GITHUB_WEBHOOK_SECRET="$2"; shift 2 ;;
+    --github-private-key)   GITHUB_PRIVATE_KEY_PATH="$2"; shift 2 ;;
+    --inventpay-key)        INVENTPAY_KEY="$2"; shift 2 ;;
+    --inventpay-webhook-secret) INVENTPAY_WEBHOOK_SECRET="$2"; shift 2 ;;
+    --telegram-token)       TELEGRAM_TOKEN="$2"; shift 2 ;;
+    --skip-db)              SKIP_DB=true; shift ;;
+    --skip-caddy)           SKIP_CADDY=true; shift ;;
+    --skip-web)             SKIP_WEB=true; shift ;;
     -h|--help)
-      echo "ServerMe Self-Hosted Installer"
-      echo ""
-      echo "Usage: $0 --domain <domain> --email <email> [options]"
-      echo ""
-      echo "Required:"
-      echo "  --domain <domain>        Base domain (e.g., tunnel.yourdomain.com)"
-      echo "  --email <email>          Email for Let's Encrypt certificates"
-      echo ""
-      echo "Optional:"
-      echo "  --db-pass <password>     PostgreSQL password (random if omitted)"
-      echo "  --jwt-secret <secret>    JWT signing secret (random if omitted)"
-      echo "  --auth-token <token>     Fallback auth token (random if omitted)"
-      echo "  --google-id <id>         Google OAuth Client ID"
-      echo "  --google-secret <secret> Google OAuth Client Secret"
-      echo "  --version <version>      Version to install (default: latest)"
-      echo "  --skip-caddy             Skip Caddy installation (if already installed)"
-      echo "  --skip-db                Skip PostgreSQL installation (if already installed)"
-      echo "  -h, --help               Show this help"
-      exit 0
-      ;;
+      cat <<EOF
+ServerMe Self-Hosted Installer
+
+Required:
+  --domain <domain>              Base domain (e.g. serverme.site)
+  --email <email>                Email for Let's Encrypt
+
+Optional integrations — skip any you don't use:
+  --google-id / --google-secret          Google OAuth for login
+  --github-app-id / --github-client-id /
+    --github-client-secret /
+    --github-webhook-secret /
+    --github-private-key <pem-path>      GitHub App (deploys from GitHub)
+  --inventpay-key / --inventpay-webhook-secret   Billing
+  --telegram-token <token>               Telegram notifications
+
+Skip individual phases (if already present):
+  --skip-db      Don't install PostgreSQL
+  --skip-caddy   Don't install Caddy
+  --skip-web     Don't build/install the dashboard
+
+Advanced:
+  --db-pass <p>          PostgreSQL password (random if omitted)
+  --jwt-secret <s>       JWT secret (random if omitted)
+EOF
+      exit 0 ;;
     *) err "Unknown option: $1"; exit 1 ;;
   esac
 done
 
-# ─── Validate ────────────────────────────────────────────────
-if [[ -z "$DOMAIN" ]]; then
-  err "Missing required --domain flag"
-  echo "Usage: $0 --domain tunnel.yourdomain.com --email you@example.com"
-  exit 1
-fi
-
-if [[ -z "$EMAIL" ]]; then
-  err "Missing required --email flag"
-  exit 1
-fi
-
-if [[ $EUID -ne 0 ]]; then
-  err "This script must be run as root"
-  exit 1
-fi
+[[ -z "$DOMAIN" ]] && { err "Missing --domain"; exit 1; }
+[[ -z "$EMAIL"  ]] && { err "Missing --email"; exit 1; }
+[[ $EUID -ne 0  ]] && { err "Must run as root"; exit 1; }
 
 FRONTEND_URL="https://${DOMAIN}"
 
-# ─── Banner ──────────────────────────────────────────────────
-echo -e "${BOLD}"
-echo "  ╔═══════════════════════════════════════════╗"
-echo "  ║         ServerMe Self-Hosted Setup        ║"
-echo "  ║       Open-Source Tunneling Platform       ║"
-echo "  ╚═══════════════════════════════════════════╝"
-echo -e "${NC}"
-echo "  Domain:   ${DOMAIN}"
-echo "  Email:    ${EMAIL}"
-echo ""
+# ─── Banner ──────────────────────────────────────────────────────────
+cat <<EOF
 
-# ─── Step 1: System packages + Docker ──────────────────────
-step "1/8 — Installing system packages"
+${BOLD}╔══════════════════════════════════════════════════════╗
+║              ServerMe Self-Hosted Setup               ║
+║   tunneling + deploys + managed DBs + analytics       ║
+╚══════════════════════════════════════════════════════╝${NC}
 
+  Domain:       ${DOMAIN}
+  Email:        ${EMAIL}
+  Install dir:  ${INSTALL_DIR}
+  Web dir:      ${WEB_DIR}
+
+EOF
+
+# ─── 1. System packages ──────────────────────────────────────────────
+step "1/10 — System packages"
 apt-get update -qq
-apt-get install -y -qq curl wget tar gzip openssl git > /dev/null 2>&1
+apt-get install -y -qq \
+  curl wget tar gzip openssl git ca-certificates \
+  iptables iptables-persistent \
+  netcat-openbsd dnsutils > /dev/null 2>&1
 log "System packages ready"
 
-# Install Docker if not present (needed for ServerMe Deploy)
+# Node.js 20 for building the Next.js frontend
+if ! command -v node &> /dev/null || [[ "$(node -v | cut -c2-3)" -lt 20 ]]; then
+  log "Installing Node.js 20…"
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
+  apt-get install -y -qq nodejs > /dev/null 2>&1
+fi
+log "Node.js $(node -v) ready"
+
+# ─── 2. Docker (with multi-tenant-safe daemon config) ────────────────
+step "2/10 — Docker (with icc=false + log rotation)"
+
 if ! command -v docker &> /dev/null; then
-  log "Installing Docker..."
   curl -fsSL https://get.docker.com | sh > /dev/null 2>&1
-  systemctl enable docker > /dev/null 2>&1
-  systemctl start docker
-  log "Docker installed"
-else
-  log "Docker already installed"
 fi
 
-# ─── Step 2: PostgreSQL ─────────────────────────────────────
+# icc:false blocks container-to-container traffic on the default bridge.
+# log rotation caps per-container logs at 150 MB total.
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'DAEMON'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "3"
+  },
+  "icc": false
+}
+DAEMON
+systemctl enable docker > /dev/null 2>&1
+systemctl restart docker
+log "Docker configured (icc=false, 50m×3 log rotation)"
+
+# ─── 3. PostgreSQL ───────────────────────────────────────────────────
 if [[ "$SKIP_DB" == false ]]; then
-  step "2/8 — Installing PostgreSQL"
+  step "3/10 — PostgreSQL"
 
   if ! command -v psql &> /dev/null; then
     apt-get install -y -qq postgresql postgresql-contrib > /dev/null 2>&1
   fi
-
   systemctl enable postgresql > /dev/null 2>&1
   systemctl start postgresql
 
-  sudo -u postgres psql -c "CREATE USER serverme WITH PASSWORD '${DB_PASS}';" 2>/dev/null || true
+  PG_VER=$(ls /etc/postgresql/ | head -1)
+  PG_CONF="/etc/postgresql/${PG_VER}/main/postgresql.conf"
+  PG_HBA="/etc/postgresql/${PG_VER}/main/pg_hba.conf"
+
+  # Listen on all interfaces so user containers can reach the managed DB.
+  sed -i "s/^#\?listen_addresses.*/listen_addresses = '*'/" "$PG_CONF"
+
+  # sameuser rule = role X can only connect to database X (cross-tenant
+  # isolation for the managed-DB feature).
+  grep -q 'host all all 172.17.0.0/16 md5'            "$PG_HBA" || echo 'host all all 172.17.0.0/16 md5'            >> "$PG_HBA"
+  grep -q 'host sameuser all 0.0.0.0/0 scram-sha-256' "$PG_HBA" || echo 'host sameuser all 0.0.0.0/0 scram-sha-256' >> "$PG_HBA"
+  systemctl restart postgresql
+
+  sudo -u postgres psql -c "CREATE USER serverme WITH SUPERUSER PASSWORD '${DB_PASS}';" 2>/dev/null || \
+    sudo -u postgres psql -c "ALTER USER serverme WITH PASSWORD '${DB_PASS}';" 2>/dev/null || true
   sudo -u postgres psql -c "CREATE DATABASE serverme OWNER serverme;" 2>/dev/null || true
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE serverme TO serverme;" 2>/dev/null || true
-
-  log "PostgreSQL ready (user: serverme, db: serverme)"
+  log "PostgreSQL ready (user=serverme, db=serverme, external access enabled)"
 else
-  step "2/8 — Skipping PostgreSQL (--skip-db)"
+  step "3/10 — Skipping PostgreSQL (--skip-db)"
 fi
 
-# ─── Step 3: Download ServerMe binaries ─────────────────────
-step "3/8 — Downloading ServerMe"
+# ─── 4. Build ServerMe binaries from source ──────────────────────────
+step "4/10 — Building ServerMe from source"
 
-mkdir -p "${INSTALL_DIR}"
+mkdir -p "${INSTALL_DIR}" "${INSTALL_DIR}/backups" "${INSTALL_DIR}/project-data"
 
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64)  GOARCH="amd64" ;;
-  aarch64) GOARCH="arm64" ;;
-  *) err "Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-if [[ "$VERSION" == "latest" ]]; then
-  DOWNLOAD_URL="https://github.com/jams24/serverme/releases/latest/download"
-else
-  DOWNLOAD_URL="https://github.com/jams24/serverme/releases/download/${VERSION}"
+# Install Go if missing
+if ! command -v go &> /dev/null; then
+  log "Installing Go 1.24…"
+  ARCH=$(uname -m); case "$ARCH" in x86_64) GOARCH=amd64;; aarch64) GOARCH=arm64;; *) err "unsupported arch $ARCH"; exit 1;; esac
+  wget -q "https://go.dev/dl/go1.24.3.linux-${GOARCH}.tar.gz" -O /tmp/go.tar.gz
+  rm -rf /usr/local/go
+  tar -C /usr/local -xzf /tmp/go.tar.gz
+  export PATH=$PATH:/usr/local/go/bin
 fi
+command -v go &> /dev/null || export PATH=$PATH:/usr/local/go/bin
 
-# Try GitHub releases first, fall back to building from source
-if curl -fsSL -o /tmp/servermesrv.tar.gz "${DOWNLOAD_URL}/servermesrv_linux_${GOARCH}.tar.gz" 2>/dev/null; then
-  tar -xzf /tmp/servermesrv.tar.gz -C /usr/local/bin/ servermesrv 2>/dev/null || \
-    mv /tmp/servermesrv.tar.gz /dev/null
-  log "Server binary downloaded"
-else
-  warn "GitHub release not found. Downloading from source..."
-
-  if ! command -v go &> /dev/null; then
-    log "Installing Go..."
-    GO_VERSION="1.24.3"
-    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" -O /tmp/go.tar.gz
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf /tmp/go.tar.gz
-    export PATH=$PATH:/usr/local/go/bin
-  fi
-
-  log "Building from source..."
-  cd /tmp
-  if [[ ! -d serverme-src ]]; then
-    git clone --depth 1 https://github.com/jams24/serverme.git serverme-src 2>/dev/null
-  fi
-  cd serverme-src
-  CGO_ENABLED=0 go build -C server -ldflags="-s -w" -o /usr/local/bin/servermesrv ./cmd/servermesrv
-  CGO_ENABLED=0 go build -C cli -ldflags="-s -w" -o /usr/local/bin/serverme ./cmd/serverme
-  cd /
+if [[ ! -d /tmp/serverme-src/.git ]]; then
   rm -rf /tmp/serverme-src
+  git clone --depth 1 https://github.com/jams24/serverme.git /tmp/serverme-src > /dev/null 2>&1
+else
+  ( cd /tmp/serverme-src && git pull --quiet )
 fi
 
-# Also get the CLI
-if curl -fsSL -o /tmp/serverme.tar.gz "${DOWNLOAD_URL}/serverme_linux_${GOARCH}.tar.gz" 2>/dev/null; then
-  tar -xzf /tmp/serverme.tar.gz -C /usr/local/bin/ serverme 2>/dev/null || true
+cd /tmp/serverme-src
+CGO_ENABLED=0 go build -C server -ldflags="-s -w" -o /usr/local/bin/servermesrv ./cmd/servermesrv
+CGO_ENABLED=0 go build -C cli    -ldflags="-s -w" -o /usr/local/bin/serverme    ./cmd/serverme
+chmod +x /usr/local/bin/servermesrv /usr/local/bin/serverme
+log "servermesrv + serverme (CLI) installed"
+
+# ─── 5. Build + install the Next.js dashboard ───────────────────────
+if [[ "$SKIP_WEB" == false ]]; then
+  step "5/10 — Building the dashboard (Next.js)"
+  cd /tmp/serverme-src/web
+  # Bake the API URL at build time (Next.js NEXT_PUBLIC_* is compile-time)
+  echo "NEXT_PUBLIC_API_URL=https://api.${DOMAIN}" > .env.production
+  npm ci --no-audit --no-fund --silent
+  npm run build --silent
+  mkdir -p "${WEB_DIR}"
+  rm -rf "${WEB_DIR}"/*
+  cp -r .next/standalone/* "${WEB_DIR}/"
+  mkdir -p "${WEB_DIR}/.next/static"
+  cp -r .next/static "${WEB_DIR}/.next/"
+  [[ -d public ]] && cp -r public "${WEB_DIR}/"
+  log "Dashboard built to ${WEB_DIR}"
+else
+  step "5/10 — Skipping dashboard build (--skip-web)"
 fi
 
-chmod +x /usr/local/bin/servermesrv /usr/local/bin/serverme 2>/dev/null || true
-log "Binaries installed"
-/usr/local/bin/serverme version 2>/dev/null || log "(CLI not available, server-only install)"
-
-# ─── Step 4: Caddy ──────────────────────────────────────────
+# ─── 6. Caddy (TLS + on-demand certs for user custom domains) ──────
 if [[ "$SKIP_CADDY" == false ]]; then
-  step "4/8 — Installing Caddy"
-
+  step "6/10 — Caddy"
   if ! command -v caddy &> /dev/null; then
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+      gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > \
+      /etc/apt/sources.list.d/caddy-stable.list
     apt-get update -qq
     apt-get install -y -qq caddy > /dev/null 2>&1
   fi
-
-  # Configure Caddy
-  cat > /etc/caddy/Caddyfile << CADDY
-${DOMAIN} {
-    reverse_proxy localhost:9080
+  # On-demand TLS asks our server ("is this hostname ours?") before issuing
+  # a cert, letting users bring their own domain without any Caddy reload.
+  cat > /etc/caddy/Caddyfile <<CADDY
+{
+    on_demand_tls {
+        ask http://localhost:9080/health
+    }
+    email ${EMAIL}
 }
 
-api.${DOMAIN} {
-    reverse_proxy localhost:9081
+https:// {
+    tls { on_demand }
+
+    @www host www.${DOMAIN}
+    handle @www {
+        redir https://${DOMAIN}{uri} permanent
+    }
+
+    @root host ${DOMAIN}
+    handle @root {
+        reverse_proxy localhost:3000
+    }
+
+    @api host api.${DOMAIN}
+    handle @api {
+        reverse_proxy localhost:9081
+    }
+
+    handle {
+        reverse_proxy localhost:9080
+    }
 }
 CADDY
-
-  caddy fmt --overwrite /etc/caddy/Caddyfile 2>/dev/null || true
   systemctl enable caddy > /dev/null 2>&1
   systemctl restart caddy
-
-  log "Caddy installed and configured"
+  log "Caddy configured with on-demand TLS"
 else
-  step "4/8 — Skipping Caddy (--skip-caddy)"
+  step "6/10 — Skipping Caddy (--skip-caddy)"
 fi
 
-# ─── Step 5: Create systemd services ────────────────────────
-step "5/8 — Creating systemd services"
+# ─── 7. Systemd services ─────────────────────────────────────────────
+step "7/10 — Systemd services"
 
-# Build Google OAuth flags if provided
-GOOGLE_FLAGS=""
-if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
-  GOOGLE_FLAGS="--google-client-id=${GOOGLE_CLIENT_ID} --google-client-secret=${GOOGLE_CLIENT_SECRET} --frontend-url=${FRONTEND_URL}"
-fi
+# Build optional CLI flags only if the user supplied them.
+GOOGLE_FLAGS="" ;  [[ -n "$GOOGLE_CLIENT_ID"  ]] && GOOGLE_FLAGS="--google-client-id=${GOOGLE_CLIENT_ID} --google-client-secret=${GOOGLE_CLIENT_SECRET} --frontend-url=${FRONTEND_URL}"
+GITHUB_FLAGS="" ;  [[ -n "$GITHUB_APP_ID"     ]] && GITHUB_FLAGS="--github-app-id=${GITHUB_APP_ID} --github-client-id=${GITHUB_CLIENT_ID} --github-client-secret=${GITHUB_CLIENT_SECRET} --github-webhook-secret=${GITHUB_WEBHOOK_SECRET} --github-private-key=${GITHUB_PRIVATE_KEY_PATH}"
+BILLING_FLAGS="" ; [[ -n "$INVENTPAY_KEY"     ]] && BILLING_FLAGS="--inventpay-key=${INVENTPAY_KEY} --inventpay-webhook-secret=${INVENTPAY_WEBHOOK_SECRET}"
+TELEGRAM_FLAGS="" ; [[ -n "$TELEGRAM_TOKEN"   ]] && TELEGRAM_FLAGS="--telegram-token=${TELEGRAM_TOKEN}"
 
-cat > /etc/systemd/system/serverme.service << EOF
+cat > /etc/systemd/system/serverme.service <<EOF
 [Unit]
-Description=ServerMe Tunnel Server
+Description=ServerMe Tunnel + API Server
 After=network.target postgresql.service
 
 [Service]
@@ -267,6 +327,9 @@ ExecStart=/usr/local/bin/servermesrv \\
   --jwt-secret=${JWT_SECRET} \\
   --auth-token=${AUTH_TOKEN} \\
   ${GOOGLE_FLAGS} \\
+  ${GITHUB_FLAGS} \\
+  ${BILLING_FLAGS} \\
+  ${TELEGRAM_FLAGS} \\
   --log-level=info
 Restart=always
 RestartSec=5
@@ -276,100 +339,134 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable serverme > /dev/null 2>&1
-systemctl start serverme
+if [[ "$SKIP_WEB" == false ]]; then
+  cat > /etc/systemd/system/serverme-web.service <<EOF
+[Unit]
+Description=ServerMe Dashboard (Next.js)
+After=network.target
 
-sleep 3
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${WEB_DIR}
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Environment=NEXT_PUBLIC_API_URL=https://api.${DOMAIN}
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
 
-if systemctl is-active --quiet serverme; then
-  log "ServerMe server is running"
-else
-  err "ServerMe failed to start. Check: journalctl -u serverme -n 20"
-  exit 1
+[Install]
+WantedBy=multi-user.target
+EOF
 fi
 
-# ─── Step 6: Firewall ───────────────────────────────────────
-step "6/8 — Configuring firewall"
+systemctl daemon-reload
+systemctl enable --now serverme > /dev/null 2>&1
+[[ "$SKIP_WEB" == false ]] && systemctl enable --now serverme-web > /dev/null 2>&1
+sleep 3
+systemctl is-active --quiet serverme   || { err "serverme failed to start — see: journalctl -u serverme -n 50"; exit 1; }
+[[ "$SKIP_WEB" == false ]] && (systemctl is-active --quiet serverme-web || warn "serverme-web not running yet — see: journalctl -u serverme-web -n 50")
+log "Services started"
+
+# ─── 8. Firewall + container sandbox (iptables) ─────────────────────
+step "8/10 — Firewall + container sandbox"
 
 if command -v ufw &> /dev/null; then
   ufw allow 22/tcp   > /dev/null 2>&1 || true
   ufw allow 80/tcp   > /dev/null 2>&1 || true
   ufw allow 443/tcp  > /dev/null 2>&1 || true
-  ufw allow 8443/tcp > /dev/null 2>&1 || true
+  ufw allow 8443/tcp > /dev/null 2>&1 || true   # tunnel control
+  ufw allow from 172.17.0.0/16 to any port 5432 > /dev/null 2>&1 || true
   ufw --force enable > /dev/null 2>&1 || true
-  log "Firewall configured (22, 80, 443, 8443)"
-else
-  warn "ufw not found, skipping firewall setup"
+  log "UFW: 22/80/443/8443 open, 5432 for container bridge"
 fi
 
-# ─── Step 7: Done! ──────────────────────────────────────────
-step "7/8 — Verifying installation"
+# iptables INPUT chain: block container→host EXCEPT :5432 (managed DB) and
+# :53 (DNS). Inter-container traffic already blocked by icc=false.
+iptables -C INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+  iptables -I INPUT 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -C INPUT -i docker0 -p tcp --dport 5432 -j ACCEPT 2>/dev/null || \
+  iptables -I INPUT 2 -i docker0 -p tcp --dport 5432 -j ACCEPT
+iptables -C INPUT -i docker0 -p udp --dport 53   -j ACCEPT 2>/dev/null || \
+  iptables -I INPUT 3 -i docker0 -p udp --dport 53   -j ACCEPT
+iptables -C INPUT -i docker0 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || \
+  iptables -I INPUT 4 -i docker0 -j REJECT --reject-with icmp-port-unreachable
+mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4
+log "iptables rules set + persisted"
 
-HEALTH=$(curl -s http://localhost:9080/health 2>/dev/null || echo "")
-if echo "$HEALTH" | grep -q "ok"; then
-  log "Health check passed"
-else
-  warn "Health check failed — server may still be starting"
-fi
+# ─── 9. Daily cleanup cron ──────────────────────────────────────────
+step "9/10 — Daily cleanup cron"
+cat > /etc/cron.daily/serverme-cleanup <<'CLEANUP'
+#!/bin/bash
+# ServerMe daily cleanup — prevent disk full
+docker image prune -af --filter 'until=48h' > /dev/null 2>&1
+docker builder prune -af > /dev/null 2>&1
+find /var/lib/docker/containers -name '*.log' -size +100M -exec truncate -s 0 {} \; 2>/dev/null
+find /tmp/serverme-build -maxdepth 1 -mtime +1 -exec rm -rf {} + 2>/dev/null
+rm -rf /tmp/serverme-web-build /tmp/serverme-web-deploy 2>/dev/null
+find /tmp -maxdepth 1 -name 'serverme-*.tar.gz' -mtime +1 -delete 2>/dev/null
+rm -f /usr/local/bin/servermesrv.bak 2>/dev/null
+truncate -s 0 /var/log/btmp 2>/dev/null
+rm -f /var/log/btmp.1 2>/dev/null
+journalctl --vacuum-size=100M > /dev/null 2>&1
+apt-get clean > /dev/null 2>&1
+echo "$(date): cleanup done, disk: $(df -h / | tail -1 | awk '{print $5}')" >> /var/log/serverme-cleanup.log
+CLEANUP
+chmod +x /etc/cron.daily/serverme-cleanup
+log "Daily cleanup cron installed"
 
-# ─── Save credentials ───────────────────────────────────────
-CREDS_FILE="${INSTALL_DIR}/credentials.txt"
-cat > "${CREDS_FILE}" << CREDS
-# ServerMe Credentials — KEEP THIS SAFE
-# Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# ─── 10. Save credentials + summary ─────────────────────────────────
+step "10/10 — Saving credentials"
+CREDS="${INSTALL_DIR}/credentials.txt"
+cat > "$CREDS" <<CREDS
+# ServerMe credentials — KEEP SAFE
+Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
-Domain:          ${DOMAIN}
-API URL:         https://api.${DOMAIN}
-Control Port:    ${DOMAIN}:8443
+Domain:     ${DOMAIN}
+API:        https://api.${DOMAIN}
+Dashboard:  https://${DOMAIN}
+Tunnel:     ${DOMAIN}:8443
 
-Database:
-  Host:          localhost:5432
-  Database:      serverme
-  User:          serverme
-  Password:      ${DB_PASS}
+PostgreSQL:
+  Host: localhost:5432
+  DB:   serverme
+  User: serverme
+  Pass: ${DB_PASS}
 
-JWT Secret:      ${JWT_SECRET}
-Auth Token:      ${AUTH_TOKEN}
-
-Google OAuth:    ${GOOGLE_CLIENT_ID:-"not configured"}
+JWT secret: ${JWT_SECRET}
 CREDS
-chmod 600 "${CREDS_FILE}"
+chmod 600 "$CREDS"
 
-# ─── Print summary ──────────────────────────────────────────
-echo ""
-echo -e "${BOLD}${GREEN}"
-echo "  ╔═══════════════════════════════════════════╗"
-echo "  ║        ServerMe installed successfully!    ║"
-echo "  ╚═══════════════════════════════════════════╝"
-echo -e "${NC}"
-echo ""
-echo -e "  ${BOLD}Tunnel Server:${NC}   https://${DOMAIN}"
-echo -e "  ${BOLD}REST API:${NC}        https://api.${DOMAIN}"
-echo -e "  ${BOLD}CLI Control:${NC}     ${DOMAIN}:8443"
-echo ""
-echo -e "  ${BOLD}Credentials saved to:${NC} ${CREDS_FILE}"
-echo ""
-echo -e "  ${CYAN}Connect from your local machine:${NC}"
-echo ""
-echo "    serverme authtoken ${AUTH_TOKEN}"
-echo "    serverme http 3000 --server ${DOMAIN}:8443"
-echo ""
-echo -e "  ${CYAN}DNS Setup (if not done yet):${NC}"
-echo ""
-echo "    A     ${DOMAIN}       → $(curl -s ifconfig.me 2>/dev/null || echo '<this-server-ip>')"
-echo "    CNAME *.${DOMAIN}     → ${DOMAIN}"
-echo "    CNAME api.${DOMAIN}   → ${DOMAIN}"
-echo ""
-echo -e "  ${CYAN}Manage services:${NC}"
-echo ""
-echo "    systemctl status serverme"
-echo "    journalctl -u serverme -f"
-echo ""
-echo -e "  ${YELLOW}Next steps:${NC}"
-echo "    1. Make sure DNS A and wildcard records point to this server"
-echo "    2. Register an account: curl -X POST https://api.${DOMAIN}/api/v1/auth/register \\"
-echo "         -H 'Content-Type: application/json' \\"
-echo "         -d '{\"email\":\"you@example.com\",\"name\":\"Admin\",\"password\":\"yourpassword\"}'"
-echo "    3. Start tunneling!"
-echo ""
+# ─── Print summary ──────────────────────────────────────────────────
+cat <<EOF
+
+${BOLD}${GREEN}╔══════════════════════════════════════════════════════╗
+║         ServerMe installed successfully!              ║
+╚══════════════════════════════════════════════════════╝${NC}
+
+  ${BOLD}Dashboard:${NC}     https://${DOMAIN}
+  ${BOLD}API:${NC}           https://api.${DOMAIN}
+  ${BOLD}Tunnel port:${NC}   ${DOMAIN}:8443
+
+  ${BOLD}Credentials:${NC}   ${CREDS}
+
+  ${CYAN}DNS records to create:${NC}
+    A      ${DOMAIN}      → $(curl -s ifconfig.me 2>/dev/null || echo '<this-server-ip>')
+    CNAME  *.${DOMAIN}    → ${DOMAIN}
+    CNAME  api.${DOMAIN}  → ${DOMAIN}
+    CNAME  www.${DOMAIN}  → ${DOMAIN}
+
+  ${CYAN}Register the first account + make it admin:${NC}
+    curl -X POST https://api.${DOMAIN}/api/v1/auth/register \\
+      -H 'Content-Type: application/json' \\
+      -d '{"email":"you@example.com","name":"Admin","password":"changeme"}'
+    sudo -u postgres psql -d serverme \\
+      -c "UPDATE users SET is_admin=true WHERE email='you@example.com'"
+
+  ${CYAN}Service management:${NC}
+    systemctl status serverme serverme-web
+    journalctl -u serverme -f
+
+EOF
