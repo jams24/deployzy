@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -86,8 +87,21 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Assign worker server if specified, or auto-select
+	// Assign worker server if specified, or auto-select. Validate ownership
+	// first — a user can only target their own BYOC server or a platform
+	// (user_id=NULL) server. Without this check a user could drop their
+	// project onto another user's BYOC box and read their env vars /
+	// container filesystem.
 	if req.WorkerServerID != "" {
+		ws, _ := s.db.GetWorkerServer(r.Context(), req.WorkerServerID)
+		if ws == nil {
+			writeError(w, http.StatusBadRequest, "worker server not found")
+			return
+		}
+		if ws.UserID != nil && *ws.UserID != u.ID {
+			writeError(w, http.StatusForbidden, "you don't own that worker server")
+			return
+		}
 		s.db.AssignProjectServer(r.Context(), project.ID, req.WorkerServerID)
 		project.WorkerServerID = req.WorkerServerID
 	}
@@ -366,6 +380,14 @@ func (s *Server) handleTogglePreviewEnabled(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]bool{"preview_enabled": req.Enabled})
 }
 
+// isHexSHA gates commit_sha values before they reach a shell. Hex only,
+// 7-64 chars (GitHub short SHAs are 7; full are 40; Git SHA-256 repos are 64).
+var hexSHARe = regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`)
+
+func isHexSHA(s string) bool {
+	return hexSHARe.MatchString(s)
+}
+
 func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 	projectID := chi.URLParam(r, "projectId")
@@ -389,6 +411,11 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 	if body.CommitSHA != "" {
+		// Must be hex-only — the engine interpolates this into `git checkout`.
+		if !isHexSHA(body.CommitSHA) {
+			writeError(w, http.StatusBadRequest, "invalid commit sha")
+			return
+		}
 		project.CommitSHA = body.CommitSHA
 		// Persist so the logs show which commit is running even if the deploy crashes.
 		s.db.UpdateProjectCommitSHA(r.Context(), projectID, body.CommitSHA)

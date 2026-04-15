@@ -113,6 +113,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		// Check out a specific commit if requested (rollbacks / pinned deploys).
 		if project.CommitSHA != "" {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Checking out commit %s...", project.CommitSHA[:min(8, len(project.CommitSHA))]), "build")
+			// Validate SHA is hex only before interpolating into a shell command.
+			// A SHA like "'; touch /tmp/pwned; '" would otherwise run on the host.
+			if !isValidCommitSHA(project.CommitSHA) {
+				e.logMsg(ctx, project.ID, "Invalid commit SHA format — aborting", "error")
+				e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+				return fmt.Errorf("invalid commit SHA")
+			}
 			out, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.CommitSHA))
 			if err != nil {
 				e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out)), "error")
@@ -603,6 +610,14 @@ func (e *Engine) planResourceCeiling(ctx context.Context, userID string) (int, f
 		cpuMax = 0
 	}
 	return memMax, cpuMax
+}
+
+// isValidCommitSHA accepts only hex strings (7-64 chars) — anything else
+// would be a shell injection attempt when interpolated into `git checkout`.
+var validCommitSHARe = regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`)
+
+func isValidCommitSHA(s string) bool {
+	return validCommitSHARe.MatchString(s)
 }
 
 // trimLogs truncates a log string to at most n characters, keeping the tail

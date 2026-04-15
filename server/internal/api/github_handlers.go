@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,9 @@ import (
 )
 
 // handleGitHubConnect starts the GitHub OAuth flow.
+// Generates a random state, stores it in a short-lived signed cookie, and
+// sends the same value as the `state` OAuth param. The callback compares
+// them to prevent CSRF-driven account takeover.
 func (s *Server) handleGitHubConnect(w http.ResponseWriter, r *http.Request) {
 	if s.deployer == nil || s.deployer.GitHub == nil {
 		writeError(w, http.StatusServiceUnavailable, "GitHub integration not configured")
@@ -23,6 +27,16 @@ func (s *Server) handleGitHubConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := generateGHState()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sm_gh_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   600, // 10 min; OAuth hops are short
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode, // Lax required — GitHub redirects cross-site
+	})
+
 	redirectURI := fmt.Sprintf("https://api.%s/api/v1/github/callback", s.deployer.Domain)
 	authURL := s.deployer.GitHub.GetOAuthURL(state, redirectURI)
 
@@ -35,6 +49,20 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "GitHub integration not configured")
 		return
 	}
+
+	// CSRF guard: the state we set in a cookie during /connect MUST match the
+	// `state` param GitHub echoes back. A missing or mismatched state means
+	// the callback wasn't triggered by our own /connect flow.
+	stateParam := r.URL.Query().Get("state")
+	stateCookie, _ := r.Cookie("sm_gh_state")
+	if stateParam == "" || stateCookie == nil || stateCookie.Value == "" ||
+		subtle.ConstantTimeCompare([]byte(stateParam), []byte(stateCookie.Value)) != 1 {
+		s.log.Warn().Msg("GitHub OAuth state mismatch — possible CSRF attempt")
+		http.Redirect(w, r, "https://serverme.site/projects?error=invalid_state", http.StatusFound)
+		return
+	}
+	// Consume the cookie so it can't be replayed.
+	http.SetCookie(w, &http.Cookie{Name: "sm_gh_state", Value: "", Path: "/", MaxAge: -1})
 
 	code := r.URL.Query().Get("code")
 	if code == "" {

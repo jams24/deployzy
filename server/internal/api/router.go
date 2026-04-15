@@ -62,11 +62,20 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	r.Use(chimw.Timeout(30 * time.Second))
 	r.Use(corsMiddleware)
 
+	// Rate limiters for unauthenticated endpoints — blocks brute-force
+	// password attempts and signup spam from a single IP. Per-IP, sliding
+	// 1-minute window, 10 hits max (generous enough for legit users that
+	// mistyped a password a few times).
+	authRateLimiter := newIPRateLimiter(10, 1*time.Minute)
+
 	// Public routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// Auth (no auth required)
-		r.Post("/auth/register", s.handleRegister)
-		r.Post("/auth/login", s.handleLogin)
+		// Auth (no auth required) — rate limited per IP
+		r.Group(func(r chi.Router) {
+			r.Use(rateLimitMiddleware(authRateLimiter))
+			r.Post("/auth/register", s.handleRegister)
+			r.Post("/auth/login", s.handleLogin)
+		})
 
 		// Google OAuth
 		r.Get("/auth/google", s.handleGoogleLogin)
