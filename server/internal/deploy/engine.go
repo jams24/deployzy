@@ -332,7 +332,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 	args = append(args, "--restart", "unless-stopped",
 		"--memory", fmt.Sprintf("%dm", memMB),
-		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64))
+		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64),
+		// Container hardening — prevents privilege escalation and raw-socket
+		// based attacks (ARP spoof, port scanning tricks) while staying
+		// compatible with the overwhelming majority of user apps.
+		"--security-opt", "no-new-privileges=true",
+		"--cap-drop", "NET_RAW",
+	)
 
 	// Add data volume for persistence
 	args = append(args, "-v", fmt.Sprintf("/opt/serverme/project-data/%s:/app/data", project.ID[:8]))
@@ -343,7 +349,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// abort the deploy so broken migrations don't take the running site down.
 	if project.ReleaseCmd != "" {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Running release command: %s", project.ReleaseCmd), "deploy")
-		releaseArgs := []string{"run", "--rm"}
+		// Release containers get the same hardening as the main container.
+		releaseArgs := []string{"run", "--rm",
+			"--security-opt", "no-new-privileges=true",
+			"--cap-drop", "NET_RAW",
+		}
 		releaseArgs = append(releaseArgs, envFlags...)
 		releaseArgs = append(releaseArgs, imageName, "sh", "-c", project.ReleaseCmd)
 		relCtx, relCancel := context.WithTimeout(ctx, 10*time.Minute)

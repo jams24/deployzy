@@ -123,7 +123,11 @@ func (cs *CronScheduler) runCron(ctx context.Context, c db.ProjectCron) {
 		envFlags = append(envFlags, "-e", "DATABASE_URL="+projDB.ConnectionURL())
 	}
 
-	args := []string{"run", "--rm"}
+	// Same hardening as the main deploy + release containers.
+	args := []string{"run", "--rm",
+		"--security-opt", "no-new-privileges=true",
+		"--cap-drop", "NET_RAW",
+	}
 	args = append(args, envFlags...)
 	args = append(args, imageName, "sh", "-c", c.Command)
 
