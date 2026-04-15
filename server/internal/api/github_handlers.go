@@ -160,10 +160,14 @@ func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disconnected"})
 }
 
-// handleGitHubRepos lists the user's GitHub repos.
+// handleGitHubRepos lists the user's GitHub repos. Must use the USER OAuth
+// token — /user/repos is a user-scope endpoint that rejects installation
+// tokens (GitHub returns an empty list + 403 semantics, which previously
+// surfaced in the UI as a persistent "no repos found" state even after
+// disconnect/reconnect).
 func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
-	token, ok := s.bestGitHubToken(r.Context(), u.ID)
+	token, ok := s.bestUserGitHubToken(r.Context(), u.ID)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "GitHub connection expired — please reconnect")
 		return
@@ -195,7 +199,10 @@ func (s *Server) handleGitHubCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, ok := s.bestGitHubToken(r.Context(), u.ID)
+	// Use user token — /repos/:owner/:repo/commits works with either token,
+	// but the user token covers more cases (public repos + repos user has
+	// access to without the app being installed).
+	token, ok := s.bestUserGitHubToken(r.Context(), u.ID)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "GitHub connection expired — please reconnect")
 		return

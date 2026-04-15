@@ -90,9 +90,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GitHubRepo != "" {
 		s.db.UpdateProjectGitHub(r.Context(), project.ID, req.GitHubRepo, req.Branch, true)
-		// Auto-register webhook for auto-deploy, using the freshest token.
+		// Auto-register webhook for auto-deploy. Webhook creation is a
+		// user-scope action; installation tokens only cover repos where the
+		// app is installed with admin:write, so user OAuth is more reliable.
 		if s.deployer != nil && s.deployer.GitHub != nil {
-			if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
+			if token, ok := s.bestUserGitHubToken(r.Context(), u.ID); ok {
 				webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
 				s.deployer.GitHub.EnsureWebhook(token, req.GitHubRepo, webhookURL)
 			}
@@ -515,9 +517,10 @@ func (s *Server) handleToggleAutoDeploy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Auto-register webhook on GitHub when enabling
+	// Auto-register webhook on GitHub when enabling. Same reasoning as
+	// handleCreateProject: this is user-scope admin, not app action.
 	if req.Enabled && s.deployer != nil && s.deployer.GitHub != nil {
-		if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
+		if token, ok := s.bestUserGitHubToken(r.Context(), u.ID); ok {
 			webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
 			if err := s.deployer.GitHub.EnsureWebhook(token, project.GitHubRepo, webhookURL); err != nil {
 				s.log.Warn().Err(err).Str("repo", project.GitHubRepo).Msg("failed to register webhook — user may need to add it manually")
