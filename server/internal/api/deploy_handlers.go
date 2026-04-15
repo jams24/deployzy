@@ -38,6 +38,18 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		req.Branch = "main"
 	}
 
+	// Validate repo_url so it can't be used for SSRF (file://, ssh://, ...)
+	// or for git argument injection (a URL starting with '-' is parsed by git
+	// as a CLI flag like --upload-pack=cmd, which is a known RCE class).
+	if req.RepoURL != "" && !isSafeRepoURL(req.RepoURL) {
+		writeError(w, http.StatusBadRequest, "repo_url must be a plain https:// GitHub URL")
+		return
+	}
+	if req.Branch != "" && !isSafeBranchName(req.Branch) {
+		writeError(w, http.StatusBadRequest, "branch contains invalid characters")
+		return
+	}
+
 	// Plan limit: max projects.
 	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimProject); err != nil {
 		writeError(w, http.StatusPaymentRequired, err.Error())
@@ -386,6 +398,31 @@ var hexSHARe = regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`)
 
 func isHexSHA(s string) bool {
 	return hexSHARe.MatchString(s)
+}
+
+// isSafeRepoURL blocks SSRF (file://, ssh://, git://) and git-flag injection
+// (URL starting with '-'). Only public HTTPS URLs pointing at common git
+// hosts pass. We deliberately allow any https:// for forward-compatibility
+// with self-hosted GitLab/Gitea, but the leading-scheme check + no-leading-
+// dash rule is the security-critical part.
+var safeRepoRe = regexp.MustCompile(`^https://[a-zA-Z0-9][a-zA-Z0-9.\-/_@:]*$`)
+
+func isSafeRepoURL(s string) bool {
+	if strings.HasPrefix(s, "-") {
+		return false
+	}
+	return safeRepoRe.MatchString(s)
+}
+
+// isSafeBranchName rejects anything that could escape into a shell context
+// when the engine interpolates it into git / docker commands.
+var safeBranchRe = regexp.MustCompile(`^[a-zA-Z0-9._/\-]+$`)
+
+func isSafeBranchName(s string) bool {
+	if strings.HasPrefix(s, "-") {
+		return false
+	}
+	return len(s) <= 128 && safeBranchRe.MatchString(s)
 }
 
 func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {

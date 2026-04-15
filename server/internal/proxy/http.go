@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -305,9 +306,14 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleAnalyticsIngest accepts events POSTed by the JS snippet. Events are
 // attributed to whichever project the request's Host maps to, so no API key
 // or site ID is needed — the user just drops the snippet on their site.
+//
+// Abuse protection (in order):
+//  1. Origin/Referer must match the Host header — blocks curl-based injection
+//     from arbitrary machines (real browser requests include this; scripted
+//     abuse rarely bothers).
+//  2. Per-IP rate limit of 60 events/min to cap any one attacker's impact.
+//  3. Bot UAs already marked is_bot and filtered out of dashboards.
 func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request, hostname string) {
-	// CORS for the snippet on the same origin — allow wildcards since this is
-	// a public ingest endpoint.
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -324,16 +330,29 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Origin / Referer must mention the host we're attributing the event to.
+	// A real browser loading the site's JS snippet will always send one.
+	// Without this a curl from anywhere on the internet can spam events.
+	if !originMatchesHost(r, hostname) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Per-IP rate limit — 60 events/min is plenty for a real SPA (even at
+	// one pageview/sec that's an insanely active visitor).
+	if !ingestLimiter.allow(clientIP(r)) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+
 	// Resolve host → projectID.
 	var projectID string
-	// Subdomain first
 	parts := strings.SplitN(hostname, ".", 2)
 	if len(parts) >= 1 {
 		if _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
 			projectID = pid
 		}
 	}
-	// Fall back to custom domain
 	if projectID == "" && p.domains != nil {
 		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
 			if _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
@@ -394,6 +413,92 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		IsBot:       isBot,
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// originMatchesHost returns true if the request's Origin OR Referer header
+// hostname matches the target hostname. Used to reject analytics events sent
+// from anywhere other than the project's own site.
+func originMatchesHost(r *http.Request, host string) bool {
+	check := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		if i := strings.Index(s, "://"); i >= 0 {
+			s = s[i+3:]
+		}
+		if i := strings.IndexAny(s, "/?#"); i >= 0 {
+			s = s[:i]
+		}
+		// Strip optional :port.
+		if i := strings.IndexByte(s, ':'); i >= 0 {
+			s = s[:i]
+		}
+		return strings.EqualFold(s, host) || strings.EqualFold(s, "www."+host)
+	}
+	return check(r.Header.Get("Origin")) || check(r.Header.Get("Referer"))
+}
+
+// ingestLimiter caps unauthenticated analytics events per source IP so a
+// single attacker can't pollute dashboards at scale. Per-minute sliding
+// window. Lives at package scope because the limiter's in-memory bucket map
+// must survive across HTTPProxy instances (there's only one, but still).
+var ingestLimiter = newSlidingIPLimiter(60, time.Minute)
+
+// slidingIPLimiter: simple per-IP sliding-window rate limiter with
+// opportunistic cleanup. Duplicated intentionally from the api package's
+// version so the proxy doesn't have to import api (would be a cycle).
+type slidingIPLimiter struct {
+	mu      sync.Mutex
+	buckets map[string][]time.Time
+	max     int
+	window  time.Duration
+	cleanAt time.Time
+}
+
+func newSlidingIPLimiter(max int, window time.Duration) *slidingIPLimiter {
+	return &slidingIPLimiter{buckets: map[string][]time.Time{}, max: max, window: window}
+}
+
+func (l *slidingIPLimiter) allow(ip string) bool {
+	if ip == "" {
+		return true
+	}
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if now.After(l.cleanAt) {
+		for k, ts := range l.buckets {
+			fresh := ts[:0]
+			for _, t := range ts {
+				if t.After(cutoff) {
+					fresh = append(fresh, t)
+				}
+			}
+			if len(fresh) == 0 {
+				delete(l.buckets, k)
+			} else {
+				l.buckets[k] = fresh
+			}
+		}
+		l.cleanAt = now.Add(5 * time.Minute)
+	}
+
+	hits := l.buckets[ip]
+	fresh := hits[:0]
+	for _, t := range hits {
+		if t.After(cutoff) {
+			fresh = append(fresh, t)
+		}
+	}
+	if len(fresh) >= l.max {
+		l.buckets[ip] = fresh
+		return false
+	}
+	l.buckets[ip] = append(fresh, now)
+	return true
 }
 
 // proxyToProject reverse-proxies a request to a deployed project's container
