@@ -6,7 +6,8 @@ import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
-  Activity, BarChart3,
+  Activity, BarChart3, GitBranch, Database, Globe, Terminal,
+  GitPullRequest, Clock, HardDrive, Rocket,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -20,34 +21,56 @@ export default function HomePage() {
               <FadeIn delay={0.1}>
                 <div className="inline-flex items-center gap-2 self-start rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
                   <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>
-                  v1.0 — Now open source
+                  Deploy • Tunnel • Monitor
                 </div>
               </FadeIn>
-              <FadeIn delay={0.2}><h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">Expose localhost<br />to the internet</h1></FadeIn>
-              <FadeIn delay={0.35}><p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">Secure tunnels from the public internet to your local machine. HTTP, TCP, TLS — with real-time request inspection.</p></FadeIn>
+              <FadeIn delay={0.2}>
+                <h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">
+                  Ship from localhost<br />to live URL
+                </h1>
+              </FadeIn>
+              <FadeIn delay={0.35}>
+                <p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">
+                  Deploy from GitHub, tunnel your localhost, run scheduled jobs,
+                  get cookieless analytics — all on one open-source platform.
+                  No AWS ticket, no config sprawl.
+                </p>
+              </FadeIn>
               <FadeIn delay={0.5}>
                 <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                  <HoverScale><Button className="h-10 px-5 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Get started <ArrowRight className="h-3.5 w-3.5" /></Button></HoverScale>
+                  <HoverScale><Button className="h-10 px-5 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Start free <ArrowRight className="h-3.5 w-3.5" /></Button></HoverScale>
                   <HoverScale><Button variant="outline" className="h-10 px-5 text-sm" nativeButton={false} render={<Link href="/docs" />}>Read docs</Button></HoverScale>
                 </div>
               </FadeIn>
               <FadeIn delay={0.6}>
-                <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground">
-                  {["Free tier", "No credit card", "Self-hostable"].map((t) => (<span key={t} className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" />{t}</span>))}
+                <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground flex-wrap">
+                  {["Free tier", "No credit card", "Self-hostable", "MIT license"].map((t) => (
+                    <span key={t} className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" />{t}</span>
+                  ))}
                 </div>
               </FadeIn>
             </FadeIn>
+
+            {/* Hero right side: terminal showing deploy flow */}
             <SlideIn delay={0.3} className="flex items-center">
               <div className="w-full rounded-lg border border-border/60 bg-[#09090b] overflow-hidden">
                 <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
-                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" /><div className="h-2.5 w-2.5 rounded-full bg-white/10" /><div className="h-2.5 w-2.5 rounded-full bg-white/10" />
-                  <span className="ml-2 text-[10px] text-zinc-600 font-mono">terminal</span>
+                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
+                  <span className="ml-2 text-[10px] text-zinc-600 font-mono">~/my-saas</span>
                 </div>
                 <div className="p-4 sm:p-5 font-mono text-[12px] sm:text-[13px] leading-[1.9] overflow-x-auto">
-                  <div className="text-zinc-600">$ serverme http 3000</div>
-                  <div className="mt-3 text-zinc-500">  ServerMe</div>
-                  <div className="text-zinc-500">  Inspect  <span className="text-blue-400/80">http://127.0.0.1:4040</span></div>
-                  <div className="mt-2 text-zinc-500">  HTTP  <span className="text-emerald-400 font-medium">https://myapp.serverme.site</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
+                  <div className="text-zinc-600">$ git push origin main</div>
+                  <div className="mt-1 text-zinc-500">  Writing objects: 100% (4/4), 412 bytes</div>
+                  <div className="text-zinc-500">  To github.com:me/my-saas.git</div>
+                  <div className="mt-3 text-zinc-700">  <span className="text-amber-500">◷</span> ServerMe: webhook received</div>
+                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Building Docker image...</div>
+                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Running migrations</div>
+                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Health check /health 200 OK</div>
+                  <div className="mt-2 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.serverme.site</span></div>
+                  <div className="mt-3 text-zinc-700">$ serverme http 3000</div>
+                  <div className="mt-1 text-zinc-500">  Tunnel  <span className="text-blue-400 font-medium">https://dev.serverme.site</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
                 </div>
               </div>
             </SlideIn>
@@ -59,8 +82,10 @@ export default function HomePage() {
       <section className="border-b border-border/40">
         <div className="mx-auto max-w-6xl px-5 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-center gap-3 sm:gap-6 text-xs text-muted-foreground font-mono">
-            <span>npm i -g serverme-cli</span><span className="hidden sm:block text-border/60">·</span>
-            <span>brew install jams24/serverme/serverme</span><span className="hidden sm:block text-border/60">·</span>
+            <span>npm i -g serverme-cli</span>
+            <span className="hidden sm:block text-border/60">·</span>
+            <span>brew install jams24/serverme/serverme</span>
+            <span className="hidden sm:block text-border/60">·</span>
             <span>curl -fsSL get.serverme.site | sh</span>
           </div>
         </div>
@@ -70,22 +95,61 @@ export default function HomePage() {
       <section className="border-b border-border/40">
         <div className="mx-auto max-w-6xl px-5 sm:px-6 py-12 sm:py-16">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 sm:gap-12 text-center">
-            <Metric value={805} label="Requests proxied" />
+            <Metric value={30} prefix="<" suffix="s" label="git push → live" />
             <Metric value={99} suffix="%" label="Uptime" />
-            <Metric value={8} prefix="<" suffix="ms" label="Avg latency" />
-            <Metric value={4} label="Active users" />
+            <Metric value={8}  prefix="<" suffix="ms" label="Tunnel latency" />
+            <Metric value={0}  label="Cold starts" />
           </div>
         </div>
       </section>
 
-      {/* ── Video Preview ────────────────────────────── */}
+      {/* ── Four pillars: Deploy / Data / Tunnel / Observe ─────────────── */}
       <section className="py-20 sm:py-28">
+        <div className="mx-auto max-w-6xl px-5 sm:px-6">
+          <ScrollReveal>
+            <SectionHeader
+              label="Platform"
+              title="One platform, four jobs"
+              desc="Everything you'd otherwise glue together yourself — deploys, databases, tunneling, observability."
+            />
+          </ScrollReveal>
+          <StaggerContainer className="mt-12 grid gap-4 sm:grid-cols-2">
+            {pillars.map((p) => (
+              <StaggerItem key={p.title}>
+                <GlowCard className="bg-card/30 p-6 sm:p-8 h-full transition-colors hover:bg-accent/20">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-md ${p.iconBg}`}>
+                      <p.icon className={`h-4 w-4 ${p.iconColor}`} />
+                    </div>
+                    <h3 className="text-base font-medium">{p.title}</h3>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{p.desc}</p>
+                  <ul className="mt-5 space-y-2">
+                    {p.bullets.map((b) => (
+                      <li key={b} className="flex items-start gap-2 text-xs text-foreground/80">
+                        <Check className="h-3 w-3 mt-0.5 text-emerald-500/80 shrink-0" />
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </GlowCard>
+              </StaggerItem>
+            ))}
+          </StaggerContainer>
+        </div>
+      </section>
+
+      {/* ── Dashboard preview ──────────────────────────────────────────── */}
+      <section className="border-y border-border/40 py-20 sm:py-28">
         <div className="mx-auto max-w-5xl px-5 sm:px-6">
           <ScrollReveal>
             <div className="text-center max-w-lg mx-auto mb-12">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">See it in action</p>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">From terminal to production</h2>
-              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">One command to expose your local server. A full dashboard to manage everything.</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Dashboard</p>
+              <h2 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">Everything in one tab</h2>
+              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                Deploys, live logs, metrics, analytics, tunnels, databases — all in one place.
+                No Grafana, Datadog, or five-tool stack.
+              </p>
             </div>
           </ScrollReveal>
           <ScrollReveal delay={150}>
@@ -94,34 +158,45 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Protocols ────────────────────────────────── */}
+      {/* ── Deploy from GitHub ───────────────────────────────────────── */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal><SectionHeader label="Protocols" title="HTTP. TCP. TLS." desc="Not just web traffic. Expose databases, game servers, or any TCP service." /></ScrollReveal>
-          <StaggerContainer className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-3">
-            {protocols.map((p) => (
-              <StaggerItem key={p.name}>
-                <GlowCard className="bg-card/30 p-6 sm:p-8 transition-colors hover:bg-accent/20 h-full">
-                  <div className="font-mono text-xs font-medium text-muted-foreground uppercase tracking-wider">{p.name}</div>
-                  <p className="mt-3 text-sm text-foreground/80 leading-relaxed">{p.desc}</p>
-                  <code className="mt-4 block font-mono text-[11px] text-muted-foreground">{p.cmd}</code>
-                </GlowCard>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            <ScrollReveal>
+              <SectionHeader
+                label="Deploys"
+                title="Push code. Ship code."
+                desc="Connect a GitHub repo, pick a branch. Every push auto-deploys. Every PR gets its own preview URL with a real running container, a comment on the PR, and tear-down on close."
+                align="left"
+              />
+              <div className="mt-6 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1.5"><GitBranch className="h-3.5 w-3.5" /> Auto-deploy on push</span>
+                <span className="flex items-center gap-1.5"><GitPullRequest className="h-3.5 w-3.5" /> PR previews</span>
+                <span className="flex items-center gap-1.5"><Rocket className="h-3.5 w-3.5" /> Rollback in 3 clicks</span>
+              </div>
+            </ScrollReveal>
+            <ScrollReveal delay={200}>
+              <DeployCard />
+            </ScrollReveal>
+          </div>
         </div>
       </section>
 
-      {/* ── Inspection (live stream) ─────────────────── */}
+      {/* ── Tunnels (with live inspection) ────────────────────────────── */}
       <section className="border-y border-border/40 py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             <ScrollReveal>
-              <SectionHeader label="Inspection" title="See every request" desc="Every HTTP request is captured in real-time — method, path, headers, body, status, timing. Replay any request with one click." align="left" />
-              <div className="mt-6 flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" /> Real-time</span>
-                <span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> WebSocket</span>
-                <span className="flex items-center gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Analytics</span>
+              <SectionHeader
+                label="Tunnels"
+                title="Localhost to the internet, instantly"
+                desc="HTTP, TCP, or TLS. Every request captured in real time — method, path, headers, body, status, timing. Replay any request with one click."
+                align="left"
+              />
+              <div className="mt-6 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" /> Live inspection</span>
+                <span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Replay requests</span>
+                <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" /> Custom domain</span>
               </div>
             </ScrollReveal>
             <ScrollReveal delay={200}><LiveStream /></ScrollReveal>
@@ -129,12 +204,18 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Features Grid ────────────────────────────── */}
+      {/* ── Everything else ─────────────────────────────── */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal><SectionHeader label="Platform" title="Everything you need" desc="A complete tunneling platform — not just a port forwarder." /></ScrollReveal>
+          <ScrollReveal>
+            <SectionHeader
+              label="More"
+              title="Batteries included"
+              desc="The stuff you'd end up bolting on anyway — already there."
+            />
+          </ScrollReveal>
           <StaggerContainer className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((f) => (
+            {extras.map((f) => (
               <StaggerItem key={f.title}>
                 <GlowCard className="bg-card/30 p-6 group transition-colors hover:bg-accent/20 h-full">
                   <f.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -150,7 +231,13 @@ export default function HomePage() {
       {/* ── SDKs ─────────────────────────────────────── */}
       <section className="border-y border-border/40 py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal><SectionHeader label="SDKs" title="Programmatic access" desc="Manage tunnels, stream traffic, and replay requests from your code." /></ScrollReveal>
+          <ScrollReveal>
+            <SectionHeader
+              label="Programmatic"
+              title="CLI + SDKs"
+              desc="Scriptable from your terminal, your CI, or your own apps."
+            />
+          </ScrollReveal>
           <div className="mt-12 grid gap-4 lg:grid-cols-2">
             <ScrollReveal><CodeCard lang="TypeScript" code={tsCode} /></ScrollReveal>
             <ScrollReveal delay={150}><CodeCard lang="Python" code={pyCode} /></ScrollReveal>
@@ -161,7 +248,13 @@ export default function HomePage() {
       {/* ── Pricing ──────────────────────────────────── */}
       <section id="pricing" className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal><SectionHeader label="Pricing" title="Start free, scale when ready" desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits." /></ScrollReveal>
+          <ScrollReveal>
+            <SectionHeader
+              label="Pricing"
+              title="Start free, scale when ready"
+              desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits."
+            />
+          </ScrollReveal>
           <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3">
             {plans.map((plan, i) => (
               <ScrollReveal key={plan.name} delay={i * 150}>
@@ -170,9 +263,18 @@ export default function HomePage() {
                     <span className="text-sm font-medium">{plan.name}</span>
                     {plan.popular && <span className="text-[10px] font-medium text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">Popular</span>}
                   </div>
-                  <div className="mt-3 flex items-baseline gap-0.5"><span className="text-3xl font-semibold tracking-tight">{plan.price}</span>{plan.period && <span className="text-sm text-muted-foreground">/{plan.period}</span>}</div>
+                  <div className="mt-3 flex items-baseline gap-0.5">
+                    <span className="text-3xl font-semibold tracking-tight">{plan.price}</span>
+                    {plan.period && <span className="text-sm text-muted-foreground">/{plan.period}</span>}
+                  </div>
                   <p className="mt-2 text-xs text-muted-foreground">{plan.desc}</p>
-                  <ul className="mt-6 space-y-2.5">{plan.features.map((f) => (<li key={f} className="flex items-center gap-2 text-xs text-foreground/70"><Check className="h-3 w-3 text-emerald-500/80 shrink-0" />{f}</li>))}</ul>
+                  <ul className="mt-6 space-y-2.5">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-xs text-foreground/70">
+                        <Check className="h-3 w-3 text-emerald-500/80 shrink-0" />{f}
+                      </li>
+                    ))}
+                  </ul>
                   <Button className="mt-6 w-full h-9 text-xs" variant={plan.popular ? "default" : "outline"} nativeButton={false} render={<Link href="/sign-up" />}>{plan.cta}</Button>
                 </div>
               </ScrollReveal>
@@ -185,8 +287,8 @@ export default function HomePage() {
       <section className="border-t border-border/40 py-20 sm:py-28">
         <div className="mx-auto max-w-xl px-5 sm:px-6 text-center">
           <ScrollReveal>
-            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">Start tunneling in seconds</h2>
-            <p className="mt-3 text-sm text-muted-foreground">No credit card. No config files. One command.</p>
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">Ship your first project in 30 seconds</h2>
+            <p className="mt-3 text-sm text-muted-foreground">Connect GitHub, pick a repo, get a live URL. No credit card.</p>
             <div className="mt-8 flex flex-col items-center gap-4">
               <Button className="h-10 px-6 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Create free account <ArrowRight className="h-3.5 w-3.5" /></Button>
               <code className="text-xs text-muted-foreground font-mono">npm install -g serverme-cli</code>
@@ -199,22 +301,71 @@ export default function HomePage() {
 }
 
 // ─── Data ────────────────────────────────────────────
-const protocols = [
-  { name: "HTTP", desc: "Expose web apps, APIs, and webhooks with custom subdomains and automatic TLS.", cmd: "$ serverme http 3000" },
-  { name: "TCP", desc: "Forward PostgreSQL, Redis, MySQL — any TCP service gets a public port.", cmd: "$ serverme tcp 5432" },
-  { name: "TLS", desc: "Passthrough encrypted traffic without termination. Your certs, your control.", cmd: "$ serverme tls 443" },
+
+const pillars = [
+  {
+    icon: Rocket,
+    iconBg: "bg-emerald-500/10", iconColor: "text-emerald-400",
+    title: "Deploy",
+    desc: "Connect a GitHub repo. Every push builds a Docker image, runs migrations, health-checks, and serves on a subdomain.",
+    bullets: [
+      "Auto-deploy on push to any branch",
+      "Preview URL for every pull request",
+      "Framework auto-detect: Next.js, Node, Python, Docker, static",
+      "Custom domains with automatic TLS",
+      "Deploy from specific commits, roll back in one click",
+    ],
+  },
+  {
+    icon: Database,
+    iconBg: "bg-blue-500/10", iconColor: "text-blue-400",
+    title: "Data",
+    desc: "Managed PostgreSQL you can reach from your container and from your laptop. Backups on a schedule.",
+    bullets: [
+      "PostgreSQL 16 per project, auto-injected as DATABASE_URL",
+      "External connection URL (pgAdmin, DBeaver, psql from your laptop)",
+      "Scheduled backups + one-click restore",
+      "Standalone databases not tied to a project",
+    ],
+  },
+  {
+    icon: Globe,
+    iconBg: "bg-violet-500/10", iconColor: "text-violet-400",
+    title: "Tunnel",
+    desc: "Expose your local machine to the internet over HTTP, TCP, or TLS. Real-time request inspector + replay.",
+    bullets: [
+      "HTTP tunnels with custom subdomains",
+      "TCP tunnels for databases, game servers, SSH",
+      "TLS passthrough (your certs, your control)",
+      "Live request capture + one-click replay",
+    ],
+  },
+  {
+    icon: Activity,
+    iconBg: "bg-amber-500/10", iconColor: "text-amber-400",
+    title: "Observe",
+    desc: "Cookieless website analytics, CPU/memory/network metrics, and live-streaming container logs.",
+    bullets: [
+      "Privacy-first analytics (no cookies, GDPR-safe)",
+      "Real-time visitor counter, top pages, countries",
+      "CPU / memory / network per project with sparklines",
+      "Live container logs via WebSocket — stop paying for Datadog",
+    ],
+  },
 ];
-const features = [
-  { icon: Eye, title: "Request inspection", desc: "View every request in real-time at localhost:4040. Headers, body, timing." },
-  { icon: Activity, title: "Replay requests", desc: "Re-send any captured request with one click. Debug webhooks effortlessly." },
-  { icon: Gauge, title: "Custom domains", desc: "Bring your own domain with automatic Let's Encrypt TLS." },
-  { icon: Zap, title: "Blazing fast", desc: "Written in Go with smux multiplexing. Sub-millisecond overhead." },
-  { icon: Users, title: "Teams", desc: "Invite members, share tunnels, and manage access with roles." },
-  { icon: Shield, title: "Auth at edge", desc: "Basic auth, Google OAuth, or IP restrictions. No code changes." },
-  { icon: Lock, title: "E2E encryption", desc: "All traffic encrypted with TLS 1.3. Zero plaintext on our servers." },
-  { icon: BarChart3, title: "Analytics", desc: "Success rates, latency, bandwidth — all in real-time." },
-  { icon: Code, title: "Self-hostable", desc: "Deploy your own server with one command. MIT licensed." },
+
+const extras = [
+  { icon: Clock,       title: "Scheduled jobs",     desc: "Cron-like jobs that run in a one-shot container from your image. Same env, same DB access." },
+  { icon: HardDrive,   title: "BYOC servers",       desc: "Bring your own cloud. SSH into a VPS you already own — ServerMe deploys there instead." },
+  { icon: Eye,         title: "Health checks",      desc: "Deploy isn't marked 'running' until your /health endpoint returns 2xx. No silent bad pushes." },
+  { icon: Terminal,    title: "Release commands",   desc: "Run migrations, seed data, or warm caches in a one-shot container before the app starts." },
+  { icon: Users,       title: "Team collaboration", desc: "Invite members with roles. Shared projects, shared databases, shared tunnels." },
+  { icon: Shield,      title: "OAuth at edge",      desc: "Google/GitHub auth before traffic reaches your app — no code changes needed." },
+  { icon: Zap,         title: "Fast by default",    desc: "Go server, Docker under the hood, smux-multiplexed tunnels. Sub-ms overhead." },
+  { icon: Lock,        title: "End-to-end TLS",     desc: "Let's Encrypt via Caddy on-demand. Works with your custom domains automatically." },
+  { icon: Code,        title: "Self-hostable",      desc: "One-command install on any Ubuntu VPS. MIT license. Run your own stack." },
 ];
+
 const plans = [
   {
     name: "Free", price: "$0", period: null, popular: false,
@@ -260,23 +411,38 @@ const plans = [
     ],
   },
 ];
+
 const tsCode = `import { ServerMe } from '@serverme/sdk';
 
-const client = new ServerMe({ authtoken: 'sm_live_...' });
-const tunnels = await client.tunnels.list();
+const sm = new ServerMe({ apiKey: 'sm_live_...' });
 
-for await (const req of client.inspect.subscribe(url)) {
-  console.log(\`\${req.method} \${req.path} → \${req.statusCode}\`);
+// Deploy a GitHub repo
+const project = await sm.projects.create({
+  name: 'my-saas',
+  subdomain: 'my-saas',
+  github_repo: 'me/my-saas',
+});
+await sm.projects.deploy(project.id);
+
+// Tail live container logs
+for await (const line of sm.projects.logs(project.id)) {
+  console.log(line.message);
 }`;
+
 const pyCode = `from serverme import ServerMe
 
-async with ServerMe(authtoken="sm_live_...") as client:
-    tunnels = await client.tunnels.list()
+sm = ServerMe(api_key="sm_live_...")
 
-    async for req in client.inspect.subscribe(url):
-        print(f"{req.method} {req.path} → {req.status_code}")`;
+# Spin up a managed database
+db = sm.services.create(name="my-db", type="postgres")
+print(db.external_connection_url)
+
+# Trigger a deploy from a specific commit
+sm.projects.deploy(project_id,
+                   commit_sha="a1b2c3d")`;
 
 // ─── Components ──────────────────────────────────────
+
 function SectionHeader({ label, title, desc, align = "center" }: { label: string; title: string; desc: string; align?: string }) {
   return (
     <div className={align === "center" ? "text-center max-w-lg mx-auto" : "max-w-lg"}>
@@ -286,14 +452,84 @@ function SectionHeader({ label, title, desc, align = "center" }: { label: string
     </div>
   );
 }
+
 function Metric({ value, suffix, prefix, label }: { value: number; suffix?: string; prefix?: string; label: string }) {
   return (
     <div>
-      <div className="text-2xl sm:text-3xl font-semibold tracking-tight">{prefix}<AnimatedCounter value={value} suffix={suffix} /></div>
+      <div className="text-2xl sm:text-3xl font-semibold tracking-tight">
+        {prefix}<AnimatedCounter value={value} suffix={suffix} />
+      </div>
       <div className="mt-1 text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }
+
+// Small card that animates a GitHub deploy flow — shown in the "Deploys" section.
+function DeployCard() {
+  return (
+    <div className="rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3 bg-zinc-950">
+        <div className="flex gap-1.5">
+          <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
+          <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/60" />
+          <div className="h-2.5 w-2.5 rounded-full bg-green-500/60" />
+        </div>
+        <div className="flex-1 mx-4">
+          <div className="mx-auto max-w-xs h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-[10px] text-zinc-600 font-mono">
+            serverme.site/projects/my-saas
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-3">
+        {/* Project header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400">
+              <Rocket className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[13px] font-medium text-zinc-200">my-saas</div>
+              <div className="text-[10px] text-zinc-600 font-mono">my-saas.serverme.site</div>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-emerald-500 font-medium">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            running
+          </span>
+        </div>
+
+        {/* Deploy timeline */}
+        <div className="space-y-1.5">
+          {[
+            { label: "Cloning me/my-saas @ a1b2c3d",  time: "0.8s",  icon: Check, color: "text-emerald-500" },
+            { label: "Building Docker image",          time: "22.1s", icon: Check, color: "text-emerald-500" },
+            { label: "npx prisma migrate deploy",      time: "1.4s",  icon: Check, color: "text-emerald-500" },
+            { label: "Health check /health → 200 OK",  time: "0.3s",  icon: Check, color: "text-emerald-500" },
+          ].map((s, i) => (
+            <div key={i} className="flex items-center gap-2 rounded-md bg-white/[0.02] px-2.5 py-1.5 animate-fade-in-up" style={{ animationDelay: `${i * 0.18}s` }}>
+              <s.icon className={`h-3 w-3 ${s.color} shrink-0`} />
+              <span className="flex-1 text-[11px] text-zinc-400 truncate">{s.label}</span>
+              <span className="text-[10px] text-zinc-700 font-mono">{s.time}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* PR preview chip */}
+        <div className="mt-3 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+          <div className="flex items-center gap-2 text-[10px] text-blue-400">
+            <GitPullRequest className="h-3 w-3" />
+            <span>PR #42 preview:</span>
+            <span className="font-mono">my-saas-pr-42.serverme.site</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardPreview() {
   return (
     <div className="relative rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20">
@@ -306,12 +542,11 @@ function DashboardPreview() {
         </div>
         <div className="flex-1 mx-4">
           <div className="mx-auto max-w-xs h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-[10px] text-zinc-600 font-mono">
-            serverme.site/tunnels
+            serverme.site/projects
           </div>
         </div>
       </div>
 
-      {/* Dashboard content */}
       <div className="flex min-h-[380px] sm:min-h-[440px]">
         {/* Sidebar */}
         <div className="hidden sm:flex flex-col w-48 border-r border-white/[0.04] p-3 gap-0.5 shrink-0">
@@ -319,76 +554,86 @@ function DashboardPreview() {
             <div className="h-5 w-5 rounded bg-white/5 flex items-center justify-center text-[9px]">S</div>
             ServerMe
           </div>
-          {["Tunnels", "Projects", "Analytics", "Inspector", "Domains", "Team"].map((item, i) => (
-            <div key={item} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[11px] font-mono transition-colors ${i === 0 ? "bg-white/[0.06] text-zinc-300" : "text-zinc-600 hover:text-zinc-400"}`}>
-              <div className={`h-1 w-1 rounded-full ${i === 0 ? "bg-emerald-500" : "bg-transparent"}`} />
+          {[
+            ["Overview", false],
+            ["Projects", true],
+            ["Services", false],
+            ["Tunnels", false],
+            ["Analytics", false],
+            ["Domains", false],
+            ["Inspector", false],
+          ].map(([item, active]) => (
+            <div key={item as string} className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[11px] font-mono transition-colors ${active ? "bg-white/[0.06] text-zinc-300" : "text-zinc-600"}`}>
+              <div className={`h-1 w-1 rounded-full ${active ? "bg-emerald-500" : "bg-transparent"}`} />
               {item}
             </div>
           ))}
         </div>
 
-        {/* Main content */}
+        {/* Main content — project list with a live resource widget */}
         <div className="flex-1 p-4 sm:p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <div className="text-sm font-medium text-zinc-200">Active Tunnels</div>
-              <div className="text-[11px] text-zinc-600 mt-0.5">3 tunnels running</div>
+              <div className="text-sm font-medium text-zinc-200">Projects</div>
+              <div className="text-[11px] text-zinc-600 mt-0.5">3 running · 1 building</div>
             </div>
             <div className="h-7 px-3 rounded-md bg-white/[0.06] text-[10px] text-zinc-400 flex items-center gap-1.5 font-mono">
-              + New Tunnel
+              + New project
             </div>
           </div>
 
-          {/* Tunnel cards - animated entrance */}
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {[
-              { name: "api-dev", url: "api-dev.serverme.site", proto: "HTTP", port: "3000", status: "active", delay: "0s" },
-              { name: "postgres", url: "tcp://serverme.site:41923", proto: "TCP", port: "5432", status: "active", delay: "0.15s" },
-              { name: "my-saas", url: "my-saas.serverme.site", proto: "HTTP", port: "8080", status: "active", delay: "0.3s" },
-            ].map((t) => (
-              <div key={t.name} className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] p-3 animate-fade-in-up" style={{ animationDelay: t.delay }}>
-                <div className={`flex h-8 w-8 items-center justify-center rounded-md text-[10px] font-mono font-medium shrink-0 ${t.proto === "TCP" ? "bg-green-500/10 text-green-400" : "bg-blue-500/10 text-blue-400"}`}>
-                  {t.proto}
+              { name: "my-saas",       sub: "my-saas.serverme.site",       status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Next.js", delay: "0s" },
+              { name: "api-server",    sub: "api-server.serverme.site",    status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Node",    delay: "0.15s" },
+              { name: "analytics-etl", sub: "analytics-etl.serverme.site", status: "building", pingCls: "bg-amber-400",   dotCls: "bg-amber-500",   textCls: "text-amber-500",   framework: "Python",  delay: "0.3s" },
+            ].map((p) => (
+              <div key={p.name} className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] p-3 animate-fade-in-up" style={{ animationDelay: p.delay }}>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.04] shrink-0">
+                  <Rocket className="h-3.5 w-3.5 text-zinc-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-medium text-zinc-300 truncate">{t.url}</span>
+                    <span className="text-[12px] font-medium text-zinc-300 truncate">{p.name}</span>
+                    <span className="text-[9px] text-zinc-600 font-mono">{p.framework}</span>
                   </div>
-                  <div className="text-[10px] text-zinc-600 font-mono mt-0.5">→ localhost:{t.port}</div>
+                  <div className="text-[10px] text-zinc-600 font-mono mt-0.5">{p.sub}</div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${p.pingCls}`} />
+                    <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${p.dotCls}`} />
                   </span>
-                  <span className="text-[10px] text-emerald-500 font-medium">Active</span>
+                  <span className={`text-[10px] font-medium ${p.textCls}`}>{p.status}</span>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Live request stream */}
-          <div className="mt-5 rounded-lg border border-white/[0.04] bg-white/[0.01] overflow-hidden">
-            <div className="flex items-center justify-between border-b border-white/[0.04] px-3 py-1.5">
+          {/* Mini metrics widget */}
+          <div className="mt-5 rounded-lg border border-white/[0.04] bg-white/[0.01] p-3">
+            <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] text-zinc-600 font-mono flex items-center gap-1.5">
-                <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500" /></span>
-                Live Traffic
+                <BarChart3 className="h-3 w-3" />
+                my-saas · metrics
               </div>
-              <div className="text-[9px] text-zinc-700 font-mono">12 req/s</div>
+              <div className="flex gap-1 text-[9px] text-zinc-600">
+                <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-zinc-400">1h</span>
+                <span>6h</span><span>24h</span>
+              </div>
             </div>
-            <div className="p-2 space-y-0.5 font-mono text-[10px]">
+            <div className="grid grid-cols-3 gap-2">
               {[
-                { method: "GET", path: "/api/users", status: "200", time: "12ms", color: "text-emerald-400" },
-                { method: "POST", path: "/api/webhooks/stripe", status: "201", time: "45ms", color: "text-emerald-400" },
-                { method: "GET", path: "/api/products?page=2", status: "200", time: "8ms", color: "text-emerald-400" },
-                { method: "DELETE", path: "/api/sessions/expired", status: "204", time: "3ms", color: "text-emerald-400" },
-                { method: "POST", path: "/api/auth/login", status: "401", time: "6ms", color: "text-red-400" },
-              ].map((req, i) => (
-                <div key={i} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/[0.02] animate-fade-in-up" style={{ animationDelay: `${0.5 + i * 0.12}s` }}>
-                  <span className={`w-10 shrink-0 font-medium ${req.method === "GET" ? "text-blue-400" : req.method === "POST" ? "text-amber-400" : "text-red-400"}`}>{req.method}</span>
-                  <span className="flex-1 text-zinc-400 truncate">{req.path}</span>
-                  <span className={`w-6 text-right ${req.color}`}>{req.status}</span>
-                  <span className="w-10 text-right text-zinc-600">{req.time}</span>
+                { label: "CPU",     val: "23%",    color: "bg-emerald-500" },
+                { label: "Memory",  val: "412 MB", color: "bg-blue-500" },
+                { label: "Network", val: "1.2 MB", color: "bg-amber-500" },
+              ].map((m) => (
+                <div key={m.label} className="rounded bg-[#0c0c0e] px-2 py-1.5">
+                  <div className="text-[9px] text-zinc-600">{m.label}</div>
+                  <div className="text-[11px] text-zinc-300 font-mono mt-0.5">{m.val}</div>
+                  <div className="mt-1.5 h-0.5 w-full rounded-full bg-white/[0.04] overflow-hidden">
+                    <div className={`h-full ${m.color} opacity-60`} style={{ width: "60%" }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -396,7 +641,6 @@ function DashboardPreview() {
         </div>
       </div>
 
-      {/* Glow effect */}
       <div className="absolute inset-0 pointer-events-none rounded-xl ring-1 ring-inset ring-white/[0.03]" />
     </div>
   );
