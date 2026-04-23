@@ -60,3 +60,4 @@ secrets/
 
 # Operations runbook (contains real credentials)
 RUNBOOK.md
+.bin/

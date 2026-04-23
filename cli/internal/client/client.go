@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -148,7 +149,7 @@ func (c *Client) Run() (runErr error) {
 	for {
 		env, err := proto.ReadMsg(c.ctrlStr)
 		if err != nil {
-			if c.isClosed() {
+			if c.isClosed() || errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("read control msg: %w", err)
