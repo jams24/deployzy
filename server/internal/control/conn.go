@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -214,7 +215,7 @@ func (c *Conn) Run() error {
 	for {
 		env, err := proto.ReadMsg(c.ctrlStr)
 		if err != nil {
-			if err == io.EOF || c.isClosed() {
+			if c.isClosed() || errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("read control msg: %w", err)
