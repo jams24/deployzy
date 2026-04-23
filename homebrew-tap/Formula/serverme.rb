@@ -1,26 +1,26 @@
 class Serverme < Formula
   desc "Open-source tunnel to expose your local servers to the internet"
   homepage "https://serverme.site"
-  version "1.0.0"
+  version "1.0.7"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/jams24/serverme/releases/download/v#{version}/serverme_darwin_arm64.tar.gz"
-      sha256 "39e1435ea7d036c9dd3a09676d16d250f5d43ded8888c977452992dc93991fd2"
+      sha256 "500ee311c30f2392fde5195e4e2ae600ad8226385a006cadfd2ae21372a25a89"
     else
       url "https://github.com/jams24/serverme/releases/download/v#{version}/serverme_darwin_amd64.tar.gz"
-      sha256 "579d90fe713c78e8e31d6425cbd0d857312a72572769b953a0c5e7c25a7a73e1"
+      sha256 "bc4a39e5899b0c2456e6397479b899b9b545de595f24cad517e3554b34876f68"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/jams24/serverme/releases/download/v#{version}/serverme_linux_arm64.tar.gz"
-      sha256 "84bff299f4721ba830af9b48871198b9d883bb7475eaa6655d32a996b8df7849"
+      sha256 "6b83adae5588f388073398499cc738e9736b45fd6434fb208d0b60ae1f6d9f98"
     else
       url "https://github.com/jams24/serverme/releases/download/v#{version}/serverme_linux_amd64.tar.gz"
-      sha256 "3f982ae67e000f966d327d284ea3429a6840bc96d2440df8590611c29da52fdf"
+      sha256 "101eed6b9b7c9547903d23afe4e6b0ac75183c7c7f08260a59430fc54ca34836"
     end
   end
 
