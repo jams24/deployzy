@@ -55,8 +55,6 @@ func (s *Server) handleAdminAddServer(w http.ResponseWriter, r *http.Request) {
 	if req.Port == 0 { req.Port = 22 }
 	if req.SSHUser == "" { req.SSHUser = "root" }
 	if req.Region == "" { req.Region = "default" }
-	if req.TotalCPU == 0 { req.TotalCPU = 2.0 }
-	if req.TotalMemoryMB == 0 { req.TotalMemoryMB = 4096 }
 	if req.MaxProjects == 0 { req.MaxProjects = 10 }
 
 	ws := &db.WorkerServer{
@@ -67,13 +65,28 @@ func (s *Server) handleAdminAddServer(w http.ResponseWriter, r *http.Request) {
 		SSHPassword:   req.SSHPassword,
 		SSHKey:        req.SSHKey,
 		Region:        req.Region,
-		TotalCPU:      req.TotalCPU,
-		TotalMemoryMB: req.TotalMemoryMB,
 		MaxProjects:   req.MaxProjects,
 		Status:        "active",
 	}
 
-	// Test SSH connection
+	// Probe real hardware first; fall back to admin-provided overrides; final
+	// fallback to safe defaults so the row never lands with 0 capacity.
+	cpus, memMB := probeServerResources(ws)
+	if cpus > 0 {
+		ws.TotalCPU = cpus
+	} else if req.TotalCPU > 0 {
+		ws.TotalCPU = req.TotalCPU
+	} else {
+		ws.TotalCPU = 2.0
+	}
+	if memMB > 0 {
+		ws.TotalMemoryMB = memMB
+	} else if req.TotalMemoryMB > 0 {
+		ws.TotalMemoryMB = req.TotalMemoryMB
+	} else {
+		ws.TotalMemoryMB = 4096
+	}
+
 	dockerOK := testServerConnection(ws)
 	ws.DockerInstalled = dockerOK
 
@@ -165,10 +178,21 @@ func (s *Server) handleAddUserServer(w http.ResponseWriter, r *http.Request) {
 		SSHPassword:   req.SSHPassword,
 		SSHKey:        req.SSHKey,
 		Region:        "user",
-		TotalCPU:      2.0,
-		TotalMemoryMB: 4096,
 		MaxProjects:   5,
 		Status:        "active",
+	}
+
+	// Probe actual hardware — replaces the old hard-coded 2 CPU / 4096 MB.
+	cpus, memMB := probeServerResources(ws)
+	if cpus > 0 {
+		ws.TotalCPU = cpus
+	} else {
+		ws.TotalCPU = 2.0
+	}
+	if memMB > 0 {
+		ws.TotalMemoryMB = memMB
+	} else {
+		ws.TotalMemoryMB = 4096
 	}
 
 	dockerOK := testServerConnection(ws)
@@ -199,7 +223,26 @@ func (s *Server) handleDeleteUserServer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.db.DeleteWorkerServer(r.Context(), serverID)
+	// Best-effort remote cleanup: kill every sm-* container and its data
+	// volume on the user's VPS BEFORE we drop the DB row. If the server is
+	// already unreachable we still want to finish the DB delete, hence the
+	// ignored error. Runs in a goroutine with a short timeout so a slow or
+	// dead VPS doesn't hang the UI — the DB cleanup is what the user sees
+	// and that's synchronous below.
+	go func(srv *db.WorkerServer) {
+		// `sm-*` covers both project containers (sm-<8-char-id>) and BYOC
+		// service containers (sm-svc-<random>). Separate steps so partial
+		// failures still progress.
+		runRemoteSSH(srv,
+			`docker ps -aq --filter "name=^sm-" | xargs -r docker rm -f; `+
+				`docker volume ls -q --filter "name=^sm-svc-" | xargs -r docker volume rm`,
+			1*time.Minute)
+	}(server)
+
+	if err := s.db.DeleteWorkerServer(r.Context(), serverID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete server: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -225,9 +268,120 @@ func testServerConnection(ws *db.WorkerServer) bool {
 	return err == nil && strings.Contains(string(out), "Docker")
 }
 
+// probeServerResources SSHes in and returns (cpus, memoryMB) from the remote
+// host. Falls back to (0, 0) on any failure so the caller keeps defaults.
+func probeServerResources(ws *db.WorkerServer) (float64, int) {
+	probe := "echo $(nproc) $(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)"
+	var cmd string
+	if ws.SSHPassword != "" {
+		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s@%s -p %d %q 2>/dev/null",
+			ws.SSHPassword, ws.SSHUser, ws.Host, ws.Port, probe)
+	} else if ws.SSHKey != "" {
+		cmd = fmt.Sprintf("KEY=$(mktemp) && echo %q > $KEY && chmod 600 $KEY && ssh -i $KEY -o StrictHostKeyChecking=no -o ConnectTimeout=10 %s@%s -p %d %q 2>/dev/null; RC=$?; rm -f $KEY; exit $RC",
+			ws.SSHKey, ws.SSHUser, ws.Host, ws.Port, probe)
+	} else {
+		return 0, 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "bash", "-c", cmd).Output()
+	if err != nil {
+		return 0, 0
+	}
+	var cpus float64
+	var mem int
+	fmt.Sscanf(strings.TrimSpace(string(out)), "%f %d", &cpus, &mem)
+	return cpus, mem
+}
+
 func dockerMessage(installed bool) string {
 	if installed {
 		return "Server connected. Docker is installed and ready."
 	}
 	return "Server connected but Docker is not installed. Install Docker to deploy projects."
+}
+
+// handleInstallDocker kicks off an async Docker install on a user's BYOC
+// server and returns immediately with status=installing so browser timeouts
+// can't lose the install state. The UI polls the servers list to see when
+// docker_install_status flips to "installed" or "failed".
+func (s *Server) handleInstallDocker(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	serverID := chi.URLParam(r, "serverId")
+
+	server, _ := s.db.GetWorkerServer(r.Context(), serverID)
+	if server == nil || server.UserID == nil || *server.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	if server.DockerInstalled {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "already_installed"})
+		return
+	}
+	if server.DockerInstallStatus == "installing" {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "installing"})
+		return
+	}
+
+	// Flip to installing before returning so concurrent clicks don't spawn
+	// duplicate installs.
+	s.db.SetDockerInstallStatus(r.Context(), server.ID, "installing", "")
+
+	go s.runDockerInstall(server)
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "installing"})
+}
+
+func (s *Server) runDockerInstall(server *db.WorkerServer) {
+	// get.docker.com is the official bootstrap. Idempotent — safe to re-run.
+	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker"
+	var cmd string
+	if server.SSHPassword != "" {
+		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1",
+			server.SSHPassword, server.SSHUser, server.Host, server.Port, install)
+	} else if server.SSHKey != "" {
+		cmd = fmt.Sprintf("KEY=$(mktemp) && echo %q > $KEY && chmod 600 $KEY && ssh -i $KEY -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1; RC=$?; rm -f $KEY; exit $RC",
+			server.SSHKey, server.SSHUser, server.Host, server.Port, install)
+	} else {
+		s.db.SetDockerInstallStatus(context.Background(), server.ID, "failed", "no ssh credentials")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "bash", "-c", cmd).CombinedOutput()
+	if err != nil {
+		s.db.SetDockerInstallStatus(context.Background(), server.ID, "failed", lastLine(string(out)))
+		return
+	}
+
+	// Verify docker is now callable. Retry a few times since the daemon may
+	// take a few seconds to start after `systemctl enable --now docker`.
+	ok := false
+	for i := 0; i < 5; i++ {
+		if testServerConnection(server) {
+			ok = true
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+
+	if ok {
+		s.db.UpdateWorkerServerDockerInstalled(context.Background(), server.ID, true)
+		s.db.SetDockerInstallStatus(context.Background(), server.ID, "installed", "")
+		// Refresh hardware stats now that we have SSH working end-to-end.
+		if cpus, memMB := probeServerResources(server); cpus > 0 && memMB > 0 {
+			s.db.UpdateWorkerServerCapacity(context.Background(), server.ID, cpus, memMB)
+		}
+	} else {
+		s.db.SetDockerInstallStatus(context.Background(), server.ID, "failed", "install finished but docker --version still fails")
+	}
+}
+
+func lastLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndex(s, "\n"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }

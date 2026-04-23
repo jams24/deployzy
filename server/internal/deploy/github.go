@@ -235,21 +235,40 @@ func (g *GitHubApp) ExchangeCodeForToken(code string) (*GitHubTokenResponse, err
 	return &result, nil
 }
 
-// ListUserRepos lists repos the user has access to via their token.
+// ListUserRepos lists every repo the user has access to — public + private,
+// owner + collaborator + org member. Paginates so users with >100 repos see
+// all of them.
+//
+// `type=all` seems obvious but is wrong: GitHub treats it as "repos the user
+// owns", excluding collaborator + org repos. The correct query combines
+// `visibility=all` (public + private) with `affiliation=owner,collaborator,
+// organization_member`. `type` and `visibility` cannot be used together.
 func (g *GitHubApp) ListUserRepos(accessToken string) ([]GitHubRepo, error) {
-	req, _ := http.NewRequest("GET", "https://api.github.com/user/repos?per_page=100&sort=updated&type=all", nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/vnd.github+json")
+	var all []GitHubRepo
+	for page := 1; page <= 10; page++ { // cap at 10 pages = 1000 repos; anything more gets truncated
+		url := fmt.Sprintf(
+			"https://api.github.com/user/repos?per_page=100&page=%d&sort=updated&visibility=all&affiliation=owner,collaborator,organization_member",
+			page)
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Accept", "application/vnd.github+json")
 
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return nil, err
+		resp, err := g.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var batch []GitHubRepo
+		json.NewDecoder(resp.Body).Decode(&batch)
+		resp.Body.Close()
+		if len(batch) == 0 {
+			break
+		}
+		all = append(all, batch...)
+		if len(batch) < 100 {
+			break // last page
+		}
 	}
-	defer resp.Body.Close()
-
-	var repos []GitHubRepo
-	json.NewDecoder(resp.Body).Decode(&repos)
-	return repos, nil
+	return all, nil
 }
 
 // GitHubCommit is a minimal commit summary returned to the UI.

@@ -143,6 +143,14 @@ func (d *DB) CheckSubdomainAvailable(ctx context.Context, subdomain, userID stri
 		return false, "subdomain already taken"
 	}
 
+	// Admin bypass — single source of truth is is_admin. Matches the billing
+	// package's behaviour so admins never hit plan caps on any dimension.
+	var isAdmin bool
+	d.Pool.QueryRow(ctx, `SELECT is_admin FROM users WHERE id = $1`, userID).Scan(&isAdmin)
+	if isAdmin {
+		return true, ""
+	}
+
 	// Subdomain is free — check if user has reached their limit
 	var count int
 	d.Pool.QueryRow(ctx,
@@ -155,6 +163,12 @@ func (d *DB) CheckSubdomainAvailable(ctx context.Context, subdomain, userID stri
 	d.Pool.QueryRow(ctx, `SELECT plan FROM users WHERE id = $1`, userID).Scan(&plan)
 
 	limits, _ := d.GetPlanLimits(ctx, plan)
+
+	// -1 in any plan_limits column means "unlimited" — bail out before the
+	// count comparison so admin/enterprise tiers don't get blocked.
+	if limits == nil || limits.MaxSubdomains < 0 {
+		return true, ""
+	}
 
 	if count >= limits.MaxSubdomains {
 		return false, fmt.Sprintf("subdomain limit reached (%d/%d for %s plan)", count, limits.MaxSubdomains, plan)

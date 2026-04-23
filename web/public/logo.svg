@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" fill="none">
+  <!-- ServerMe — Combination mark: icon + wordmark -->
+
+  <!-- Icon: stylized server rack with upward deploy arrow + tunnel connection lines -->
+  <g transform="translate(0, 3)">
+    <!-- Server base (two stacked bars = server rack) -->
+    <rect x="4" y="28" width="42" height="10" rx="3" fill="#10B981"/>
+    <rect x="4" y="14" width="42" height="10" rx="3" fill="#34D399"/>
+    <!-- LED dots on each server bar -->
+    <circle cx="12" cy="19" r="1.5" fill="#064E3B"/>
+    <circle cx="17" cy="19" r="1.5" fill="#064E3B"/>
+    <circle cx="12" cy="33" r="1.5" fill="#064E3B"/>
+    <circle cx="17" cy="33" r="1.5" fill="#064E3B"/>
+    <!-- Deploy arrow shooting up from the rack -->
+    <path d="M25 12 L25 2 L20 7 M25 2 L30 7" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Tunnel/connection lines on the right side of rack -->
+    <path d="M46 19 L52 19 Q56 19 56 23 L56 33 Q56 37 52 37 L46 37" stroke="#6EE7B7" stroke-width="1.5" stroke-linecap="round" fill="none" stroke-dasharray="3 2"/>
+    <!-- Small dot at connection endpoint -->
+    <circle cx="56" cy="28" r="2" fill="#6EE7B7"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="70" y="38" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="28" font-weight="700" letter-spacing="-0.5" fill="currentColor">
+    <tspan fill="currentColor">Server</tspan><tspan fill="#10B981">Me</tspan>
+  </text>
+</svg>

@@ -54,3 +54,9 @@ go.work.sum
 .github/
 INFRASTRUCTURE.md
 PROGRESS.md
+
+# Local secrets mirror
+secrets/
+
+# Operations runbook (contains real credentials)
+RUNBOOK.md

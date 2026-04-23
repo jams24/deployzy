@@ -26,9 +26,7 @@ export default function DashboardLayout({
         {/* Mobile header */}
         <header className="flex h-14 items-center justify-between border-b border-border/40 bg-background px-4 md:hidden">
           <Link href="/" className="flex items-center gap-2 font-bold">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Terminal className="h-3.5 w-3.5" />
-            </div>
+            <img src="/logo-icon.svg" alt="ServerMe" className="h-7 w-7 rounded-md" />
             ServerMe
           </Link>
           <div className="flex items-center gap-1">
@@ -51,7 +49,9 @@ export default function DashboardLayout({
               onClick={() => setMobileOpen(false)}
             />
             {/* Sidebar panel */}
-            <div className="relative h-full w-72 bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Cap the panel to 80% of viewport so small phones (iPhone SE,
+                Android mini) still show ~60px of content gutter behind it. */}
+            <div className="relative h-full w-72 max-w-[80vw] bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <Sidebar onNavigate={() => setMobileOpen(false)} />
             </div>
           </div>

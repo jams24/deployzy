@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -66,14 +67,52 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if server != nil {
 			assignedServer = server
 			e.db.AssignProjectServer(ctx, project.ID, server.ID)
-			e.db.AllocateServerResources(ctx, server.ID, 0.5, 512)
+			// Reserve actual plan-aware resources, not a hard-coded 0.5/512
+			planMemMax, planCPUMax := e.planResourceCeiling(ctx, project.UserID)
+			reserveMem := 512
+			if planMemMax > 0 && planMemMax < reserveMem {
+				reserveMem = planMemMax
+			}
+			if project.MemoryMB > 0 {
+				reserveMem = project.MemoryMB
+				if planMemMax > 0 && reserveMem > planMemMax {
+					reserveMem = planMemMax
+				}
+			}
+			reserveCPU := 0.5
+			if planCPUMax > 0 && planCPUMax < reserveCPU {
+				reserveCPU = planCPUMax
+			}
+			if project.CPUs > 0 {
+				reserveCPU = project.CPUs
+				if planCPUMax > 0 && reserveCPU > planCPUMax {
+					reserveCPU = planCPUMax
+				}
+			}
 			project.WorkerServerID = server.ID
+			// Allocation is recomputed from reality by ReconcileServerAllocation
+			// at the end of this deploy, so no need to manually add here.
+			_ = reserveCPU
+			_ = reserveMem
 		}
 	}
 
 	if assignedServer != nil {
-		runner = NewRemoteRunner(assignedServer)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
+		// Belt-and-braces: treat localhost as local regardless of the is_local
+		// flag. Even if scanning ever leaves IsLocal=false, we must never
+		// try to SSH to "localhost" because that requires root SSH-to-self
+		// to be set up, which it isn't on our box.
+		isLocalHost := assignedServer.IsLocal ||
+			assignedServer.Host == "localhost" ||
+			assignedServer.Host == "127.0.0.1" ||
+			assignedServer.Host == ""
+		if isLocalHost {
+			runner = NewLocalRunner()
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
+		} else {
+			runner = NewRemoteRunner(assignedServer)
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
+		}
 	} else {
 		runner = NewLocalRunner()
 	}
@@ -310,11 +349,21 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	// Resource limits: clamped to the user's plan ceiling. Defaults are
-	// applied first (256MB / 0.25 CPU as a safe floor); user-set values
-	// take effect up to their plan max; admin (-1 plan ceiling) is uncapped.
+	// Resource limits: clamp against the user's plan ceiling ONLY when
+	// deploying to a platform-owned server. If this project lives on the
+	// user's own BYOC VPS, they're paying for that compute themselves — plan
+	// caps don't apply, use the whole box if they want it.
 	planMemMax, planCPUMax := e.planResourceCeiling(ctx, project.UserID)
+	if assignedServer != nil && assignedServer.UserID != nil && *assignedServer.UserID == project.UserID {
+		planMemMax, planCPUMax = 0, 0
+	}
+	// Default to the plan ceiling when the user didn't specify — matches what
+	// the billing page advertises, and avoids the old behaviour of starting
+	// at 512/0.5 and silently clamping free users down to 256/0.25.
 	memMB := 512
+	if planMemMax > 0 && planMemMax < memMB {
+		memMB = planMemMax
+	}
 	if project.MemoryMB > 0 {
 		memMB = project.MemoryMB
 	}
@@ -323,6 +372,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		memMB = planMemMax
 	}
 	cpus := 0.5
+	if planCPUMax > 0 && planCPUMax < cpus {
+		cpus = planCPUMax
+	}
 	if project.CPUs > 0 {
 		cpus = project.CPUs
 	}
@@ -397,6 +449,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", trimLogs(string(crashOut), 2000)), "error")
 		e.db.UpdateProjectStatus(ctx, project.ID, "failed", containerID, hostPort)
 	}
+	// Recompute the server's resource allocation from the actual set of
+	// running projects. Works for both platform + BYOC servers.
+	if assignedServer != nil {
+		e.db.ReconcileServerAllocation(ctx, assignedServer.ID)
+	}
 
 	e.registerRoute(project.Subdomain, hostPort)
 
@@ -425,12 +482,21 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	return nil
 }
 
-// getRunner returns a local or remote runner based on the project's worker server.
+// getRunner returns a local or remote runner based on the project's worker
+// server. Projects on the local platform row (is_local=true) use LocalRunner
+// — SSH-to-self would hang on credential lookup since the local row has no
+// SSH password.
 func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	if project.WorkerServerID != "" {
 		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
 		if server != nil {
-			return NewRemoteRunner(server)
+			isLocalHost := server.IsLocal ||
+				server.Host == "localhost" ||
+				server.Host == "127.0.0.1" ||
+				server.Host == ""
+			if !isLocalHost {
+				return NewRemoteRunner(server)
+			}
 		}
 	}
 	return NewLocalRunner()
@@ -499,7 +565,7 @@ func (e *Engine) detectFrameworkIgnoreDocker(dir string) string {
 	if fileExists(dir + "/go.mod") {
 		return "docker"
 	}
-	if fileExists(dir + "/index.html") {
+	if fileExists(dir + "/index.html") || hasAnyFile(dir, "*.html") {
 		return "static"
 	}
 	return "node"
@@ -708,6 +774,14 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+// hasAnyFile returns true if at least one file matching `pattern` exists
+// directly inside `dir`. Used so a repo with only foo.html (no index.html)
+// still gets classified as "static" during auto-detect.
+func hasAnyFile(dir, pattern string) bool {
+	matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+	return len(matches) > 0
+}
+
 // generateDockerfile creates a Dockerfile based on framework.
 func (e *Engine) generateDockerfile(project *db.Project, framework string) string {
 	// Node version (default 20)
@@ -745,51 +819,144 @@ EXPOSE 3000
 CMD sh -c '%s && %s'`, nodeVer, installCmd, buildCmd, prismaPush, startCmd)
 
 	case "node":
+		// Install full deps (incl. dev) so TypeScript, bundlers, prisma, etc.
+		// are available for the build step. `--ignore-scripts` skips the
+		// user's `postinstall` hook — otherwise a common pattern like
+		// `postinstall: npm run build` fires before COPY . . and fails
+		// because source files aren't in the layer yet. We run the build
+		// explicitly below after all files are copied.
 		installCmd := project.InstallCmd
 		if installCmd == "" {
-			installCmd = "npm ci --production"
+			installCmd = "npm ci --ignore-scripts"
 		}
 		startCmd := project.StartCmd
 		if startCmd == "" {
 			startCmd = "npm start"
 		}
-		// Build step is optional for plain Node
-		buildLine := ""
+		// Auto-detect build: explicit BuildCmd wins; otherwise run `npm run
+		// build` if package.json has one. Covers the 90% case of TypeScript
+		// repos whose start script references a compiled dist/.
+		buildLine := "RUN if grep -q '\"build\"' package.json 2>/dev/null; then npm run build; fi"
 		if project.BuildCmd != "" {
-			buildLine = "RUN " + project.BuildCmd + "\n"
+			buildLine = "RUN " + project.BuildCmd
 		}
 		return fmt.Sprintf(`FROM node:%s-alpine
 WORKDIR /app
+# Native module build toolchain. Alpine is tiny but misses gcc/python used by
+# packages like bcrypt, node-gyp, sharp. Installed here (not apk del'd later)
+# because prune gets them out of the final stage anyway.
+RUN apk add --no-cache --virtual .build-deps python3 make g++ 2>/dev/null || true
 COPY package*.json ./
+# --ignore-scripts skips user lifecycle hooks (preinstall/postinstall/install)
+# so a common pattern like "postinstall: npm run build" can't fire before
+# COPY . . — source files aren't in the layer yet.
 RUN %s
 COPY . .
-RUN if [ -d "prisma" ]; then npx prisma generate; fi
-%sEXPOSE 3000
+# Rebuild native modules now that build tools AND source are present.
+# Handles bcrypt, better-sqlite3, sharp, canvas, etc.
+RUN npm rebuild 2>/dev/null || true
+# Prisma schema autodetect — finds it anywhere (prisma/, src/prisma/, db/, …).
+RUN SCHEMA=$(find . -name schema.prisma -not -path "./node_modules/*" 2>/dev/null | head -1); \
+    if [ -n "$SCHEMA" ]; then npx prisma generate --schema="$SCHEMA" || true; fi
+ENV NODE_OPTIONS="--max-old-space-size=1536"
+%s
+RUN npm prune --production 2>/dev/null || true
+EXPOSE 3000
 CMD sh -c '%s && %s'`, nodeVer, installCmd, buildLine, prismaPush, startCmd)
 
 	case "python":
+		// Install strategy:
+		//   • requirements.txt present → pip install it (most common)
+		//   • pyproject.toml present   → pip install . (PEP-621 projects)
+		//   • neither                  → no-op (script-only repos still run)
+		// The COPY-all-first approach means missing requirements.txt doesn't
+		// fail the build (the old `COPY requirements.txt* ./` glob failed
+		// with "no source files were specified" on script-only repos).
 		installCmd := project.InstallCmd
 		if installCmd == "" {
-			installCmd = "pip install --no-cache-dir -r requirements.txt 2>/dev/null || true"
+			installCmd = `if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; ` +
+				`elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; ` +
+				`else echo "[serverme] no requirements.txt or pyproject.toml — skipping pip install"; fi`
 		}
 		startCmd := project.StartCmd
 		if startCmd == "" {
-			startCmd = "python app.py"
+			// Entry-point detection, in priority order:
+			//   1. app.py          (Flask/FastAPI convention)
+			//   2. main.py         (common name)
+			//   3. run.py          (older Flask convention)
+			//   4. manage.py       (Django)
+			//   5. __main__.py     (Python package convention)
+			//   6. A single runnable *.py file at repo root (excluding setup.py,
+			//      conftest.py, test_*.py, *_test.py — which aren't entry points)
+			//   7. Error with a listing of what was found so users can debug.
+			startCmd = `` +
+				`if [ -f app.py ]; then python app.py; ` +
+				`elif [ -f main.py ]; then python main.py; ` +
+				`elif [ -f run.py ]; then python run.py; ` +
+				`elif [ -f manage.py ]; then python manage.py runserver 0.0.0.0:3000; ` +
+				`elif [ -f __main__.py ]; then python .; ` +
+				`else ` +
+				`  CANDIDATES=""; ` +
+				`  for f in *.py; do ` +
+				`    [ -f "$f" ] || continue; ` +
+				`    case "$f" in setup.py|conftest.py|test_*.py|*_test.py) continue;; esac; ` +
+				`    CANDIDATES="$CANDIDATES $f"; ` +
+				`  done; ` +
+				`  set -- $CANDIDATES; ` +
+				`  if [ "$#" = "1" ]; then ` +
+				`    echo "[serverme] auto-detected single script: $1"; exec python "$1"; ` +
+				`  else ` +
+				`    echo "[serverme] No entry point found."; ` +
+				`    echo "[serverme] Contents of /app:"; ls -la /app | sed "s/^/[serverme]   /"; ` +
+				`    echo "[serverme] Expected one of: app.py, main.py, run.py, manage.py, __main__.py, or a single runnable *.py at repo root."; ` +
+				`    echo "[serverme] Candidates found: [$CANDIDATES ]"; ` +
+				`    echo "[serverme] Set a custom Start Command in project settings (e.g., python emailchk.py)."; ` +
+				`    exit 1; ` +
+				`  fi; ` +
+				`fi`
 		}
 		return fmt.Sprintf(`FROM python:3.12-slim
 WORKDIR /app
-COPY requirements.txt* ./
-RUN %s
 COPY . .
+RUN %s
 EXPOSE 3000
-CMD %s`, installCmd, formatCmd(startCmd))
+CMD sh -c %q`, installCmd, startCmd)
 
 	case "static":
-		return `FROM nginx:alpine
-COPY . /usr/share/nginx/html
-RUN echo 'server { listen 80; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri.html $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]`
+		// Two fallbacks so users don't hit the nginx welcome page:
+		//   1. nginx's default /usr/share/nginx/html is wiped before COPY so
+		//      the stock "Welcome to nginx!" index.html never wins.
+		//   2. If the repo has no index.html but exactly one *.html, we
+		//      symlink it as index.html so that single file is served at /.
+		//   3. If the repo has many .html files and no index, we generate a
+		//      tiny directory listing so the site at least shows something
+		//      useful instead of a 403/welcome page.
+		// BusyBox-compatible (alpine has no GNU find -printf). Using shell
+		// globs + basename keeps it portable across nginx:alpine versions.
+		return "FROM nginx:alpine\n" +
+			"RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf\n" +
+			"COPY . /usr/share/nginx/html\n" +
+			"RUN set -e; cd /usr/share/nginx/html; \\\n" +
+			"    if [ ! -f index.html ]; then \\\n" +
+			"      files=''; count=0; \\\n" +
+			"      for f in *.html; do \\\n" +
+			"        [ -e \"$f\" ] || continue; \\\n" +
+			"        files=\"$files $f\"; count=$((count + 1)); \\\n" +
+			"      done; \\\n" +
+			"      if [ \"$count\" = \"1\" ]; then \\\n" +
+			"        only=$(echo $files | tr -d ' '); \\\n" +
+			"        ln -s \"$only\" index.html; \\\n" +
+			"      elif [ \"$count\" -gt \"1\" ]; then \\\n" +
+			"        { \\\n" +
+			"          echo '<!doctype html><meta charset=utf-8><title>Index</title>'; \\\n" +
+			"          echo '<style>body{font:14px system-ui;padding:40px;max-width:600px;margin:auto}a{display:block;padding:8px 0;color:#0969da}</style><h1>Pages</h1>'; \\\n" +
+			"          for f in $files; do printf '<a href=\"%s\">%s</a>\\n' \"$f\" \"$f\"; done; \\\n" +
+			"        } > index.html; \\\n" +
+			"      fi; \\\n" +
+			"    fi\n" +
+			"RUN printf 'server { listen 80; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri.html $uri/ /index.html =404; } }\\n' > /etc/nginx/conf.d/default.conf\n" +
+			"EXPOSE 80\n" +
+			"CMD [\"nginx\", \"-g\", \"daemon off;\"]"
 
 	default:
 		return ""

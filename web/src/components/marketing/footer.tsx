@@ -32,13 +32,11 @@ export function Footer() {
               href="/"
               className="flex items-center gap-2 font-bold text-lg"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Terminal className="h-4 w-4" />
-              </div>
+              <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
               ServerMe
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">
-              Open-source tunnels for developers. Expose localhost to the world.
+              Deploy apps, tunnel localhost, manage databases — your entire backend, one platform.
             </p>
           </div>
 

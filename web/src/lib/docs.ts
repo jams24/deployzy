@@ -578,7 +578,8 @@ All responses are JSON. Errors return:
 | Plan | Limit |
 |------|-------|
 | Free | 100 req/s |
-| Premium | 500 req/s |
+| Pro  | 500 req/s |
+| Team | 2000 req/s |
 
 When rate limited, you'll receive a \`429\` status with a \`Retry-After\` header.`,
   },

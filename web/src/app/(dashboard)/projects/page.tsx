@@ -11,6 +11,8 @@ import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
   Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3, GitPullRequest,
 } from "lucide-react";
+import { getBuildPlaceholders } from "@/lib/placeholders";
+import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -199,6 +201,15 @@ function ProjectsContent() {
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   };
 
+  // Plan limits — populates real memory/cpu caps in the advanced build form
+  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number } | null>(null);
+  useEffect(() => {
+    fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.limits) setPlanLimits({ max_memory_mb: d.limits.max_memory_mb, max_cpus: d.limits.max_cpus }); })
+      .catch(() => {});
+  }, []);
+
   // Handle GitHub OAuth callback
   useEffect(() => {
     const ghToken = searchParams.get("github_token");
@@ -301,11 +312,7 @@ function ProjectsContent() {
 
     // Set env vars if provided
     if (importEnvText.trim()) {
-      const envVars: Record<string, string> = {};
-      importEnvText.split("\n").forEach((line) => {
-        const eq = line.indexOf("=");
-        if (eq > 0) envVars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-      });
+      const envVars = parseEnvText(importEnvText);
       await fetch(`${API}/api/v1/projects/${project.id}`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify({ env_vars: envVars }),
@@ -380,14 +387,7 @@ function ProjectsContent() {
   }
 
   async function saveEnvVars(id: string) {
-    // Parse KEY=VALUE lines into object
-    const envVars: Record<string, string> = {};
-    envText.split("\n").forEach((line) => {
-      const eq = line.indexOf("=");
-      if (eq > 0) {
-        envVars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-      }
-    });
+    const envVars = parseEnvText(envText);
 
     await fetch(`${API}/api/v1/projects/${id}`, {
       method: "PUT", headers: headers(),
@@ -724,6 +724,8 @@ function ProjectsContent() {
     !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
 
+  const importPh = getBuildPlaceholders(importRepo ? detectFramework(importRepo.language) : "node");
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -858,14 +860,25 @@ function ProjectsContent() {
               </div>
             )}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Environment Variables <span className="text-[10px] text-muted-foreground font-normal">(optional)</span></label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">Environment Variables <span className="text-[10px] text-muted-foreground font-normal">(optional)</span></label>
+                <button
+                  type="button"
+                  onClick={() => setImportEnvText(autoFormatEnvText(importEnvText))}
+                  disabled={!importEnvText.trim()}
+                  className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title="Parse and rewrite as one KEY=VALUE per line. Recovers from pasted values with missing newlines."
+                >
+                  Auto-format
+                </button>
+              </div>
               <textarea
                 value={importEnvText}
                 onChange={(e) => setImportEnvText(e.target.value)}
-                placeholder={"DATABASE_URL=postgresql://...\nAPI_KEY=sk_live_...\nNODE_ENV=production"}
+                placeholder={importPh.env}
                 className="w-full h-24 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. You can edit these anytime after deployment.</p>
+              <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Click Auto-format if a paste came out mangled.</p>
             </div>
 
             {/* Advanced Build & Runtime Settings */}
@@ -896,35 +909,39 @@ function ProjectsContent() {
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Install Command</label>
-                      <input type="text" placeholder="npm ci" value={importBuildCfg.install_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.install} value={importBuildCfg.install_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Build Command</label>
-                      <input type="text" placeholder="npm run build" value={importBuildCfg.build_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.build} value={importBuildCfg.build_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Start Command</label>
-                      <input type="text" placeholder="npm start" value={importBuildCfg.start_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.start} value={importBuildCfg.start_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
                       <input type="number" min="0" max="65535" value={importBuildCfg.port_override || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
-                      <input type="number" min="0" max="16384" step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">
+                        Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
+                      </label>
+                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
-                      <input type="number" min="0" max="8" step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">
+                        CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                      </label>
+                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                      <input type="text" placeholder="/health" value={importBuildCfg.health_check_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.healthCheck} value={importBuildCfg.health_check_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                      <input type="text" placeholder="npx prisma migrate deploy" value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.release} value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. Editable anytime after deployment.</p>
@@ -980,7 +997,9 @@ function ProjectsContent() {
               </div>
             );
           })()}
-          {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => (
+          {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => {
+            const ph = getBuildPlaceholders(p.framework);
+            return (
             <Card key={p.id} className={`transition-colors ${selectedProject === p.id ? "border-foreground/20" : ""}`}>
               <CardContent className="pt-4 pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1218,14 +1237,25 @@ function ProjectsContent() {
                   <div className="mt-4">
                     {editingEnv === p.id ? (
                       <div className="rounded-lg border border-border/40 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium">Environment Variables</span>
-                          <span className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line</span>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setEnvText(autoFormatEnvText(envText))}
+                              disabled={!envText.trim()}
+                              className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              title="Parse and rewrite as one KEY=VALUE per line. Recovers from pasted values with missing newlines."
+                            >
+                              Auto-format
+                            </button>
+                            <span className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line</span>
+                          </div>
                         </div>
                         <textarea
                           value={envText}
                           onChange={(e) => setEnvText(e.target.value)}
-                          placeholder={"BOT_TOKEN=123456:ABC...\nDATABASE_URL=postgres://...\nPORT=3000"}
+                          placeholder={ph.env}
                           className="w-full h-32 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                         />
                         <div className="flex gap-2">
@@ -1270,35 +1300,39 @@ function ProjectsContent() {
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Install Command</label>
-                            <input type="text" placeholder="npm ci" value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.install} value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Build Command</label>
-                            <input type="text" placeholder="npm run build" value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.build} value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Start Command</label>
-                            <input type="text" placeholder="npm start" value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.start} value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Port Override <span className="text-zinc-600">(0 = auto)</span></label>
                             <input type="number" min="0" max="65535" value={buildCfg.port_override || ""} onChange={(e) => setBuildCfg({ ...buildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
-                            <input type="number" min="0" max="16384" step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">
+                              Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
+                            </label>
+                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
-                            <input type="number" min="0" max="8" step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">
+                              CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                            </label>
+                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                            <input type="text" placeholder="/health" value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.healthCheck} value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                            <input type="text" placeholder="npx prisma migrate deploy" value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.release} value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Build Mode</label>
@@ -1337,6 +1371,11 @@ function ProjectsContent() {
                             @ {p.commit_sha.slice(0, 7)}
                           </span>
                         )}
+                        {p.github_repo && commits[p.id]?.[0] && p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
+                          <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/30" title={`Latest on ${p.github_branch || p.branch || "main"} is ${commits[p.id][0].sha.slice(0, 7)}`}>
+                            behind {p.github_branch || p.branch || "main"}
+                          </Badge>
+                        )}
                       </div>
                     )}
 
@@ -1347,19 +1386,39 @@ function ProjectsContent() {
                           <span className="text-xs font-medium">Recent commits on {p.github_branch || p.branch || "main"}</span>
                           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; })}>Close</Button>
                         </div>
+                        {p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
+                          <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500/90">
+                            Currently deployed <code className="font-mono">{p.commit_sha.slice(0, 7)}</code> is behind — latest on {p.github_branch || p.branch || "main"} is <code className="font-mono">{commits[p.id][0].sha.slice(0, 7)}</code>.
+                          </div>
+                        )}
                         <div className="space-y-1 max-h-64 overflow-y-auto">
-                          {commits[p.id].map((c) => (
+                          {commits[p.id].map((c, i) => (
                             <label key={c.sha} className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-white/[0.03] ${selectedCommit[p.id] === c.sha ? "bg-white/[0.05]" : ""}`}>
                               <input type="radio" name={`commit-${p.id}`} checked={selectedCommit[p.id] === c.sha} onChange={() => setSelectedCommit((prev) => ({ ...prev, [p.id]: c.sha }))} className="accent-emerald-500" />
                               <code className="text-[10px] text-emerald-500">{c.sha.slice(0, 7)}</code>
                               <span className="flex-1 truncate">{c.message}</span>
                               <span className="text-[10px] text-muted-foreground hidden md:inline">{c.author}</span>
+                              {i === 0 && <Badge variant="outline" className="text-[9px] text-sky-500 border-sky-500/30">latest</Badge>}
                               {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">current</Badge>}
                             </label>
                           ))}
                         </div>
                         <div className="flex gap-2 pt-1">
-                          <Button size="sm" className="h-7 text-xs" disabled={!selectedCommit[p.id] || deploying === p.id} onClick={() => { deployCommit(p.id, selectedCommit[p.id]); setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; }); }}>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={deploying === p.id || !commits[p.id]?.[0] || p.commit_sha === commits[p.id][0].sha}
+                            title={p.commit_sha === commits[p.id][0]?.sha ? "Already on latest" : `Deploy ${commits[p.id][0]?.sha.slice(0, 7)}`}
+                            onClick={() => {
+                              const latest = commits[p.id][0].sha;
+                              deployCommit(p.id, latest);
+                              setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; });
+                            }}
+                          >
+                            {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
+                            Deploy latest {commits[p.id]?.[0] ? `(${commits[p.id][0].sha.slice(0, 7)})` : ""}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedCommit[p.id] || deploying === p.id} onClick={() => { deployCommit(p.id, selectedCommit[p.id]); setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; }); }}>
                             {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
                             Deploy selected
                           </Button>
@@ -1489,7 +1548,7 @@ function ProjectsContent() {
                       </div>
 
                       {/* Headline metrics */}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div className="rounded-md bg-[#09090b] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Pageviews</div>
                           <div className="text-lg font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
@@ -1712,7 +1771,8 @@ function ProjectsContent() {
                 )}
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>

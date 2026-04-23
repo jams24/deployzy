@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Markdown Viewer</title>
+<!--
+  Self-contained markdown renderer. Open this file in a browser, drop any .md
+  on it (or click to pick), and it renders with syntax-highlighted code blocks,
+  GitHub-flavoured tables, anchor links on headings, etc.
+  Loads marked.js + highlight.js from CDN — needs internet on first load only.
+-->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" />
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --bg-code: #161b22;
+    --text: #e6edf3;
+    --text-muted: #7d8590;
+    --accent: #58a6ff;
+    --accent-hover: #79b8ff;
+    --border: #30363d;
+    --green: #3fb950;
+    --amber: #d29922;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --bg-soft: #f6f8fa;
+      --bg-code: #f6f8fa;
+      --text: #1f2328;
+      --text-muted: #59636e;
+      --accent: #0969da;
+      --accent-hover: #0860c7;
+      --border: #d1d9e0;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter",
+                 system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+  /* ── Toolbar ─────────────────────────────────────────── */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+  }
+  header h1 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-muted);
+  }
+  header .file {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    color: var(--text);
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+  }
+  header .actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  button, label.btn {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    color: var(--text);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  button:hover, label.btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  input[type="file"] { display: none; }
+
+  /* ── Drop zone ───────────────────────────────────────── */
+  #drop {
+    margin: 80px auto;
+    max-width: 520px;
+    padding: 60px 40px;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    text-align: center;
+    color: var(--text-muted);
+    transition: all 0.2s;
+  }
+  #drop.dragover {
+    border-color: var(--accent);
+    background: var(--bg-soft);
+    color: var(--accent);
+  }
+  #drop strong { display: block; font-size: 20px; color: var(--text); margin-bottom: 6px; }
+  #drop .hint { font-size: 13px; margin-top: 16px; }
+
+  /* ── Markdown content ────────────────────────────────── */
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 40px 32px 80px;
+  }
+  main.hidden { display: none; }
+  main h1, main h2, main h3, main h4, main h5, main h6 {
+    margin-top: 1.6em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+    scroll-margin-top: 60px;
+  }
+  main h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+  main h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+  main h3 { font-size: 1.25em; }
+  main h4 { font-size: 1.05em; }
+  main p { margin: 0 0 1em 0; }
+  main a { color: var(--accent); text-decoration: none; }
+  main a:hover { text-decoration: underline; }
+
+  /* Headings get hover-anchor links */
+  main .anchor {
+    opacity: 0;
+    margin-left: 8px;
+    color: var(--text-muted);
+    font-weight: normal;
+    font-size: 0.7em;
+  }
+  main h1:hover .anchor,
+  main h2:hover .anchor,
+  main h3:hover .anchor,
+  main h4:hover .anchor { opacity: 1; }
+
+  /* Inline code */
+  main code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.875em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+  }
+  /* Code blocks (highlight.js takes over the colors) */
+  main pre {
+    margin: 1em 0;
+    padding: 16px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  main pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* Blockquotes */
+  main blockquote {
+    margin: 1em 0;
+    padding: 8px 16px;
+    border-left: 4px solid var(--amber);
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    border-radius: 0 6px 6px 0;
+  }
+  main blockquote p:last-child { margin-bottom: 0; }
+
+  /* Tables */
+  main table {
+    border-collapse: collapse;
+    margin: 1em 0;
+    width: 100%;
+    font-size: 14px;
+  }
+  main th, main td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    text-align: left;
+  }
+  main th { background: var(--bg-soft); font-weight: 600; }
+  main tr:nth-child(2n) td { background: var(--bg-soft); }
+
+  /* Lists */
+  main ul, main ol { padding-left: 1.6em; margin: 0 0 1em 0; }
+  main li { margin: 0.25em 0; }
+  main li > p { margin: 0.25em 0; }
+
+  /* Horizontal rule */
+  main hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2em 0;
+  }
+
+  /* Task list checkboxes */
+  main input[type="checkbox"] { margin-right: 6px; }
+
+  /* Images */
+  main img { max-width: 100%; border-radius: 6px; }
+
+  /* Selection */
+  ::selection { background: var(--accent); color: var(--bg); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📄 Markdown Viewer</h1>
+  <span id="filename" class="file" hidden></span>
+  <div class="actions">
+    <label class="btn" for="filepicker">Open .md</label>
+    <input type="file" id="filepicker" accept=".md,.markdown,text/markdown" />
+    <button id="print" hidden>Print / PDF</button>
+  </div>
+</header>
+
+<div id="drop">
+  <strong>Drop a markdown file here</strong>
+  <span>or use <em>Open .md</em> in the toolbar</span>
+  <div class="hint">
+    Renders headings, tables, code blocks (with syntax highlighting),
+    task lists, blockquotes, and GitHub-flavoured markdown.<br>
+    Files stay 100% local — never uploaded anywhere.
+  </div>
+</div>
+
+<main id="content" class="hidden"></main>
+
+<script>
+  const drop      = document.getElementById('drop');
+  const content   = document.getElementById('content');
+  const picker    = document.getElementById('filepicker');
+  const filename  = document.getElementById('filename');
+  const printBtn  = document.getElementById('print');
+
+  // marked v12 config: enable GFM (tables, strikethrough, task lists, autolinks)
+  // and route every code block through highlight.js for syntax colors.
+  marked.setOptions({
+    gfm: true,
+    breaks: false,
+    headerIds: true,
+    mangle: false,
+  });
+  marked.use({
+    renderer: {
+      // Add hover-anchor links to headings so users can deep-link.
+      heading(text, level, raw) {
+        const id = raw.toLowerCase().trim()
+          .replace(/[^\w\s-]/g, '')
+          .replace(/\s+/g, '-');
+        return `<h${level} id="${id}">${text}<a href="#${id}" class="anchor">#</a></h${level}>`;
+      },
+      code(code, lang) {
+        const validLang = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+        const html = hljs.highlight(code, { language: validLang }).value;
+        return `<pre><code class="hljs language-${validLang}">${html}</code></pre>`;
+      },
+    },
+  });
+
+  function render(text, name) {
+    content.innerHTML = marked.parse(text);
+    content.classList.remove('hidden');
+    drop.style.display = 'none';
+    filename.textContent = name;
+    filename.hidden = false;
+    printBtn.hidden = false;
+    document.title = name + ' — Markdown Viewer';
+    // Re-highlight in case any block was missed (defensive).
+    document.querySelectorAll('pre code').forEach((b) => hljs.highlightElement(b));
+    // Scroll back to top on each new file.
+    window.scrollTo(0, 0);
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => render(e.target.result, file.name);
+    reader.readAsText(file);
+  }
+
+  // ── File picker ────────────────────────────────────────
+  picker.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+  // ── Drag & drop ────────────────────────────────────────
+  ['dragenter', 'dragover'].forEach((evt) => {
+    document.addEventListener(evt, (e) => {
+      e.preventDefault();
+      drop.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((evt) => {
+    document.addEventListener(evt, (e) => {
+      e.preventDefault();
+      drop.classList.remove('dragover');
+    });
+  });
+  document.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files[0];
+    if (file && /\.(md|markdown|txt)$/i.test(file.name)) {
+      handleFile(file);
+    } else {
+      alert('Please drop a .md / .markdown file.');
+    }
+  });
+
+  // ── Print / save-as-PDF ────────────────────────────────
+  printBtn.addEventListener('click', () => window.print());
+
+  // ── Optional: load ?file=path on URL (handy if served via local web server)
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('file')) {
+    fetch(params.get('file'))
+      .then((r) => r.ok ? r.text() : Promise.reject(r.status))
+      .then((text) => render(text, params.get('file')))
+      .catch((err) => console.warn('?file= load failed:', err));
+  }
+</script>
+</body>
+</html>

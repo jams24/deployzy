@@ -568,10 +568,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		s.deployer.Delete(r.Context(), project)
 	}
 
-	// Release server resources if assigned to a worker
-	if project.WorkerServerID != "" {
-		s.db.ReleaseServerResources(r.Context(), project.WorkerServerID, 0.5, 512)
-	}
+	serverID := project.WorkerServerID
 
 	// Drop managed database if one exists
 	s.db.DeleteProjectDatabase(r.Context(), projectID)
@@ -585,6 +582,11 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	// Release the subdomain so it can be reused
 	s.db.ReleaseSubdomain(r.Context(), u.ID, subdomain)
+
+	// Recompute the server's allocation from what's actually left.
+	if serverID != "" {
+		s.db.ReconcileServerAllocation(r.Context(), serverID)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

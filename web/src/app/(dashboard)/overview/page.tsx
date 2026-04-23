@@ -111,7 +111,7 @@ export default function OverviewPage() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/projects">
+        <Link href="/services">
           <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0 transition-transform group-hover:scale-110">

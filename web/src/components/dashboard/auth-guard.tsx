@@ -33,9 +33,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="flex items-center gap-3 text-muted-foreground">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground animate-pulse">
-            <Terminal className="h-4 w-4" />
-          </div>
+          <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg animate-pulse" />
           <span className="text-sm">Loading...</span>
         </div>
       </div>

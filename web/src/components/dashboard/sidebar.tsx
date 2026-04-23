@@ -35,7 +35,7 @@ import {
 const navItems = [
   { href: "/overview", icon: LayoutDashboard, label: "Overview" },
   { href: "/projects", icon: Rocket, label: "Projects" },
-  { href: "/services", icon: Database, label: "Services" },
+  { href: "/services", icon: Database, label: "Databases" },
   { href: "/tunnels", icon: Waypoints, label: "Tunnels" },
   { href: "/servers", icon: Server, label: "Servers" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
@@ -90,9 +90,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
     <aside className="flex h-full w-full flex-col border-r border-border/40 bg-background shrink-0">
       <div className="flex h-16 items-center gap-2 border-b border-border/40 px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg" onClick={onNavigate}>
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Terminal className="h-3.5 w-3.5" />
-          </div>
+          <img src="/logo-icon.svg" alt="ServerMe" className="h-7 w-7 rounded-md" />
           ServerMe
         </Link>
       </div>

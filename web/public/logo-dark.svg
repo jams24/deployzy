@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" fill="none">
+  <!-- ServerMe logo — for dark backgrounds -->
+  <g transform="translate(0, 3)">
+    <rect x="4" y="28" width="42" height="10" rx="3" fill="#10B981"/>
+    <rect x="4" y="14" width="42" height="10" rx="3" fill="#34D399"/>
+    <circle cx="12" cy="19" r="1.5" fill="#064E3B"/>
+    <circle cx="17" cy="19" r="1.5" fill="#064E3B"/>
+    <circle cx="12" cy="33" r="1.5" fill="#064E3B"/>
+    <circle cx="17" cy="33" r="1.5" fill="#064E3B"/>
+    <path d="M25 12 L25 2 L20 7 M25 2 L30 7" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M46 19 Q56 19 56 28 Q56 37 46 37" stroke="#6EE7B7" stroke-width="1.5" stroke-linecap="round" fill="none" stroke-dasharray="3 2"/>
+    <circle cx="56" cy="28" r="2" fill="#6EE7B7"/>
+  </g>
+  <text x="70" y="38" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="28" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#F9FAFB">Server</tspan><tspan fill="#10B981">Me</tspan>
+  </text>
+</svg>

@@ -35,9 +35,7 @@ export default function SignInPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Terminal className="h-4 w-4" />
-          </div>
+          <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
           ServerMe
         </Link>
 

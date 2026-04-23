@@ -24,18 +24,25 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ServerMe — Open-Source Tunnels",
+    default: "ServerMe — Deploy, Tunnel, Database Platform",
     template: "%s | ServerMe",
   },
   description:
-    "Expose your local servers to the internet. Open-source ngrok alternative with HTTP, TCP, TLS tunnels, request inspection, and more.",
+    "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, bring your own VPS — Railway + ngrok + Supabase in one open-source platform.",
   keywords: [
+    "deploy",
     "tunnel",
+    "database",
+    "BYOC",
     "ngrok alternative",
-    "localhost",
+    "railway alternative",
     "open source",
     "serverme",
   ],
+  icons: {
+    icon: "/logo-icon.svg",
+    apple: "/logo-icon.svg",
+  },
 };
 
 export default function RootLayout({

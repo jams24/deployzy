@@ -15,6 +15,7 @@ interface WorkerServer {
   allocated_cpu: number; allocated_memory_mb: number;
   max_projects: number; current_projects: number;
   status: string; docker_installed: boolean; last_heartbeat: string | null; created_at: string;
+  docker_install_status?: string; docker_install_error?: string | null;
 }
 
 export default function ServersPage() {
@@ -60,6 +61,29 @@ export default function ServersPage() {
     setAdding(false);
   }
 
+  async function installDocker(id: string) {
+    if (!confirm("Install Docker on this server? Runs in the background — takes ~60 seconds.")) return;
+    try {
+      const res = await fetch(`${API}/api/v1/servers/${id}/install-docker`, { method: "POST", headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 202) {
+        alert(data.error || "Failed to start Docker install");
+        return;
+      }
+      load();
+    } catch {
+      alert("Network error starting Docker install.");
+    }
+  }
+
+  // Poll while any server has an install in progress so the UI reflects state.
+  useEffect(() => {
+    const anyInstalling = servers.some((s) => s.docker_install_status === "installing");
+    if (!anyInstalling) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [servers]);
+
   async function removeServer(id: string) {
     if (!confirm("Remove this server? Projects deployed on it will become inaccessible.")) return;
     await fetch(`${API}/api/v1/servers/${id}`, { method: "DELETE", headers: headers() });
@@ -86,7 +110,7 @@ export default function ServersPage() {
             <CardTitle className="text-base">Add SSH Server</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Label</label>
                 <Input placeholder="my-vps" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="h-9 text-sm" />
@@ -148,17 +172,45 @@ export default function ServersPage() {
                         </Badge>
                         {s.docker_installed ? (
                           <Badge variant="outline" className="text-[10px] gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> Docker</Badge>
+                        ) : s.docker_install_status === "installing" ? (
+                          <Badge variant="outline" className="text-[10px] gap-1 text-blue-400 border-blue-500/20">
+                            <Loader2 className="h-2.5 w-2.5 animate-spin" /> Installing Docker…
+                          </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] gap-0.5 text-amber-500 border-amber-500/20"><AlertCircle className="h-2.5 w-2.5" /> No Docker</Badge>
+                          <>
+                            <Badge variant="outline" className={`text-[10px] gap-0.5 ${s.docker_install_status === "failed" ? "text-red-500 border-red-500/30" : "text-amber-500 border-amber-500/20"}`}>
+                              <AlertCircle className="h-2.5 w-2.5" /> {s.docker_install_status === "failed" ? "Install failed" : "No Docker"}
+                            </Badge>
+                            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => installDocker(s.id)}>
+                              {s.docker_install_status === "failed" ? "Retry install" : "Install Docker"}
+                            </Button>
+                            {s.docker_install_status === "failed" && s.docker_install_error && (
+                              <span className="text-[10px] text-red-400 truncate max-w-[200px]" title={s.docker_install_error}>{s.docker_install_error}</span>
+                            )}
+                          </>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.ssh_user}@{s.host}:{s.port}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="text-right text-xs text-muted-foreground">
-                      <div>{s.current_projects}/{s.max_projects} projects</div>
-                      <div>{s.allocated_memory_mb}/{s.total_memory_mb} MB</div>
+                    <div className="text-right text-xs text-muted-foreground space-y-0.5 min-w-[140px]">
+                      <div><span className="text-foreground font-mono">{s.current_projects}</span>/{s.max_projects} projects</div>
+                      <div>
+                        <span className="text-foreground font-mono">{s.allocated_memory_mb}</span>
+                        <span>/{s.total_memory_mb >= 1024 ? `${(s.total_memory_mb / 1024).toFixed(1)} GB` : `${s.total_memory_mb} MB`} RAM</span>
+                      </div>
+                      <div>
+                        <span className="text-foreground font-mono">{s.allocated_cpu.toFixed(2)}</span>/<span className="font-mono">{s.total_cpu.toFixed(0)}</span> vCPU
+                      </div>
+                      {s.total_memory_mb > 0 && (
+                        <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+                          <div
+                            className={`h-full ${s.allocated_memory_mb / s.total_memory_mb > 0.85 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.min(100, (s.allocated_memory_mb / s.total_memory_mb) * 100)}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => removeServer(s.id)}>
                       <Trash2 className="h-4 w-4" />

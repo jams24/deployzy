@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ServerMe Logo Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui; padding: 40px; background: #f3f4f6; }
+  h1 { font-size: 20px; color: #111; margin-bottom: 30px; }
+  h2 { font-size: 14px; color: #6b7280; margin: 30px 0 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  .card {
+    border-radius: 12px; padding: 30px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid #e5e7eb;
+  }
+  .card.dark { background: #0d1117; }
+  .card.light { background: #ffffff; }
+  .card.gray { background: #1f2937; }
+  .card img, .card object { max-height: 56px; width: auto; }
+  .card.icon img, .card.icon object { max-height: 64px; }
+
+  .sizes { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; }
+  .sizes .size { text-align: center; }
+  .sizes .size span { display: block; font-size: 11px; color: #9ca3af; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>ServerMe Logo System</h1>
+
+  <h2>Combination Mark (Icon + Wordmark)</h2>
+  <div class="grid">
+    <div class="card dark">
+      <img src="logo-dark.svg" alt="Dark variant">
+    </div>
+    <div class="card light">
+      <img src="logo-light.svg" alt="Light variant">
+    </div>
+    <div class="card gray">
+      <img src="logo-dark.svg" alt="Gray bg variant">
+    </div>
+  </div>
+
+  <h2>Icon Only (App Icon / Favicon)</h2>
+  <div class="grid">
+    <div class="card dark icon">
+      <div class="sizes">
+        <div class="size"><img src="logo-icon.svg" width="64" height="64"><span>64px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="48" height="48"><span>48px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="32" height="32"><span>32px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="16" height="16"><span>16px</span></div>
+      </div>
+    </div>
+    <div class="card light icon">
+      <div class="sizes">
+        <div class="size"><img src="logo-icon.svg" width="64" height="64"><span>64px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="48" height="48"><span>48px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="32" height="32"><span>32px</span></div>
+        <div class="size"><img src="logo-icon.svg" width="16" height="16"><span>16px</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Design Elements</h2>
+  <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; max-width: 600px;">
+    <table style="font-size: 13px; width: 100%; border-collapse: collapse;">
+      <tr><td style="padding: 6px 0; color: #6b7280;">Primary green</td><td><span style="display:inline-block;width:16px;height:16px;background:#10B981;border-radius:3px;vertical-align:middle;margin-right:8px;"></span>#10B981 (emerald-500)</td></tr>
+      <tr><td style="padding: 6px 0; color: #6b7280;">Secondary green</td><td><span style="display:inline-block;width:16px;height:16px;background:#34D399;border-radius:3px;vertical-align:middle;margin-right:8px;"></span>#34D399 (emerald-400)</td></tr>
+      <tr><td style="padding: 6px 0; color: #6b7280;">Accent green</td><td><span style="display:inline-block;width:16px;height:16px;background:#6EE7B7;border-radius:3px;vertical-align:middle;margin-right:8px;"></span>#6EE7B7 (emerald-300)</td></tr>
+      <tr><td style="padding: 6px 0; color: #6b7280;">Dark background</td><td><span style="display:inline-block;width:16px;height:16px;background:#0D1117;border:1px solid #333;border-radius:3px;vertical-align:middle;margin-right:8px;"></span>#0D1117</td></tr>
+      <tr><td style="padding: 6px 0; color: #6b7280;">Icon meaning</td><td>Two server bars = infrastructure · Arrow up = deploy · Dashed curve = tunnel · Ellipse = database</td></tr>
+      <tr><td style="padding: 6px 0; color: #6b7280;">Word treatment</td><td>"Server" in foreground color · "Me" in emerald green</td></tr>
+    </table>
+  </div>
+</body>
+</html>

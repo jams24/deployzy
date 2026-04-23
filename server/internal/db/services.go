@@ -24,6 +24,12 @@ type Service struct {
 	Port        int       `json:"port"`
 	ContainerID *string   `json:"container_id"`
 	CreatedAt   time.Time `json:"created_at"`
+	SizeMB      int       `json:"size_mb"`
+	OverQuota   bool      `json:"over_quota"`
+	WorkerServerID *string `json:"worker_server_id"`
+	ContainerName  *string `json:"container_name"`
+	PublicHost     *string `json:"public_host"`
+	PublicPort     *int    `json:"public_port"`
 }
 
 // ConnectionURL returns the internal connection string (for containers on same host).
@@ -51,17 +57,24 @@ func (s *Service) connectionURLWithHost(host string) string {
 	}
 }
 
-// CreateService creates a standalone PostgreSQL database service.
-func (d *DB) CreateService(ctx context.Context, userID, name, serviceType string) (*Service, error) {
-	// Generate safe names
+// NewServiceCredentials generates a safe (db_name, password) pair for a new
+// service. Exposed so handlers can reuse the same format for BYOC and
+// platform-hosted services.
+func NewServiceCredentials() (string, string) {
 	b := make([]byte, 4)
 	rand.Read(b)
-	suffix := hex.EncodeToString(b)
-	dbName := "svc_" + suffix
-	password := hex.EncodeToString(func() []byte { p := make([]byte, 16); rand.Read(p); return p }())
+	dbName := "svc_" + hex.EncodeToString(b)
+	pw := make([]byte, 16)
+	rand.Read(pw)
+	return dbName, hex.EncodeToString(pw)
+}
+
+// CreateService creates a standalone Postgres service on the platform's
+// central Postgres. Use CreateServiceRecord + remote docker-run for BYOC.
+func (d *DB) CreateService(ctx context.Context, userID, name, serviceType string) (*Service, error) {
+	dbName, password := NewServiceCredentials()
 
 	if serviceType == "postgres" {
-		// Create PG role and database
 		var exists bool
 		d.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1)", dbName).Scan(&exists)
 		if !exists {
@@ -83,16 +96,30 @@ func (d *DB) CreateService(ctx context.Context, userID, name, serviceType string
 	err := d.Pool.QueryRow(ctx,
 		`INSERT INTO services (user_id, name, type, db_name, db_user, db_password, port)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at`,
+		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port`,
 		userID, name, serviceType, dbName, dbName, password, 5432,
-	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt)
+	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt, &svc.SizeMB, &svc.OverQuota, &svc.WorkerServerID, &svc.ContainerName, &svc.PublicHost, &svc.PublicPort)
+	return &svc, err
+}
+
+// CreateBYOCService inserts a service row that points at a Postgres container
+// running on a user's BYOC worker server. The caller is responsible for the
+// actual `docker run` over SSH before persisting (or for cleanup on failure).
+func (d *DB) CreateBYOCService(ctx context.Context, userID, name, serviceType, workerServerID, containerName, publicHost, dbName, dbUser, dbPassword string, publicPort int) (*Service, error) {
+	var svc Service
+	err := d.Pool.QueryRow(ctx,
+		`INSERT INTO services (user_id, name, type, db_name, db_user, db_password, host, port, worker_server_id, container_name, public_host, public_port, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active')
+		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port`,
+		userID, name, serviceType, dbName, dbUser, dbPassword, publicHost, publicPort, workerServerID, containerName, publicHost, publicPort,
+	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt, &svc.SizeMB, &svc.OverQuota, &svc.WorkerServerID, &svc.ContainerName, &svc.PublicHost, &svc.PublicPort)
 	return &svc, err
 }
 
 // ListServices returns all services for a user.
 func (d *DB) ListServices(ctx context.Context, userID string) ([]Service, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at
+		`SELECT id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port
 		 FROM services WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -102,7 +129,7 @@ func (d *DB) ListServices(ctx context.Context, userID string) ([]Service, error)
 	var svcs []Service
 	for rows.Next() {
 		var s Service
-		rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Status, &s.DBName, &s.DBUser, &s.DBPassword, &s.Host, &s.Port, &s.ContainerID, &s.CreatedAt)
+		rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Status, &s.DBName, &s.DBUser, &s.DBPassword, &s.Host, &s.Port, &s.ContainerID, &s.CreatedAt, &s.SizeMB, &s.OverQuota, &s.WorkerServerID, &s.ContainerName, &s.PublicHost, &s.PublicPort)
 		svcs = append(svcs, s)
 	}
 	return svcs, nil
@@ -112,26 +139,30 @@ func (d *DB) ListServices(ctx context.Context, userID string) ([]Service, error)
 func (d *DB) GetService(ctx context.Context, id string) (*Service, error) {
 	var s Service
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at
+		`SELECT id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port
 		 FROM services WHERE id = $1`, id,
-	).Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Status, &s.DBName, &s.DBUser, &s.DBPassword, &s.Host, &s.Port, &s.ContainerID, &s.CreatedAt)
+	).Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Status, &s.DBName, &s.DBUser, &s.DBPassword, &s.Host, &s.Port, &s.ContainerID, &s.CreatedAt, &s.SizeMB, &s.OverQuota, &s.WorkerServerID, &s.ContainerName, &s.PublicHost, &s.PublicPort)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	return &s, err
 }
 
-// DeleteService drops the database/role and removes the service record.
+// DeleteService drops the database/role and removes the service record. For
+// BYOC services the caller (handler) is responsible for `docker rm` on the
+// remote host before calling this; we only clean up platform-Postgres state
+// here.
 func (d *DB) DeleteService(ctx context.Context, id, userID string) error {
 	svc, err := d.GetService(ctx, id)
 	if err != nil || svc == nil || svc.UserID != userID {
 		return fmt.Errorf("service not found")
 	}
 
-	if svc.Type == "postgres" {
-		d.Pool.Exec(ctx, fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", svc.DBName))
-		d.Pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", svc.DBName))
-		d.Pool.Exec(ctx, fmt.Sprintf("DROP ROLE IF EXISTS %s", svc.DBUser))
+	// Only drop platform Postgres state when the service actually lives there.
+	if svc.Type == "postgres" && svc.WorkerServerID == nil && svc.DBName != nil && svc.DBUser != nil {
+		d.Pool.Exec(ctx, fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", *svc.DBName))
+		d.Pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", *svc.DBName))
+		d.Pool.Exec(ctx, fmt.Sprintf("DROP ROLE IF EXISTS %s", *svc.DBUser))
 	}
 
 	_, err = d.Pool.Exec(ctx, "DELETE FROM services WHERE id = $1 AND user_id = $2", id, userID)

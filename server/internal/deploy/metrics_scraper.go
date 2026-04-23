@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -19,6 +20,9 @@ type MetricsScraper struct {
 	db     *db.DB
 	engine *Engine
 	log    zerolog.Logger
+	// oomSeen tracks the last-seen RestartCount per project so we only log an
+	// OOM event once per kill (docker restarts crash-looping containers fast).
+	oomSeen sync.Map // projectID → lastRestartCount (int)
 }
 
 func NewMetricsScraper(database *db.DB, engine *Engine, log zerolog.Logger) *MetricsScraper {
@@ -105,6 +109,66 @@ func (ms *MetricsScraper) scrapeOne(ctx context.Context, p db.Project) {
 	if err := ms.db.InsertMetric(ctx, p.ID, cpu, memMB, memLimitMB, rx, tx); err != nil {
 		ms.log.Debug().Err(err).Str("project", p.ID).Msg("insert metric failed")
 	}
+
+	ms.checkOOM(ctx, p, runner, containerName)
+}
+
+// checkOOM inspects the container and, if it was OOM-killed since the last
+// observation, writes a visible log line so users understand why their app is
+// crash-looping. Without this, an OOM'd app silently restarts and the user
+// only sees "restarted N times" with no cause.
+func (ms *MetricsScraper) checkOOM(ctx context.Context, p db.Project, runner *Runner, containerName string) {
+	inspectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := runner.Run(inspectCtx, "docker", "inspect", "--format",
+		"{{.State.OOMKilled}}|{{.RestartCount}}|{{.State.ExitCode}}", containerName)
+	if err != nil {
+		return
+	}
+	parts := strings.Split(strings.TrimSpace(string(out)), "|")
+	if len(parts) != 3 {
+		return
+	}
+	oom := parts[0] == "true"
+	restartCount, _ := strconv.Atoi(parts[1])
+	exitCode, _ := strconv.Atoi(parts[2])
+
+	if !oom && exitCode != 137 {
+		return
+	}
+	prev, _ := ms.oomSeen.Load(p.ID)
+	prevCount, _ := prev.(int)
+	if restartCount <= prevCount {
+		return
+	}
+	ms.oomSeen.Store(p.ID, restartCount)
+	ms.engine.logMsg(ctx, p.ID, fmt.Sprintf(
+		"Container OOM-killed — exceeded memory limit (%d MB). Exit 137. Increase Memory MB in project settings, or upgrade your plan for a higher ceiling.",
+		planMemLimitFromID(ctx, ms.db, p.ID),
+	), "error")
+}
+
+// planMemLimitFromID looks up what memory limit the project is running under
+// (project override or plan ceiling). Used only for the OOM message.
+func planMemLimitFromID(ctx context.Context, database *db.DB, projectID string) int {
+	proj, err := database.GetProject(ctx, projectID)
+	if err != nil || proj == nil {
+		return 0
+	}
+	if proj.MemoryMB > 0 {
+		return proj.MemoryMB
+	}
+	user, err := database.GetUserByID(ctx, proj.UserID)
+	if err != nil || user == nil {
+		return 512
+	}
+	limits, _ := database.GetPlanLimits(ctx, user.Plan)
+	if limits != nil && limits.MaxMemoryMB > 0 {
+		if limits.MaxMemoryMB < 512 {
+			return limits.MaxMemoryMB
+		}
+	}
+	return 512
 }
 
 // parseCPUPerc turns "0.13%" → 0.13.

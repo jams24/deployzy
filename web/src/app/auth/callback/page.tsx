@@ -27,9 +27,7 @@ export default function AuthCallbackPage() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
         <div className="flex justify-center mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground animate-pulse">
-            <Terminal className="h-5 w-5" />
-          </div>
+          <img src="/logo-icon.svg" alt="ServerMe" className="h-10 w-10 rounded-lg animate-pulse" />
         </div>
         <p className="text-sm text-muted-foreground">Signing you in...</p>
         <Suspense>

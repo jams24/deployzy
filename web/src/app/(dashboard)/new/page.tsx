@@ -10,6 +10,8 @@ import {
   GitBranch, Database, Container, Layers, Search, Rocket,
   ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
 } from "lucide-react";
+import { getBuildPlaceholders } from "@/lib/placeholders";
+import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -91,10 +93,14 @@ export default function NewResourcePage() {
 
   // Database
   const [dbName, setDbName] = useState("");
+  const [dbTargetServer, setDbTargetServer] = useState(""); // "" = platform, else worker_server_id
 
   // Servers
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
+
+  // Plan limits (used to show real resource caps in the advanced form)
+  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number } | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -111,6 +117,11 @@ export default function NewResourcePage() {
     fetch(`${API}/api/v1/servers`, { headers: headers() })
       .then(r => r.ok ? r.json() : [])
       .then(data => setUserServers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+    // Load plan limits so the advanced form can show real caps
+    fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.limits) setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus }); })
       .catch(() => {});
   }, []);
 
@@ -205,11 +216,7 @@ export default function NewResourcePage() {
 
     // Set env vars if provided
     if (envText.trim()) {
-      const envVars: Record<string, string> = {};
-      envText.split("\n").forEach((line) => {
-        const eq = line.indexOf("=");
-        if (eq > 0) envVars[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
-      });
+      const envVars = parseEnvText(envText);
       await fetch(`${API}/api/v1/projects/${project.id}`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify({ env_vars: envVars }),
@@ -244,7 +251,7 @@ export default function NewResourcePage() {
     try {
       const res = await fetch(`${API}/api/v1/services`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ name: dbName, type: "postgres" }),
+        body: JSON.stringify({ name: dbName, type: "postgres", worker_server_id: dbTargetServer || undefined }),
       });
       if (res.ok) router.push("/services");
       else {
@@ -339,6 +346,7 @@ export default function NewResourcePage() {
 
   // ── Step: Configure Project (shared by GitHub, Template, Docker) ──
   if (step === "configure" || step === "docker") {
+    const ph = getBuildPlaceholders(framework);
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
@@ -400,16 +408,27 @@ export default function NewResourcePage() {
 
           {/* Env vars */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">
-              Environment Variables <span className="text-[10px] font-normal">(optional)</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">
+                Environment Variables <span className="text-[10px] font-normal">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setEnvText(autoFormatEnvText(envText))}
+                disabled={!envText.trim()}
+                className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Parse and rewrite as one KEY=VALUE per line. Recovers from pasted values with missing newlines."
+              >
+                Auto-format
+              </button>
+            </div>
             <textarea
               value={envText}
               onChange={(e) => setEnvText(e.target.value)}
-              placeholder={"DATABASE_URL=postgresql://...\nAPI_KEY=sk_live_...\nNODE_ENV=production"}
+              placeholder={ph.env}
               className="w-full h-28 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
             />
-            <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Editable anytime after deployment.</p>
+            <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Click Auto-format if a paste came out mangled.</p>
           </div>
 
           {/* Advanced Build & Runtime Settings */}
@@ -444,35 +463,39 @@ export default function NewResourcePage() {
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Install Command</label>
-                    <input type="text" placeholder="npm ci" value={installCmd} onChange={(e) => setInstallCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.install} value={installCmd} onChange={(e) => setInstallCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Build Command</label>
-                    <input type="text" placeholder="npm run build" value={buildCmd} onChange={(e) => setBuildCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.build} value={buildCmd} onChange={(e) => setBuildCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Start Command</label>
-                    <input type="text" placeholder="npm start" value={startCmd} onChange={(e) => setStartCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.start} value={startCmd} onChange={(e) => setStartCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
                     <input type="number" min="0" max="65535" value={portOverride || ""} onChange={(e) => setPortOverride(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground">Memory MB <span className="text-zinc-600">(0 = 512)</span></label>
-                    <input type="number" min="0" max="16384" step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">
+                      Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
+                    </label>
+                    <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground">CPUs <span className="text-zinc-600">(0 = 0.5)</span></label>
-                    <input type="number" min="0" max="8" step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">
+                      CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                    </label>
+                    <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                    <input type="text" placeholder="/health" value={healthCheckPath} onChange={(e) => setHealthCheckPath(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.healthCheck} value={healthCheckPath} onChange={(e) => setHealthCheckPath(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                    <input type="text" placeholder="npx prisma migrate deploy" value={releaseCmd} onChange={(e) => setReleaseCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.release} value={releaseCmd} onChange={(e) => setReleaseCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. You can also change these later from the project settings.</p>
@@ -510,11 +533,23 @@ export default function NewResourcePage() {
               </div>
               <div>
                 <p className="text-sm font-medium">PostgreSQL 16</p>
-                <p className="text-[11px] text-muted-foreground">Managed instance on ServerMe infrastructure</p>
+                <p className="text-[11px] text-muted-foreground">Managed instance — your plan size cap applies on platform; your full disk on BYOC</p>
               </div>
-              <Badge className="ml-auto text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Free</Badge>
             </CardContent>
           </Card>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium">Deploy to</label>
+            <select value={dbTargetServer} onChange={(e) => setDbTargetServer(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">ServerMe platform (shared Postgres)</option>
+              {userServers.filter((s) => s.status === "active").map((s) => (
+                <option key={s.id} value={s.id}>My server — {s.label} ({s.host})</option>
+              ))}
+            </select>
+            {userServers.length > 0 && !dbTargetServer && (
+              <p className="text-[11px] text-muted-foreground">Tip: deploy on your own VPS to use its full disk and skip plan DB-size caps.</p>
+            )}
+          </div>
 
           <Button className="w-full gap-2" onClick={createDatabase} disabled={creating || !dbName}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}

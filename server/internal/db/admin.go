@@ -26,6 +26,17 @@ type AdminStats struct {
 	UsersThisWeek  int64 `json:"users_this_week"`
 	UsersThisMonth int64 `json:"users_this_month"`
 	RequestsToday  int64 `json:"requests_today"`
+
+	// Projects / deploy analytics
+	ProjectsTotal      int64            `json:"projects_total"`
+	ProjectsByStatus   map[string]int64 `json:"projects_by_status"`
+	ProjectsByStack    map[string]int64 `json:"projects_by_stack"`
+	DeploysToday       int64            `json:"deploys_today"`
+	DeploysThisWeek    int64            `json:"deploys_this_week"`
+	ServicesTotal      int64            `json:"services_total"`
+	TunnelsTotal       int64            `json:"tunnels_total"`
+	SubdomainsTotal    int64            `json:"subdomains_total"`
+	WorkerServersTotal int64            `json:"worker_servers_total"`
 }
 
 func (d *DB) IsUserAdmin(ctx context.Context, userID string) (bool, error) {
@@ -95,7 +106,10 @@ func scanAdminUsers(rows interface{ Next() bool; Scan(...interface{}) error }) [
 }
 
 func (d *DB) AdminGetStats(ctx context.Context) (*AdminStats, error) {
-	s := &AdminStats{}
+	s := &AdminStats{
+		ProjectsByStatus: map[string]int64{},
+		ProjectsByStack:  map[string]int64{},
+	}
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	weekAgo := now.AddDate(0, 0, -7)
@@ -110,6 +124,62 @@ func (d *DB) AdminGetStats(ctx context.Context) (*AdminStats, error) {
 	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at >= $1`, weekAgo).Scan(&s.UsersThisWeek)
 	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at >= $1`, monthAgo).Scan(&s.UsersThisMonth)
 	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM captured_requests WHERE timestamp >= $1`, today).Scan(&s.RequestsToday)
+
+	// Projects — exclude previews (those with a parent_project_id) so the
+	// total matches what admins see in the UI and what billing reports.
+	d.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM projects WHERE parent_project_id IS NULL`,
+	).Scan(&s.ProjectsTotal)
+
+	// Status breakdown
+	if rows, err := d.Pool.Query(ctx,
+		`SELECT COALESCE(status, 'unknown') AS k, COUNT(*) FROM projects
+		 WHERE parent_project_id IS NULL GROUP BY k`,
+	); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var k string
+			var v int64
+			if err := rows.Scan(&k, &v); err != nil {
+				return nil, err
+			}
+			s.ProjectsByStatus[k] = v
+		}
+	}
+
+	// Stack / framework breakdown
+	if rows, err := d.Pool.Query(ctx,
+		`SELECT COALESCE(framework, 'unknown') AS k, COUNT(*) FROM projects
+		 WHERE parent_project_id IS NULL GROUP BY k`,
+	); err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var k string
+			var v int64
+			if err := rows.Scan(&k, &v); err != nil {
+				return nil, err
+			}
+			s.ProjectsByStack[k] = v
+		}
+	}
+
+	// Deploys — use deploy_logs.created_at when available, falling back to
+	// last_deploy_at on the project itself.
+	d.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1`, today,
+	).Scan(&s.DeploysToday)
+	d.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1`, weekAgo,
+	).Scan(&s.DeploysThisWeek)
+
+	// Services (standalone DBs), subdomains, active tunnels (last 24h), worker servers
+	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM services`).Scan(&s.ServicesTotal)
+	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM subdomains`).Scan(&s.SubdomainsTotal)
+	d.Pool.QueryRow(ctx,
+		`SELECT COUNT(DISTINCT tunnel_name) FROM tunnel_logs
+		 WHERE started_at >= $1`, weekAgo,
+	).Scan(&s.TunnelsTotal)
+	d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM worker_servers`).Scan(&s.WorkerServersTotal)
 
 	return s, nil
 }

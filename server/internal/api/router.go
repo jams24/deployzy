@@ -173,6 +173,15 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Project Databases
 			r.Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
+			// Database editor — SQL runner + table browser
+			r.Post("/projects/{projectId}/database/query", s.handleProjectDatabaseQuery)
+			r.Get("/projects/{projectId}/database/tables", s.handleProjectDatabaseTables)
+			r.Get("/projects/{projectId}/database/tables/{table}/columns", s.handleProjectDatabaseTableColumns)
+			r.Get("/projects/{projectId}/database/tables/{table}/rows", s.handleProjectDatabaseTableRows)
+			r.Post("/services/{serviceId}/query", s.handleServiceQuery)
+			r.Get("/services/{serviceId}/tables", s.handleServiceTables)
+			r.Get("/services/{serviceId}/tables/{table}/columns", s.handleServiceTableColumns)
+			r.Get("/services/{serviceId}/tables/{table}/rows", s.handleServiceTableRows)
 			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
 			r.Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
 
@@ -205,6 +214,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/servers", s.handleListUserServers)
 			r.Post("/servers", s.handleAddUserServer)
 			r.Delete("/servers/{serverId}", s.handleDeleteUserServer)
+			r.Post("/servers/{serverId}/install-docker", s.handleInstallDocker)
 
 			// Admin routes
 			r.Route("/admin", func(r chi.Router) {
@@ -213,12 +223,18 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/users", s.handleAdminListUsers)
 				r.Put("/users/{userId}", s.handleAdminUpdateUser)
 				r.Delete("/users/{userId}", s.handleAdminDeleteUser)
+				r.Post("/redeploy-all", s.handleAdminRedeployAll)
 
 				// Infrastructure management
 				r.Get("/servers", s.handleAdminListServers)
 				r.Post("/servers", s.handleAdminAddServer)
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
+				// Platform backups (admin only)
+				r.Get("/backups", s.handleListPlatformBackups)
+				r.Post("/backups/run", s.handleRunPlatformBackup)
+				r.Delete("/backups/{timestamp}", s.handleDeletePlatformBackup)
+				r.Get("/backups/file/{filename}", s.handleDownloadPlatformBackup)
 			})
 		})
 	})

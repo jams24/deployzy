@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -258,11 +260,20 @@ func main() {
 			metricsScraper := deploy.NewMetricsScraper(database, deployEngine, log)
 			go metricsScraper.Start(context.Background())
 
+			// DB quota sweeper — enforces per-plan Postgres disk caps on
+			// standalone services. Revokes INSERT/UPDATE when over quota.
+			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)
+			go dbQuotaSweeper.Start(context.Background())
+
 			// Worker-health monitor: pings every active worker periodically
 			// and marks dead ones offline so SelectServerForProject can't
 			// schedule new deploys onto them. Also updates last_heartbeat
 			// so admins can see at a glance when a worker was last alive.
 			go monitorWorkerHealth(context.Background(), database, log)
+
+			// Refresh the local platform row with real hardware values so the
+			// scheduler knows what's actually available on this host.
+			go refreshLocalServerCapacity(context.Background(), database, log)
 		}
 
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, log)
@@ -410,6 +421,41 @@ func pruneAbandonedBuildDirsOnWorkers(ctx context.Context, database *db.DB, log 
 //
 // Uses the per-worker SSH config that's already stored for deploys, so no
 // extra credentials are required.
+// refreshLocalServerCapacity reads this host's CPU and memory and writes them
+// to the worker_servers row marked is_local=true so the scheduler can do
+// real overflow accounting (instead of relying on the placeholder values
+// from the migration). Runs once at startup; cheap enough to not need a
+// loop unless we add hot-add/remove of CPUs.
+func refreshLocalServerCapacity(ctx context.Context, database *db.DB, log zerolog.Logger) {
+	cpuOut, _ := exec.Command("nproc").Output()
+	memOut, _ := exec.Command("bash", "-c", `awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo`).Output()
+	var cpus float64
+	var memMB int
+	fmt.Sscanf(strings.TrimSpace(string(cpuOut)), "%f", &cpus)
+	fmt.Sscanf(strings.TrimSpace(string(memOut)), "%d", &memMB)
+	if cpus <= 0 || memMB <= 0 {
+		log.Warn().Msg("refreshLocalServerCapacity: probe returned 0 — leaving placeholders")
+		return
+	}
+	if _, err := database.Pool.Exec(ctx,
+		`UPDATE worker_servers
+		 SET total_cpu = $1, total_memory_mb = $2
+		 WHERE is_local = true`, cpus, memMB); err != nil {
+		log.Warn().Err(err).Msg("refreshLocalServerCapacity: update failed")
+		return
+	}
+	log.Info().Float64("cpus", cpus).Int("memory_mb", memMB).Msg("local platform server capacity refreshed")
+
+	// Also reconcile allocations now that capacity is correct, so the admin
+	// page shows accurate "X / Y MB" right after startup rather than waiting
+	// for the next deploy to trigger reconciliation.
+	var localID string
+	database.Pool.QueryRow(ctx, `SELECT id FROM worker_servers WHERE is_local = true LIMIT 1`).Scan(&localID)
+	if localID != "" {
+		database.ReconcileServerAllocation(ctx, localID)
+	}
+}
+
 func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logger) {
 	log.Info().Msg("worker health monitor started")
 	fails := map[string]int{}

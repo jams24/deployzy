@@ -21,19 +21,20 @@ export default function HomePage() {
               <FadeIn delay={0.1}>
                 <div className="inline-flex items-center gap-2 self-start rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
                   <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>
-                  Deploy • Tunnel • Monitor
+                  Deploy · Databases · Tunnels · BYOC
                 </div>
               </FadeIn>
               <FadeIn delay={0.2}>
                 <h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">
-                  Ship from localhost<br />to live URL
+                  Your entire backend,<br />one platform
                 </h1>
               </FadeIn>
               <FadeIn delay={0.35}>
                 <p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">
-                  Deploy from GitHub, tunnel your localhost, run scheduled jobs,
-                  get cookieless analytics — all on one open-source platform.
-                  No AWS ticket, no config sprawl.
+                  Deploy apps from GitHub, attach managed Postgres, tunnel your
+                  laptop to the internet, and bring your own VPS for unlimited
+                  scale — Railway + ngrok + Supabase, in one open-source platform
+                  you can self-host.
                 </p>
               </FadeIn>
               <FadeIn delay={0.5}>
@@ -60,17 +61,19 @@ export default function HomePage() {
                   <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
                   <span className="ml-2 text-[10px] text-zinc-600 font-mono">~/my-saas</span>
                 </div>
-                <div className="p-4 sm:p-5 font-mono text-[12px] sm:text-[13px] leading-[1.9] overflow-x-auto">
+                <div className="p-4 sm:p-5 font-mono text-[12px] sm:text-[13px] leading-[1.85] overflow-x-auto">
                   <div className="text-zinc-600">$ git push origin main</div>
-                  <div className="mt-1 text-zinc-500">  Writing objects: 100% (4/4), 412 bytes</div>
-                  <div className="text-zinc-500">  To github.com:me/my-saas.git</div>
-                  <div className="mt-3 text-zinc-700">  <span className="text-amber-500">◷</span> ServerMe: webhook received</div>
+                  <div className="mt-1 text-zinc-700">  <span className="text-amber-500">◷</span> ServerMe: webhook received</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Building Docker image...</div>
+                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Postgres attached <span className="text-zinc-700">·</span> DATABASE_URL injected</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Running migrations</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Health check /health 200 OK</div>
-                  <div className="mt-2 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.serverme.site</span></div>
+                  <div className="mt-1 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.serverme.site</span></div>
                   <div className="mt-3 text-zinc-700">$ serverme http 3000</div>
                   <div className="mt-1 text-zinc-500">  Tunnel  <span className="text-blue-400 font-medium">https://dev.serverme.site</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
+                  <div className="mt-3 text-zinc-700">$ serverme servers add my-vps --host 5.9.x.x</div>
+                  <div className="mt-1 text-zinc-500">  <span className="text-emerald-500">✓</span> Probed: 8 vCPU · 32 GB · Docker installed</div>
+                  <div className="text-zinc-500">  Next deploy → <span className="text-violet-400 font-medium">my-vps</span> <span className="text-zinc-700">·</span> uncapped resources</div>
                 </div>
               </div>
             </SlideIn>
@@ -103,19 +106,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Four pillars: Deploy / Data / Tunnel / Observe ─────────────── */}
+      {/* ── Pillars: Deploy / Data / Tunnel / Observe / BYOC ───────────── */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
           <ScrollReveal>
             <SectionHeader
               label="Platform"
-              title="One platform, four jobs"
-              desc="Everything you'd otherwise glue together yourself — deploys, databases, tunneling, observability."
+              title="Everything you'd otherwise glue together"
+              desc="Deploys, managed Postgres, tunnels, observability, and your own VPS — all wired together. No five-tool stack, no AWS console deep-dives."
             />
           </ScrollReveal>
           <StaggerContainer className="mt-12 grid gap-4 sm:grid-cols-2">
-            {pillars.map((p) => (
-              <StaggerItem key={p.title}>
+            {pillars.map((p, i) => (
+              <StaggerItem key={p.title} className={i === pillars.length - 1 && pillars.length % 2 === 1 ? "sm:col-span-2" : ""}>
                 <GlowCard className="bg-card/30 p-6 sm:p-8 h-full transition-colors hover:bg-accent/20">
                   <div className="flex items-center gap-3">
                     <div className={`flex h-9 w-9 items-center justify-center rounded-md ${p.iconBg}`}>
@@ -238,9 +241,9 @@ export default function HomePage() {
               desc="Scriptable from your terminal, your CI, or your own apps."
             />
           </ScrollReveal>
-          <div className="mt-12 grid gap-4 lg:grid-cols-2">
-            <ScrollReveal><CodeCard lang="TypeScript" code={tsCode} /></ScrollReveal>
-            <ScrollReveal delay={150}><CodeCard lang="Python" code={pyCode} /></ScrollReveal>
+          <div className="mt-12 grid gap-4 lg:grid-cols-2 items-stretch">
+            <ScrollReveal className="h-full"><CodeCard lang="TypeScript" code={tsCode} /></ScrollReveal>
+            <ScrollReveal delay={150} className="h-full"><CodeCard lang="Python" code={pyCode} /></ScrollReveal>
           </div>
         </div>
       </section>
@@ -255,10 +258,10 @@ export default function HomePage() {
               desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits."
             />
           </ScrollReveal>
-          <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3">
+          <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3 items-stretch">
             {plans.map((plan, i) => (
-              <ScrollReveal key={plan.name} delay={i * 150}>
-                <div className={`rounded-lg border p-6 sm:p-8 h-full transition-all hover:border-foreground/20 ${plan.popular ? "border-foreground/20" : "border-border/40"}`}>
+              <ScrollReveal key={plan.name} delay={i * 150} className="h-full">
+                <div className={`flex h-full flex-col rounded-lg border p-6 sm:p-8 transition-all hover:border-foreground/20 ${plan.popular ? "border-foreground/20" : "border-border/40"}`}>
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{plan.name}</span>
                     {plan.popular && <span className="text-[10px] font-medium text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">Popular</span>}
@@ -268,7 +271,7 @@ export default function HomePage() {
                     {plan.period && <span className="text-sm text-muted-foreground">/{plan.period}</span>}
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">{plan.desc}</p>
-                  <ul className="mt-6 space-y-2.5">
+                  <ul className="mt-6 space-y-2.5 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-center gap-2 text-xs text-foreground/70">
                         <Check className="h-3 w-3 text-emerald-500/80 shrink-0" />{f}
@@ -352,11 +355,23 @@ const pillars = [
       "Live container logs via WebSocket — stop paying for Datadog",
     ],
   },
+  {
+    icon: HardDrive,
+    iconBg: "bg-orange-500/10", iconColor: "text-orange-400",
+    title: "BYOC",
+    desc: "Bring your own VPS. We SSH in, install Docker, and deploy projects there with no plan resource caps. The escape hatch every PaaS lacks.",
+    bullets: [
+      "Add any Linux VPS via SSH — we probe CPU/RAM and provision Docker",
+      "Deploys go straight to your hardware — no plan memory/CPU ceiling",
+      "Run managed Postgres on your own disk, your own quota",
+      "Mix BYOC with platform overflow — scheduler picks lowest priority with capacity",
+    ],
+  },
 ];
 
 const extras = [
   { icon: Clock,       title: "Scheduled jobs",     desc: "Cron-like jobs that run in a one-shot container from your image. Same env, same DB access." },
-  { icon: HardDrive,   title: "BYOC servers",       desc: "Bring your own cloud. SSH into a VPS you already own — ServerMe deploys there instead." },
+  { icon: GitBranch,   title: "Preview deploys",    desc: "Every PR gets its own URL. Auto-cleanup when the PR closes." },
   { icon: Eye,         title: "Health checks",      desc: "Deploy isn't marked 'running' until your /health endpoint returns 2xx. No silent bad pushes." },
   { icon: Terminal,    title: "Release commands",   desc: "Run migrations, seed data, or warm caches in a one-shot container before the app starts." },
   { icon: Users,       title: "Team collaboration", desc: "Invite members with roles. Shared projects, shared databases, shared tunnels." },
@@ -648,9 +663,9 @@ function DashboardPreview() {
 
 function CodeCard({ lang, code }: { lang: string; code: string }) {
   return (
-    <div className="rounded-lg border border-border/40 bg-[#09090b] overflow-hidden transition-colors hover:border-border/60">
-      <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] text-zinc-600 font-mono">{lang}</div>
-      <div className="overflow-x-auto"><pre className="p-4 text-[12px] leading-relaxed"><code className="text-zinc-400 font-mono">{code}</code></pre></div>
+    <div className="flex h-full flex-col rounded-lg border border-border/40 bg-[#09090b] overflow-hidden transition-colors hover:border-border/60">
+      <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] text-zinc-600 font-mono shrink-0">{lang}</div>
+      <div className="flex-1 overflow-x-auto"><pre className="p-4 text-[12px] leading-relaxed"><code className="text-zinc-400 font-mono">{code}</code></pre></div>
     </div>
   );
 }

@@ -9,7 +9,7 @@
 #   • Caddy (TLS, on-demand cert for user custom domains)
 #   • Docker (with icc=false + log rotation for multi-tenant safety)
 #   • iptables sandbox (blocks container → host internal services)
-#   • Daily cleanup cron
+#   • Daily cleanup + nightly backup (systemd timers)
 #
 # Usage:
 #   sudo ./install.sh --domain serverme.site --email you@example.com
@@ -130,12 +130,16 @@ ${BOLD}╔═══════════════════════�
 EOF
 
 # ─── 1. System packages ──────────────────────────────────────────────
-step "1/10 — System packages"
+step "1/11 — System packages"
 apt-get update -qq
 apt-get install -y -qq \
   curl wget tar gzip openssl git ca-certificates \
   iptables iptables-persistent \
-  netcat-openbsd dnsutils > /dev/null 2>&1
+  netcat-openbsd dnsutils \
+  sshpass rclone rsync > /dev/null 2>&1
+# sshpass — password SSH for BYOC + remote pool servers
+# rclone  — off-site backup sync (R2/B2/S3)
+# rsync   — used by web-deploy layout flatten step
 log "System packages ready"
 
 # Node.js 20 for building the Next.js frontend
@@ -147,7 +151,7 @@ fi
 log "Node.js $(node -v) ready"
 
 # ─── 2. Docker (with multi-tenant-safe daemon config) ────────────────
-step "2/10 — Docker (with icc=false + log rotation)"
+step "2/11 — Docker (with icc=false + log rotation)"
 
 if ! command -v docker &> /dev/null; then
   curl -fsSL https://get.docker.com | sh > /dev/null 2>&1
@@ -172,7 +176,7 @@ log "Docker configured (icc=false, 50m×3 log rotation)"
 
 # ─── 3. PostgreSQL ───────────────────────────────────────────────────
 if [[ "$SKIP_DB" == false ]]; then
-  step "3/10 — PostgreSQL"
+  step "3/11 — PostgreSQL"
 
   if ! command -v psql &> /dev/null; then
     apt-get install -y -qq postgresql postgresql-contrib > /dev/null 2>&1
@@ -198,11 +202,11 @@ if [[ "$SKIP_DB" == false ]]; then
   sudo -u postgres psql -c "CREATE DATABASE serverme OWNER serverme;" 2>/dev/null || true
   log "PostgreSQL ready (user=serverme, db=serverme, external access enabled)"
 else
-  step "3/10 — Skipping PostgreSQL (--skip-db)"
+  step "3/11 — Skipping PostgreSQL (--skip-db)"
 fi
 
 # ─── 4. Build ServerMe binaries from source ──────────────────────────
-step "4/10 — Building ServerMe from source"
+step "4/11 — Building ServerMe from source"
 
 mkdir -p "${INSTALL_DIR}" "${INSTALL_DIR}/backups" "${INSTALL_DIR}/project-data"
 
@@ -232,7 +236,7 @@ log "servermesrv + serverme (CLI) installed"
 
 # ─── 5. Build + install the Next.js dashboard ───────────────────────
 if [[ "$SKIP_WEB" == false ]]; then
-  step "5/10 — Building the dashboard (Next.js)"
+  step "5/11 — Building the dashboard (Next.js)"
   cd /tmp/serverme-src/web
   # Bake the API URL at build time (Next.js NEXT_PUBLIC_* is compile-time)
   echo "NEXT_PUBLIC_API_URL=https://api.${DOMAIN}" > .env.production
@@ -246,12 +250,12 @@ if [[ "$SKIP_WEB" == false ]]; then
   [[ -d public ]] && cp -r public "${WEB_DIR}/"
   log "Dashboard built to ${WEB_DIR}"
 else
-  step "5/10 — Skipping dashboard build (--skip-web)"
+  step "5/11 — Skipping dashboard build (--skip-web)"
 fi
 
 # ─── 6. Caddy (TLS + on-demand certs for user custom domains) ──────
 if [[ "$SKIP_CADDY" == false ]]; then
-  step "6/10 — Caddy"
+  step "6/11 — Caddy"
   if ! command -v caddy &> /dev/null; then
     apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
@@ -298,11 +302,11 @@ CADDY
   systemctl restart caddy
   log "Caddy configured with on-demand TLS"
 else
-  step "6/10 — Skipping Caddy (--skip-caddy)"
+  step "6/11 — Skipping Caddy (--skip-caddy)"
 fi
 
 # ─── 7. Systemd services ─────────────────────────────────────────────
-step "7/10 — Systemd services"
+step "7/11 — Systemd services"
 
 # Build optional CLI flags only if the user supplied them.
 GOOGLE_FLAGS="" ;  [[ -n "$GOOGLE_CLIENT_ID"  ]] && GOOGLE_FLAGS="--google-client-id=${GOOGLE_CLIENT_ID} --google-client-secret=${GOOGLE_CLIENT_SECRET} --frontend-url=${FRONTEND_URL}"
@@ -371,7 +375,7 @@ systemctl is-active --quiet serverme   || { err "serverme failed to start — se
 log "Services started"
 
 # ─── 8. Firewall + container sandbox (iptables) ─────────────────────
-step "8/10 — Firewall + container sandbox"
+step "8/11 — Firewall + container sandbox"
 
 if command -v ufw &> /dev/null; then
   ufw allow 22/tcp   > /dev/null 2>&1 || true
@@ -396,11 +400,13 @@ iptables -C INPUT -i docker0 -j REJECT --reject-with icmp-port-unreachable 2>/de
 mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4
 log "iptables rules set + persisted"
 
-# ─── 9. Daily cleanup cron ──────────────────────────────────────────
-step "9/10 — Daily cleanup cron"
-cat > /etc/cron.daily/serverme-cleanup <<'CLEANUP'
+# ─── 9. Daily cleanup (systemd timer) ───────────────────────────────
+# Note: switched off /etc/cron.daily because the cron daemon isn't installed
+# on every base image (e.g. some KVM Ubuntu templates ship without it).
+# systemd timers are always present on systemd-init systems.
+step "9/11 — Daily cleanup timer"
+cat > /usr/local/bin/serverme-cleanup <<'CLEANUP'
 #!/bin/bash
-# ServerMe daily cleanup — prevent disk full
 docker image prune -af --filter 'until=48h' > /dev/null 2>&1
 docker builder prune -af > /dev/null 2>&1
 find /var/lib/docker/containers -name '*.log' -size +100M -exec truncate -s 0 {} \; 2>/dev/null
@@ -414,11 +420,81 @@ journalctl --vacuum-size=100M > /dev/null 2>&1
 apt-get clean > /dev/null 2>&1
 echo "$(date): cleanup done, disk: $(df -h / | tail -1 | awk '{print $5}')" >> /var/log/serverme-cleanup.log
 CLEANUP
-chmod +x /etc/cron.daily/serverme-cleanup
-log "Daily cleanup cron installed"
+chmod +x /usr/local/bin/serverme-cleanup
 
-# ─── 10. Save credentials + summary ─────────────────────────────────
-step "10/10 — Saving credentials"
+cat > /etc/systemd/system/serverme-cleanup.service <<EOF
+[Unit]
+Description=ServerMe daily cleanup
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/serverme-cleanup
+EOF
+
+cat > /etc/systemd/system/serverme-cleanup.timer <<EOF
+[Unit]
+Description=Run ServerMe cleanup daily
+Requires=serverme-cleanup.service
+[Timer]
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now serverme-cleanup.timer > /dev/null 2>&1
+log "Daily cleanup timer installed"
+
+# ─── 10. Nightly platform backup ────────────────────────────────────
+step "10/11 — Nightly platform backup"
+mkdir -p /etc/serverme /var/backups/serverme
+# Copy backup script alongside the binary; install-backup.sh contains the
+# full setup logic (cron-or-timer + env template).
+if [ -f "$(dirname "$0")/backup.sh" ]; then
+    cp "$(dirname "$0")/backup.sh" /opt/serverme/backup.sh
+    chmod 750 /opt/serverme/backup.sh
+
+    cat > /etc/systemd/system/serverme-backup.service <<EOF
+[Unit]
+Description=ServerMe nightly backup
+After=postgresql.service
+[Service]
+Type=oneshot
+ExecStart=/opt/serverme/backup.sh
+StandardOutput=append:/var/log/serverme-backup.log
+StandardError=append:/var/log/serverme-backup.log
+EOF
+
+    cat > /etc/systemd/system/serverme-backup.timer <<EOF
+[Unit]
+Description=Run ServerMe nightly backup at 02:00 UTC
+Requires=serverme-backup.service
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+
+    # Off-site env template — admin fills in REMOTE=r2:bucket-name to enable.
+    if [ ! -f /etc/serverme/backup-remote.env ]; then
+        cat > /etc/serverme/backup-remote.env <<'ENVEOF'
+# Off-site backup target. Leave REMOTE empty for local-only.
+# After running `rclone config create r2 s3 ...`, set:
+#   REMOTE=r2:serverme-backups
+REMOTE=
+ENVEOF
+        chmod 600 /etc/serverme/backup-remote.env
+    fi
+
+    systemctl daemon-reload
+    systemctl enable --now serverme-backup.timer > /dev/null 2>&1
+    log "Backup timer installed (next run: 02:00 UTC) — local-only until rclone is configured"
+else
+    log "WARNING: deploy/backup.sh not found alongside install.sh — skipping backup setup"
+fi
+
+# ─── 11. Save credentials + summary ─────────────────────────────────
+step "11/11 — Saving credentials"
 CREDS="${INSTALL_DIR}/credentials.txt"
 cat > "$CREDS" <<CREDS
 # ServerMe credentials — KEEP SAFE

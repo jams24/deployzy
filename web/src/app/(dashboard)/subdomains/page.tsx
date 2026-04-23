@@ -234,7 +234,7 @@ export default function SubdomainsPage() {
             <li>Reserve a subdomain here or it&apos;s auto-reserved when you use <code className="bg-muted px-1 rounded">--subdomain myapp</code> in the CLI</li>
             <li>Reserved subdomains are exclusively yours — no one else can use them</li>
             <li>Random subdomains (without --subdomain flag) are not reserved and change each session</li>
-            <li>Free plan: {limit} subdomains. Premium: 50 subdomains</li>
+            <li>Free: {limit} subdomains · Pro: 10 · Team: 50</li>
             <li>Release a subdomain to free up your quota (someone else could then claim it)</li>
           </ul>
         </CardContent>

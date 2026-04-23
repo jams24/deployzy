@@ -58,7 +58,11 @@ type DeployLog struct {
 }
 
 // projectCols is the standard column list for project queries.
-const projectCols = `id, user_id, name, subdomain, repo_url, branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, container_id, container_port, github_repo, github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
+// NULL-able columns (container_id/container_port/github_repo/repo_url) are
+// COALESCE'd so the non-pointer Go struct fields can always scan — a stopped
+// project whose worker_server was deleted has container_id=NULL, which would
+// otherwise fail `cannot scan NULL into *string` and skip the row.
+const projectCols = `id, user_id, name, subdomain, COALESCE(repo_url, ''), branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, COALESCE(container_id, ''), COALESCE(container_port, 0), COALESCE(github_repo, ''), github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
 
 // scanProject scans a row into a Project struct. The row must match projectCols order.
 func scanProject(scan func(dest ...any) error) (Project, error) {
@@ -118,9 +122,19 @@ func (d *DB) ListProjects(ctx context.Context, userID string) ([]Project, error)
 	for rows.Next() {
 		p, err := scanProject(rows.Scan)
 		if err != nil {
-			continue
+			// NEVER silently drop a row — log loudly so future schema/
+			// type mismatches (nullable column → non-pointer Go field)
+			// show up in logs instead of hiding every row behind one
+			// broken one. pgx's rows iterator ALSO terminates on the
+			// first real scan error, so dropping one row effectively
+			// drops the rest too.
+			fmt.Printf("[ERROR] ListProjects scan failed user=%s err=%v\n", userID, err)
+			return nil, err
 		}
 		projects = append(projects, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return projects, nil
 }
@@ -139,6 +153,32 @@ func (d *DB) UpdateProjectStatus(ctx context.Context, projectID, status, contain
 func (d *DB) ListRunningProjects(ctx context.Context) ([]Project, error) {
 	rows, err := d.Pool.Query(ctx,
 		`SELECT `+projectCols+` FROM projects WHERE status = 'running'`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Project
+	for rows.Next() {
+		p, err := scanProject(rows.Scan)
+		if err != nil {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// ListProjectsWithGitHub returns every non-preview project that has a
+// github_repo set. Used by admin restore flows to mass-redeploy after a
+// disaster-recovery. Sorted oldest-first so newer projects get deployed
+// last and any build cache benefits them most.
+func (d *DB) ListProjectsWithGitHub(ctx context.Context) ([]Project, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT `+projectCols+` FROM projects
+		 WHERE parent_project_id IS NULL
+		   AND github_repo IS NOT NULL AND github_repo <> ''
+		 ORDER BY created_at ASC`,
 	)
 	if err != nil {
 		return nil, err

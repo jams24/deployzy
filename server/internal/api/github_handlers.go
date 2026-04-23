@@ -247,6 +247,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 	var payload struct {
 		Ref        string `json:"ref"`
+		After      string `json:"after"` // SHA of the new branch tip after this push
 		Repository struct {
 			FullName string `json:"full_name"`
 			CloneURL string `json:"clone_url"`
@@ -262,7 +263,14 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	// Extract pushed branch name from ref (refs/heads/main → main)
 	pushedBranch := strings.TrimPrefix(payload.Ref, "refs/heads/")
 
-	s.log.Info().Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Msg("GitHub push webhook")
+	// Sanity-check the pushed SHA before we interpolate it into `git checkout`.
+	// Empty / non-hex → fall back to deploying the branch tip.
+	pushedSHA := ""
+	if isHexSHA(payload.After) {
+		pushedSHA = payload.After
+	}
+
+	s.log.Info().Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Str("sha", pushedSHA).Msg("GitHub push webhook")
 
 	// Find all projects linked to this repo with auto_deploy enabled
 	projects, _ := s.db.GetProjectsByGitHubRepo(r.Context(), payload.Repository.FullName)
@@ -286,13 +294,20 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Get a fresh GitHub token for cloning (auto-refreshes + cached).
+		// Pin to the pushed SHA (not the previously-deployed one, which the
+		// engine otherwise checks out and causes "redeploys old code" bugs
+		// after a new push). If the payload is missing the SHA, clear the
+		// pin so the engine does a shallow clone of the current branch tip.
 		p := project // capture for goroutine
+		p.CommitSHA = pushedSHA
+		s.db.UpdateProjectCommitSHA(r.Context(), p.ID, pushedSHA)
+
+		// Get a fresh GitHub token for cloning (auto-refreshes + cached).
 		if token, ok := s.bestGitHubToken(r.Context(), p.UserID); ok {
 			p.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, payload.Repository.FullName)
 		}
 
-		s.log.Info().Str("project", p.ID).Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Msg("auto-deploying on push")
+		s.log.Info().Str("project", p.ID).Str("repo", payload.Repository.FullName).Str("branch", pushedBranch).Str("sha", pushedSHA).Msg("auto-deploying on push")
 		go func() {
 			ctx := context.Background()
 			if err := s.deployer.Deploy(ctx, &p); err != nil {
