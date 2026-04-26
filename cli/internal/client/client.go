@@ -23,17 +23,18 @@ import (
 )
 
 // localProxyClient makes requests to local services on behalf of the tunnel.
-// DisableCompression prevents the transport from injecting Accept-Encoding and
-// transparently decompressing responses — we forward the response verbatim.
+// DisableKeepAlives: each request gets a fresh TCP connection.  Without this,
+// Go's transport reuses connections and — when the local server (LM Studio,
+// Ollama, etc.) closes a connection between requests — the next attempt
+// silently gets an EOF instead of the server's actual error response.
+// DisableCompression: forward responses verbatim without gzip negotiation.
 var localProxyClient = &http.Client{
 	Transport: &http.Transport{
 		DisableCompression: true,
+		DisableKeepAlives:  true,
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
+			Timeout: 10 * time.Second,
 		}).DialContext,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
 	},
 	// Don't follow redirects — pass them back to the original client.
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -342,13 +343,20 @@ func (c *Client) handleReqProxy() {
 		return
 	}
 
-	// Buffer body when Content-Length is unknown so the outbound request
-	// always has a Content-Length header — chunked bodies cause 400 on
-	// LM Studio, Ollama, and several other local inference servers.
-	if req.ContentLength < 0 && req.Body != nil {
+	// Always buffer the request body so that:
+	// 1. Content-Length is always set — chunked bodies cause 400 on strict
+	//    local servers (LM Studio, Ollama).
+	// 2. GetBody is set so http.Client can retry if the local server closes
+	//    the connection mid-flight (common after long-running SSE responses).
+	// 3. The body is decoupled from the smux stream, preventing any issue
+	//    where the local server rejects early and Go can't finish reading.
+	if req.Body != nil && req.Body != http.NoBody {
 		body, _ := io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewReader(body))
 		req.ContentLength = int64(len(body))
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		}
 	}
 
 	// Rewrite to the local service.
