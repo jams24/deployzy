@@ -162,11 +162,26 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture request body if inspection enabled
+	// Buffer the full request body before touching the stream. This must happen
+	// before inspection so the 10KB capture doesn't replace r.Body with a
+	// truncated version while r.ContentLength still holds the original size —
+	// that mismatch was sending incomplete JSON to local servers (LM Studio
+	// showed "Unterminated string at position 7773"). Buffering also prevents
+	// chunked encoding on the smux stream (some servers reject chunked bodies).
 	var reqBody []byte
-	if tun.Inspect && r.Body != nil {
-		reqBody, _ = io.ReadAll(io.LimitReader(r.Body, maxBodyCapture))
-		r.Body = io.NopCloser(bytes.NewReader(reqBody))
+	if r.Body != nil {
+		fullBody, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(fullBody))
+		r.ContentLength = int64(len(fullBody))
+		r.TransferEncoding = nil
+
+		if tun.Inspect {
+			// Store at most 10KB for the inspector display.
+			reqBody = fullBody
+			if len(reqBody) > maxBodyCapture {
+				reqBody = reqBody[:maxBodyCapture]
+			}
+		}
 	}
 
 	// Get the control connection for this tunnel's client
@@ -200,16 +215,6 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// LM Studio and Ollama use it for origin checks and reject external domains)
 	r.Header.Set("X-Forwarded-For", clientIP(r))
 	r.Header.Set("X-Forwarded-Proto", schemeFromRequest(r))
-
-	// Buffer body so Content-Length is always known; r.Write uses chunked
-	// encoding when ContentLength=-1 (common for HTTP/2 requests) and some
-	// local servers reject chunked request bodies.
-	if r.ContentLength < 0 && r.Body != nil {
-		body, _ := io.ReadAll(r.Body)
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		r.ContentLength = int64(len(body))
-		r.TransferEncoding = nil
-	}
 
 	// Write the original HTTP request to the stream
 	if err := r.Write(stream); err != nil {
