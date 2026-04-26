@@ -32,12 +32,9 @@ HOST="${1:-}"
 MODE="${2:-all}"
 [[ -z "$HOST" ]] && err "usage: $0 user@host [--server-only|--web-only]"
 
-# Figure out API URL for frontend build (derive from host if not set).
-API_URL="${API_URL:-}"
-if [[ -z "$API_URL" ]]; then
-  HOST_ONLY="${HOST#*@}"
-  API_URL="https://api.${HOST_ONLY}"
-fi
+# API URL for the frontend build — defaults to production domain, not the SSH host.
+# Override with: API_URL=https://api.custom.host ./redeploy.sh ...
+API_URL="${API_URL:-https://api.serverme.site}"
 REMOTE_DIR="${REMOTE_DIR:-/tmp}"
 
 # SSH/SCP wrappers — use sshpass if SSH_PASS is set, otherwise rely on keys.
