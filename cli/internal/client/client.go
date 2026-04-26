@@ -340,6 +340,9 @@ func (c *Client) handleReqProxy() {
 				firstLine = false
 			} else if len(trimmed) >= 5 && strings.EqualFold(trimmed[:5], "host:") {
 				local.Write([]byte("Host: " + localAddr + "\r\n"))
+			} else if isProxyHeader(trimmed) {
+				// Strip X-Forwarded-* and similar headers — local services like
+				// LM Studio use these for origin checks and reject external domains
 			} else {
 				local.Write([]byte(line))
 			}
@@ -612,4 +615,14 @@ func (b *expBackoff) next() time.Duration {
 
 func (b *expBackoff) reset() {
 	b.current = 0
+}
+
+// isProxyHeader returns true for headers that are tunnel-internal and should
+// not be forwarded to the local service (LM Studio, Ollama, etc. use
+// X-Forwarded-Host for origin checks and reject non-localhost values).
+func isProxyHeader(headerLine string) bool {
+	lower := strings.ToLower(headerLine)
+	return strings.HasPrefix(lower, "x-forwarded-") ||
+		strings.HasPrefix(lower, "x-real-ip:") ||
+		strings.HasPrefix(lower, "forwarded:")
 }

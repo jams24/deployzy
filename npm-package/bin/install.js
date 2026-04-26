@@ -8,7 +8,7 @@ const os = require("os");
 const zlib = require("zlib");
 const { pipeline } = require("stream/promises");
 
-const VERSION = "1.0.11";
+const VERSION = "1.0.12";
 const GITHUB_REPO = "jams24/serverme";
 
 function getPlatform() {

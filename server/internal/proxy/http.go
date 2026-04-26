@@ -196,10 +196,20 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add forwarding headers
+	// Add forwarding headers (omit X-Forwarded-Host — local AI servers like
+	// LM Studio and Ollama use it for origin checks and reject external domains)
 	r.Header.Set("X-Forwarded-For", clientIP(r))
 	r.Header.Set("X-Forwarded-Proto", schemeFromRequest(r))
-	r.Header.Set("X-Forwarded-Host", r.Host)
+
+	// Buffer body so Content-Length is always known; r.Write uses chunked
+	// encoding when ContentLength=-1 (common for HTTP/2 requests) and some
+	// local servers reject chunked request bodies.
+	if r.ContentLength < 0 && r.Body != nil {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		r.TransferEncoding = nil
+	}
 
 	// Write the original HTTP request to the stream
 	if err := r.Write(stream); err != nil {
