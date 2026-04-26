@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
-
 
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/proto"
@@ -317,43 +317,45 @@ func (c *Client) handleReqProxy() {
 
 	proxyStart := time.Now()
 
-	// Sniff the HTTP request line from the stream before forwarding
-	var method, path, statusLine string
-	var statusCode int
-
-	// Use a buffered reader to peek at the HTTP request
+	// Parse the incoming HTTP request so we can rewrite the Host header before
+	// forwarding. Services like LM Studio and Ollama validate the Host header
+	// and return 400 when it contains the public tunnel hostname instead of
+	// localhost — rewriting it here matches what ngrok does by default.
 	bufStream := bufio.NewReaderSize(stream, 4096)
-	firstLine, err := bufStream.ReadString('\n')
-	if err == nil {
-		parts := strings.SplitN(strings.TrimSpace(firstLine), " ", 3)
-		if len(parts) >= 2 {
-			method = parts[0]
-			path = parts[1]
-		}
+	req, readErr := http.ReadRequest(bufStream)
+	if readErr != nil {
+		c.log.Error().Err(readErr).Msg("failed to read HTTP request from stream")
+		local.Close()
+		stream.Close()
+		return
 	}
 
-	// Write the peeked data + rest to local
+	var method, path string
+	var statusCode int
+
+	method = req.Method
+	path = req.URL.RequestURI()
+	req.Host = localAddr
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// stream → local (request)
+	// stream → local: write the host-rewritten request then signal end-of-write
 	go func() {
 		defer wg.Done()
-		local.Write([]byte(firstLine))
-		io.Copy(local, bufStream)
+		req.Write(local)
 		if tc, ok := local.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
 	}()
 
-	// local → stream (response) — sniff status code
+	// local → stream: sniff the status line then pipe the full response back
 	go func() {
 		defer wg.Done()
 		bufLocal := bufio.NewReaderSize(local, 4096)
 		respLine, err := bufLocal.ReadString('\n')
 		if err == nil {
-			statusLine = strings.TrimSpace(respLine)
-			parts := strings.SplitN(statusLine, " ", 3)
+			parts := strings.SplitN(strings.TrimSpace(respLine), " ", 3)
 			if len(parts) >= 2 {
 				fmt.Sscanf(parts[1], "%d", &statusCode)
 			}

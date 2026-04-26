@@ -1,5 +1,6 @@
 # Binaries
 bin/
+!npm-package/bin/
 *.exe
 *.exe~
 *.dll
