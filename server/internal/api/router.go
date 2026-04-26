@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,9 +34,10 @@ type Server struct {
 	google              *GoogleOAuthConfig
 	telegram            *notify.TelegramBot
 	telegramBotUsername string
-	billing            *billing.InventPay
-	deployer           *deploy.Engine
+	billing             *billing.InventPay
+	deployer            *deploy.Engine
 	log                 zerolog.Logger
+	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
 }
 
 // NewRouter creates the REST API router.
@@ -80,6 +82,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		// Google OAuth
 		r.Get("/auth/google", s.handleGoogleLogin)
 		r.Get("/auth/google/callback", s.handleGoogleCallback)
+		r.Get("/auth/poll/{state}", s.handleAuthPoll)
 
 		// Health
 		r.Get("/health", s.handleHealth)

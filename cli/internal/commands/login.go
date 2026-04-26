@@ -1,9 +1,10 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,37 +28,14 @@ func NewLoginCmd() *cobra.Command {
 			fmt.Printf("  %s\n", c(bold+cyan, "ServerMe Login"))
 			fmt.Printf("  %s\n", c(dim, "──────────────────────────"))
 
-			// Start local server to receive callback
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				return fmt.Errorf("start local server: %w", err)
-			}
-			port := listener.Addr().(*net.TCPAddr).Port
+			// Generate a random state token the CLI will poll for
+			b := make([]byte, 16)
+			rand.Read(b)
+			cliState := hex.EncodeToString(b)
 
-			tokenCh := make(chan string, 1)
-			errCh := make(chan error, 1)
-
-			mux := http.NewServeMux()
-			mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-				token := r.URL.Query().Get("token")
-				if token == "" {
-					w.Header().Set("Content-Type", "text/html")
-					fmt.Fprint(w, `<html><body style="background:#0d1117;color:#c9d1d9;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><h2 style="color:#f85149">Login Failed</h2><p>No token received.</p></div></body></html>`)
-					errCh <- fmt.Errorf("no token received")
-					return
-				}
-				w.Header().Set("Content-Type", "text/html")
-				fmt.Fprint(w, `<html><body style="background:#0d1117;color:#c9d1d9;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><h2 style="color:#3fb950">&#10003; Logged in!</h2><p>You can close this window and return to your terminal.</p></div></body></html>`)
-				tokenCh <- token
-			})
-
-			srv := &http.Server{Handler: mux}
-			go srv.Serve(listener)
-			defer srv.Close()
-
-			// Derive API base from server flag
 			apiBase := deriveAPIBase(serverAddr)
-			loginURL := fmt.Sprintf("%s/api/v1/auth/google?callback=http://127.0.0.1:%d/callback", apiBase, port)
+			loginURL := fmt.Sprintf("%s/api/v1/auth/google?cli_state=%s", apiBase, cliState)
+			pollURL := fmt.Sprintf("%s/api/v1/auth/poll/%s", apiBase, cliState)
 
 			fmt.Println()
 			fmt.Printf("  Opening browser...\n")
@@ -67,19 +45,40 @@ func NewLoginCmd() *cobra.Command {
 
 			openBrowser(loginURL)
 
-			select {
-			case token := <-tokenCh:
-				saveToken(token)
-				fmt.Printf("  %s Logged in successfully!\n", c(green, "✓"))
-				fmt.Println()
-				fmt.Printf("  Now run: %s\n", c(white, "serverme http 3000"))
-				fmt.Println()
-				return nil
-			case err := <-errCh:
-				return err
-			case <-time.After(2 * time.Minute):
-				return fmt.Errorf("login timed out")
+			fmt.Printf("  %s\n", c(dim, "Waiting for authentication..."))
+			fmt.Println()
+
+			client := &http.Client{Timeout: 10 * time.Second}
+			deadline := time.Now().Add(2 * time.Minute)
+
+			for time.Now().Before(deadline) {
+				time.Sleep(2 * time.Second)
+
+				resp, err := client.Get(pollURL)
+				if err != nil {
+					continue
+				}
+
+				if resp.StatusCode == http.StatusOK {
+					var result struct {
+						Token string `json:"token"`
+					}
+					json.NewDecoder(resp.Body).Decode(&result)
+					resp.Body.Close()
+
+					if result.Token != "" {
+						saveToken(result.Token)
+						fmt.Printf("  %s Logged in successfully!\n", c(green, "✓"))
+						fmt.Println()
+						fmt.Printf("  Now run: %s\n", c(white, "serverme http 3000"))
+						fmt.Println()
+						return nil
+					}
+				}
+				resp.Body.Close()
 			}
+
+			return fmt.Errorf("login timed out")
 		},
 	}
 }

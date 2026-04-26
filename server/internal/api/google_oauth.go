@@ -10,11 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type statePayload struct {
 	Nonce    string `json:"n"`
 	Callback string `json:"c,omitempty"`
+	CliState string `json:"s,omitempty"`
 }
 
 func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +29,7 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	payload := statePayload{
 		Nonce:    generateOAuthState(),
 		Callback: r.URL.Query().Get("callback"),
+		CliState: r.URL.Query().Get("cli_state"),
 	}
 	stateJSON, _ := json.Marshal(payload)
 	state := base64.URLEncoding.EncodeToString(stateJSON)
@@ -53,12 +57,13 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cliCallback string
+	var cliCallback, cliState string
 	if stateB64 := r.URL.Query().Get("state"); stateB64 != "" {
 		if stateJSON, err := base64.URLEncoding.DecodeString(stateB64); err == nil {
 			var payload statePayload
 			if json.Unmarshal(stateJSON, &payload) == nil {
 				cliCallback = payload.Callback
+				cliState = payload.CliState
 			}
 		}
 	}
@@ -106,7 +111,10 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if cliCallback != "" && strings.HasPrefix(cliCallback, "http://127.0.0.1") {
+	if cliState != "" {
+		s.cliPending.Store(cliState, token)
+		http.Redirect(w, r, s.google.FrontendURL+"/auth/cli-success", http.StatusFound)
+	} else if cliCallback != "" && strings.HasPrefix(cliCallback, "http://127.0.0.1") {
 		http.Redirect(w, r, fmt.Sprintf("%s?token=%s", cliCallback, url.QueryEscape(token)), http.StatusFound)
 	} else {
 		http.Redirect(w, r, fmt.Sprintf("%s/auth/callback?token=%s", s.google.FrontendURL, url.QueryEscape(token)), http.StatusFound)
@@ -176,4 +184,16 @@ func generateOAuthState() string {
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, frontendURL, errMsg string) {
 	http.Redirect(w, r, fmt.Sprintf("%s/sign-in?error=%s", frontendURL, url.QueryEscape(errMsg)), http.StatusFound)
+}
+
+// handleAuthPoll is called by the CLI to retrieve the JWT token after OAuth.
+// The CLI passes the cli_state UUID it generated; this endpoint returns the token
+// once the OAuth callback has stored it, and consumes the entry immediately.
+func (s *Server) handleAuthPoll(w http.ResponseWriter, r *http.Request) {
+	state := chi.URLParam(r, "state")
+	if val, ok := s.cliPending.LoadAndDelete(state); ok {
+		writeJSON(w, http.StatusOK, map[string]string{"token": val.(string)})
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+	}
 }
