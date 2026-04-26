@@ -64,7 +64,7 @@ checksum:
 
 release:
   github:
-    owner: serverme
+    owner: jams24
     name: serverme
   draft: false
   prerelease: auto
