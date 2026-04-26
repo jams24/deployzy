@@ -2,12 +2,15 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -18,6 +21,26 @@ import (
 	"github.com/serverme/serverme/proto"
 	"github.com/xtaci/smux"
 )
+
+// localProxyClient makes requests to local services on behalf of the tunnel.
+// DisableCompression prevents the transport from injecting Accept-Encoding and
+// transparently decompressing responses — we forward the response verbatim.
+var localProxyClient = &http.Client{
+	Transport: &http.Transport{
+		DisableCompression: true,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	},
+	// Don't follow redirects — pass them back to the original client.
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+	Timeout: 0, // no timeout — AI inference can take minutes
+}
 
 // TunnelConfig defines what tunnel to create.
 type TunnelConfig struct {
@@ -276,21 +299,18 @@ func (c *Client) requestTunnel(tc TunnelConfig) (*ActiveTunnel, error) {
 }
 
 func (c *Client) handleReqProxy() {
-	// Open a new smux stream for this proxy connection
 	stream, err := c.session.OpenStream()
 	if err != nil {
 		c.log.Error().Err(err).Msg("failed to open proxy stream")
 		return
 	}
 
-	// Send RegProxy to identify ourselves
 	if err := proto.WriteMsg(stream, proto.TypeRegProxy, &proto.RegProxy{}); err != nil {
 		c.log.Error().Err(err).Msg("failed to send RegProxy")
 		stream.Close()
 		return
 	}
 
-	// Read StartProxy to know where to connect
 	var start proto.StartProxy
 	if err := proto.ReadTypedMsg(stream, proto.TypeStartProxy, &start); err != nil {
 		c.log.Error().Err(err).Msg("failed to read StartProxy")
@@ -298,102 +318,83 @@ func (c *Client) handleReqProxy() {
 		return
 	}
 
-	// Find the local address for this tunnel
 	localAddr := c.findLocalAddr(start.URL)
 	if localAddr == "" {
 		c.log.Error().Str("url", start.URL).Msg("no local addr for tunnel")
-		stream.Close()
-		return
-	}
-
-	// Dial the local service
-	local, err := net.DialTimeout("tcp", localAddr, 5*time.Second)
-	if err != nil {
-		c.log.Error().Err(err).Str("local", localAddr).Msg("failed to connect to local service")
+		proxyWriteError(stream, http.StatusBadGateway, "no tunnel for this URL")
 		stream.Close()
 		return
 	}
 
 	proxyStart := time.Now()
 
-	// Read HTTP request headers line-by-line, rewriting the Host header to
-	// localAddr before forwarding. Byte-level replacement avoids Go's
-	// http.Request.Write re-encoding (chunked ↔ Content-Length, stripped
-	// headers) which causes strict local servers like LM Studio and Ollama
-	// to reject requests with 400.
+	// Parse the HTTP/1.1 request that the server serialized onto the stream.
+	// Using http.ReadRequest + http.Client.Do (instead of manual byte-copying)
+	// makes the client a proper HTTP/1.1 reverse proxy — the same approach
+	// ngrok uses — so strict servers like LM Studio and Ollama accept the
+	// requests regardless of how the original request arrived (HTTP/2, chunked,
+	// large tools arrays, etc.).
 	bufStream := bufio.NewReaderSize(stream, 4096)
-
-	var method, path string
-	var statusCode int
-	firstLine := true
-
-	for {
-		line, err := bufStream.ReadString('\n')
-		if line != "" {
-			trimmed := strings.TrimRight(line, "\r\n")
-			if firstLine {
-				parts := strings.SplitN(trimmed, " ", 3)
-				if len(parts) >= 2 {
-					method, path = parts[0], parts[1]
-				}
-				local.Write([]byte(line))
-				firstLine = false
-			} else if len(trimmed) >= 5 && strings.EqualFold(trimmed[:5], "host:") {
-				local.Write([]byte("Host: " + localAddr + "\r\n"))
-			} else if isProxyHeader(trimmed) {
-				// Strip X-Forwarded-* and similar headers — local services like
-				// LM Studio use these for origin checks and reject external domains
-			} else {
-				local.Write([]byte(line))
-			}
-			if trimmed == "" {
-				break // end of headers
-			}
-		}
-		if err != nil {
-			break
-		}
+	req, err := http.ReadRequest(bufStream)
+	if err != nil {
+		c.log.Error().Err(err).Msg("failed to parse request from stream")
+		stream.Close()
+		return
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// Buffer body when Content-Length is unknown so the outbound request
+	// always has a Content-Length header — chunked bodies cause 400 on
+	// LM Studio, Ollama, and several other local inference servers.
+	if req.ContentLength < 0 && req.Body != nil {
+		body, _ := io.ReadAll(req.Body)
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+	}
 
-	// stream → local: pipe the request body verbatim after the rewritten headers
-	go func() {
-		defer wg.Done()
-		io.Copy(local, bufStream)
-		if tc, ok := local.(*net.TCPConn); ok {
-			tc.CloseWrite()
-		}
-	}()
+	// Rewrite to the local service.
+	req.URL = &url.URL{
+		Scheme:   "http",
+		Host:     localAddr,
+		Path:     req.URL.Path,
+		RawQuery: req.URL.RawQuery,
+	}
+	req.RequestURI = "" // required for http.Client
+	req.Host = localAddr
 
-	// local → stream: sniff the status line then pipe the full response back
-	go func() {
-		defer wg.Done()
-		bufLocal := bufio.NewReaderSize(local, 4096)
-		respLine, err := bufLocal.ReadString('\n')
-		if err == nil {
-			parts := strings.SplitN(strings.TrimSpace(respLine), " ", 3)
-			if len(parts) >= 2 {
-				fmt.Sscanf(parts[1], "%d", &statusCode)
-			}
-		}
-		stream.Write([]byte(respLine))
-		io.Copy(stream, bufLocal)
+	// Strip proxy / hop-by-hop headers before forwarding.
+	for _, h := range []string{
+		"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+		"X-Real-Ip", "Forwarded",
+		"Connection", "Proxy-Connection", "Keep-Alive", "Upgrade", "Te",
+	} {
+		req.Header.Del(h)
+	}
+
+	method := req.Method
+	path := req.URL.Path
+	var statusCode int
+
+	resp, err := localProxyClient.Do(req)
+	if err != nil {
+		c.log.Error().Err(err).Str("local", localAddr).Msg("failed to forward to local service")
+		proxyWriteError(stream, http.StatusBadGateway, "Failed to connect to local service")
 		stream.Close()
-	}()
+		return
+	}
+	defer resp.Body.Close()
 
-	wg.Wait()
-	local.Close()
+	statusCode = resp.StatusCode
+
+	if err := resp.Write(stream); err != nil {
+		c.log.Error().Err(err).Msg("failed to write response to stream")
+	}
+	stream.Close()
 
 	duration := time.Since(proxyStart)
-
-	// Print request log to terminal
 	if method != "" {
 		c.printRequestLog(method, path, statusCode, duration)
 	}
 
-	// Notify inspector if attached
 	if c.inspector != nil {
 		c.inspector.AddRequest(&InspectedRequest{
 			TunnelURL:  start.URL,
@@ -404,6 +405,14 @@ func (c *Client) handleReqProxy() {
 			Duration:   duration,
 		})
 	}
+}
+
+// proxyWriteError writes a minimal HTTP error response to the stream so the
+// server can forward a meaningful status to the original caller.
+func proxyWriteError(w io.Writer, status int, msg string) {
+	body := []byte(msg)
+	fmt.Fprintf(w, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s",
+		status, http.StatusText(status), len(body), msg)
 }
 
 func (c *Client) printRequestLog(method, path string, statusCode int, duration time.Duration) {
@@ -617,12 +626,3 @@ func (b *expBackoff) reset() {
 	b.current = 0
 }
 
-// isProxyHeader returns true for headers that are tunnel-internal and should
-// not be forwarded to the local service (LM Studio, Ollama, etc. use
-// X-Forwarded-Host for origin checks and reject non-localhost values).
-func isProxyHeader(headerLine string) bool {
-	lower := strings.ToLower(headerLine)
-	return strings.HasPrefix(lower, "x-forwarded-") ||
-		strings.HasPrefix(lower, "x-real-ip:") ||
-		strings.HasPrefix(lower, "forwarded:")
-}
