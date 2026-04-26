@@ -3,7 +3,7 @@ package proto
 import "encoding/json"
 
 // Protocol version
-const Version = "1.0.10"
+const Version = "1.0.11"
 
 // Message type constants
 const (

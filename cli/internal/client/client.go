@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -317,33 +316,49 @@ func (c *Client) handleReqProxy() {
 
 	proxyStart := time.Now()
 
-	// Parse the incoming HTTP request so we can rewrite the Host header before
-	// forwarding. Services like LM Studio and Ollama validate the Host header
-	// and return 400 when it contains the public tunnel hostname instead of
-	// localhost — rewriting it here matches what ngrok does by default.
+	// Read HTTP request headers line-by-line, rewriting the Host header to
+	// localAddr before forwarding. Byte-level replacement avoids Go's
+	// http.Request.Write re-encoding (chunked ↔ Content-Length, stripped
+	// headers) which causes strict local servers like LM Studio and Ollama
+	// to reject requests with 400.
 	bufStream := bufio.NewReaderSize(stream, 4096)
-	req, readErr := http.ReadRequest(bufStream)
-	if readErr != nil {
-		c.log.Error().Err(readErr).Msg("failed to read HTTP request from stream")
-		local.Close()
-		stream.Close()
-		return
-	}
 
 	var method, path string
 	var statusCode int
+	firstLine := true
 
-	method = req.Method
-	path = req.URL.RequestURI()
-	req.Host = localAddr
+	for {
+		line, err := bufStream.ReadString('\n')
+		if line != "" {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if firstLine {
+				parts := strings.SplitN(trimmed, " ", 3)
+				if len(parts) >= 2 {
+					method, path = parts[0], parts[1]
+				}
+				local.Write([]byte(line))
+				firstLine = false
+			} else if len(trimmed) >= 5 && strings.EqualFold(trimmed[:5], "host:") {
+				local.Write([]byte("Host: " + localAddr + "\r\n"))
+			} else {
+				local.Write([]byte(line))
+			}
+			if trimmed == "" {
+				break // end of headers
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// stream → local: write the host-rewritten request then signal end-of-write
+	// stream → local: pipe the request body verbatim after the rewritten headers
 	go func() {
 		defer wg.Done()
-		req.Write(local)
+		io.Copy(local, bufStream)
 		if tc, ok := local.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
