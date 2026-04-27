@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
+	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/inspect"
@@ -36,12 +37,13 @@ type Server struct {
 	telegramBotUsername string
 	billing             *billing.InventPay
 	deployer            *deploy.Engine
+	ctrlManager         *control.Manager
 	log                 zerolog.Logger
 	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, billingClient *billing.InventPay, deployEngine *deploy.Engine, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -50,8 +52,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		google:              google,
 		telegram:            telegramBot,
 		telegramBotUsername: telegramUsername,
-		billing:            billingClient,
-		deployer:           deployEngine,
+		billing:             billingClient,
+		deployer:            deployEngine,
+		ctrlManager:         ctrlManager,
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 
@@ -233,6 +236,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/servers", s.handleAdminAddServer)
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
+				// Live sessions
+				r.Get("/sessions", s.handleAdminListSessions)
+				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)
+				r.Delete("/tunnels/{encodedURL}", s.handleAdminKillTunnel)
+
 				// Platform backups (admin only)
 				r.Get("/backups", s.handleListPlatformBackups)
 				r.Post("/backups/run", s.handleRunPlatformBackup)

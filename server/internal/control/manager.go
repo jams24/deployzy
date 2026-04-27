@@ -68,6 +68,27 @@ func (m *Manager) Count() int {
 	return count
 }
 
+// CloseConn forcibly closes a single client connection by ID.
+// Returns true if the connection was found and closed.
+func (m *Manager) CloseConn(clientID string) bool {
+	v, ok := m.conns.Load(clientID)
+	if !ok {
+		return false
+	}
+	v.(*Conn).Close()
+	return true
+}
+
+// List returns a snapshot of all active connections.
+func (m *Manager) List() []*Conn {
+	var out []*Conn
+	m.conns.Range(func(_, value interface{}) bool {
+		out = append(out, value.(*Conn))
+		return true
+	})
+	return out
+}
+
 // CloseAll closes all active connections.
 func (m *Manager) CloseAll() {
 	m.conns.Range(func(key, value interface{}) bool {

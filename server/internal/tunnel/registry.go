@@ -78,6 +78,23 @@ func (r *Registry) Register(t *Tunnel) error {
 	return nil
 }
 
+// LookupByURL finds a tunnel by its full public URL.
+func (r *Registry) LookupByURL(url string) *Tunnel {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, t := range r.byHost {
+		if t.URL == url {
+			return t
+		}
+	}
+	for _, t := range r.byPort {
+		if t.URL == url {
+			return t
+		}
+	}
+	return nil
+}
+
 // LookupByHost finds a tunnel by hostname or subdomain.
 func (r *Registry) LookupByHost(host string) *Tunnel {
 	r.mu.RLock()

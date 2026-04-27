@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -174,4 +175,90 @@ func (s *Server) handleAdminRedeployAll(w http.ResponseWriter, r *http.Request) 
 		"total":    len(projects),
 		"projects": queueIDs,
 	})
+}
+
+type sessionTunnelInfo struct {
+	URL       string `json:"url"`
+	Protocol  string `json:"protocol"`
+	LocalAddr string `json:"local_addr"`
+	Name      string `json:"name"`
+	Inspect   bool   `json:"inspect"`
+}
+
+type sessionInfo struct {
+	ClientID    string              `json:"client_id"`
+	UserID      string              `json:"user_id"`
+	UserEmail   string              `json:"user_email"`
+	RemoteAddr  string              `json:"remote_addr"`
+	ConnectedAt time.Time           `json:"connected_at"`
+	Tunnels     []sessionTunnelInfo `json:"tunnels"`
+}
+
+func (s *Server) handleAdminListSessions(w http.ResponseWriter, r *http.Request) {
+	if s.ctrlManager == nil {
+		writeJSON(w, http.StatusOK, []sessionInfo{})
+		return
+	}
+
+	conns := s.ctrlManager.List()
+	sessions := make([]sessionInfo, 0, len(conns))
+
+	for _, conn := range conns {
+		email := ""
+		if conn.UserID() != "" {
+			if u, err := s.db.GetUserByID(r.Context(), conn.UserID()); err == nil && u != nil {
+				email = u.Email
+			}
+		}
+
+		var tunnels []sessionTunnelInfo
+		for _, url := range conn.TunnelURLs() {
+			t := s.registry.LookupByURL(url)
+			if t != nil {
+				tunnels = append(tunnels, sessionTunnelInfo{
+					URL:       t.URL,
+					Protocol:  t.Protocol,
+					LocalAddr: t.LocalAddr,
+					Name:      t.Name,
+					Inspect:   t.Inspect,
+				})
+			} else {
+				tunnels = append(tunnels, sessionTunnelInfo{URL: url})
+			}
+		}
+		if tunnels == nil {
+			tunnels = []sessionTunnelInfo{}
+		}
+
+		sessions = append(sessions, sessionInfo{
+			ClientID:    conn.ID(),
+			UserID:      conn.UserID(),
+			UserEmail:   email,
+			RemoteAddr:  conn.RemoteAddr().String(),
+			ConnectedAt: conn.ConnectedAt(),
+			Tunnels:     tunnels,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, sessions)
+}
+
+func (s *Server) handleAdminKillSession(w http.ResponseWriter, r *http.Request) {
+	clientID := chi.URLParam(r, "clientId")
+	if s.ctrlManager == nil || !s.ctrlManager.CloseConn(clientID) {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
+}
+
+func (s *Server) handleAdminKillTunnel(w http.ResponseWriter, r *http.Request) {
+	encoded := chi.URLParam(r, "encodedURL")
+	tunnelURL, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tunnel URL encoding")
+		return
+	}
+	s.registry.RemoveByURL(string(tunnelURL))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }

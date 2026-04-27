@@ -63,6 +63,22 @@ type Conn struct {
 	closeOnce    sync.Once
 	lastPong     time.Time
 	pongMu       sync.Mutex
+	connectedAt  time.Time
+}
+
+// UserID returns the authenticated user ID for this connection.
+func (c *Conn) UserID() string { return c.userID }
+
+// ConnectedAt returns when this connection was established.
+func (c *Conn) ConnectedAt() time.Time { return c.connectedAt }
+
+// TunnelURLs returns a snapshot of tunnel URLs owned by this connection.
+func (c *Conn) TunnelURLs() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.tunnels))
+	copy(out, c.tunnels)
+	return out
 }
 
 // NewConn creates a control connection from an accepted smux session.
@@ -86,6 +102,7 @@ func NewConn(session *smux.Session, registry *tunnel.Registry, tcpAlloc TCPAlloc
 		proxyCh:          make(chan *smux.Stream, 64),
 		closeCh:          make(chan struct{}),
 		lastPong:         time.Now(),
+		connectedAt:      time.Now(),
 	}, nil
 }
 

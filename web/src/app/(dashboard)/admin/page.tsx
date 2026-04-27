@@ -24,6 +24,12 @@ import {
   BarChart3,
   Database,
   Link2,
+  Radio,
+  WifiOff,
+  ExternalLink,
+  RefreshCw,
+  X,
+  Zap,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -200,6 +206,43 @@ export default function AdminPage() {
     loadServers();
   }
 
+  // Live sessions
+  interface SessionTunnel { url: string; protocol: string; local_addr: string; name: string; inspect: boolean; }
+  interface Session { client_id: string; user_id: string; user_email: string; remote_addr: string; connected_at: string; tunnels: SessionTunnel[]; }
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [sessionsLastRefresh, setSessionsLastRefresh] = useState<Date | null>(null);
+
+  async function loadSessions() {
+    setSessionsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/sessions`, { headers: headers() });
+      if (res.ok) { setSessions(await res.json()); setSessionsLastRefresh(new Date()); }
+    } catch {}
+    setSessionsLoading(false);
+  }
+
+  async function killSession(clientId: string) {
+    if (!confirm("Force-disconnect this client? Their tunnels will close immediately.")) return;
+    await fetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE", headers: headers() });
+    loadSessions();
+  }
+
+  async function killTunnel(tunnelURL: string) {
+    if (!confirm(`Remove tunnel ${tunnelURL}?`)) return;
+    const encoded = btoa(tunnelURL).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    await fetch(`${API}/api/v1/admin/tunnels/${encoded}`, { method: "DELETE", headers: headers() });
+    loadSessions();
+  }
+
+  const filteredSessions = sessions.filter(s =>
+    !sessionSearch ||
+    s.user_email?.toLowerCase().includes(sessionSearch.toLowerCase()) ||
+    s.client_id.includes(sessionSearch) ||
+    s.tunnels.some(t => t.url.includes(sessionSearch))
+  );
+
   const [redeploying, setRedeploying] = useState(false);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
   async function redeployAll(statusFilter?: string) {
@@ -237,7 +280,14 @@ export default function AdminPage() {
     loadUsers();
     loadServers();
     loadBackups();
+    loadSessions();
   }, [page]);
+
+  // Auto-refresh sessions every 8s
+  useEffect(() => {
+    const interval = setInterval(loadSessions, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   if (error === "admin") {
     return (
@@ -347,6 +397,148 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Live Sessions */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Radio className="h-4 w-4 text-emerald-500 animate-pulse" />
+                Live Sessions
+                <Badge className={`text-[10px] font-mono ${sessions.length > 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-muted text-muted-foreground"}`}>
+                  {sessions.length}
+                </Badge>
+              </CardTitle>
+              {sessionsLastRefresh && (
+                <span className="text-[10px] text-muted-foreground">
+                  {sessionsLastRefresh.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative max-w-xs w-full">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Filter by email, client ID, or URL..."
+                  className="pl-9 h-8 text-xs"
+                  value={sessionSearch}
+                  onChange={(e) => setSessionSearch(e.target.value)}
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 shrink-0"
+                onClick={loadSessions}
+                disabled={sessionsLoading}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${sessionsLoading ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredSessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <WifiOff className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">
+                {sessionSearch ? "No sessions match your filter." : "No active tunnel sessions."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredSessions.map((session) => (
+                <div key={session.client_id} className="rounded-lg border border-border/50 p-3 space-y-2">
+                  {/* Session header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded px-1.5 py-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                          connected
+                        </span>
+                        <span className="text-sm font-medium truncate">
+                          {session.user_email || <span className="text-muted-foreground font-mono text-xs">anonymous</span>}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{session.remote_addr}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground">
+                        <span title="Client ID" className="font-mono">{session.client_id.slice(0, 12)}…</span>
+                        <span>since {new Date(session.connected_at).toLocaleTimeString()}</span>
+                        <span>{session.tunnels.length} tunnel{session.tunnels.length !== 1 ? "s" : ""}</span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-destructive hover:text-destructive shrink-0"
+                      onClick={() => killSession(session.client_id)}
+                      title="Force disconnect this client"
+                    >
+                      <WifiOff className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Tunnels */}
+                  {session.tunnels.length > 0 && (
+                    <div className="space-y-1 pl-1 border-l-2 border-border/40 ml-1">
+                      {session.tunnels.map((t) => (
+                        <div key={t.url} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] shrink-0 ${
+                                t.protocol === "http" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                                t.protocol === "tcp" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                "bg-violet-500/10 text-violet-400 border-violet-500/20"
+                              }`}
+                            >
+                              {t.protocol.toUpperCase()}
+                            </Badge>
+                            <span className="text-[11px] font-mono text-muted-foreground truncate">{t.url}</span>
+                            {t.local_addr && (
+                              <span className="text-[10px] text-muted-foreground/60 shrink-0">→ {t.local_addr}</span>
+                            )}
+                            {t.name && (
+                              <span className="text-[10px] text-muted-foreground/60 shrink-0">({t.name})</span>
+                            )}
+                            {t.inspect && (
+                              <Badge variant="outline" className="text-[9px] shrink-0">inspect</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {t.protocol === "http" && (
+                              <a
+                                href={t.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground"
+                                title="Open tunnel"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              onClick={() => killTunnel(t.url)}
+                              title="Remove this tunnel"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* User Management */}
       <Card className="mt-6">
