@@ -64,6 +64,10 @@ type DeployLog struct {
 // otherwise fail `cannot scan NULL into *string` and skip the row.
 const projectCols = `id, user_id, name, subdomain, COALESCE(repo_url, ''), branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, COALESCE(container_id, ''), COALESCE(container_port, 0), COALESCE(github_repo, ''), github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
 
+// adminProjectCols is projectCols with every column prefixed by "p." for use
+// in JOIN queries where bare column names like id/created_at would be ambiguous.
+const adminProjectCols = `p.id, p.user_id, p.name, p.subdomain, COALESCE(p.repo_url, ''), p.branch, p.framework, p.install_cmd, p.build_cmd, p.start_cmd, p.root_dir, p.node_version, p.port_override, p.memory_mb, p.cpus, p.health_check_path, p.release_cmd, p.commit_sha, p.labels, p.build_mode, p.parent_project_id, p.pr_number, p.pr_title, p.preview_enabled, p.pr_comment_id, p.env_vars, p.status, COALESCE(p.container_id, ''), COALESCE(p.container_port, 0), COALESCE(p.github_repo, ''), p.github_branch, p.auto_deploy, p.last_deploy_at, p.created_at, p.updated_at`
+
 // scanProject scans a row into a Project struct. The row must match projectCols order.
 func scanProject(scan func(dest ...any) error) (Project, error) {
 	var p Project

@@ -235,7 +235,7 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 
 	args = append(args, limit, offset)
 	rows, err := d.Pool.Query(ctx,
-		`SELECT `+projectCols+`, COALESCE(u.email, '') FROM projects p
+		`SELECT `+adminProjectCols+`, COALESCE(u.email, '') FROM projects p
 		 LEFT JOIN users u ON u.id = p.user_id
 		 WHERE `+where+`
 		 ORDER BY p.created_at DESC
