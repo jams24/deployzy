@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,6 @@ import {
   Trash2,
   Shield,
   Crown,
-  ChevronLeft,
-  ChevronRight,
   UserPlus,
   Server,
   Plus,
@@ -73,12 +71,14 @@ interface AdminUser {
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [total, setTotal] = useState(0);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersOffset, setUsersOffset] = useState(0);
+  const [usersHasMore, setUsersHasMore] = useState(true);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const limit = 20;
+  const userSentinelRef = useRef<HTMLDivElement>(null);
+  const usersLimit = 25;
   const [servers, setServers] = useState<{ id: string; label: string; host: string; region: string; total_cpu: number; total_memory_mb: number; allocated_memory_mb: number; max_projects: number; current_projects: number; status: string; docker_installed: boolean; priority?: number; is_local?: boolean }[]>([]);
   const [showAddServer, setShowAddServer] = useState(false);
   const [serverForm, setServerForm] = useState({ label: "", host: "", ssh_user: "root", ssh_password: "", total_cpu: "2", total_memory_mb: "4096", max_projects: "10", region: "default" });
@@ -153,20 +153,46 @@ export default function AdminPage() {
     } catch {}
   }
 
-  async function loadUsers() {
+  const fetchUsers = useCallback(async (offset: number, searchVal: string, append: boolean) => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
-      if (search) q.set("search", search);
+      const q = new URLSearchParams({ limit: String(usersLimit), offset: String(offset) });
+      if (searchVal) q.set("search", searchVal);
       const res = await fetch(`${API}/api/v1/admin/users?${q}`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        setUsers(data.users);
-        setTotal(data.total);
+        const rows = data.users || [];
+        setUsersTotal(data.total || 0);
+        setUsers(prev => append ? [...prev, ...rows] : rows);
+        setUsersHasMore(offset + rows.length < (data.total || 0));
+        setUsersOffset(offset + rows.length);
       }
     } catch {}
     setLoading(false);
-  }
+  }, []);
+
+  const resetUsers = useCallback((searchVal: string) => {
+    setUsers([]);
+    setUsersOffset(0);
+    setUsersHasMore(true);
+    fetchUsers(0, searchVal, false);
+  }, [fetchUsers]);
+
+  // Sentinel observer for users infinite scroll
+  useEffect(() => {
+    const el = userSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && usersHasMore && !loading) {
+        fetchUsers(usersOffset, search, true);
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [usersHasMore, loading, usersOffset, search, fetchUsers]);
+
+  // loadUsers is kept as a reset alias for compatibility
+  const loadUsers = useCallback(() => resetUsers(search), [resetUsers, search]);
 
   async function updateUser(userId: string, updates: { plan?: string; is_admin?: boolean }) {
     await fetch(`${API}/api/v1/admin/users/${userId}`, {
@@ -247,7 +273,7 @@ export default function AdminPage() {
     s.tunnels.some(t => t.url.includes(sessionSearch))
   );
 
-  // Admin projects
+  // Admin projects — infinite scroll
   interface AdminProject {
     id: string; user_id: string; user_email: string; name: string; subdomain: string;
     repo_url: string; branch: string; framework: string; status: string;
@@ -255,44 +281,70 @@ export default function AdminPage() {
   }
   const [adminProjects, setAdminProjects] = useState<AdminProject[]>([]);
   const [adminProjectsTotal, setAdminProjectsTotal] = useState(0);
-  const [adminProjectsPage, setAdminProjectsPage] = useState(0);
+  const [adminProjectsOffset, setAdminProjectsOffset] = useState(0);
   const [adminProjectSearch, setAdminProjectSearch] = useState("");
   const [adminProjectStatus, setAdminProjectStatus] = useState("all");
   const [adminProjectsLoading, setAdminProjectsLoading] = useState(false);
-  const adminProjectLimit = 20;
+  const [adminProjectsHasMore, setAdminProjectsHasMore] = useState(true);
+  const adminProjectSentinelRef = useRef<HTMLDivElement>(null);
+  const adminProjectLimit = 25;
 
-  async function loadAdminProjects(page = adminProjectsPage, search = adminProjectSearch, status = adminProjectStatus) {
+  const fetchAdminProjects = useCallback(async (offset: number, search: string, status: string, append: boolean) => {
     setAdminProjectsLoading(true);
     try {
-      const q = new URLSearchParams({ limit: String(adminProjectLimit), offset: String(page * adminProjectLimit) });
+      const q = new URLSearchParams({ limit: String(adminProjectLimit), offset: String(offset) });
       if (search) q.set("search", search);
       if (status && status !== "all") q.set("status", status);
       const res = await fetch(`${API}/api/v1/admin/projects?${q}`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        setAdminProjects(data.projects || []);
+        const rows: AdminProject[] = data.projects || [];
         setAdminProjectsTotal(data.total || 0);
+        setAdminProjects(prev => append ? [...prev, ...rows] : rows);
+        setAdminProjectsHasMore(offset + rows.length < (data.total || 0));
+        setAdminProjectsOffset(offset + rows.length);
       }
     } catch {}
     setAdminProjectsLoading(false);
-  }
+  }, []);
+
+  // Reset + reload when search/status changes
+  const resetAdminProjects = useCallback((search: string, status: string) => {
+    setAdminProjects([]);
+    setAdminProjectsOffset(0);
+    setAdminProjectsHasMore(true);
+    fetchAdminProjects(0, search, status, false);
+  }, [fetchAdminProjects]);
+
+  // IntersectionObserver: load next page when sentinel scrolls into view
+  useEffect(() => {
+    const el = adminProjectSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && adminProjectsHasMore && !adminProjectsLoading) {
+        fetchAdminProjects(adminProjectsOffset, adminProjectSearch, adminProjectStatus, true);
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [adminProjectsHasMore, adminProjectsLoading, adminProjectsOffset, adminProjectSearch, adminProjectStatus, fetchAdminProjects]);
 
   async function stopProject(id: string, name: string) {
     if (!confirm(`Stop project "${name}"? The container will be paused.`)) return;
     await fetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST", headers: headers() });
-    loadAdminProjects();
+    resetAdminProjects(adminProjectSearch, adminProjectStatus);
   }
 
   async function redeployProject(id: string, name: string) {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
     await fetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST", headers: headers() });
-    setTimeout(() => loadAdminProjects(), 1500);
+    setTimeout(() => resetAdminProjects(adminProjectSearch, adminProjectStatus), 1500);
   }
 
   async function deleteProject(id: string, name: string) {
     if (!confirm(`Delete project "${name}"? This removes the container and all data. Cannot be undone.`)) return;
     await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
-    loadAdminProjects();
+    resetAdminProjects(adminProjectSearch, adminProjectStatus);
     loadStats();
   }
 
@@ -336,14 +388,15 @@ export default function AdminPage() {
     loadServers();
   }
 
+  // Initial load — runs once on mount
   useEffect(() => {
     loadStats();
-    loadUsers();
+    fetchUsers(0, "", false);
     loadServers();
     loadBackups();
     loadSessions();
-    loadAdminProjects();
-  }, [page]);
+    fetchAdminProjects(0, "", "all", false);
+  }, []);
 
   // Auto-refresh sessions every 8s
   useEffect(() => {
@@ -360,8 +413,6 @@ export default function AdminPage() {
       </div>
     );
   }
-
-  const totalPages = Math.ceil(total / limit);
 
   return (
     <div>
@@ -614,7 +665,7 @@ export default function AdminPage() {
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={adminProjectStatus}
-                onChange={(e) => { setAdminProjectStatus(e.target.value); setAdminProjectsPage(0); loadAdminProjects(0, adminProjectSearch, e.target.value); }}
+                onChange={(e) => { setAdminProjectStatus(e.target.value); resetAdminProjects(adminProjectSearch, e.target.value); }}
                 className="h-8 rounded border border-input bg-background px-2 text-xs"
               >
                 <option value="all">All statuses</option>
@@ -631,7 +682,7 @@ export default function AdminPage() {
                   className="pl-9 h-8 text-xs w-52"
                   value={adminProjectSearch}
                   onChange={(e) => setAdminProjectSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { setAdminProjectsPage(0); loadAdminProjects(0, adminProjectSearch, adminProjectStatus); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") resetAdminProjects(adminProjectSearch, adminProjectStatus); }}
                 />
               </div>
             </div>
@@ -688,19 +739,13 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
-              {Math.ceil(adminProjectsTotal / adminProjectLimit) > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
-                  <Button variant="outline" size="sm" disabled={adminProjectsPage === 0}
-                    onClick={() => { const p = adminProjectsPage - 1; setAdminProjectsPage(p); loadAdminProjects(p); }}
-                    className="gap-1"><ChevronLeft className="h-3.5 w-3.5" /> Previous</Button>
-                  <span className="text-xs text-muted-foreground">
-                    Page {adminProjectsPage + 1} of {Math.ceil(adminProjectsTotal / adminProjectLimit)}
-                  </span>
-                  <Button variant="outline" size="sm" disabled={adminProjectsPage >= Math.ceil(adminProjectsTotal / adminProjectLimit) - 1}
-                    onClick={() => { const p = adminProjectsPage + 1; setAdminProjectsPage(p); loadAdminProjects(p); }}
-                    className="gap-1">Next <ChevronRight className="h-3.5 w-3.5" /></Button>
-                </div>
-              )}
+              {/* Infinite scroll sentinel */}
+              <div ref={adminProjectSentinelRef} className="py-2 flex justify-center">
+                {adminProjectsLoading && adminProjects.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {!adminProjectsHasMore && adminProjects.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">All {adminProjectsTotal} projects loaded</p>
+                )}
+              </div>
             </>
           )}
         </CardContent>
@@ -710,7 +755,7 @@ export default function AdminPage() {
       <Card className="mt-6">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="text-base">Users ({total})</CardTitle>
+            <CardTitle className="text-base">Users ({usersTotal})</CardTitle>
             <div className="relative max-w-xs w-full">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -718,7 +763,7 @@ export default function AdminPage() {
                 className="pl-9 h-8 text-xs"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { setPage(0); loadUsers(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter") resetUsers(search); }}
               />
             </div>
           </div>
@@ -780,32 +825,13 @@ export default function AdminPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === 0}
-                    onClick={() => setPage(page - 1)}
-                    className="gap-1"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" /> Previous
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Page {page + 1} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages - 1}
-                    onClick={() => setPage(page + 1)}
-                    className="gap-1"
-                  >
-                    Next <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
+              {/* Infinite scroll sentinel */}
+              <div ref={userSentinelRef} className="py-2 flex justify-center">
+                {loading && users.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {!usersHasMore && users.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">All {usersTotal} users loaded</p>
+                )}
+              </div>
             </>
           )}
         </CardContent>
