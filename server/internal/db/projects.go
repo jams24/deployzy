@@ -75,6 +75,7 @@ func scanProject(scan func(dest ...any) error) (Project, error) {
 	return p, err
 }
 
+
 func (d *DB) CreateProject(ctx context.Context, userID, name, subdomain, framework string) (*Project, error) {
 	envJSON, _ := json.Marshal(map[string]string{})
 	p, err := scanProject(d.Pool.QueryRow(ctx,

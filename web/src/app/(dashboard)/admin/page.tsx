@@ -30,6 +30,10 @@ import {
   RefreshCw,
   X,
   Zap,
+  Square,
+  RotateCcw,
+  GitBranch,
+  FolderOpen,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -243,6 +247,63 @@ export default function AdminPage() {
     s.tunnels.some(t => t.url.includes(sessionSearch))
   );
 
+  // Admin projects
+  interface AdminProject {
+    id: string; user_id: string; user_email: string; name: string; subdomain: string;
+    repo_url: string; branch: string; framework: string; status: string;
+    created_at: string; last_deploy_at: string | null; commit_sha: string;
+  }
+  const [adminProjects, setAdminProjects] = useState<AdminProject[]>([]);
+  const [adminProjectsTotal, setAdminProjectsTotal] = useState(0);
+  const [adminProjectsPage, setAdminProjectsPage] = useState(0);
+  const [adminProjectSearch, setAdminProjectSearch] = useState("");
+  const [adminProjectStatus, setAdminProjectStatus] = useState("all");
+  const [adminProjectsLoading, setAdminProjectsLoading] = useState(false);
+  const adminProjectLimit = 20;
+
+  async function loadAdminProjects(page = adminProjectsPage, search = adminProjectSearch, status = adminProjectStatus) {
+    setAdminProjectsLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: String(adminProjectLimit), offset: String(page * adminProjectLimit) });
+      if (search) q.set("search", search);
+      if (status && status !== "all") q.set("status", status);
+      const res = await fetch(`${API}/api/v1/admin/projects?${q}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminProjects(data.projects || []);
+        setAdminProjectsTotal(data.total || 0);
+      }
+    } catch {}
+    setAdminProjectsLoading(false);
+  }
+
+  async function stopProject(id: string, name: string) {
+    if (!confirm(`Stop project "${name}"? The container will be paused.`)) return;
+    await fetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST", headers: headers() });
+    loadAdminProjects();
+  }
+
+  async function redeployProject(id: string, name: string) {
+    if (!confirm(`Redeploy "${name}" from source?`)) return;
+    await fetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST", headers: headers() });
+    setTimeout(() => loadAdminProjects(), 1500);
+  }
+
+  async function deleteProject(id: string, name: string) {
+    if (!confirm(`Delete project "${name}"? This removes the container and all data. Cannot be undone.`)) return;
+    await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
+    loadAdminProjects();
+    loadStats();
+  }
+
+  const statusColors: Record<string, string> = {
+    running:  "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+    building: "bg-sky-500/10 text-sky-500 border-sky-500/20",
+    stopped:  "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+    failed:   "bg-red-500/10 text-red-500 border-red-500/20",
+    created:  "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  };
+
   const [redeploying, setRedeploying] = useState(false);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
   async function redeployAll(statusFilter?: string) {
@@ -281,6 +342,7 @@ export default function AdminPage() {
     loadServers();
     loadBackups();
     loadSessions();
+    loadAdminProjects();
   }, [page]);
 
   // Auto-refresh sessions every 8s
@@ -536,6 +598,110 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* All Projects */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FolderOpen className="h-4 w-4 text-muted-foreground" />
+              All Projects
+              <Badge variant="outline" className="text-[10px] font-mono">{adminProjectsTotal}</Badge>
+            </CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={adminProjectStatus}
+                onChange={(e) => { setAdminProjectStatus(e.target.value); setAdminProjectsPage(0); loadAdminProjects(0, adminProjectSearch, e.target.value); }}
+                className="h-8 rounded border border-input bg-background px-2 text-xs"
+              >
+                <option value="all">All statuses</option>
+                <option value="running">Running</option>
+                <option value="building">Building</option>
+                <option value="stopped">Stopped</option>
+                <option value="failed">Failed</option>
+                <option value="created">Created</option>
+              </select>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search name, email, repo..."
+                  className="pl-9 h-8 text-xs w-52"
+                  value={adminProjectSearch}
+                  onChange={(e) => setAdminProjectSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { setAdminProjectsPage(0); loadAdminProjects(0, adminProjectSearch, adminProjectStatus); } }}
+                />
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {adminProjectsLoading && adminProjects.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">Loading...</p>
+          ) : adminProjects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Rocket className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">No projects found.</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                {adminProjects.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/50 px-3 py-2.5">
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium truncate">{p.name}</span>
+                        <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColors[p.status] || "bg-muted text-muted-foreground"}`}>
+                          {p.status === "building" && <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse inline-block mr-1" />}
+                          {p.status}
+                        </Badge>
+                        {p.framework && <Badge variant="outline" className="text-[9px] shrink-0">{p.framework}</Badge>}
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
+                        <span className="font-mono">{p.subdomain}.serverme.site</span>
+                        <span>{p.user_email || p.user_id.slice(0, 8)}</span>
+                        {p.repo_url && (
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-2.5 w-2.5" />
+                            {p.repo_url.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "")}
+                            {p.branch ? `@${p.branch}` : ""}
+                          </span>
+                        )}
+                        {p.last_deploy_at && <span>{new Date(p.last_deploy_at).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.status === "running" && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-500 hover:text-amber-500" onClick={() => stopProject(p.id, p.name)} title="Stop">
+                          <Square className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => redeployProject(p.id, p.name)} title="Redeploy">
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => deleteProject(p.id, p.name)} title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {Math.ceil(adminProjectsTotal / adminProjectLimit) > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
+                  <Button variant="outline" size="sm" disabled={adminProjectsPage === 0}
+                    onClick={() => { const p = adminProjectsPage - 1; setAdminProjectsPage(p); loadAdminProjects(p); }}
+                    className="gap-1"><ChevronLeft className="h-3.5 w-3.5" /> Previous</Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {adminProjectsPage + 1} of {Math.ceil(adminProjectsTotal / adminProjectLimit)}
+                  </span>
+                  <Button variant="outline" size="sm" disabled={adminProjectsPage >= Math.ceil(adminProjectsTotal / adminProjectLimit) - 1}
+                    onClick={() => { const p = adminProjectsPage + 1; setAdminProjectsPage(p); loadAdminProjects(p); }}
+                    className="gap-1">Next <ChevronRight className="h-3.5 w-3.5" /></Button>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

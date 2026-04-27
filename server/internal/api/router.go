@@ -241,6 +241,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)
 				r.Delete("/tunnels/{encodedURL}", s.handleAdminKillTunnel)
 
+				// Project management across all users
+				r.Get("/projects", s.handleAdminListProjects)
+				r.Post("/projects/{projectId}/stop", s.handleAdminStopProject)
+				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)
+				r.Delete("/projects/{projectId}", s.handleAdminDeleteProject)
+
 				// Platform backups (admin only)
 				r.Get("/backups", s.handleListPlatformBackups)
 				r.Post("/backups/run", s.handleRunPlatformBackup)

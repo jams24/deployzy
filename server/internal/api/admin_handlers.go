@@ -177,6 +177,82 @@ func (s *Server) handleAdminRedeployAll(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleAdminListProjects(w http.ResponseWriter, r *http.Request) {
+	search := r.URL.Query().Get("search")
+	status := r.URL.Query().Get("status")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 {
+		limit = 50
+	}
+
+	projects, total, err := s.db.AdminListProjects(r.Context(), search, status, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list projects")
+		return
+	}
+	if projects == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"projects": []interface{}{}, "total": total})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"projects": projects, "total": total, "limit": limit, "offset": offset})
+}
+
+func (s *Server) handleAdminStopProject(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	p, err := s.db.GetProject(r.Context(), projectID)
+	if err != nil || p == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if err := s.deployer.Stop(r.Context(), p); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+func (s *Server) handleAdminDeleteProject(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	p, err := s.db.GetProject(r.Context(), projectID)
+	if err != nil || p == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if err := s.deployer.Delete(r.Context(), p); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.db.DeleteProject(r.Context(), projectID, p.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "container removed but DB delete failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleAdminRedeployProject(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	p, err := s.db.GetProject(r.Context(), projectID)
+	if err != nil || p == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	go s.deployer.Deploy(r.Context(), p)
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "deploying"})
+}
+
 type sessionTunnelInfo struct {
 	URL       string `json:"url"`
 	Protocol  string `json:"protocol"`
