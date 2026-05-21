@@ -29,6 +29,15 @@ func (r *Runner) IsRemote() bool {
 	return r.server != nil
 }
 
+// Host returns the address to use for outbound probes (e.g. health checks).
+// Local runners return 127.0.0.1; remote runners return the server's host IP.
+func (r *Runner) Host() string {
+	if r.server == nil {
+		return "127.0.0.1"
+	}
+	return r.server.Host
+}
+
 // Run executes a command and returns combined output.
 func (r *Runner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if r.server == nil {

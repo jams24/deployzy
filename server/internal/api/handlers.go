@@ -222,8 +222,12 @@ func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 // --- Domains ---
 
 func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
-	u := auth.GetUser(r)
-	domains, err := s.db.ListDomains(r.Context(), u.ID)
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	domains, err := s.db.ListDomainsForUsers(r.Context(), userIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list domains")
 		return
@@ -279,10 +283,15 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
-	u := auth.GetUser(r)
 	domID := chi.URLParam(r, "id")
 
-	if err := s.db.DeleteDomain(r.Context(), u.ID, domID); err != nil {
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	if err := s.db.DeleteDomainForUsers(r.Context(), userIDs, domID); err != nil {
 		writeError(w, http.StatusNotFound, "domain not found")
 		return
 	}
@@ -293,9 +302,13 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 	domID := chi.URLParam(r, "id")
 
-	// Look up the domain — we need to verify CNAME
-	u := auth.GetUser(r)
-	domains, err := s.db.ListDomains(r.Context(), u.ID)
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	domains, err := s.db.ListDomainsForUsers(r.Context(), userIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -391,8 +404,13 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
-	u := auth.GetUser(r)
 	domID := chi.URLParam(r, "id")
+
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 
 	var req struct {
 		TargetType      string `json:"target_type"`
@@ -412,23 +430,46 @@ func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the user owns the target
+	// Verify the user has access to the target (tunnel or project)
 	if req.TargetType == "project" {
-		projects, _ := s.db.ListProjects(r.Context(), u.ID)
 		found := false
-		for _, p := range projects {
-			if p.Subdomain == req.TargetSubdomain {
-				found = true
+		for _, uid := range userIDs {
+			projects, _ := s.db.ListProjects(r.Context(), uid)
+			for _, p := range projects {
+				if p.Subdomain == req.TargetSubdomain {
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
 		if !found {
-			writeError(w, http.StatusBadRequest, "you don't own a project with that subdomain")
+			writeError(w, http.StatusBadRequest, "no project with that subdomain found in your team")
 			return
 		}
 	}
 
-	if err := s.db.BindDomain(r.Context(), domID, u.ID, req.TargetType, req.TargetSubdomain); err != nil {
+	// Find which user in the team owns this domain
+	domains, err := s.db.ListDomainsForUsers(r.Context(), userIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to find domain")
+		return
+	}
+	var domainOwnerID string
+	for _, d := range domains {
+		if d.ID == domID {
+			domainOwnerID = d.UserID
+			break
+		}
+	}
+	if domainOwnerID == "" {
+		writeError(w, http.StatusNotFound, "domain not found or not accessible")
+		return
+	}
+
+	if err := s.db.BindDomain(r.Context(), domID, domainOwnerID, req.TargetType, req.TargetSubdomain); err != nil {
 		writeError(w, http.StatusBadRequest, "failed to bind domain — is it verified?")
 		return
 	}

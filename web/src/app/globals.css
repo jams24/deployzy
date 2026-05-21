@@ -67,37 +67,37 @@
 
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.08 0 0);           /* near-black — max contrast on white */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.08 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.08 0 0);
+  --primary: oklch(0.08 0 0);             /* black primary buttons */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.08 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.44 0 0);    /* clearly readable secondary text */
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0.08 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.22 0 0);             /* dark border — this is the contour */
+  --input: oklch(0.94 0 0);
+  --ring: oklch(0.08 0 0);               /* crisp black focus ring */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --radius: 0.375rem;                    /* tighter corners — sharper contour feel */
+  --sidebar: oklch(0.99 0 0);
+  --sidebar-foreground: oklch(0.08 0 0);
+  --sidebar-primary: oklch(0.08 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.08 0 0);
+  --sidebar-border: oklch(0.22 0 0);     /* dark sidebar border */
+  --sidebar-ring: oklch(0.08 0 0);
 }
 
 .dark {
@@ -250,3 +250,76 @@ pre {
 /* Scroll reveal */
 .reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
 .reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ── Light-mode artwork: engineering-notebook aesthetic ──────────────────
+ *
+ * Three layers on the body background:
+ *   1. Dot grid  — faint Moleskine/Figma-style graph paper that repeats
+ *                  across the full scrollable page.
+ *   2. Arc motif — concentric quarter-circles anchored to the bottom-right
+ *                  of the viewport (like a radar or technical bullseye).
+ *                  Each ring fades so only the nearest 2–3 arcs are legible.
+ *   3. Corner bracket — a tiny registration-mark "L" in the top-left corner,
+ *                  the kind you see on engineering drawings and print layouts.
+ *
+ * All layers are purely decorative: pointer-events are unaffected because
+ * background-image never intercepts mouse events, and the colours sit at
+ * ≤10% opacity so they vanish behind any solid-background element.
+ * ─────────────────────────────────────────────────────────────────────── */
+html:not(.dark) body {
+  background-image:
+    /* 1 — dot grid */
+    radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1px),
+    /* 2 — bottom-right arc motif: concentric circles centred at (300,300)
+     *     so only the top-left quadrant of each circle is visible in the
+     *     bottom-right viewport corner */
+    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><circle cx="300" cy="300" r="58"  fill="none" stroke="black" stroke-opacity="0.18" stroke-width="1"/><circle cx="300" cy="300" r="96"  fill="none" stroke="black" stroke-opacity="0.13" stroke-width="1"/><circle cx="300" cy="300" r="136" fill="none" stroke="black" stroke-opacity="0.09" stroke-width="1"/><circle cx="300" cy="300" r="178" fill="none" stroke="black" stroke-opacity="0.055" stroke-width="1"/><circle cx="300" cy="300" r="222" fill="none" stroke="black" stroke-opacity="0.03" stroke-width="1"/><line x1="297" y1="242" x2="303" y2="242" stroke="black" stroke-opacity="0.18" stroke-width="1"/><line x1="297" y1="204" x2="303" y2="204" stroke="black" stroke-opacity="0.13" stroke-width="1"/><line x1="297" y1="164" x2="303" y2="164" stroke="black" stroke-opacity="0.09" stroke-width="1"/><line x1="242" y1="297" x2="242" y2="303" stroke="black" stroke-opacity="0.18" stroke-width="1"/><line x1="204" y1="297" x2="204" y2="303" stroke="black" stroke-opacity="0.13" stroke-width="1"/><line x1="164" y1="297" x2="164" y2="303" stroke="black" stroke-opacity="0.09" stroke-width="1"/></svg>'),
+    /* 3 — top-left registration bracket */
+    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52"><path d="M 22 5 L 5 5 L 5 22" fill="none" stroke="black" stroke-opacity="0.32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="5" r="2.5" fill="black" fill-opacity="0.3"/></svg>');
+
+  background-size:
+    22px 22px,     /* dot grid — tiles */
+    300px 300px,   /* arc motif — fixed to viewport bottom-right */
+    52px 52px;     /* bracket — fixed to viewport top-left */
+
+  background-position:
+    0 0,
+    right bottom,
+    left top;
+
+  background-repeat:
+    repeat,
+    no-repeat,
+    no-repeat;
+
+  /* Dot grid scrolls with page content; decorative corners stay pinned */
+  background-attachment:
+    scroll,
+    fixed,
+    fixed;
+}
+
+/* Dark preview cards (terminal, dashboard mock, code blocks) need a shadow
+ * frame in light mode so they look intentional rather than a black void
+ * floating on white paper. sm-terminal = "this card is meant to be dark." */
+html:not(.dark) .sm-terminal {
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.10),
+    0 4px 16px rgba(0,0,0,0.10),
+    0 16px 48px rgba(0,0,0,0.08);
+}
+
+/* Card contour shadow — a 2 px offset lift that reads like a print stamp.
+ * Targets shadcn's data-slot="card" attribute; falls back to nothing if
+ * the slot attribute is absent (no visual regression on other elements). */
+html:not(.dark) [data-slot="card"] {
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* Input contour: slightly visible background so text fields read as
+ * "ink on paper" rather than floating on the void. */
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) textarea,
+html:not(.dark) select {
+  background-color: oklch(0.975 0 0);
+}

@@ -54,7 +54,42 @@ export default function HomePage() {
 
             {/* Hero right side: terminal showing deploy flow */}
             <SlideIn delay={0.3} className="flex items-center">
-              <div className="w-full rounded-lg border border-border/60 bg-[#09090b] overflow-hidden">
+              <div className="relative w-full">
+
+                {/* ── Light-mode artwork frame ───────────────────────────
+                  * Dot pad + concentric arcs + corner bracket framing the
+                  * terminal card. Hidden in dark mode. pointer-events:none
+                  * so it never intercepts clicks.
+                  * ──────────────────────────────────────────────────── */}
+                <div className="pointer-events-none absolute -inset-6 rounded-2xl overflow-hidden dark:hidden" aria-hidden>
+                  {/* dot grid pad */}
+                  <div className="absolute inset-0 [background-image:radial-gradient(circle,rgba(0,0,0,0.09)_1px,transparent_1px)] [background-size:18px_18px]" />
+                  {/* bottom-right concentric arcs */}
+                  <svg className="absolute -bottom-3 -right-3 w-40 h-40 opacity-[0.18]" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="160" cy="160" r="44" stroke="black" strokeWidth="1"/>
+                    <circle cx="160" cy="160" r="72" stroke="black" strokeWidth="1"/>
+                    <circle cx="160" cy="160" r="100" stroke="black" strokeWidth="1"/>
+                    <circle cx="160" cy="160" r="130" stroke="black" strokeWidth="1"/>
+                    <line x1="156" y1="116" x2="164" y2="116" stroke="black" strokeWidth="1"/>
+                    <line x1="156" y1="88" x2="164" y2="88" stroke="black" strokeWidth="1"/>
+                    <line x1="156" y1="60" x2="164" y2="60" stroke="black" strokeWidth="1"/>
+                    <line x1="116" y1="156" x2="116" y2="164" stroke="black" strokeWidth="1"/>
+                    <line x1="88" y1="156" x2="88" y2="164" stroke="black" strokeWidth="1"/>
+                    <line x1="60" y1="156" x2="60" y2="164" stroke="black" strokeWidth="1"/>
+                  </svg>
+                  {/* top-right corner bracket */}
+                  <svg className="absolute top-2 right-2 w-10 h-10 opacity-25" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M 14 4 L 36 4 L 36 14" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <circle cx="36" cy="4" r="2" fill="black"/>
+                  </svg>
+                  {/* bottom-left corner bracket */}
+                  <svg className="absolute bottom-2 left-2 w-10 h-10 opacity-20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M 14 36 L 4 36 L 4 26" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <circle cx="4" cy="36" r="2" fill="black"/>
+                  </svg>
+                </div>
+
+              <div className="relative w-full rounded-lg border border-border/60 bg-[#09090b] overflow-hidden sm-terminal">
                 <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
                   <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
                   <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
@@ -76,6 +111,7 @@ export default function HomePage() {
                   <div className="text-zinc-500">  Next deploy → <span className="text-violet-400 font-medium">my-vps</span> <span className="text-zinc-700">·</span> uncapped resources</div>
                 </div>
               </div>
+              </div>{/* /relative w-full artwork wrapper */}
             </SlideIn>
           </div>
         </div>
@@ -482,7 +518,7 @@ function Metric({ value, suffix, prefix, label }: { value: number; suffix?: stri
 // Small card that animates a GitHub deploy flow — shown in the "Deploys" section.
 function DeployCard() {
   return (
-    <div className="rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20">
+    <div className="rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20 sm-terminal">
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3 bg-zinc-950">
         <div className="flex gap-1.5">
           <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
@@ -547,7 +583,7 @@ function DeployCard() {
 
 function DashboardPreview() {
   return (
-    <div className="relative rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20">
+    <div className="relative rounded-xl border border-border/60 bg-[#09090b] overflow-hidden shadow-2xl shadow-black/20 sm-terminal">
       {/* Browser chrome */}
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3 bg-zinc-950">
         <div className="flex gap-1.5">
@@ -663,9 +699,15 @@ function DashboardPreview() {
 
 function CodeCard({ lang, code }: { lang: string; code: string }) {
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border/40 bg-[#09090b] overflow-hidden transition-colors hover:border-border/60">
-      <div className="border-b border-white/[0.04] px-4 py-2 text-[10px] text-zinc-600 font-mono shrink-0">{lang}</div>
-      <div className="flex-1 overflow-x-auto"><pre className="p-4 text-[12px] leading-relaxed"><code className="text-zinc-400 font-mono">{code}</code></pre></div>
+    <div className="flex h-full flex-col rounded-lg border border-border overflow-hidden transition-colors hover:border-foreground/30 sm-terminal bg-zinc-50 dark:bg-[#09090b]">
+      <div className="border-b border-border px-4 py-2 text-[10px] font-mono shrink-0 text-muted-foreground">
+        {lang}
+      </div>
+      <div className="flex-1 overflow-x-auto">
+        <pre className="p-4 text-[12px] leading-relaxed">
+          <code className="font-mono text-zinc-700 dark:text-zinc-400">{code}</code>
+        </pre>
+      </div>
     </div>
   );
 }

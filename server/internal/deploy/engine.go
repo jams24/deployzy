@@ -47,7 +47,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	defer mu.Unlock()
 
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
-	e.db.UpdateProjectStatus(ctx, project.ID, "building", "", 0)
+	// Keep the old port alive so the proxy continues routing to the old container
+	// while the new image is being built. GetProjectRouting allows 'building' status.
+	e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 
 	// Determine if deploying locally or to a remote server
 	var runner *Runner
@@ -117,18 +119,36 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		runner = NewLocalRunner()
 	}
 
-	// Stop and remove existing container
+	// Blue-green: build new container while old one keeps serving traffic.
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-	runner.Exec(ctx, "docker", "stop", containerName)
-	runner.Exec(ctx, "docker", "rm", "-f", containerName)
+	newContainerName := containerName + "-next"
+	oldContainerID := project.ContainerID
+	oldHostPort := project.ContainerPort
+
+	// Called on any failure path: restores old container to 'running' so the
+	// service keeps serving if it was up before, or marks it failed if this
+	// was a first deploy.
+	restoreOldState := func() {
+		if oldHostPort > 0 {
+			e.db.UpdateProjectStatus(ctx, project.ID, "running", oldContainerID, oldHostPort)
+		} else {
+			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+		}
+	}
+
+	// Clean up any leftover "-next" container from a previous interrupted deploy
+	runner.Exec(ctx, "docker", "stop", newContainerName)
+	runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 
 	// Ensure data directory exists for persistence
 	runner.Exec(ctx, "mkdir", "-p", fmt.Sprintf("/opt/serverme/project-data/%s", project.ID[:8]))
 
-	// Clean build directory
+	// Clean build directory — defer ensures temp files are always removed,
+	// even when an early failure path returns before the bottom of Deploy.
 	buildDir := fmt.Sprintf("/tmp/serverme-build/%s", project.ID)
 	runner.Exec(ctx, "rm", "-rf", buildDir)
 	runner.Exec(ctx, "mkdir", "-p", buildDir)
+	defer runner.Exec(ctx, "rm", "-rf", buildDir)
 
 	// Clone repo if URL provided
 	buildCtx := buildDir
@@ -144,7 +164,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		output, err := runner.Run(ctx, "git", cloneArgs...)
 		if err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Clone failed: %s", string(output)), "error")
-			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+			restoreOldState()
 			return fmt.Errorf("git clone: %w", err)
 		}
 		buildCtx = cloneDir
@@ -156,13 +176,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			// A SHA like "'; touch /tmp/pwned; '" would otherwise run on the host.
 			if !isValidCommitSHA(project.CommitSHA) {
 				e.logMsg(ctx, project.ID, "Invalid commit SHA format — aborting", "error")
-				e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+				restoreOldState()
 				return fmt.Errorf("invalid commit SHA")
 			}
 			out, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.CommitSHA))
 			if err != nil {
 				e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out)), "error")
-				e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+				restoreOldState()
 				return fmt.Errorf("git checkout: %w", err)
 			}
 		}
@@ -201,7 +221,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		} else if strings.Contains(files, "next.config") {
 			framework = "nextjs"
 		} else if strings.Contains(files, "package.json") {
-			framework = "node"
+			// next.config.* is optional in Next.js 14+ — also check package.json deps
+			pkgOut, _ := runner.RunShell(ctx, fmt.Sprintf(`grep -l '"next"' %s/package.json 2>/dev/null || true`, buildCtx))
+			if strings.Contains(string(pkgOut), "package.json") {
+				framework = "nextjs"
+			} else {
+				framework = "node"
+			}
 		} else if strings.Contains(files, "requirements.txt") {
 			framework = "python"
 		} else if strings.Contains(files, "index.html") {
@@ -248,12 +274,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
 		if strings.TrimSpace(string(out)) != "yes" {
 			e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
-			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+			restoreOldState()
 			return fmt.Errorf("no Dockerfile")
 		}
 	} else if !fileExists(buildCtx + "/Dockerfile") {
 		e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
-		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+		restoreOldState()
 		return fmt.Errorf("no Dockerfile")
 	}
 
@@ -289,7 +315,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			errMsg = "build timed out after 20 minutes"
 		}
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
-		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+		restoreOldState()
 		return fmt.Errorf("docker build: %w", err)
 	}
 	e.logMsg(ctx, project.ID, "Build successful", "build")
@@ -331,9 +357,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Detect all exposed ports and map them
 	allPorts := detectAllExposedPorts(buildCtx + "/Dockerfile")
 
-	// Run container
+	// Run new container under a temp name — old container keeps serving until health check passes
 	e.logMsg(ctx, project.ID, "Starting container...", "deploy")
-	args := []string{"run", "-d", "--name", containerName}
+	args := []string{"run", "-d", "--name", newContainerName}
 
 	// Map primary port
 	args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
@@ -413,7 +439,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		relCancel()
 		if relErr != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Release command failed:\n%s", trimLogs(string(relOut), 2000)), "error")
-			e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+			restoreOldState()
 			return fmt.Errorf("release cmd: %w", relErr)
 		}
 		if out := strings.TrimSpace(string(relOut)); out != "" {
@@ -427,7 +453,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
-		e.db.UpdateProjectStatus(ctx, project.ID, "failed", "", 0)
+		runner.Exec(ctx, "docker", "stop", newContainerName)
+		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
+		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
 	}
 
@@ -436,18 +464,34 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		containerID = containerID[:12]
 	}
 
-	// Health check: poll the app until it responds 2xx (or timeout).
-	// If health_check_path is set, we HTTP-probe that path on the host port.
-	// Otherwise we fall back to the old "container still running after 5s" check.
-	healthy := e.waitForHealthy(ctx, project, runner, containerName, hostPort)
+	// Health check: probe new container while old one keeps serving.
+	healthy := e.waitForHealthy(ctx, project, runner, newContainerName, hostPort)
 
 	if healthy {
+		// Atomic route swap: proxy reads container_port on every request; this
+		// single UPDATE makes it immediately start routing to the new container.
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
+
+		// Traffic has moved — now safe to stop the old container.
+		runner.Exec(ctx, "docker", "stop", containerName)
+		runner.Exec(ctx, "docker", "rm", "-f", containerName)
+
+		// Rename temp → canonical name so `docker ps` shows the right name.
+		runner.Exec(ctx, "docker", "rename", newContainerName, containerName)
+
+		// Dangling images (old build layers) are freed here. Each successful
+		// deploy leaves the previous image untagged; prune reclaims that space.
+		runner.Exec(ctx, "docker", "image", "prune", "-f")
 	} else {
-		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", containerName)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Container unhealthy — check logs:\n%s", trimLogs(string(crashOut), 2000)), "error")
-		e.db.UpdateProjectStatus(ctx, project.ID, "failed", containerID, hostPort)
+		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
+
+		// Clean up the failed new container; old container is untouched.
+		runner.Exec(ctx, "docker", "stop", newContainerName)
+		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
+
+		restoreOldState()
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -456,9 +500,6 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 
 	e.registerRoute(project.Subdomain, hostPort)
-
-	// Cleanup
-	runner.Exec(ctx, "rm", "-rf", buildDir)
 
 	return nil
 }
@@ -514,7 +555,7 @@ func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
 func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
 	ctx := context.Background()
 	rows, err := e.db.Pool.Query(ctx,
-		`SELECT container_port, id FROM projects WHERE subdomain = $1 AND status = 'running' AND container_port > 0`,
+		`SELECT container_port, id FROM projects WHERE subdomain = $1 AND status IN ('running', 'building') AND container_port > 0`,
 		subdomain,
 	)
 	if err != nil {
@@ -557,6 +598,12 @@ func (e *Engine) detectFrameworkIgnoreDocker(dir string) string {
 		return "nextjs"
 	}
 	if fileExists(dir + "/package.json") {
+		// next.config.* is optional in Next.js 14+ — check package.json deps too
+		if data, err := os.ReadFile(dir + "/package.json"); err == nil {
+			if strings.Contains(string(data), `"next"`) {
+				return "nextjs"
+			}
+		}
 		return "node"
 	}
 	if fileExists(dir + "/requirements.txt") || fileExists(dir + "/Pipfile") {
@@ -729,7 +776,7 @@ func (e *Engine) waitForHealthy(ctx context.Context, project *db.Project, runner
 	// HTTP health check: poll the path until it responds 2xx or we run out of time.
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Health-checking %s ...", project.HealthCheckPath), "deploy")
 	healthClient := &http.Client{Timeout: 3 * time.Second}
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", hostPort, project.HealthCheckPath)
+	url := fmt.Sprintf("http://%s:%d%s", runner.Host(), hostPort, project.HealthCheckPath)
 
 	for time.Now().Before(deadline) {
 		// Abort fast if the container has already crashed.
@@ -814,6 +861,7 @@ RUN %s
 COPY . .
 RUN if [ -d "prisma" ]; then npx prisma generate; fi
 ENV NODE_OPTIONS="--max-old-space-size=1536"
+ENV NEXT_STATIC_GENERATION_TIMEOUT=120
 RUN %s
 EXPOSE 3000
 CMD sh -c '%s && %s'`, nodeVer, installCmd, buildCmd, prismaPush, startCmd)

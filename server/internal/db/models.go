@@ -265,6 +265,45 @@ func (d *DB) ListDomains(ctx context.Context, userID string) ([]Domain, error) {
 	return domains, nil
 }
 
+// ListDomainsForUsers returns all domains for multiple users (team context).
+func (d *DB) ListDomainsForUsers(ctx context.Context, userIDs []string) ([]Domain, error) {
+	if len(userIDs) == 0 {
+		return []Domain{}, nil
+	}
+	rows, err := d.Pool.Query(ctx,
+		`SELECT id, user_id, domain, verified, cname_target, target_type, target_subdomain, created_at 
+		 FROM domains WHERE user_id = ANY($1) ORDER BY created_at DESC`,
+		userIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var domains []Domain
+	for rows.Next() {
+		var dom Domain
+		if err := rows.Scan(&dom.ID, &dom.UserID, &dom.Domain, &dom.Verified, &dom.CnameTarget, &dom.TargetType, &dom.TargetSubdomain, &dom.CreatedAt); err != nil {
+			return nil, err
+		}
+		domains = append(domains, dom)
+	}
+	return domains, nil
+}
+
+// DeleteDomainForUsers deletes a custom domain for any of the given user IDs.
+func (d *DB) DeleteDomainForUsers(ctx context.Context, userIDs []string, domainID string) error {
+	tag, err := d.Pool.Exec(ctx,
+		`DELETE FROM domains WHERE id = $1 AND user_id = ANY($2)`, domainID, userIDs)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("domain not found")
+	}
+	return nil
+}
+
 // DeleteDomain deletes a custom domain.
 func (d *DB) DeleteDomain(ctx context.Context, userID, domainID string) error {
 	tag, err := d.Pool.Exec(ctx,
