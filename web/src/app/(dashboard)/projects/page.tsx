@@ -321,7 +321,7 @@ function ProjectsContent() {
 
     // Apply build config before deploy if any advanced setting was customized
     const c = importBuildCfg;
-    if (c.install_cmd || c.build_cmd || c.start_cmd || c.root_dir || c.node_version || c.port_override || c.memory_mb || c.cpus) {
+    if (c.install_cmd || c.build_cmd || c.start_cmd || c.root_dir || c.node_version || c.port_override || c.memory_mb || c.cpus || c.dockerfile_path) {
       await fetch(`${API}/api/v1/projects/${project.id}/build-config`, {
         method: "PUT", headers: headers(),
         body: JSON.stringify(c),
@@ -943,6 +943,10 @@ function ProjectsContent() {
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
                       <input type="text" placeholder={importPh.release} value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-zinc-600">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
+                      <input type="text" placeholder="Dockerfile" value={importBuildCfg.dockerfile_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. Editable anytime after deployment.</p>
