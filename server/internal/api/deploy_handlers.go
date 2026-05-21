@@ -231,6 +231,7 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		HealthCheckPath string  `json:"health_check_path"`
 		ReleaseCmd      string  `json:"release_cmd"`
 		BuildMode       string  `json:"build_mode"`
+		DockerfilePath  string  `json:"dockerfile_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -269,6 +270,13 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "build_mode must be 'auto' or 'ignore_dockerfile'")
 		return
 	}
+	// Prevent path traversal: dockerfile_path must be a bare filename or single-level relative path
+	if req.DockerfilePath != "" {
+		if strings.Contains(req.DockerfilePath, "..") || strings.HasPrefix(req.DockerfilePath, "/") || strings.ContainsAny(req.DockerfilePath, ";|&`$()") {
+			writeError(w, http.StatusBadRequest, "dockerfile_path must be a relative filename (e.g. Dockerfile.bot)")
+			return
+		}
+	}
 	// Plan-gated features: only paid plans can use these.
 	if req.HealthCheckPath != "" && !billing.IsFeatureAllowed(r.Context(), s.db, u, "health_checks") {
 		writeError(w, http.StatusPaymentRequired, "health checks require a paid plan")
@@ -291,6 +299,7 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		HealthCheckPath: req.HealthCheckPath,
 		ReleaseCmd:      req.ReleaseCmd,
 		BuildMode:       req.BuildMode,
+		DockerfilePath:  req.DockerfilePath,
 	})
 	if err != nil {
 		s.log.Error().Err(err).Str("project", projectID).Msg("update build config failed")

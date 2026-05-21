@@ -212,11 +212,18 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// command, prisma auto-push, etc.) to take over.
 	ignoreRepoDockerfile := project.BuildMode == "ignore_dockerfile"
 
+	// effectiveDockerfile is the Dockerfile name to use. Defaults to "Dockerfile"
+	// but can be overridden (e.g. "Dockerfile.bot", "Dockerfile.frontend").
+	effectiveDockerfile := "Dockerfile"
+	if project.DockerfilePath != "" {
+		effectiveDockerfile = project.DockerfilePath
+	}
+
 	if runner.IsRemote() {
 		// Remote: check files via SSH
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("ls %s/Dockerfile %s/next.config.* %s/package.json %s/requirements.txt %s/go.mod %s/index.html 2>/dev/null", buildCtx, buildCtx, buildCtx, buildCtx, buildCtx, buildCtx))
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("ls %s/%s %s/next.config.* %s/package.json %s/requirements.txt %s/go.mod %s/index.html 2>/dev/null", buildCtx, effectiveDockerfile, buildCtx, buildCtx, buildCtx, buildCtx, buildCtx))
 		files := string(out)
-		if !ignoreRepoDockerfile && strings.Contains(files, "Dockerfile") {
+		if !ignoreRepoDockerfile && strings.Contains(files, effectiveDockerfile) {
 			framework = "docker"
 		} else if strings.Contains(files, "next.config") {
 			framework = "nextjs"
@@ -252,33 +259,35 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// Generate Dockerfile if repo doesn't have one, OR if user asked us to ignore theirs.
 	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
 		exists := strings.TrimSpace(string(out)) == "yes"
 		if !exists || ignoreRepoDockerfile {
 			dockerfile := e.generateDockerfile(project, framework)
 			if dockerfile != "" {
 				runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
+				effectiveDockerfile = "Dockerfile"
 			}
 		}
 	} else {
-		if !fileExists(buildCtx+"/Dockerfile") || ignoreRepoDockerfile {
+		if !fileExists(buildCtx+"/"+effectiveDockerfile) || ignoreRepoDockerfile {
 			dockerfile := e.generateDockerfile(project, framework)
 			if dockerfile != "" {
 				os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
+				effectiveDockerfile = "Dockerfile"
 			}
 		}
 	}
 
 	// Verify Dockerfile exists
 	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/Dockerfile && echo yes || echo no", buildCtx))
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
 		if strings.TrimSpace(string(out)) != "yes" {
-			e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
+			e.logMsg(ctx, project.ID, fmt.Sprintf("No %s found in repository.", effectiveDockerfile), "error")
 			restoreOldState()
 			return fmt.Errorf("no Dockerfile")
 		}
-	} else if !fileExists(buildCtx + "/Dockerfile") {
-		e.logMsg(ctx, project.ID, "No Dockerfile found in repository.", "error")
+	} else if !fileExists(buildCtx + "/" + effectiveDockerfile) {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("No %s found in repository.", effectiveDockerfile), "error")
 		restoreOldState()
 		return fmt.Errorf("no Dockerfile")
 	}
@@ -286,14 +295,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Determine container port: user override > Dockerfile EXPOSE > default 3000
 	containerPort := 3000
 	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/Dockerfile | head -1 | grep -oE '[0-9]+'", buildCtx))
+		out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/%s | head -1 | grep -oE '[0-9]+'", buildCtx, effectiveDockerfile))
 		if p := strings.TrimSpace(string(out)); p != "" {
 			if pp, err := strconv.Atoi(p); err == nil {
 				containerPort = pp
 			}
 		}
 	} else {
-		containerPort = detectExposedPort(buildCtx + "/Dockerfile")
+		containerPort = detectExposedPort(buildCtx + "/" + effectiveDockerfile)
 	}
 	if project.PortOverride > 0 {
 		containerPort = project.PortOverride
@@ -307,7 +316,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
-	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", "--memory=2g", "-t", imageName, buildCtx)
+	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", "--memory=2g", "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -355,7 +364,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	envFlags = append(envFlags, "-e", fmt.Sprintf("PORT=%d", containerPort))
 
 	// Detect all exposed ports and map them
-	allPorts := detectAllExposedPorts(buildCtx + "/Dockerfile")
+	allPorts := detectAllExposedPorts(buildCtx + "/" + effectiveDockerfile)
 
 	// Run new container under a temp name — old container keeps serving until health check passes
 	e.logMsg(ctx, project.ID, "Starting container...", "deploy")

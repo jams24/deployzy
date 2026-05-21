@@ -30,6 +30,7 @@ type Project struct {
 	CommitSHA       string            `json:"commit_sha"`
 	Labels          []string          `json:"labels"`
 	BuildMode       string            `json:"build_mode"` // "auto" | "ignore_dockerfile"
+	DockerfilePath  string            `json:"dockerfile_path"` // e.g. "Dockerfile.bot"; empty = "Dockerfile"
 	// Preview deployments — per-PR ephemeral children of a parent project.
 	ParentProjectID *string           `json:"parent_project_id"`
 	PRNumber        int               `json:"pr_number"`
@@ -62,17 +63,17 @@ type DeployLog struct {
 // COALESCE'd so the non-pointer Go struct fields can always scan — a stopped
 // project whose worker_server was deleted has container_id=NULL, which would
 // otherwise fail `cannot scan NULL into *string` and skip the row.
-const projectCols = `id, user_id, name, subdomain, COALESCE(repo_url, ''), branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, COALESCE(container_id, ''), COALESCE(container_port, 0), COALESCE(github_repo, ''), github_branch, auto_deploy, last_deploy_at, created_at, updated_at`
+const projectCols = `id, user_id, name, subdomain, COALESCE(repo_url, ''), branch, framework, install_cmd, build_cmd, start_cmd, root_dir, node_version, port_override, memory_mb, cpus, health_check_path, release_cmd, commit_sha, labels, build_mode, parent_project_id, pr_number, pr_title, preview_enabled, pr_comment_id, env_vars, status, COALESCE(container_id, ''), COALESCE(container_port, 0), COALESCE(github_repo, ''), github_branch, auto_deploy, last_deploy_at, created_at, updated_at, COALESCE(dockerfile_path, '')`
 
 // adminProjectCols is projectCols with every column prefixed by "p." for use
 // in JOIN queries where bare column names like id/created_at would be ambiguous.
-const adminProjectCols = `p.id, p.user_id, p.name, p.subdomain, COALESCE(p.repo_url, ''), p.branch, p.framework, p.install_cmd, p.build_cmd, p.start_cmd, p.root_dir, p.node_version, p.port_override, p.memory_mb, p.cpus, p.health_check_path, p.release_cmd, p.commit_sha, p.labels, p.build_mode, p.parent_project_id, p.pr_number, p.pr_title, p.preview_enabled, p.pr_comment_id, p.env_vars, p.status, COALESCE(p.container_id, ''), COALESCE(p.container_port, 0), COALESCE(p.github_repo, ''), p.github_branch, p.auto_deploy, p.last_deploy_at, p.created_at, p.updated_at`
+const adminProjectCols = `p.id, p.user_id, p.name, p.subdomain, COALESCE(p.repo_url, ''), p.branch, p.framework, p.install_cmd, p.build_cmd, p.start_cmd, p.root_dir, p.node_version, p.port_override, p.memory_mb, p.cpus, p.health_check_path, p.release_cmd, p.commit_sha, p.labels, p.build_mode, p.parent_project_id, p.pr_number, p.pr_title, p.preview_enabled, p.pr_comment_id, p.env_vars, p.status, COALESCE(p.container_id, ''), COALESCE(p.container_port, 0), COALESCE(p.github_repo, ''), p.github_branch, p.auto_deploy, p.last_deploy_at, p.created_at, p.updated_at, COALESCE(p.dockerfile_path, '')`
 
 // scanProject scans a row into a Project struct. The row must match projectCols order.
 func scanProject(scan func(dest ...any) error) (Project, error) {
 	var p Project
 	var envJSON []byte
-	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride, &p.MemoryMB, &p.CPUs, &p.HealthCheckPath, &p.ReleaseCmd, &p.CommitSHA, &p.Labels, &p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled, &p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt)
+	err := scan(&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework, &p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride, &p.MemoryMB, &p.CPUs, &p.HealthCheckPath, &p.ReleaseCmd, &p.CommitSHA, &p.Labels, &p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled, &p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort, &p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt, &p.DockerfilePath)
 	if err == nil {
 		json.Unmarshal(envJSON, &p.EnvVars)
 	}
@@ -235,6 +236,7 @@ type BuildConfig struct {
 	HealthCheckPath string
 	ReleaseCmd      string
 	BuildMode       string
+	DockerfilePath  string
 }
 
 // UpdateProjectBuildConfig updates the advanced build/run settings for a project.
@@ -252,11 +254,12 @@ func (d *DB) UpdateProjectBuildConfig(ctx context.Context, projectID string, cfg
 		   health_check_path = $10,
 		   release_cmd = $11,
 		   build_mode = $12,
+		   dockerfile_path = $13,
 		   updated_at = now()
 		 WHERE id = $1`,
 		projectID, cfg.InstallCmd, cfg.BuildCmd, cfg.StartCmd, cfg.RootDir,
 		cfg.NodeVersion, cfg.PortOverride, cfg.MemoryMB, cfg.CPUs,
-		cfg.HealthCheckPath, cfg.ReleaseCmd, cfg.BuildMode,
+		cfg.HealthCheckPath, cfg.ReleaseCmd, cfg.BuildMode, cfg.DockerfilePath,
 	)
 	return err
 }
@@ -340,11 +343,11 @@ func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber
 			user_id, name, subdomain, repo_url, branch, framework,
 			install_cmd, build_cmd, start_cmd, root_dir, node_version,
 			port_override, memory_mb, cpus, health_check_path, release_cmd,
-			labels, build_mode,
+			labels, build_mode, dockerfile_path,
 			parent_project_id, pr_number, pr_title,
 			github_repo, github_branch, worker_server_id,
 			env_vars
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
 		RETURNING `+projectCols,
 		parent.UserID,
 		fmt.Sprintf("%s PR #%d", parent.Name, prNumber),
@@ -354,7 +357,7 @@ func (d *DB) CreatePreviewProject(ctx context.Context, parent *Project, prNumber
 		parent.Framework,
 		parent.InstallCmd, parent.BuildCmd, parent.StartCmd, parent.RootDir, parent.NodeVersion,
 		parent.PortOverride, parent.MemoryMB, parent.CPUs, parent.HealthCheckPath, parent.ReleaseCmd,
-		labels, parent.BuildMode,
+		labels, parent.BuildMode, parent.DockerfilePath,
 		parent.ID, prNumber, prTitle,
 		parent.GitHubRepo, branch, workerID,
 		envJSON,

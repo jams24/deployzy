@@ -25,7 +25,7 @@ interface Project {
   root_dir?: string; node_version?: string;
   port_override?: number; memory_mb?: number; cpus?: number;
   health_check_path?: string; release_cmd?: string; commit_sha?: string;
-  labels?: string[]; build_mode?: string;
+  labels?: string[]; build_mode?: string; dockerfile_path?: string;
   preview_enabled?: boolean;
   parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
@@ -35,7 +35,7 @@ interface BuildConfig {
   root_dir: string; node_version: string;
   port_override: number; memory_mb: number; cpus: number;
   health_check_path: string; release_cmd: string;
-  build_mode: string;
+  build_mode: string; dockerfile_path: string;
 }
 interface Domain {
   id: string; domain: string; verified: boolean;
@@ -144,7 +144,7 @@ function ProjectsContent() {
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
     health_check_path: "", release_cmd: "",
-    build_mode: "",
+    build_mode: "", dockerfile_path: "",
   });
   const [savingBuild, setSavingBuild] = useState(false);
   // Commits dropdown (for rollback / pinned deploys) — per-project
@@ -193,7 +193,7 @@ function ProjectsContent() {
     root_dir: "", node_version: "",
     port_override: 0, memory_mb: 0, cpus: 0,
     health_check_path: "", release_cmd: "",
-    build_mode: "",
+    build_mode: "", dockerfile_path: "",
   });
 
   const headers = () => {
@@ -338,7 +338,7 @@ function ProjectsContent() {
       root_dir: "", node_version: "",
       port_override: 0, memory_mb: 0, cpus: 0,
       health_check_path: "", release_cmd: "",
-      build_mode: "",
+      build_mode: "", dockerfile_path: "",
     });
     setImportShowAdvanced(false);
     setShowRepoPicker(false);
@@ -410,6 +410,7 @@ function ProjectsContent() {
       health_check_path: p.health_check_path || "",
       release_cmd: p.release_cmd || "",
       build_mode: p.build_mode || "",
+      dockerfile_path: p.dockerfile_path || "",
     });
     setEditingBuild(p.id);
   }
@@ -1341,6 +1342,10 @@ function ProjectsContent() {
                               <option value="ignore_dockerfile">Ignore repo Dockerfile — always auto-generate</option>
                             </select>
                           </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-zinc-600">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
+                            <input type="text" placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setBuildCfg({ ...buildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
                         </div>
 
                         <div className="flex gap-2 pt-1">
@@ -1356,7 +1361,7 @@ function ProjectsContent() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
                           <Settings2 className="h-3 w-3" /> Build &amp; Runtime
-                          {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd) ? (
+                          {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd || p.dockerfile_path) ? (
                             <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">customized</Badge>
                           ) : null}
                         </Button>
