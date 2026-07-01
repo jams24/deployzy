@@ -1,4 +1,4 @@
-# ServerMe
+# Deployzy
 
 Open-source tunnel to expose your local servers to the internet. Like ngrok, but open source and self-hostable.
 
@@ -21,29 +21,29 @@ Open-source tunnel to expose your local servers to the internet. Like ngrok, but
 
 ```bash
 # Install the CLI
-go install github.com/jams24/serverme/cli/cmd/serverme@latest
+go install github.com/jams24/deployzy/cli/cmd/deployzy@latest
 
 # Authenticate
-serverme authtoken YOUR_TOKEN
+deployzy authtoken YOUR_TOKEN
 
 # Expose a local HTTP server
-serverme http 8080
+deployzy http 8080
 ```
 
 Output:
 
 ```
-ServerMe                               (Ctrl+C to quit)
+Deployzy                               (Ctrl+C to quit)
 
 Version              1.0.0
 Web Inspector        http://127.0.0.1:4040
 
-Forwarding           https://a1b2c3d4.serverme.site -> localhost:8080
+Forwarding           https://a1b2c3d4.deployzy.com -> localhost:8080
 ```
 
 ## Self-Host (One Command)
 
-Deploy your own ServerMe server on any Ubuntu/Debian VPS:
+Deploy your own Deployzy server on any Ubuntu/Debian VPS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/serverme/serverme/main/deploy/install.sh | bash -s -- \
@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/serverme/serverme/main/deploy/insta
   --email you@example.com
 ```
 
-This installs PostgreSQL, Caddy (TLS), and ServerMe server. Takes about 2 minutes.
+This installs PostgreSQL, Caddy (TLS), and Deployzy server. Takes about 2 minutes.
 
 **Options:**
 
@@ -76,21 +76,21 @@ CNAME api.tunnel.yourdomain.com → tunnel.yourdomain.com
 ## CLI Commands
 
 ```bash
-serverme http 3000                    # HTTP tunnel
-serverme http 3000 --subdomain myapp  # Custom subdomain
-serverme http 3000 --auth user:pass   # Basic auth
-serverme tcp 5432                     # TCP tunnel (databases, etc.)
-serverme tcp 5432 --remote-port 54320 # Specific remote port
-serverme tls 443                      # TLS passthrough
-serverme start                        # All tunnels from config file
-serverme start -c serverme.yml        # Custom config path
-serverme authtoken <TOKEN>            # Save auth token
-serverme version                      # Version info
+deployzy http 3000                    # HTTP tunnel
+deployzy http 3000 --subdomain myapp  # Custom subdomain
+deployzy http 3000 --auth user:pass   # Basic auth
+deployzy tcp 5432                     # TCP tunnel (databases, etc.)
+deployzy tcp 5432 --remote-port 54320 # Specific remote port
+deployzy tls 443                      # TLS passthrough
+deployzy start                        # All tunnels from config file
+deployzy start -c deployzy.yml        # Custom config path
+deployzy authtoken <TOKEN>            # Save auth token
+deployzy version                      # Version info
 ```
 
 ## Configuration File
 
-`~/.serverme/serverme.yml`:
+`~/.deployzy/deployzy.yml`:
 
 ```yaml
 server: tunnel.yourdomain.com:443
@@ -113,13 +113,13 @@ tunnels:
 ### JavaScript / TypeScript
 
 ```bash
-npm install @serverme/sdk
+npm install deployzy-sdk
 ```
 
 ```typescript
-import { ServerMe } from '@serverme/sdk';
+import { Deployzy } from 'deployzy-sdk';
 
-const client = new ServerMe({ authtoken: 'sm_live_...' });
+const client = new Deployzy({ authtoken: 'sm_live_...' });
 const tunnels = await client.tunnels.list();
 const requests = await client.inspect.list(tunnels[0].url);
 
@@ -132,13 +132,13 @@ for await (const req of client.inspect.subscribe(tunnelUrl)) {
 ### Python
 
 ```bash
-pip install serverme
+pip install deployzy
 ```
 
 ```python
-from serverme import ServerMe
+from deployzy import Deployzy
 
-async with ServerMe(authtoken="sm_live_...") as client:
+async with Deployzy(authtoken="sm_live_...") as client:
     tunnels = await client.tunnels.list()
     async for req in client.inspect.subscribe(tunnels[0].url):
         print(f"{req.method} {req.path} -> {req.status_code}")
@@ -147,7 +147,7 @@ async with ServerMe(authtoken="sm_live_...") as client:
 ## Architecture
 
 ```
-Internet → Caddy (TLS) → ServerMe Server → smux over TLS → CLI Client → Local Service
+Internet → Caddy (TLS) → Deployzy Server → smux over TLS → CLI Client → Local Service
                               ↕
                     PostgreSQL (users, keys, domains)
                               ↕

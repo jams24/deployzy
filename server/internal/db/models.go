@@ -14,13 +14,14 @@ import (
 
 // User represents a registered user.
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	PasswordHash string    `json:"-"`
-	Plan         string    `json:"plan"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string     `json:"id"`
+	Email        string     `json:"email"`
+	Name         string     `json:"name"`
+	PasswordHash string     `json:"-"`
+	Plan         string     `json:"plan"` // effective plan (base, or "pro" while a referral reward is active)
+	ProUntil     *time.Time `json:"pro_until"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // APIKey represents an API key for SDK/CLI authentication.
@@ -30,6 +31,7 @@ type APIKey struct {
 	Name       string     `json:"name"`
 	Prefix     string     `json:"prefix"`     // e.g., "sm_live_a1b2"
 	TokenHash  string     `json:"-"`          // SHA-256 of full token
+	Scope      string     `json:"scope"`      // "read" | "deploy" | "full"
 	LastUsedAt *time.Time `json:"last_used_at"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
@@ -95,15 +97,16 @@ func (d *DB) CreateUser(ctx context.Context, email, name, password string) (*Use
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, plan, created_at, updated_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, password_hash, plan, pro_until, created_at, updated_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.CreatedAt, &u.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	u.Plan = effectivePlan(u.Plan, u.ProUntil)
 	return &u, nil
 }
 
@@ -111,15 +114,16 @@ func (d *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 func (d *DB) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, plan, created_at, updated_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, password_hash, plan, pro_until, created_at, updated_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.CreatedAt, &u.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	u.Plan = effectivePlan(u.Plan, u.ProUntil)
 	return &u, nil
 }
 
@@ -136,8 +140,17 @@ func (u *User) CheckPassword(password string) bool {
 
 // --- API Key operations ---
 
+// ValidScope reports whether s is one of the allowed API-key scopes.
+func ValidScope(s string) bool {
+	return s == "read" || s == "deploy" || s == "full"
+}
+
 // GenerateAPIKey creates a new API key and returns the full token (only shown once).
-func (d *DB) GenerateAPIKey(ctx context.Context, userID, name string) (fullToken string, key *APIKey, err error) {
+// scope must be one of "read"|"deploy"|"full" (empty defaults to "full").
+func (d *DB) GenerateAPIKey(ctx context.Context, userID, name, scope string) (fullToken string, key *APIKey, err error) {
+	if scope == "" {
+		scope = "full"
+	}
 	// Generate random token: sm_live_ + 32 random hex chars
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -152,11 +165,11 @@ func (d *DB) GenerateAPIKey(ctx context.Context, userID, name string) (fullToken
 
 	var k APIKey
 	err = d.Pool.QueryRow(ctx,
-		`INSERT INTO api_keys (user_id, name, token_hash, prefix)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, user_id, name, prefix, token_hash, last_used_at, created_at`,
-		userID, name, tokenHash, prefix,
-	).Scan(&k.ID, &k.UserID, &k.Name, &k.Prefix, &k.TokenHash, &k.LastUsedAt, &k.CreatedAt)
+		`INSERT INTO api_keys (user_id, name, token_hash, prefix, scope)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, user_id, name, prefix, token_hash, scope, last_used_at, created_at`,
+		userID, name, tokenHash, prefix, scope,
+	).Scan(&k.ID, &k.UserID, &k.Name, &k.Prefix, &k.TokenHash, &k.Scope, &k.LastUsedAt, &k.CreatedAt)
 	if err != nil {
 		return "", nil, fmt.Errorf("insert api_key: %w", err)
 	}
@@ -164,31 +177,33 @@ func (d *DB) GenerateAPIKey(ctx context.Context, userID, name string) (fullToken
 	return fullToken, &k, nil
 }
 
-// ValidateAPIKey checks an API key token and returns the associated user.
-func (d *DB) ValidateAPIKey(ctx context.Context, token string) (*User, error) {
+// ValidateAPIKey checks an API key token and returns the associated user plus the
+// key's scope ("read"|"deploy"|"full"). Scope is "" when the key is invalid.
+func (d *DB) ValidateAPIKey(ctx context.Context, token string) (*User, string, error) {
 	hash := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(hash[:])
 
-	// Update last_used_at and get user_id
-	var userID string
+	// Update last_used_at and get user_id + scope
+	var userID, scope string
 	err := d.Pool.QueryRow(ctx,
-		`UPDATE api_keys SET last_used_at = now() WHERE token_hash = $1 RETURNING user_id`,
+		`UPDATE api_keys SET last_used_at = now() WHERE token_hash = $1 RETURNING user_id, COALESCE(scope, 'full')`,
 		tokenHash,
-	).Scan(&userID)
+	).Scan(&userID, &scope)
 	if err == pgx.ErrNoRows {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return d.GetUserByID(ctx, userID)
+	u, err := d.GetUserByID(ctx, userID)
+	return u, scope, err
 }
 
 // ListAPIKeys returns all API keys for a user (without the actual token).
 func (d *DB) ListAPIKeys(ctx context.Context, userID string) ([]APIKey, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, name, prefix, last_used_at, created_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT id, user_id, name, prefix, COALESCE(scope, 'full'), last_used_at, created_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -199,7 +214,7 @@ func (d *DB) ListAPIKeys(ctx context.Context, userID string) ([]APIKey, error) {
 	var keys []APIKey
 	for rows.Next() {
 		var k APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.Prefix, &k.LastUsedAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.Prefix, &k.Scope, &k.LastUsedAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

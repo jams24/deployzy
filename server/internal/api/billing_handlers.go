@@ -29,8 +29,8 @@ func (s *Server) handleCreateCheckout(w http.ResponseWriter, r *http.Request) {
 		Amount:            10,
 		AmountCurrency:    "USDT",
 		OrderID:           "sm_premium_" + u.ID,
-		Description:       "ServerMe Premium - 1 Month",
-		CallbackURL:       "https://api.serverme.site/api/v1/billing/webhook",
+		Description:       "Deployzy Premium - 1 Month",
+		CallbackURL:       "https://api.deployzy.com/api/v1/billing/webhook",
 		ExpirationMinutes: 30,
 	})
 	if err != nil {
@@ -115,7 +115,7 @@ func (s *Server) handleBillingWebhook(w http.ResponseWriter, r *http.Request) {
 						tc, _ := s.db.GetTelegramConnection(r.Context(), sub.UserID)
 						if tc != nil {
 							s.telegram.SendMarkdown(tc.ChatID,
-								"🎉 *Premium Activated!*\n\nYour ServerMe Premium subscription is now active. Enjoy all premium features!")
+								"🎉 *Premium Activated!*\n\nYour Deployzy Premium subscription is now active. Enjoy all premium features!")
 						}
 						break
 					}

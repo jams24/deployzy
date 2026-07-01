@@ -93,6 +93,7 @@ export default function NewResourcePage() {
 
   // Database
   const [dbName, setDbName] = useState("");
+  const [dbType, setDbType] = useState("postgres"); // only postgres is provisionable today
   const [dbTargetServer, setDbTargetServer] = useState(""); // "" = platform, else worker_server_id
 
   // Servers
@@ -251,7 +252,7 @@ export default function NewResourcePage() {
     try {
       const res = await fetch(`${API}/api/v1/services`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ name: dbName, type: "postgres", worker_server_id: dbTargetServer || undefined }),
+        body: JSON.stringify({ name: dbName, type: dbType, worker_server_id: dbTargetServer || undefined }),
       });
       if (res.ok) router.push("/services");
       else {
@@ -261,6 +262,13 @@ export default function NewResourcePage() {
     } catch {}
     setCreating(false);
   }
+
+  // Deep-link support: /new?type=database opens the database form directly
+  // (used by the "New Database" button) instead of the resource picker.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("type");
+    if (t === "database") { setDbName(""); setStep("database"); }
+  }, []);
 
   function handleSelect(id: string) {
     switch (id) {
@@ -389,7 +397,7 @@ export default function NewResourcePage() {
                 placeholder="my-project"
                 className="h-9 text-sm rounded-r-none font-mono"
               />
-              <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.serverme.site</span>
+              <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.deployzy.com</span>
             </div>
           </div>
 
@@ -398,7 +406,7 @@ export default function NewResourcePage() {
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">Deploy to</label>
               <select className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedServer} onChange={(e) => setSelectedServer(e.target.value)}>
-                <option value="">ServerMe Cloud (default)</option>
+                <option value="">Deployzy Cloud (default)</option>
                 {userServers.filter(s => s.status === "active").map((s) => (
                   <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
                 ))}
@@ -518,12 +526,22 @@ export default function NewResourcePage() {
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
         <h1 className="text-xl font-bold mb-1">Create Database</h1>
-        <p className="text-sm text-muted-foreground mb-6">Deploy a managed PostgreSQL instance. Use the connection URL in any project.</p>
+        <p className="text-sm text-muted-foreground mb-6">Set up a new managed database instance. Use the connection URL in any project.</p>
 
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-xs font-medium">Database Name</label>
             <Input placeholder="my-database" value={dbName} onChange={(e) => setDbName(e.target.value)} className="h-10" />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium">Database Type</label>
+            <select value={dbType} onChange={(e) => setDbType(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="postgres">PostgreSQL 16</option>
+              <option value="mysql" disabled>MySQL — coming soon</option>
+              <option value="redis" disabled>Redis — coming soon</option>
+              <option value="mongodb" disabled>MongoDB — coming soon</option>
+            </select>
           </div>
 
           <Card className="border-emerald-500/20">
@@ -541,7 +559,7 @@ export default function NewResourcePage() {
           <div className="space-y-2">
             <label className="text-xs font-medium">Deploy to</label>
             <select value={dbTargetServer} onChange={(e) => setDbTargetServer(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">ServerMe platform (shared Postgres)</option>
+              <option value="">Deployzy platform (shared Postgres)</option>
               {userServers.filter((s) => s.status === "active").map((s) => (
                 <option key={s.id} value={s.id}>My server — {s.label} ({s.host})</option>
               ))}

@@ -1,21 +1,21 @@
-# serverme
+# deployzy
 
-Official Python SDK for [ServerMe](https://serverme.site) — open-source tunneling platform.
+Official Python SDK for [Deployzy](https://deployzy.com) — deploy & tunnel platform.
 
 ## Install
 
 ```bash
-pip install serverme
+pip install deployzy
 ```
 
 ## Quick Start
 
 ```python
 import asyncio
-from serverme import ServerMe
+from deployzy import Deployzy
 
 async def main():
-    async with ServerMe(authtoken="sm_live_...") as client:
+    async with Deployzy(authtoken="sm_live_...") as client:
         # List active tunnels
         tunnels = await client.tunnels.list()
         print(tunnels)
@@ -31,15 +31,15 @@ asyncio.run(main())
 ## Live Traffic Streaming
 
 ```python
-async with ServerMe(authtoken="sm_live_...") as client:
-    async for req in client.inspect.subscribe("https://abc123.serverme.site"):
+async with Deployzy(authtoken="sm_live_...") as client:
+    async for req in client.inspect.subscribe("https://abc123.deployzy.com"):
         print(f"{req.method} {req.path} -> {req.status_code}")
 ```
 
 ## API Keys
 
 ```python
-async with ServerMe(authtoken="sm_live_...") as client:
+async with Deployzy(authtoken="sm_live_...") as client:
     # List keys
     keys = await client.api_keys.list()
 
@@ -54,7 +54,7 @@ async with ServerMe(authtoken="sm_live_...") as client:
 ## Custom Domains
 
 ```python
-async with ServerMe(authtoken="sm_live_...") as client:
+async with Deployzy(authtoken="sm_live_...") as client:
     # Add a domain
     domain, instructions = await client.domains.create("api.example.com")
     print(f"Add CNAME: {instructions['name']} -> {instructions['target']}")
@@ -70,10 +70,10 @@ async with ServerMe(authtoken="sm_live_...") as client:
 ## Error Handling
 
 ```python
-from serverme import ServerMe, AuthError, RateLimitError, ApiError
+from deployzy import Deployzy, AuthError, RateLimitError, ApiError
 
 try:
-    async with ServerMe(authtoken="invalid") as client:
+    async with Deployzy(authtoken="invalid") as client:
         await client.tunnels.list()
 except AuthError:
     print("Bad token")
@@ -86,7 +86,7 @@ except ApiError as e:
 ## Self-Hosted
 
 ```python
-client = ServerMe(
+client = Deployzy(
     authtoken="sm_live_...",
     server_url="https://tunnel.mycompany.com",
 )

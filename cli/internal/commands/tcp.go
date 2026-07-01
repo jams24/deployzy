@@ -23,9 +23,9 @@ func NewTCPCmd() *cobra.Command {
 		Short: "Start a TCP tunnel",
 		Long:  "Expose a local TCP service to the internet via a public port.",
 		Args:  cobra.ExactArgs(1),
-		Example: `  serverme tcp 5432
-  serverme tcp 3306 --remote-port 33060
-  serverme tcp 6379 --name redis`,
+		Example: `  deployzy tcp 5432
+  deployzy tcp 3306 --remote-port 33060
+  deployzy tcp 6379 --name redis`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			port := args[0]
 			localAddr := port

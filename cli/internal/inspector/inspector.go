@@ -111,7 +111,7 @@ const inspectorHTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ServerMe Inspector</title>
+<title>Deployzy Inspector</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background: #0d1117; color: #c9d1d9; }
@@ -141,7 +141,7 @@ const inspectorHTML = `<!DOCTYPE html>
 </head>
 <body>
 <div class="header">
-  <h1>ServerMe Inspector</h1>
+  <h1>Deployzy Inspector</h1>
   <div>
     <span class="stats" id="stats">0 requests</span>
     <button onclick="clearRequests()">Clear</button>

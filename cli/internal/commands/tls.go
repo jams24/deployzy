@@ -24,8 +24,8 @@ func NewTLSCmd() *cobra.Command {
 		Short: "Start a TLS passthrough tunnel",
 		Long:  "Expose a local TLS service to the internet. TLS traffic is passed through without termination.",
 		Args:  cobra.ExactArgs(1),
-		Example: `  serverme tls 443
-  serverme tls 8443 --subdomain myapp`,
+		Example: `  deployzy tls 443
+  deployzy tls 8443 --subdomain myapp`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			port := args[0]
 			localAddr := port

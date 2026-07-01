@@ -1,19 +1,19 @@
-# @serverme/sdk
+# deployzy
 
-Official JavaScript/TypeScript SDK for [ServerMe](https://serverme.site) — open-source tunneling platform.
+Official JavaScript/TypeScript SDK for [Deployzy](https://deployzy.com) — open-source tunneling platform.
 
 ## Install
 
 ```bash
-npm install @serverme/sdk
+npm install deployzy-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { ServerMe } from '@serverme/sdk';
+import { Deployzy } from 'deployzy-sdk';
 
-const client = new ServerMe({ authtoken: 'sm_live_...' });
+const client = new Deployzy({ authtoken: 'sm_live_...' });
 
 // List active tunnels
 const tunnels = await client.tunnels.list();
@@ -31,7 +31,7 @@ console.log(result);
 ## Live Traffic Streaming
 
 ```typescript
-const stream = client.inspect.subscribe('https://abc123.serverme.site');
+const stream = client.inspect.subscribe('https://abc123.deployzy.com');
 
 for await (const req of stream) {
   console.log(`${req.method} ${req.path} -> ${req.statusCode} (${req.durationMs}ms)`);
@@ -73,10 +73,10 @@ const domains = await client.domains.list();
 ## Error Handling
 
 ```typescript
-import { ServerMe, AuthError, RateLimitError, ApiError } from '@serverme/sdk';
+import { Deployzy, AuthError, RateLimitError, ApiError } from 'deployzy-sdk';
 
 try {
-  const client = new ServerMe({ authtoken: 'invalid' });
+  const client = new Deployzy({ authtoken: 'invalid' });
   await client.tunnels.list();
 } catch (err) {
   if (err instanceof AuthError) {
@@ -92,7 +92,7 @@ try {
 ## Self-Hosted
 
 ```typescript
-const client = new ServerMe({
+const client = new Deployzy({
   authtoken: 'sm_live_...',
   serverUrl: 'https://tunnel.mycompany.com',
 });

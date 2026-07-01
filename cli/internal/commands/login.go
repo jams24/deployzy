@@ -19,13 +19,13 @@ import (
 func NewLoginCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
-		Short: "Log in to ServerMe via browser",
+		Short: "Log in to Deployzy via browser",
 		Long:  "Opens your browser to log in with Google. Your auth token is saved automatically.",
-		Example: `  serverme login
-  serverme login --server custom.server.com:8443`,
+		Example: `  deployzy login
+  deployzy login --server custom.server.com:8443`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Println()
-			fmt.Printf("  %s\n", c(bold+cyan, "ServerMe Login"))
+			fmt.Printf("  %s\n", c(bold+cyan, "Deployzy Login"))
 			fmt.Printf("  %s\n", c(dim, "──────────────────────────"))
 
 			// Generate a random state token the CLI will poll for
@@ -70,7 +70,7 @@ func NewLoginCmd() *cobra.Command {
 						saveToken(result.Token)
 						fmt.Printf("  %s Logged in successfully!\n", c(green, "✓"))
 						fmt.Println()
-						fmt.Printf("  Now run: %s\n", c(white, "serverme http 3000"))
+						fmt.Printf("  Now run: %s\n", c(white, "deployzy http 3000"))
 						fmt.Println()
 						return nil
 					}
@@ -90,7 +90,7 @@ func NewLoginEmailCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login:email",
 		Short: "Log in with email and password",
-		Example: `  serverme login:email --email you@example.com --password yourpass`,
+		Example: `  deployzy login:email --email you@example.com --password yourpass`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if email == "" || password == "" {
 				return fmt.Errorf("--email and --password are required")
@@ -128,7 +128,7 @@ func NewLoginEmailCmd() *cobra.Command {
 
 			saveToken(result.Token)
 			fmt.Printf("  %s Logged in as %s\n\n", c(green, "✓"), result.User.Email)
-			fmt.Printf("  Now run: %s\n\n", c(white, "serverme http 3000"))
+			fmt.Printf("  Now run: %s\n\n", c(white, "deployzy http 3000"))
 			return nil
 		},
 	}

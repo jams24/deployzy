@@ -77,7 +77,7 @@ type InspectedRequest struct {
 	RemoteAddr string
 }
 
-// Client manages the connection to the ServerMe server.
+// Client manages the connection to the Deployzy server.
 type Client struct {
 	serverAddr     string
 	authToken      string

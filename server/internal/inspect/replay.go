@@ -41,8 +41,8 @@ func Replay(captured *CapturedRequest, proxyURL string) (*ReplayResult, error) {
 	}
 
 	// Mark as replayed
-	req.Header.Set("X-ServerMe-Replay", "true")
-	req.Header.Set("X-ServerMe-Original-ID", captured.ID)
+	req.Header.Set("X-Deployzy-Replay", "true")
+	req.Header.Set("X-Deployzy-Original-ID", captured.ID)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 

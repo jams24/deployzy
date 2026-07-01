@@ -9,6 +9,8 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
+const bytesPerGB = 1024.0 * 1024.0 * 1024.0
+
 // handleGetMetrics returns CPU / memory / network samples for a project.
 // Query param: ?range=1h|6h|24h|7d (default 1h). Samples are auto-downsampled
 // for wider ranges so the response is always a few hundred points tops.
@@ -36,6 +38,50 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"range":   rng,
 		"samples": samples,
+	})
+}
+
+// handleGetBandwidth returns monthly egress bandwidth for a project and the
+// user's account-wide usage vs plan limit.
+func (s *Server) handleGetBandwidth(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	projectBytes, _ := s.db.GetProjectMonthlyBandwidthBytes(r.Context(), projectID)
+	accountBytes, _ := s.db.GetUserMonthlyBandwidthBytes(r.Context(), u.ID)
+	limits, _ := s.db.GetPlanLimits(r.Context(), u.Plan)
+
+	limitGB := -1
+	if limits != nil {
+		limitGB = limits.MaxBandwidthGB
+	}
+
+	now := time.Now().UTC()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	projectGB := float64(projectBytes) / bytesPerGB
+	accountGB := float64(accountBytes) / bytesPerGB
+
+	var pct float64
+	exceeded := false
+	if limitGB > 0 && !db.Unlimited(limitGB) {
+		pct = (accountGB / float64(limitGB)) * 100
+		exceeded = accountGB >= float64(limitGB)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"project_gb":   projectGB,
+		"account_gb":   accountGB,
+		"limit_gb":     limitGB,
+		"pct":          pct,
+		"exceeded":     exceeded,
+		"period_start": periodStart,
 	})
 }
 

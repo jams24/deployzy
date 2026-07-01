@@ -8,7 +8,7 @@ build-server:
 	cd server && go build -o ../bin/servermesrv ./cmd/servermesrv
 
 build-cli:
-	cd cli && go build -o ../bin/serverme ./cmd/serverme
+	cd cli && go build -o ../bin/deployzy ./cmd/deployzy
 
 test:
 	cd proto && go test -v ./...

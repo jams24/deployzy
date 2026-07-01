@@ -1,5 +1,5 @@
 import type {
-  ServerMeOptions,
+  DeployzyOptions,
   TunnelOptions,
   Tunnel,
   CapturedRequest,
@@ -7,20 +7,25 @@ import type {
   User,
   ApiKey,
   Domain,
+  Project,
+  CreateProjectOptions,
+  BuildConfigInput,
+  DeployLog,
+  WaitForDeployOptions,
 } from "./types";
-import { ApiError, AuthError, RateLimitError, NotFoundError } from "./errors";
+import { DeployzyError, ApiError, AuthError, RateLimitError, NotFoundError } from "./errors";
 
-const DEFAULT_SERVER_URL = "https://api.serverme.site";
+const DEFAULT_SERVER_URL = "https://api.deployzy.com";
 const DEFAULT_TIMEOUT = 30_000;
 
 /**
- * ServerMe SDK client.
+ * Deployzy SDK client.
  *
  * @example
  * ```typescript
- * import { ServerMe } from '@serverme/sdk';
+ * import { Deployzy } from '@serverme/sdk';
  *
- * const client = new ServerMe({ authtoken: 'sm_live_...' });
+ * const client = new Deployzy({ authtoken: 'sm_live_...' });
  *
  * // List active tunnels
  * const tunnels = await client.tunnels.list();
@@ -32,7 +37,7 @@ const DEFAULT_TIMEOUT = 30_000;
  * const result = await client.inspect.replay(tunnels[0].url, requests[0].id);
  * ```
  */
-export class ServerMe {
+export class Deployzy {
   private baseUrl: string;
   private authtoken: string;
   private timeout: number;
@@ -45,10 +50,12 @@ export class ServerMe {
   public readonly apiKeys: ApiKeyClient;
   /** Custom domain management. */
   public readonly domains: DomainClient;
+  /** Project deployment. */
+  public readonly projects: ProjectClient;
   /** User/account operations. */
   public readonly users: UserClient;
 
-  constructor(options: ServerMeOptions) {
+  constructor(options: DeployzyOptions) {
     if (!options.authtoken) {
       throw new AuthError("authtoken is required");
     }
@@ -62,6 +69,7 @@ export class ServerMe {
     this.inspect = new InspectClient(request);
     this.apiKeys = new ApiKeyClient(request);
     this.domains = new DomainClient(request);
+    this.projects = new ProjectClient(request);
     this.users = new UserClient(request);
   }
 
@@ -76,7 +84,7 @@ export class ServerMe {
     const headers: Record<string, string> = {
       "X-API-Key": this.authtoken,
       "Content-Type": "application/json",
-      "User-Agent": "serverme-sdk-js/1.0.0",
+      "User-Agent": "deployzy-sdk-js/1.1.0",
     };
 
     const controller = new AbortController();
@@ -164,7 +172,7 @@ class InspectClient {
     tunnelUrl: string,
     wsUrl?: string
   ): AsyncIterable<CapturedRequest> & { close: () => void } {
-    const base = wsUrl || "wss://api.serverme.site";
+    const base = wsUrl || "wss://api.deployzy.com";
     const url = `${base}/api/v1/ws/traffic/${encodeURIComponent(tunnelUrl)}`;
 
     let ws: WebSocket | null = null;
@@ -267,6 +275,106 @@ class DomainClient {
   /** Delete a custom domain. */
   async delete(id: string): Promise<void> {
     await this.request("DELETE", `/api/v1/domains/${id}`);
+  }
+}
+
+class ProjectClient {
+  constructor(private request: RequestFn) {}
+
+  /** List all projects. */
+  async list(): Promise<Project[]> {
+    return this.request("GET", "/api/v1/projects");
+  }
+
+  /** Get a single project by id. */
+  async get(id: string): Promise<Project> {
+    const res = await this.request<{ project: Project }>("GET", `/api/v1/projects/${id}`);
+    return res.project;
+  }
+
+  /**
+   * Create a project. Provide `repo` (git) OR `image` (prebuilt). Applies env
+   * and build settings if given. Does NOT deploy — call `deploy(id)` after.
+   */
+  async create(opts: CreateProjectOptions): Promise<Project> {
+    const body: Record<string, unknown> = {
+      name: opts.name,
+      subdomain: opts.subdomain || opts.name,
+    };
+    if (opts.framework) body.framework = opts.framework;
+    if (opts.image) {
+      body.image = opts.image;
+      body.deploy_source = "image";
+    } else if (opts.repo) {
+      if (/^https?:\/\//.test(opts.repo)) {
+        body.repo_url = opts.repo;
+      } else {
+        body.repo_url = `https://github.com/${opts.repo}.git`;
+        body.github_repo = opts.repo;
+      }
+      body.branch = opts.branch || "main";
+    }
+
+    const project = await this.request<Project>("POST", "/api/v1/projects", body);
+    if (opts.env && Object.keys(opts.env).length > 0) {
+      await this.setEnv(project.id, opts.env);
+    }
+    if (opts.build) {
+      await this.updateBuildConfig(project.id, opts.build);
+    }
+    return project;
+  }
+
+  /** Trigger a deploy (build + release). */
+  async deploy(id: string): Promise<void> {
+    await this.request("POST", `/api/v1/projects/${id}/deploy`);
+  }
+
+  /** Stop a project's container. */
+  async stop(id: string): Promise<void> {
+    await this.request("POST", `/api/v1/projects/${id}/stop`);
+  }
+
+  /** Delete a project. */
+  async delete(id: string): Promise<void> {
+    await this.request("DELETE", `/api/v1/projects/${id}`);
+  }
+
+  /** Replace the project's environment variables. */
+  async setEnv(id: string, env: Record<string, string>): Promise<void> {
+    await this.request("PUT", `/api/v1/projects/${id}`, { env_vars: env });
+  }
+
+  /** Update advanced build/runtime settings. */
+  async updateBuildConfig(id: string, cfg: BuildConfigInput): Promise<void> {
+    await this.request("PUT", `/api/v1/projects/${id}/build-config`, cfg);
+  }
+
+  /** Fetch recent deploy log lines. */
+  async logs(id: string): Promise<DeployLog[]> {
+    return this.request("GET", `/api/v1/projects/${id}/logs`);
+  }
+
+  /**
+   * Poll until the project reaches a terminal deploy state ("running" or
+   * "failed"), or the timeout elapses. Returns the final project.
+   */
+  async waitForDeploy(id: string, opts: WaitForDeployOptions = {}): Promise<Project> {
+    const interval = opts.intervalMs ?? 3000;
+    const timeout = opts.timeoutMs ?? 600_000;
+    const start = Date.now();
+    for (;;) {
+      const project = await this.get(id);
+      if (project.status === "running" || project.status === "failed") {
+        return project;
+      }
+      if (Date.now() - start > timeout) {
+        throw new DeployzyError(
+          `waitForDeploy timed out after ${timeout}ms (last status: ${project.status})`
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+    }
   }
 }
 

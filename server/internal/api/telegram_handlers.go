@@ -118,8 +118,8 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		s.handleTelegramStart(msg, code)
 	} else if text == "/start" {
 		s.telegram.SendMarkdown(msg.Chat.ID,
-			"👋 *Welcome to ServerMe Alerts!*\n\n"+
-				"To connect your account, go to your [ServerMe Dashboard](https://serverme.site/settings) "+
+			"👋 *Welcome to Deployzy Alerts!*\n\n"+
+				"To connect your account, go to your [Deployzy Dashboard](https://deployzy.com/settings) "+
 				"and click \"Connect Telegram\".")
 	} else if text == "/tunnels" {
 		s.handleTelegramTunnels(msg)
@@ -127,11 +127,11 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		s.handleTelegramStats(msg)
 	} else if text == "/help" {
 		s.telegram.SendMarkdown(msg.Chat.ID,
-			"*ServerMe Bot Commands*\n\n"+
+			"*Deployzy Bot Commands*\n\n"+
 				"/tunnels — List active tunnels\n"+
 				"/stats — Quick traffic stats\n"+
 				"/help — Show this message\n\n"+
-				"Manage notifications at [serverme.site/settings](https://serverme.site/settings)")
+				"Manage notifications at [deployzy.com/settings](https://deployzy.com/settings)")
 	} else {
 		s.telegram.SendMarkdown(msg.Chat.ID,
 			"I don't understand that command. Try /help")
@@ -146,7 +146,7 @@ func (s *Server) handleTelegramStart(msg *notify.Message, code string) {
 	userID, err := s.db.RedeemLinkCode(ctx, code)
 	if err != nil || userID == "" {
 		s.telegram.SendMarkdown(msg.Chat.ID,
-			"❌ Invalid or expired link code. Please generate a new one from your [dashboard](https://serverme.site/settings).")
+			"❌ Invalid or expired link code. Please generate a new one from your [dashboard](https://deployzy.com/settings).")
 		return
 	}
 
@@ -168,7 +168,7 @@ func (s *Server) handleTelegramStart(msg *notify.Message, code string) {
 			"You'll now receive notifications for:\n"+
 			"• Tunnel connections/disconnections\n"+
 			"• Error spikes\n\n"+
-			"Manage preferences at [serverme.site/settings](https://serverme.site/settings)")
+			"Manage preferences at [deployzy.com/settings](https://deployzy.com/settings)")
 }
 
 func (s *Server) handleTelegramTunnels(msg *notify.Message) {
@@ -189,7 +189,7 @@ func (s *Server) handleTelegramStats(msg *notify.Message) {
 	// Find user by chat ID — simplified, just show global stats
 	text := fmt.Sprintf("📊 *Quick Stats*\n\n"+
 		"Active tunnels: *%d*\n\n"+
-		"For detailed analytics, visit [serverme.site/analytics](https://serverme.site/analytics)",
+		"For detailed analytics, visit [deployzy.com/analytics](https://deployzy.com/analytics)",
 		len(s.registry.List()))
 	s.telegram.SendMarkdown(msg.Chat.ID, text)
 }

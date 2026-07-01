@@ -85,6 +85,23 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	hostname := extractHostname(r.Host)
 
+	// /tls/ask — Caddy on-demand TLS gate. Called by Caddy before issuing a
+	// new certificate. We approve only:
+	//   • deployzy.com itself and known static subdomains (api, www)
+	//   • exactly one label before .deployzy.com  (e.g. terra.deployzy.com)
+	//   • verified custom domains (resolved by the domain resolver)
+	// Multi-label junk like "whm.whm.blog.deployzy.com" is rejected, which
+	// prevents bots from exhausting the Let's Encrypt rate limit.
+	if r.URL.Path == "/tls/ask" {
+		domain := r.URL.Query().Get("domain")
+		if p.isCertAllowed(domain) {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			http.Error(w, "not allowed", http.StatusForbidden)
+		}
+		return
+	}
+
 	// Reserved analytics endpoints — handle here and never forward to the container:
 	//   /__sm/analytics.js  → the client snippet
 	//   /__sm-ingest        → JS beacon POST target
@@ -109,7 +126,7 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	tun := p.registry.LookupByHost(hostname)
 	if tun == nil {
-		// Check if this is a deployed project (subdomain path: myapp.serverme.site)
+		// Check if this is a deployed project (subdomain path: myapp.deployzy.com)
 		if p.projects != nil {
 			parts := strings.SplitN(hostname, ".", 2)
 			if len(parts) >= 1 {
@@ -156,7 +173,7 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check basic auth if configured
 	if tun.Auth != "" {
 		if !checkBasicAuth(r, tun.Auth) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="ServerMe"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="Deployzy"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -530,6 +547,11 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port 
 	rw := &captureRW{ResponseWriter: w, status: 200}
 	proxy.ServeHTTP(rw, r)
 
+	// Always track egress bytes for bandwidth accounting (all request types).
+	if p.analytics != nil && projectID != "" {
+		p.analytics.TrackBandwidth(projectID, rw.bytes)
+	}
+
 	// Skip analytics for asset requests — keeps the pageview count meaningful.
 	if p.analytics != nil && projectID != "" && isPageRequest(r.URL.Path) {
 		ip := clientIP(r)
@@ -658,6 +680,41 @@ func checkBasicAuth(r *http.Request, expected string) bool {
 // newBufioReader creates a bufio.Reader for reading HTTP responses.
 func newBufioReader(r io.Reader) *bufio.Reader {
 	return bufio.NewReaderSize(r, 4096)
+}
+
+// isCertAllowed returns true if Caddy should be allowed to obtain a TLS cert
+// for the given domain. Rejects multi-label *.deployzy.com junk that bots
+// generate, which previously exhausted the Let's Encrypt rate limit.
+func (p *HTTPProxy) isCertAllowed(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+
+	// Always allow the base domain and its known static subdomains.
+	if domain == p.baseDomain || domain == "www."+p.baseDomain ||
+		domain == "api."+p.baseDomain {
+		return true
+	}
+
+	// Allow exactly one label before baseDomain (e.g. terra.deployzy.com).
+	if p.baseDomain != "" && strings.HasSuffix(domain, "."+p.baseDomain) {
+		sub := strings.TrimSuffix(domain, "."+p.baseDomain)
+		// Reject if the subdomain itself contains a dot (multi-label junk).
+		if !strings.Contains(sub, ".") && len(sub) > 0 && len(sub) <= 63 {
+			return true
+		}
+		return false
+	}
+
+	// Allow verified custom domains.
+	if p.domains != nil {
+		if _, _, ok := p.domains.ResolveDomain(domain); ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // HealthHandler returns a simple health check response.

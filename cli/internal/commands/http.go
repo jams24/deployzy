@@ -30,9 +30,9 @@ func NewHTTPCmd() *cobra.Command {
 		Short: "Start an HTTP tunnel",
 		Long:  "Expose a local HTTP server to the internet via a public URL.",
 		Args:  cobra.ExactArgs(1),
-		Example: `  serverme http 8080
-  serverme http 3000 --subdomain myapp
-  serverme http 8080 --auth "user:pass"`,
+		Example: `  deployzy http 8080
+  deployzy http 3000 --subdomain myapp
+  deployzy http 8080 --auth "user:pass"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			port := args[0]
 			localAddr := port
@@ -96,10 +96,10 @@ func resolveToken() string {
 	fmt.Println()
 	fmt.Printf("  %s No authtoken set.\n", c(red, "ERROR"))
 	fmt.Println()
-	fmt.Printf("  Sign up at %s and get your token,\n", c(cyan, "https://serverme.site/sign-up"))
+	fmt.Printf("  Sign up at %s and get your token,\n", c(cyan, "https://deployzy.com/sign-up"))
 	fmt.Printf("  then run:\n")
 	fmt.Println()
-	fmt.Printf("    %s\n", c(white, "serverme authtoken <your-token>"))
+	fmt.Printf("    %s\n", c(white, "deployzy authtoken <your-token>"))
 	fmt.Println()
 	os.Exit(1)
 	return ""

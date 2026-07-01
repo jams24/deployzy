@@ -94,22 +94,39 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		r.Group(func(r chi.Router) {
 			r.Use(auth.SmartAuthMiddleware(jwtMgr, database))
 
+			// Scope guards: read < deploy < full. JWT sessions are full; API
+			// keys carry their own scope. GETs need only read (the floor, so no
+			// guard); mutations need deploy; account/key/billing/team management
+			// needs full so a leaked deploy key can't escalate or nuke the account.
+			deployScope := auth.RequireScope("deploy")
+			fullScope := auth.RequireScope("full")
+
 			// User
 			r.Get("/users/me", s.handleGetMe)
 			r.Get("/users/me/limits", s.handleGetMyLimits)
-			r.Delete("/users/me", s.handleDeleteMe)
+			r.With(fullScope).Delete("/users/me", s.handleDeleteMe)
+
+			// Referrals
+			r.Get("/referrals", s.handleGetReferrals)
+
+			// Webhooks (account-level outgoing webhooks)
+			r.Get("/webhooks", s.handleListWebhooks)
+			r.With(fullScope).Post("/webhooks", s.handleCreateWebhook)
+			r.With(fullScope).Put("/webhooks/{id}", s.handleUpdateWebhook)
+			r.With(fullScope).Delete("/webhooks/{id}", s.handleDeleteWebhook)
+			r.With(fullScope).Post("/webhooks/{id}/test", s.handleTestWebhook)
 
 			// API Keys
 			r.Get("/api-keys", s.handleListAPIKeys)
-			r.Post("/api-keys", s.handleCreateAPIKey)
-			r.Delete("/api-keys/{id}", s.handleDeleteAPIKey)
+			r.With(fullScope).Post("/api-keys", s.handleCreateAPIKey)
+			r.With(fullScope).Delete("/api-keys/{id}", s.handleDeleteAPIKey)
 
 			// Domains
 			r.Get("/domains", s.handleListDomains)
-			r.Post("/domains", s.handleCreateDomain)
-			r.Delete("/domains/{id}", s.handleDeleteDomain)
-			r.Post("/domains/{id}/verify", s.handleVerifyDomain)
-			r.Put("/domains/{id}/bind", s.handleBindDomain)
+			r.With(deployScope).Post("/domains", s.handleCreateDomain)
+			r.With(deployScope).Delete("/domains/{id}", s.handleDeleteDomain)
+			r.With(deployScope).Post("/domains/{id}/verify", s.handleVerifyDomain)
+			r.With(deployScope).Put("/domains/{id}/bind", s.handleBindDomain)
 
 			// Tunnels
 			r.Get("/tunnels", s.handleListTunnels)
@@ -122,88 +139,91 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Analytics
 			r.Get("/analytics", s.handleAnalytics)
 
-			// Teams
+			// Teams (account-level → full)
 			r.Get("/teams", s.handleListTeams)
-			r.Post("/teams", s.handleCreateTeam)
+			r.With(fullScope).Post("/teams", s.handleCreateTeam)
 			r.Get("/teams/{teamId}", s.handleGetTeam)
-			r.Delete("/teams/{teamId}", s.handleDeleteTeam)
-			r.Post("/teams/{teamId}/invite", s.handleInviteMember)
-			r.Delete("/teams/{teamId}/invitations/{inviteId}", s.handleCancelInvitation)
-			r.Post("/invitations/{token}/accept", s.handleAcceptInvitation)
-			r.Delete("/teams/{teamId}/members/{userId}", s.handleRemoveMember)
-			r.Put("/teams/{teamId}/members/{userId}/role", s.handleUpdateMemberRole)
+			r.With(fullScope).Delete("/teams/{teamId}", s.handleDeleteTeam)
+			r.With(fullScope).Post("/teams/{teamId}/invite", s.handleInviteMember)
+			r.With(fullScope).Delete("/teams/{teamId}/invitations/{inviteId}", s.handleCancelInvitation)
+			r.With(fullScope).Post("/invitations/{token}/accept", s.handleAcceptInvitation)
+			r.With(fullScope).Delete("/teams/{teamId}/members/{userId}", s.handleRemoveMember)
+			r.With(fullScope).Put("/teams/{teamId}/members/{userId}/role", s.handleUpdateMemberRole)
 
-			// Telegram
-			r.Post("/telegram/link", s.handleTelegramLinkCode)
+			// Telegram (account-level → full)
+			r.With(fullScope).Post("/telegram/link", s.handleTelegramLinkCode)
 			r.Get("/telegram/status", s.handleTelegramStatus)
-			r.Put("/telegram/preferences", s.handleTelegramUpdatePrefs)
-			r.Delete("/telegram", s.handleTelegramDisconnect)
+			r.With(fullScope).Put("/telegram/preferences", s.handleTelegramUpdatePrefs)
+			r.With(fullScope).Delete("/telegram", s.handleTelegramDisconnect)
 
-			// Billing
-			r.Post("/billing/checkout", s.handleCreateCheckout)
+			// Billing (account-level → full)
+			r.With(fullScope).Post("/billing/checkout", s.handleCreateCheckout)
 			r.Get("/billing/status", s.handleBillingStatus)
 			r.Get("/billing/check", s.handleCheckPayment)
 
-			// GitHub
+			// GitHub (connection is account-level → full; repo/commit reads are read)
 			r.Get("/github/status", s.handleGitHubStatus)
-			r.Post("/github/connect", s.handleGitHubSaveConnection)
-			r.Delete("/github", s.handleGitHubDisconnect)
+			r.With(fullScope).Post("/github/connect", s.handleGitHubSaveConnection)
+			r.With(fullScope).Delete("/github", s.handleGitHubDisconnect)
 			r.Get("/github/repos", s.handleGitHubRepos)
 			r.Get("/github/commits", s.handleGitHubCommits)
+			r.Get("/github/contents", s.handleGitHubContents)
 
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)
-			r.Post("/projects", s.handleCreateProject)
+			r.With(deployScope).Post("/projects", s.handleCreateProject)
 			r.Get("/projects/{projectId}", s.handleGetProject)
-			r.Put("/projects/{projectId}", s.handleUpdateProject)
-			r.Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
-			r.Put("/projects/{projectId}/labels", s.handleUpdateLabels)
+			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
+			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
+			r.With(deployScope).Put("/projects/{projectId}/labels", s.handleUpdateLabels)
 			// Preview deployments (one-per-PR)
 			r.Get("/projects/{projectId}/previews", s.handleListPreviews)
-			r.Put("/projects/{projectId}/preview-enabled", s.handleTogglePreviewEnabled)
+			r.With(deployScope).Put("/projects/{projectId}/preview-enabled", s.handleTogglePreviewEnabled)
 			// Metrics
 			r.Get("/projects/{projectId}/metrics", s.handleGetMetrics)
+			r.Get("/projects/{projectId}/bandwidth", s.handleGetBandwidth)
 			// Site analytics (server-side, cookieless)
 			r.Get("/projects/{projectId}/analytics", s.handleSiteOverview)
 			r.Get("/projects/{projectId}/analytics/top", s.handleSiteTop)
 			// Cron jobs
 			r.Get("/projects/{projectId}/crons", s.handleListCrons)
-			r.Post("/projects/{projectId}/crons", s.handleCreateCron)
-			r.Put("/projects/{projectId}/crons/{cronId}", s.handleUpdateCron)
-			r.Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
-			r.Post("/projects/{projectId}/deploy", s.handleDeployProject)
-			r.Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
-			r.Post("/projects/{projectId}/stop", s.handleStopProject)
-			r.Delete("/projects/{projectId}", s.handleDeleteProject)
+			r.With(deployScope).Post("/projects/{projectId}/crons", s.handleCreateCron)
+			r.With(deployScope).Put("/projects/{projectId}/crons/{cronId}", s.handleUpdateCron)
+			r.With(deployScope).Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
+			r.With(deployScope).Post("/projects/{projectId}/upload", s.handleUploadProject)
+			r.With(deployScope).Post("/projects/{projectId}/deploy", s.handleDeployProject)
+			r.With(deployScope).Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
+			r.With(deployScope).Post("/projects/{projectId}/stop", s.handleStopProject)
+			r.With(deployScope).Delete("/projects/{projectId}", s.handleDeleteProject)
 			r.Get("/projects/{projectId}/logs", s.handleGetDeployLogs)
 
 			// Project Databases
-			r.Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
-			// Database editor — SQL runner + table browser
-			r.Post("/projects/{projectId}/database/query", s.handleProjectDatabaseQuery)
+			r.With(deployScope).Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
+			// Database editor — SQL runner + table browser (query mutates → deploy)
+			r.With(deployScope).Post("/projects/{projectId}/database/query", s.handleProjectDatabaseQuery)
 			r.Get("/projects/{projectId}/database/tables", s.handleProjectDatabaseTables)
 			r.Get("/projects/{projectId}/database/tables/{table}/columns", s.handleProjectDatabaseTableColumns)
 			r.Get("/projects/{projectId}/database/tables/{table}/rows", s.handleProjectDatabaseTableRows)
-			r.Post("/services/{serviceId}/query", s.handleServiceQuery)
+			r.With(deployScope).Post("/services/{serviceId}/query", s.handleServiceQuery)
 			r.Get("/services/{serviceId}/tables", s.handleServiceTables)
 			r.Get("/services/{serviceId}/tables/{table}/columns", s.handleServiceTableColumns)
 			r.Get("/services/{serviceId}/tables/{table}/rows", s.handleServiceTableRows)
 			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
-			r.Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
+			r.With(deployScope).Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
 
 			// Database Backups
-			r.Post("/projects/{projectId}/backups", s.handleCreateBackup)
+			r.With(deployScope).Post("/projects/{projectId}/backups", s.handleCreateBackup)
 			r.Get("/projects/{projectId}/backups", s.handleListBackups)
 			r.Get("/projects/{projectId}/backups/{backupId}/download", s.handleDownloadBackup)
-			r.Post("/projects/{projectId}/backups/{backupId}/restore", s.handleRestoreBackup)
-			r.Delete("/projects/{projectId}/backups/{backupId}", s.handleDeleteBackup)
+			r.With(deployScope).Post("/projects/{projectId}/backups/{backupId}/restore", s.handleRestoreBackup)
+			r.With(deployScope).Delete("/projects/{projectId}/backups/{backupId}", s.handleDeleteBackup)
 			r.Get("/projects/{projectId}/backup-schedule", s.handleGetBackupSchedule)
-			r.Put("/projects/{projectId}/backup-schedule", s.handleUpdateBackupSchedule)
+			r.With(deployScope).Put("/projects/{projectId}/backup-schedule", s.handleUpdateBackupSchedule)
 
 			// Subdomains
 			r.Get("/subdomains", s.handleListSubdomains)
-			r.Post("/subdomains", s.handleAddSubdomain)
-			r.Delete("/subdomains", s.handleReleaseSubdomain)
+			r.With(deployScope).Post("/subdomains", s.handleAddSubdomain)
+			r.With(deployScope).Delete("/subdomains", s.handleReleaseSubdomain)
 			r.Get("/subdomains/check", s.handleCheckSubdomain)
 
 			// Unified database list — standalone services + per-project DBs
@@ -212,15 +232,15 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Standalone Services (databases, Redis, etc.)
 			r.Get("/services", s.handleListServices)
-			r.Post("/services", s.handleCreateService)
+			r.With(deployScope).Post("/services", s.handleCreateService)
 			r.Get("/services/{serviceId}", s.handleGetService)
-			r.Delete("/services/{serviceId}", s.handleDeleteService)
+			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
 
-			// User BYOC Servers
+			// User BYOC Servers (account-level infra → full)
 			r.Get("/servers", s.handleListUserServers)
-			r.Post("/servers", s.handleAddUserServer)
-			r.Delete("/servers/{serverId}", s.handleDeleteUserServer)
-			r.Post("/servers/{serverId}/install-docker", s.handleInstallDocker)
+			r.With(fullScope).Post("/servers", s.handleAddUserServer)
+			r.With(fullScope).Delete("/servers/{serverId}", s.handleDeleteUserServer)
+			r.With(fullScope).Post("/servers/{serverId}/install-docker", s.handleInstallDocker)
 
 			// Admin routes
 			r.Route("/admin", func(r chi.Router) {

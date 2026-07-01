@@ -67,7 +67,7 @@ export default function InvitePage({
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Terminal className="h-4 w-4" />
           </div>
-          ServerMe
+          Deployzy
         </Link>
 
         {status === "loading" && (
@@ -86,7 +86,7 @@ export default function InvitePage({
             </div>
             <h2 className="text-xl font-bold">Team Invitation</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              You&apos;ve been invited to join a team on ServerMe. Sign in to accept.
+              You&apos;ve been invited to join a team on Deployzy. Sign in to accept.
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <Button

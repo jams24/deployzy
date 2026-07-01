@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { RefreshCw, Waypoints, Globe, Terminal as TermIcon, Rocket } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -79,45 +79,35 @@ export default function TunnelsPage() {
               Start a tunnel from your terminal to see it here.
             </p>
             <div className="mt-6 rounded-lg border border-border bg-zinc-950 px-6 py-4 font-mono text-sm text-zinc-300">
-              <span className="text-zinc-500">$</span> serverme http 3000
+              <span className="text-zinc-500">$</span> deployzy http 3000
             </div>
           </CardContent>
         </Card>
       ) : (
-        <div className="mt-6 grid gap-4">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {tunnels.map((t) => (
-            <Card key={t.url}>
-              <CardHeader className="flex flex-row items-center gap-4 pb-3">
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-lg ${protocolColor(t.protocol)}`}
-                >
-                  {protocolIcon(t.protocol)}
-                </div>
-                <div className="flex-1">
-                  <CardTitle className="text-base font-mono">
-                    {t.url}
-                  </CardTitle>
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {t.protocol.toUpperCase()}
-                    </Badge>
-                    {t.name && (
-                      <span className="text-xs text-muted-foreground">
-                        {t.name}
-                      </span>
-                    )}
+            <Card key={t.url} className="hover:border-foreground/20 transition-colors">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${protocolColor(t.protocol)}`}>
+                    {protocolIcon(t.protocol)}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                    </span>
+                    <span className="text-xs text-green-500 font-medium">Active</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
-                  </span>
-                  <span className="text-xs text-green-500 font-medium">
-                    Active
-                  </span>
+                <div className="min-w-0">
+                  <a href={t.url} target="_blank" rel="noopener" className="text-sm font-mono break-all hover:underline">{t.url}</a>
+                  <div className="mt-1.5 flex items-center gap-2 min-w-0">
+                    <Badge variant="outline" className="text-[10px] shrink-0">{t.protocol.toUpperCase()}</Badge>
+                    {t.name && <span className="text-xs text-muted-foreground truncate">{t.name}</span>}
+                  </div>
                 </div>
-              </CardHeader>
+              </CardContent>
             </Card>
           ))}
         </div>

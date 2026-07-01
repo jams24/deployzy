@@ -41,7 +41,7 @@ func c(color, text string) string {
 
 func printBanner() {
 	fmt.Println()
-	fmt.Printf("  %s %s\n", c(bold+cyan, "ServerMe"), c(dim, "— Expose localhost to the world"))
+	fmt.Printf("  %s %s\n", c(bold+cyan, "Deployzy"), c(dim, "— Expose localhost to the world"))
 	fmt.Printf("  %s\n", c(dim, strings.Repeat("─", 50)))
 }
 

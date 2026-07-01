@@ -13,7 +13,7 @@ func NewAuthTokenCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "authtoken [token]",
 		Short: "Save an authentication token",
-		Long:  "Saves the authentication token to ~/.serverme/authtoken for future use.",
+		Long:  "Saves the authentication token to ~/.deployzy/authtoken for future use.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token := args[0]
@@ -37,9 +37,9 @@ func NewAuthTokenCmd() *cobra.Command {
 func configDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".serverme"
+		return ".deployzy"
 	}
-	return filepath.Join(home, ".serverme")
+	return filepath.Join(home, ".deployzy")
 }
 
 func loadSavedToken() string {

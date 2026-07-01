@@ -30,15 +30,15 @@ func WriteMsg(w io.Writer, msgType string, payload interface{}) error {
 		return fmt.Errorf("message too large: %d bytes (max %d)", len(envBytes), maxMessageSize)
 	}
 
-	// Write 4-byte length prefix (big-endian)
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(envBytes)))
-
-	if _, err := w.Write(lenBuf); err != nil {
+	// Single Write call: length prefix + payload merged into one buffer so that
+	// concurrent goroutines writing to the same smux stream (e.g. multiple HTTP
+	// requests all calling RequestProxy at once) don't interleave the two parts
+	// and corrupt the framing.
+	buf := make([]byte, 4+len(envBytes))
+	binary.BigEndian.PutUint32(buf, uint32(len(envBytes)))
+	copy(buf[4:], envBytes)
+	if _, err := w.Write(buf); err != nil {
 		return fmt.Errorf("write length: %w", err)
-	}
-	if _, err := w.Write(envBytes); err != nil {
-		return fmt.Errorf("write payload: %w", err)
 	}
 
 	return nil

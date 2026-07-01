@@ -85,3 +85,39 @@ func (d *DB) PruneOldMetrics(ctx context.Context, cutoff time.Time) error {
 	)
 	return err
 }
+
+// GetProjectMonthlyBandwidthBytes returns bytes transferred out for a single
+// project during the current calendar month.
+func (d *DB) GetProjectMonthlyBandwidthBytes(ctx context.Context, projectID string) (int64, error) {
+	var n int64
+	err := d.Pool.QueryRow(ctx,
+		`SELECT COALESCE(bytes, 0) FROM bandwidth_usage
+		 WHERE project_id = $1 AND month = date_trunc('month', now())::date`,
+		projectID,
+	).Scan(&n)
+	if err == pgx.ErrNoRows {
+		return 0, nil
+	}
+	return n, err
+}
+
+// GetUserMonthlyBandwidthBytes returns bytes transferred out across all of a
+// user's projects during the current calendar month.
+func (d *DB) GetUserMonthlyBandwidthBytes(ctx context.Context, userID string) (int64, error) {
+	var n int64
+	// bandwidth_usage.project_id is TEXT (stores the UUID as a string), while
+	// projects.id is UUID — so the join must cast, or Postgres errors with
+	// "operator does not exist: uuid = text" and the query returns 0 (which is
+	// why the account-total bandwidth meter read 0 despite recorded usage).
+	err := d.Pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(bu.bytes), 0)
+		 FROM bandwidth_usage bu
+		 JOIN projects p ON p.id::text = bu.project_id
+		 WHERE p.user_id = $1 AND bu.month = date_trunc('month', now())::date`,
+		userID,
+	).Scan(&n)
+	if err == pgx.ErrNoRows {
+		return 0, nil
+	}
+	return n, err
+}

@@ -92,13 +92,19 @@ if [[ -f $REMOTE_DIR/serverme-linux ]]; then
   systemctl start serverme
 fi
 
-echo '── Web bundle ──'
+echo '── Web bundle (zero-downtime swap) ──'
 if [[ -f $REMOTE_DIR/serverme-web.tar.gz ]]; then
+  # Extract the new bundle into a staging dir while the old one keeps serving,
+  # so the only downtime is the swap + restart (~1s). Caddy's lb_try_duration on
+  # the serverme.site upstream retries through that window, so requests don't 502.
+  rm -rf /opt/serverme-web-next && mkdir -p /opt/serverme-web-next
+  ( cd /opt/serverme-web-next && tar xzf $REMOTE_DIR/serverme-web.tar.gz 2>/dev/null && { [[ -f $REMOTE_DIR/serverme-static.tar.gz ]] && tar xzf $REMOTE_DIR/serverme-static.tar.gz 2>/dev/null; true; } )
   systemctl stop serverme-web
-  rm -rf /opt/serverme-web/*
-  cd /opt/serverme-web && tar xzf $REMOTE_DIR/serverme-web.tar.gz 2>/dev/null
-  [[ -f $REMOTE_DIR/serverme-static.tar.gz ]] && tar xzf $REMOTE_DIR/serverme-static.tar.gz
+  rm -rf /opt/serverme-web-prev
+  mv /opt/serverme-web /opt/serverme-web-prev
+  mv /opt/serverme-web-next /opt/serverme-web
   systemctl start serverme-web
+  rm -rf /opt/serverme-web-prev
   rm -f $REMOTE_DIR/serverme-web.tar.gz $REMOTE_DIR/serverme-static.tar.gz
 fi
 

@@ -1,16 +1,16 @@
-# Homebrew Tap for ServerMe
+# Homebrew Tap for Deployzy
 
 ## Install
 
 ```bash
-brew tap serverme/tap https://github.com/jams24/serverme
-brew install serverme/tap/serverme
+brew tap deployzy/tap https://github.com/jams24/deployzy
+brew install deployzy/tap/serverme
 ```
 
 Or in one command:
 
 ```bash
-brew install serverme/tap/serverme
+brew install deployzy/tap/serverme
 ```
 
 ## Usage
@@ -24,12 +24,12 @@ serverme tls 443
 ## Update
 
 ```bash
-brew upgrade serverme/tap/serverme
+brew upgrade deployzy/tap/serverme
 ```
 
 ## Uninstall
 
 ```bash
 brew uninstall serverme
-brew untap serverme/tap
+brew untap deployzy/tap
 ```

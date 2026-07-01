@@ -169,7 +169,7 @@ func (c *Conn) AuthenticateWithDB(staticToken string, database *db.DB, jwtMgr JW
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		user, err := database.ValidateAPIKey(ctx, authMsg.Token)
+		user, _, err := database.ValidateAPIKey(ctx, authMsg.Token)
 		if err == nil && user != nil {
 			authenticated = true
 			c.userID = user.ID

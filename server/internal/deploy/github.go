@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -321,6 +322,60 @@ func (g *GitHubApp) ListCommits(accessToken, repoFullName, branch string) ([]Git
 		})
 	}
 	return out, nil
+}
+
+// GitHubContentEntry is one entry (file or directory) in a repo path listing.
+type GitHubContentEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Type string `json:"type"` // "dir" | "file"
+}
+
+// ListRepoContents lists the entries at a path in a repo at a given ref (branch
+// or SHA). Used by the "Select Base Directory" picker to let users browse the
+// repo tree instead of typing a monorepo path by hand. Directories are returned
+// first so the picker can show them at the top; files are included too (shown
+// non-selectable) so the listing matches what the user sees on GitHub.
+func (g *GitHubApp) ListRepoContents(accessToken, repoFullName, path, ref string) ([]GitHubContentEntry, error) {
+	// Trim slashes so "/", "src/", "/src" all normalise to the same API path.
+	cleanPath := strings.Trim(path, "/")
+	url := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoFullName, cleanPath)
+	if ref != "" {
+		url += "?ref=" + ref
+	}
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// A path pointing at a file (not a dir) returns a JSON object, not an
+		// array — and a missing path returns 404. Surface a clean error either way.
+		return nil, fmt.Errorf("github contents %s: status %d", cleanPath, resp.StatusCode)
+	}
+
+	var raw []GitHubContentEntry
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+
+	// Directories first, then files; each group alphabetical.
+	dirs := make([]GitHubContentEntry, 0, len(raw))
+	files := make([]GitHubContentEntry, 0, len(raw))
+	for _, e := range raw {
+		if e.Type == "dir" {
+			dirs = append(dirs, e)
+		} else {
+			files = append(files, e)
+		}
+	}
+	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name < dirs[j].Name })
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	return append(dirs, files...), nil
 }
 
 // PostIssueComment posts a new comment to an issue or PR. Returns the comment ID

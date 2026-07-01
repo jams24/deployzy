@@ -44,7 +44,7 @@ func main() {
 	databaseURL := flag.String("database-url", "", "PostgreSQL connection URL (optional, enables user auth)")
 	googleClientID := flag.String("google-client-id", "", "Google OAuth Client ID")
 	googleClientSecret := flag.String("google-client-secret", "", "Google OAuth Client Secret")
-	frontendURL := flag.String("frontend-url", "https://serverme.site", "Frontend URL for OAuth redirects")
+	frontendURL := flag.String("frontend-url", "https://deployzy.com", "Frontend URL for OAuth redirects")
 	telegramToken := flag.String("telegram-token", "", "Telegram bot token")
 	inventpayKey := flag.String("inventpay-key", "", "InventPay API key")
 	githubAppID := flag.String("github-app-id", "", "GitHub App ID")
@@ -68,7 +68,7 @@ func main() {
 		Str("control_addr", *controlAddr).
 		Str("http_addr", *httpAddr).
 		Str("api_addr", *apiAddr).
-		Msg("ServerMe server starting")
+		Msg("Deployzy server starting")
 
 	// Components
 	registry := tunnel.NewRegistry()
@@ -88,7 +88,7 @@ func main() {
 	serverHost := *domain
 
 	// JWT manager
-	jwtMgr := auth.NewJWTManager(*jwtSecret, 24*time.Hour)
+	jwtMgr := auth.NewJWTManager(*jwtSecret, 30*24*time.Hour)
 
 	// Database (optional)
 	var database *db.DB

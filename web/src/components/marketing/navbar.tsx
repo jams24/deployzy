@@ -10,7 +10,7 @@ const links = [
   { href: "/#features", label: "Features" },
   { href: "/#pricing", label: "Pricing" },
   { href: "/docs", label: "Docs" },
-  { href: "https://github.com/jams24/serverme", label: "GitHub" },
+  { href: "https://github.com/jams24/deployzy", label: "GitHub" },
 ];
 
 export function Navbar() {
@@ -26,8 +26,8 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
-          ServerMe
+          <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+          Deployzy
         </Link>
 
         <div className="hidden items-center gap-8 md:flex">

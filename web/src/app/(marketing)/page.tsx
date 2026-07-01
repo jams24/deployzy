@@ -98,15 +98,15 @@ export default function HomePage() {
                 </div>
                 <div className="p-4 sm:p-5 font-mono text-[12px] sm:text-[13px] leading-[1.85] overflow-x-auto">
                   <div className="text-zinc-600">$ git push origin main</div>
-                  <div className="mt-1 text-zinc-700">  <span className="text-amber-500">◷</span> ServerMe: webhook received</div>
+                  <div className="mt-1 text-zinc-700">  <span className="text-amber-500">◷</span> Deployzy: webhook received</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Building Docker image...</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Postgres attached <span className="text-zinc-700">·</span> DATABASE_URL injected</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Running migrations</div>
                   <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Health check /health 200 OK</div>
-                  <div className="mt-1 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.serverme.site</span></div>
-                  <div className="mt-3 text-zinc-700">$ serverme http 3000</div>
-                  <div className="mt-1 text-zinc-500">  Tunnel  <span className="text-blue-400 font-medium">https://dev.serverme.site</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
-                  <div className="mt-3 text-zinc-700">$ serverme servers add my-vps --host 5.9.x.x</div>
+                  <div className="mt-1 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.deployzy.com</span></div>
+                  <div className="mt-3 text-zinc-700">$ deployzy http 3000</div>
+                  <div className="mt-1 text-zinc-500">  Tunnel  <span className="text-blue-400 font-medium">https://dev.deployzy.com</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
+                  <div className="mt-3 text-zinc-700">$ deployzy servers add my-vps --host 5.9.x.x</div>
                   <div className="mt-1 text-zinc-500">  <span className="text-emerald-500">✓</span> Probed: 8 vCPU · 32 GB · Docker installed</div>
                   <div className="text-zinc-500">  Next deploy → <span className="text-violet-400 font-medium">my-vps</span> <span className="text-zinc-700">·</span> uncapped resources</div>
                 </div>
@@ -121,11 +121,11 @@ export default function HomePage() {
       <section className="border-b border-border/40">
         <div className="mx-auto max-w-6xl px-5 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-center gap-3 sm:gap-6 text-xs text-muted-foreground font-mono">
-            <span>npm i -g serverme-cli</span>
+            <span>npm i -g deployzy</span>
             <span className="hidden sm:block text-border/60">·</span>
-            <span>brew install jams24/serverme/serverme</span>
+            <span>brew install jams24/deployzy/deployzy</span>
             <span className="hidden sm:block text-border/60">·</span>
-            <span>curl -fsSL get.serverme.site | sh</span>
+            <span>curl -fsSL get.deployzy.com | sh</span>
           </div>
         </div>
       </section>
@@ -330,7 +330,7 @@ export default function HomePage() {
             <p className="mt-3 text-sm text-muted-foreground">Connect GitHub, pick a repo, get a live URL. No credit card.</p>
             <div className="mt-8 flex flex-col items-center gap-4">
               <Button className="h-10 px-6 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Create free account <ArrowRight className="h-3.5 w-3.5" /></Button>
-              <code className="text-xs text-muted-foreground font-mono">npm install -g serverme-cli</code>
+              <code className="text-xs text-muted-foreground font-mono">npm install -g deployzy</code>
             </div>
           </ScrollReveal>
         </div>
@@ -420,7 +420,7 @@ const extras = [
 const plans = [
   {
     name: "Free", price: "$0", period: null, popular: false,
-    desc: "Try ServerMe with a real side project.",
+    desc: "Try Deployzy with a real side project.",
     cta: "Get started",
     features: [
       "5 subdomains, 5 active tunnels",
@@ -463,9 +463,9 @@ const plans = [
   },
 ];
 
-const tsCode = `import { ServerMe } from '@serverme/sdk';
+const tsCode = `import { Deployzy } from 'deployzy-sdk';
 
-const sm = new ServerMe({ apiKey: 'sm_live_...' });
+const sm = new Deployzy({ apiKey: 'sm_live_...' });
 
 // Deploy a GitHub repo
 const project = await sm.projects.create({
@@ -480,9 +480,9 @@ for await (const line of sm.projects.logs(project.id)) {
   console.log(line.message);
 }`;
 
-const pyCode = `from serverme import ServerMe
+const pyCode = `from deployzy import Deployzy
 
-sm = ServerMe(api_key="sm_live_...")
+sm = Deployzy(api_key="sm_live_...")
 
 # Spin up a managed database
 db = sm.services.create(name="my-db", type="postgres")
@@ -527,7 +527,7 @@ function DeployCard() {
         </div>
         <div className="flex-1 mx-4">
           <div className="mx-auto max-w-xs h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-[10px] text-zinc-600 font-mono">
-            serverme.site/projects/my-saas
+            deployzy.com/projects/my-saas
           </div>
         </div>
       </div>
@@ -540,7 +540,7 @@ function DeployCard() {
             </div>
             <div>
               <div className="text-[13px] font-medium text-zinc-200">my-saas</div>
-              <div className="text-[10px] text-zinc-600 font-mono">my-saas.serverme.site</div>
+              <div className="text-[10px] text-zinc-600 font-mono">my-saas.deployzy.com</div>
             </div>
           </div>
           <span className="inline-flex items-center gap-1.5 text-[10px] text-emerald-500 font-medium">
@@ -573,7 +573,7 @@ function DeployCard() {
           <div className="flex items-center gap-2 text-[10px] text-blue-400">
             <GitPullRequest className="h-3 w-3" />
             <span>PR #42 preview:</span>
-            <span className="font-mono">my-saas-pr-42.serverme.site</span>
+            <span className="font-mono">my-saas-pr-42.deployzy.com</span>
           </div>
         </div>
       </div>
@@ -593,7 +593,7 @@ function DashboardPreview() {
         </div>
         <div className="flex-1 mx-4">
           <div className="mx-auto max-w-xs h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-[10px] text-zinc-600 font-mono">
-            serverme.site/projects
+            deployzy.com/projects
           </div>
         </div>
       </div>
@@ -603,7 +603,7 @@ function DashboardPreview() {
         <div className="hidden sm:flex flex-col w-48 border-r border-white/[0.04] p-3 gap-0.5 shrink-0">
           <div className="flex items-center gap-2 px-2.5 py-2 text-[11px] text-zinc-600 font-mono font-medium mb-2">
             <div className="h-5 w-5 rounded bg-white/5 flex items-center justify-center text-[9px]">S</div>
-            ServerMe
+            Deployzy
           </div>
           {[
             ["Overview", false],
@@ -635,9 +635,9 @@ function DashboardPreview() {
 
           <div className="space-y-2">
             {[
-              { name: "my-saas",       sub: "my-saas.serverme.site",       status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Next.js", delay: "0s" },
-              { name: "api-server",    sub: "api-server.serverme.site",    status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Node",    delay: "0.15s" },
-              { name: "analytics-etl", sub: "analytics-etl.serverme.site", status: "building", pingCls: "bg-amber-400",   dotCls: "bg-amber-500",   textCls: "text-amber-500",   framework: "Python",  delay: "0.3s" },
+              { name: "my-saas",       sub: "my-saas.deployzy.com",       status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Next.js", delay: "0s" },
+              { name: "api-server",    sub: "api-server.deployzy.com",    status: "running",  pingCls: "bg-emerald-400", dotCls: "bg-emerald-500", textCls: "text-emerald-500", framework: "Node",    delay: "0.15s" },
+              { name: "analytics-etl", sub: "analytics-etl.deployzy.com", status: "building", pingCls: "bg-amber-400",   dotCls: "bg-amber-500",   textCls: "text-amber-500",   framework: "Python",  delay: "0.3s" },
             ].map((p) => (
               <div key={p.name} className="flex items-center gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] p-3 animate-fade-in-up" style={{ animationDelay: p.delay }}>
                 <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/[0.04] shrink-0">

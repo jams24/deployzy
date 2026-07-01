@@ -128,7 +128,7 @@ func WebhookMiddleware(verifier *WebhookVerifier) func(http.Handler) http.Handle
 				return
 			}
 
-			r.Header.Set("X-ServerMe-Webhook-Verified", "true")
+			r.Header.Set("X-Deployzy-Webhook-Verified", "true")
 			next.ServeHTTP(w, r)
 		})
 	}

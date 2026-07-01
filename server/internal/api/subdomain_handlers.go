@@ -57,7 +57,7 @@ func (s *Server) handleAddSubdomain(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"subdomain": req.Subdomain,
-		"url":       "https://" + req.Subdomain + ".serverme.site",
+		"url":       "https://" + req.Subdomain + ".deployzy.com",
 	})
 }
 

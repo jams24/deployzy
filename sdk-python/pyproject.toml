@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "serverme"
-version = "1.0.0"
-description = "Python SDK for ServerMe tunneling platform"
+name = "deployzy"
+version = "1.1.0"
+description = "Python SDK for the Deployzy deploy & tunnel platform"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
-authors = [{name = "ServerMe"}]
-keywords = ["serverme", "tunnel", "ngrok", "localhost", "sdk"]
+authors = [{name = "Deployzy"}]
+keywords = ["deployzy", "tunnel", "ngrok", "localhost", "sdk"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -29,9 +29,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://serverme.dev"
-Repository = "https://github.com/jams24/serverme"
-Documentation = "https://docs.serverme.dev/sdks/python"
+Homepage = "https://deployzy.com"
+Repository = "https://github.com/jams24/deployzy"
+Documentation = "https://deployzy.com/docs/sdks/python"
 
 [tool.setuptools.packages.find]
-include = ["serverme*"]
+include = ["deployzy*"]

@@ -17,16 +17,16 @@ var (
 
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "serverme",
-		Short: "ServerMe — expose your local servers to the internet",
-		Long: `ServerMe is an open-source tunnel that exposes local servers to the internet.
+		Use:   "deployzy",
+		Short: "Deployzy — expose your local servers to the internet",
+		Long: `Deployzy is an open-source tunnel that exposes local servers to the internet.
 Similar to ngrok, but open source and self-hostable.
 
 Examples:
-  serverme http 8080              # HTTP tunnel to localhost:8080
-  serverme http 3000 --subdomain myapp  # Custom subdomain
-  serverme tcp 5432               # TCP tunnel
-  serverme authtoken <TOKEN>      # Save auth token`,
+  deployzy http 8080              # HTTP tunnel to localhost:8080
+  deployzy http 3000 --subdomain myapp  # Custom subdomain
+  deployzy tcp 5432               # TCP tunnel
+  deployzy authtoken <TOKEN>      # Save auth token`,
 		Version: proto.Version,
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
@@ -34,7 +34,7 @@ Examples:
 	}
 
 	// Global flags
-	root.PersistentFlags().StringVarP(&serverAddr, "server", "s", "serverme.site:8443", "ServerMe server address")
+	root.PersistentFlags().StringVarP(&serverAddr, "server", "s", "deployzy.com:8443", "Deployzy server address")
 	root.PersistentFlags().StringVar(&authToken, "authtoken", "", "Authentication token")
 	root.PersistentFlags().BoolVar(&tlsSkip, "tls-skip-verify", true, "Skip TLS certificate verification")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
@@ -49,6 +49,11 @@ Examples:
 	root.AddCommand(NewLoginEmailCmd())
 	root.AddCommand(NewAuthTokenCmd())
 	root.AddCommand(NewVersionCmd())
+	// Deploy / project management (REST API).
+	root.AddCommand(NewDeployCmd())
+	root.AddCommand(NewProjectsCmd())
+	root.AddCommand(NewLogsCmd())
+	root.AddCommand(NewEnvCmd())
 
 	return root
 }

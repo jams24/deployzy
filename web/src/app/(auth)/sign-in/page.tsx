@@ -35,8 +35,8 @@ export default function SignInPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
-          ServerMe
+          <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+          Deployzy
         </Link>
 
         <h1 className="text-2xl font-bold text-center">Welcome back</h1>

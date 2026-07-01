@@ -15,10 +15,10 @@ const footerLinks = {
     { label: "Self-Hosting", href: "/docs/self-hosting" },
   ],
   Company: [
-    { label: "GitHub", href: "https://github.com/jams24/serverme" },
+    { label: "GitHub", href: "https://github.com/jams24/deployzy" },
     { label: "Blog", href: "/blog" },
     { label: "Status", href: "/status" },
-    { label: "Contact", href: "mailto:hello@serverme.dev" },
+    { label: "Contact", href: "mailto:hello@deployzy.com" },
   ],
 };
 
@@ -32,8 +32,8 @@ export function Footer() {
               href="/"
               className="flex items-center gap-2 font-bold text-lg"
             >
-              <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
-              ServerMe
+              <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+              Deployzy
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">
               Deploy apps, tunnel localhost, manage databases — your entire backend, one platform.
@@ -61,7 +61,7 @@ export function Footer() {
 
         <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-border/40 pt-8 md:flex-row">
           <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} ServerMe. MIT License.
+            &copy; {new Date().getFullYear()} Deployzy. MIT License.
           </p>
           <p className="text-xs text-muted-foreground">
             Made with care for the developer community.

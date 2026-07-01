@@ -18,6 +18,7 @@ import { api, type ApiKey } from "@/lib/api";
 export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyScope, setNewKeyScope] = useState("full");
   const [newKey, setNewKey] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,7 @@ export default function ApiKeysPage() {
   async function createKey() {
     if (!newKeyName.trim()) return;
     try {
-      const data = await api.createApiKey(newKeyName);
+      const data = await api.createApiKey(newKeyName, newKeyScope);
       setNewKey(data.api_key);
       setNewKeyName("");
       load();
@@ -79,11 +80,24 @@ export default function ApiKeysPage() {
               onChange={(e) => setNewKeyName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && createKey()}
             />
+            <select
+              value={newKeyScope}
+              onChange={(e) => setNewKeyScope(e.target.value)}
+              className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+              title="Key scope"
+            >
+              <option value="full">Full access</option>
+              <option value="deploy">Deploy (no account/key mgmt)</option>
+              <option value="read">Read-only</option>
+            </select>
             <Button onClick={createKey} className="gap-2 shrink-0">
               <Plus className="h-4 w-4" />
               Create
             </Button>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            <strong>Full</strong> = everything · <strong>Deploy</strong> = create/deploy/manage projects (safe for CI) · <strong>Read-only</strong> = list/inspect only.
+          </p>
 
           {newKey && (
             <div className="mt-4 rounded-lg border border-green-500/30 bg-green-500/5 p-4">
@@ -126,6 +140,7 @@ export default function ApiKeysPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Key</TableHead>
+                  <TableHead>Scope</TableHead>
                   <TableHead>Last Used</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="w-12" />
@@ -137,6 +152,11 @@ export default function ApiKeysPage() {
                     <TableCell className="font-medium">{k.name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {k.prefix}...
+                    </TableCell>
+                    <TableCell>
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
+                        {k.scope || "full"}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {k.last_used_at

@@ -1,7 +1,7 @@
 {
-  "name": "@serverme/sdk",
-  "version": "1.0.0",
-  "description": "JavaScript/TypeScript SDK for ServerMe tunneling platform",
+  "name": "deployzy-sdk",
+  "version": "1.1.0",
+  "description": "JavaScript/TypeScript SDK for the Deployzy deploy & tunnel platform",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -22,17 +22,17 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "serverme",
+    "deployzy",
     "tunnel",
     "ngrok",
     "localhost",
     "sdk"
   ],
-  "author": "ServerMe",
+  "author": "Deployzy",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jams24/serverme"
+    "url": "https://github.com/jams24/deployzy"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

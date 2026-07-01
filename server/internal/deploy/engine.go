@@ -17,6 +17,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // Engine handles building and deploying projects as Docker containers.
@@ -150,9 +151,37 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	runner.Exec(ctx, "mkdir", "-p", buildDir)
 	defer runner.Exec(ctx, "rm", "-rf", buildDir)
 
-	// Clone repo if URL provided
+	// Deploy source flags (declared early — the clone step branches on upload).
+	imageSource := project.DeploySource == "image" && project.ImageRef != ""
+	uploadSource := project.DeploySource == "upload"
+
+	// Build context: clone a repo, untar an upload, or (image) leave it empty.
 	buildCtx := buildDir
-	if project.RepoURL != "" {
+	if uploadSource {
+		// Local-directory upload: the API host staged a tarball; untar it as the
+		// build context. Remote-worker uploads aren't wired yet (the tar lives on
+		// the API host, not the worker).
+		if runner.IsRemote() {
+			e.logMsg(ctx, project.ID, "Upload deploys aren't supported on custom/remote servers yet — use a platform server.", "error")
+			restoreOldState()
+			return fmt.Errorf("upload deploy on remote worker")
+		}
+		tarPath := fmt.Sprintf("/tmp/serverme-uploads/%s.tar.gz", project.ID)
+		if !fileExists(tarPath) {
+			e.logMsg(ctx, project.ID, "No uploaded build context found — upload your directory before deploying.", "error")
+			restoreOldState()
+			return fmt.Errorf("no upload found")
+		}
+		cloneDir := buildDir + "/app"
+		runner.Exec(ctx, "mkdir", "-p", cloneDir)
+		e.logMsg(ctx, project.ID, "Extracting uploaded build context...", "build")
+		if out, err := runner.Run(ctx, "tar", "xzf", tarPath, "-C", cloneDir); err != nil {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Extract failed: %s", trimLogs(string(out), 1000)), "error")
+			restoreOldState()
+			return fmt.Errorf("untar upload: %w", err)
+		}
+		buildCtx = cloneDir
+	} else if project.RepoURL != "" && !imageSource {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Cloning %s (branch: %s)...", maskToken(project.RepoURL), project.Branch), "build")
 
 		cloneDir := buildDir + "/app"
@@ -195,7 +224,37 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	// Apply root_dir (for monorepos: build from a subdirectory of the repo)
+	// Bandwidth check — warn if the user is approaching or over their monthly limit.
+	if project.UserID != "" {
+		if accountBytes, err := e.db.GetUserMonthlyBandwidthBytes(ctx, project.UserID); err == nil {
+			user, _ := e.db.GetUserByID(ctx, project.UserID)
+			if user != nil {
+				if limits, _ := e.db.GetPlanLimits(ctx, user.Plan); limits != nil && limits.MaxBandwidthGB > 0 && !db.Unlimited(limits.MaxBandwidthGB) {
+					accountGB := float64(accountBytes) / (1024 * 1024 * 1024)
+					limitGB := float64(limits.MaxBandwidthGB)
+					pct := (accountGB / limitGB) * 100
+					switch {
+					case pct >= 100:
+						e.logMsg(ctx, project.ID, fmt.Sprintf("⚠ Bandwidth limit reached: %.1f GB / %d GB used this month. Traffic may be blocked — upgrade your plan.", accountGB, limits.MaxBandwidthGB), "build")
+					case pct >= 80:
+						e.logMsg(ctx, project.ID, fmt.Sprintf("⚠ Bandwidth: %.1f GB / %d GB used this month (%.0f%%).", accountGB, limits.MaxBandwidthGB, pct), "build")
+					}
+				}
+			}
+		}
+	}
+
+	// repoRoot is the clone root before root_dir is applied. Multi-service builds
+	// build from here so every service directory is in the Docker build context.
+	repoRoot := buildCtx
+	multiService := len(project.Services) > 0
+	// imageSource (declared above) models a prebuilt registry image as a one-line
+	// `FROM <ref>` Dockerfile so the rest of the build→run→route pipeline is reused.
+
+	// Apply root_dir (for monorepos: build from a subdirectory of the repo).
+	// For multi-service the primary app's root_dir is handled inside the
+	// generated Dockerfile/entrypoint, so we keep buildCtx at the primary dir
+	// only for framework detection below.
 	if project.RootDir != "" {
 		trimmed := strings.Trim(project.RootDir, "/")
 		if trimmed != "" {
@@ -208,7 +267,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	var framework string
 	// ignore_dockerfile: pretend the repo's Dockerfile doesn't exist. Useful when
 	// a project's checked-in Dockerfile is stale or wrong and the user wants
-	// ServerMe's auto-generated one (with the configured node version, install
+	// Deployzy's auto-generated one (with the configured node version, install
 	// command, prisma auto-push, etc.) to take over.
 	ignoreRepoDockerfile := project.BuildMode == "ignore_dockerfile"
 
@@ -219,7 +278,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		effectiveDockerfile = project.DockerfilePath
 	}
 
-	if runner.IsRemote() {
+	if imageSource {
+		framework = "image"
+	} else if runner.IsRemote() {
 		// Remote: check files via SSH
 		out, _ := runner.RunShell(ctx, fmt.Sprintf("ls %s/%s %s/next.config.* %s/package.json %s/requirements.txt %s/go.mod %s/index.html 2>/dev/null", buildCtx, effectiveDockerfile, buildCtx, buildCtx, buildCtx, buildCtx, buildCtx))
 		files := string(out)
@@ -245,11 +306,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	} else {
 		if ignoreRepoDockerfile {
 			framework = e.detectFrameworkIgnoreDocker(buildCtx)
+		} else if effectiveDockerfile != "Dockerfile" && fileExists(buildCtx+"/"+effectiveDockerfile) {
+			// Custom dockerfile_path set and file exists — treat as docker regardless of other files
+			framework = "docker"
 		} else {
 			framework = e.detectFramework(buildCtx)
 		}
 	}
-	if framework == "node" && project.Framework != "" && project.Framework != "node" {
+	if !imageSource && framework == "node" && project.Framework != "" && project.Framework != "node" {
 		framework = project.Framework
 	}
 	e.logMsg(ctx, project.ID, fmt.Sprintf("Framework: %s", framework), "build")
@@ -257,58 +321,93 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, "Ignoring repo Dockerfile (build_mode=ignore_dockerfile)", "build")
 	}
 
-	// Generate Dockerfile if repo doesn't have one, OR if user asked us to ignore theirs.
-	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
-		exists := strings.TrimSpace(string(out)) == "yes"
-		if !exists || ignoreRepoDockerfile {
-			dockerfile := e.generateDockerfile(project, framework)
-			if dockerfile != "" {
-				runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
-				effectiveDockerfile = "Dockerfile"
-			}
-		}
-	} else {
-		if !fileExists(buildCtx+"/"+effectiveDockerfile) || ignoreRepoDockerfile {
-			dockerfile := e.generateDockerfile(project, framework)
-			if dockerfile != "" {
-				os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
-				effectiveDockerfile = "Dockerfile"
-			}
-		}
-	}
+	// Determine container port: user override > Dockerfile EXPOSE > default 3000.
+	// Set early because the multi-service path needs the primary port to build
+	// the generated Dockerfile + entrypoint.
+	containerPort := 3000
 
-	// Verify Dockerfile exists
-	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
-		if strings.TrimSpace(string(out)) != "yes" {
+	if imageSource {
+		// Prebuilt image: pull it, then model it as a one-line `FROM <ref>`
+		// Dockerfile so build→run→route below is unchanged. We bake the image's
+		// own EXPOSE into the Dockerfile so port detection picks it up.
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying prebuilt image: %s", project.ImageRef), "build")
+		if out, err := runner.Run(ctx, "docker", "pull", project.ImageRef); err != nil {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Image pull failed: %s", trimLogs(string(out), 1000)), "error")
+			restoreOldState()
+			return fmt.Errorf("docker pull: %w", err)
+		}
+		df := "FROM " + project.ImageRef + "\n"
+		if port := e.imageExposedPort(ctx, runner, project.ImageRef); port > 0 {
+			df += fmt.Sprintf("EXPOSE %d\n", port)
+			containerPort = port
+		}
+		e.writeBuildFile(ctx, runner, buildCtx, "Dockerfile", df)
+		effectiveDockerfile = "Dockerfile"
+	} else if multiService {
+		// Multi-service: always use our generated Dockerfile, built from the repo
+		// root so every service directory is reachable. The primary app keeps the
+		// project's port + root subdomain; each service runs alongside it.
+		if project.PortOverride > 0 {
+			containerPort = project.PortOverride
+		}
+		buildCtx = repoRoot
+		dockerfile, entrypoint := e.generateMultiServiceDockerfile(project, framework, containerPort)
+		e.writeBuildFile(ctx, runner, repoRoot, "serverme-entrypoint.sh", entrypoint)
+		e.writeBuildFile(ctx, runner, repoRoot, "Dockerfile", dockerfile)
+		effectiveDockerfile = "Dockerfile"
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Multi-service build: primary on port %d + %d service(s)", containerPort, len(project.Services)), "build")
+	} else {
+		// Generate Dockerfile if repo doesn't have one, OR if user asked us to ignore theirs.
+		if runner.IsRemote() {
+			out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
+			exists := strings.TrimSpace(string(out)) == "yes"
+			if !exists || ignoreRepoDockerfile {
+				dockerfile := e.generateDockerfile(project, framework)
+				if dockerfile != "" {
+					runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
+					effectiveDockerfile = "Dockerfile"
+				}
+			}
+		} else {
+			if !fileExists(buildCtx+"/"+effectiveDockerfile) || ignoreRepoDockerfile {
+				dockerfile := e.generateDockerfile(project, framework)
+				if dockerfile != "" {
+					os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
+					effectiveDockerfile = "Dockerfile"
+				}
+			}
+		}
+
+		// Verify Dockerfile exists
+		if runner.IsRemote() {
+			out, _ := runner.RunShell(ctx, fmt.Sprintf("test -f %s/%s && echo yes || echo no", buildCtx, effectiveDockerfile))
+			if strings.TrimSpace(string(out)) != "yes" {
+				e.logMsg(ctx, project.ID, fmt.Sprintf("No %s found in repository.", effectiveDockerfile), "error")
+				restoreOldState()
+				return fmt.Errorf("no Dockerfile")
+			}
+		} else if !fileExists(buildCtx + "/" + effectiveDockerfile) {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("No %s found in repository.", effectiveDockerfile), "error")
 			restoreOldState()
 			return fmt.Errorf("no Dockerfile")
 		}
-	} else if !fileExists(buildCtx + "/" + effectiveDockerfile) {
-		e.logMsg(ctx, project.ID, fmt.Sprintf("No %s found in repository.", effectiveDockerfile), "error")
-		restoreOldState()
-		return fmt.Errorf("no Dockerfile")
-	}
 
-	// Determine container port: user override > Dockerfile EXPOSE > default 3000
-	containerPort := 3000
-	if runner.IsRemote() {
-		out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/%s | head -1 | grep -oE '[0-9]+'", buildCtx, effectiveDockerfile))
-		if p := strings.TrimSpace(string(out)); p != "" {
-			if pp, err := strconv.Atoi(p); err == nil {
-				containerPort = pp
+		if runner.IsRemote() {
+			out, _ := runner.RunShell(ctx, fmt.Sprintf("grep -i '^EXPOSE' %s/%s | head -1 | grep -oE '[0-9]+'", buildCtx, effectiveDockerfile))
+			if p := strings.TrimSpace(string(out)); p != "" {
+				if pp, err := strconv.Atoi(p); err == nil {
+					containerPort = pp
+				}
 			}
+		} else {
+			containerPort = detectExposedPort(buildCtx + "/" + effectiveDockerfile)
 		}
-	} else {
-		containerPort = detectExposedPort(buildCtx + "/" + effectiveDockerfile)
 	}
 	if project.PortOverride > 0 {
 		containerPort = project.PortOverride
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Using custom port: %d", containerPort), "build")
-	} else {
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Detected container port: %d", containerPort), "build")
+	} else if !multiService {
+		e.logMsg(ctx, project.ID, fmt.Sprintf("%s container port: %d", map[bool]string{true: "Image", false: "Detected"}[imageSource], containerPort), "build")
 	}
 
 	// Build Docker image with a 20-minute cap so a hung build can't wedge the project in "building" forever.
@@ -373,14 +472,39 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Map primary port
 	args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
 
-	// Map additional ports
-	for _, p := range allPorts {
-		if p != containerPort {
-			extraHost := 10100 + rand.Intn(900)
-			for isPortInUse(extraHost) || extraHost == hostPort {
-				extraHost = 10100 + rand.Intn(900)
+	// usedHostPorts tracks ports we've already chosen in THIS deploy so two
+	// services can't collide on the same host port (isPortInUse can't see a port
+	// we picked microseconds ago but haven't bound yet).
+	usedHostPorts := map[int]bool{hostPort: true}
+	pickHostPort := func() int {
+		p := 10100 + rand.Intn(900)
+		for isPortInUse(p) || usedHostPorts[p] {
+			p = 10100 + rand.Intn(900)
+		}
+		usedHostPorts[p] = true
+		return p
+	}
+
+	// serviceRoutes maps each non-primary service to the host port it was
+	// published on, so it can be persisted for sibling-subdomain routing.
+	var serviceRoutes []db.ServiceRoute
+	if multiService {
+		for _, svc := range project.Services {
+			sh := pickHostPort()
+			args = append(args, "-p", fmt.Sprintf("%d:%d", sh, svc.Port))
+			serviceRoutes = append(serviceRoutes, db.ServiceRoute{
+				Subdomain:   project.Subdomain + "-" + svc.Name,
+				ServiceName: svc.Name,
+				HostPort:    sh,
+			})
+		}
+	} else {
+		// Map additional ports
+		for _, p := range allPorts {
+			if p != containerPort {
+				extraHost := pickHostPort()
+				args = append(args, "-p", fmt.Sprintf("%d:%d", extraHost, p))
 			}
-			args = append(args, "-p", fmt.Sprintf("%d:%d", extraHost, p))
 		}
 	}
 
@@ -482,6 +606,16 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
 
+		// Publish sibling-subdomain routes for any extra services. Replace the
+		// whole set (ports are freshly allocated each deploy). On a single-service
+		// project this clears stale routes from a previous multi-service config.
+		if err := e.db.ReplaceServiceRoutes(ctx, project.ID, serviceRoutes); err != nil {
+			e.log.Error().Err(err).Str("project", project.ID).Msg("failed to publish service routes")
+		}
+		for _, rt := range serviceRoutes {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
+		}
+
 		// Traffic has moved — now safe to stop the old container.
 		runner.Exec(ctx, "docker", "stop", containerName)
 		runner.Exec(ctx, "docker", "rm", "-f", containerName)
@@ -492,6 +626,8 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		// Dangling images (old build layers) are freed here. Each successful
 		// deploy leaves the previous image untagged; prune reclaims that space.
 		runner.Exec(ctx, "docker", "image", "prune", "-f")
+
+		go e.fireWebhooks(project, "deploy.succeeded", "running")
 	} else {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
@@ -501,6 +637,8 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 
 		restoreOldState()
+
+		go e.fireWebhooks(project, "deploy.failed", "failed")
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -520,6 +658,8 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	runner.Exec(ctx, "docker", "stop", containerName)
 	runner.Exec(ctx, "docker", "rm", "-f", containerName)
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
+	// Drop sibling-subdomain routes — the container (and all its services) is gone.
+	e.db.DeleteServiceRoutes(ctx, project.ID)
 	e.logMsg(ctx, project.ID, "Project stopped", "deploy")
 	return nil
 }
@@ -528,7 +668,12 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	e.Stop(ctx, project)
 	runner := e.getRunner(ctx, project)
-	runner.Exec(ctx, "docker", "rmi", fmt.Sprintf("sm-project-%s", project.ID[:8]))
+	// Force-remove the named image; ignore error (image may not exist)
+	runner.Exec(ctx, "docker", "rmi", "-f", fmt.Sprintf("sm-project-%s", project.ID[:8]))
+	// Prune dangling images left by failed builds
+	runner.RunShell(ctx, "docker image prune -f")
+	// Remove any leftover exited containers from failed builds
+	runner.RunShell(ctx, "docker container prune -f")
 	return nil
 }
 
@@ -577,6 +722,30 @@ func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
 		rows.Scan(&port, &id)
 		return port, id, port > 0
 	}
+	rows.Close()
+
+	// Fall back to multi-service sibling subdomains (<projectsub>-<svc>). These
+	// live in service_routes and point at the host port the service was last
+	// published on; only resolvable while the parent project is up.
+	srRows, err := e.db.Pool.Query(ctx,
+		`SELECT sr.host_port, sr.project_id
+		   FROM service_routes sr
+		   JOIN projects p ON p.id = sr.project_id
+		  WHERE sr.subdomain = $1
+		    AND p.status IN ('running', 'building')
+		    AND sr.host_port > 0`,
+		subdomain,
+	)
+	if err != nil {
+		return 0, "", false
+	}
+	defer srRows.Close()
+	if srRows.Next() {
+		var port int
+		var id string
+		srRows.Scan(&port, &id)
+		return port, id, port > 0
+	}
 	return 0, "", false
 }
 
@@ -587,6 +756,31 @@ func (e *Engine) registerRoute(subdomain string, port int) {
 func (e *Engine) logMsg(ctx context.Context, projectID, message, level string) {
 	e.db.AddDeployLog(ctx, projectID, message, level)
 	e.log.Info().Str("project", projectID).Str("level", level).Msg(message)
+}
+
+// fireWebhooks delivers a deploy event to all of the project owner's enabled
+// webhooks. Best-effort; call in a goroutine so delivery never blocks a deploy.
+func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
+	ctx := context.Background()
+	hooks, err := e.db.GetEnabledWebhooks(ctx, project.UserID)
+	if err != nil || len(hooks) == 0 {
+		return
+	}
+	payload := map[string]interface{}{
+		"event":     event,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"project": map[string]interface{}{
+			"id":        project.ID,
+			"name":      project.Name,
+			"subdomain": project.Subdomain,
+			"url":       fmt.Sprintf("https://%s.%s", project.Subdomain, e.Domain),
+			"status":    status,
+		},
+	}
+	for _, wh := range hooks {
+		code := notify.DeliverWebhook(wh.URL, wh.Secret, payload)
+		e.db.RecordWebhookDelivery(ctx, wh.ID, code)
+	}
 }
 
 // --- Helpers ---
@@ -1027,4 +1221,212 @@ func formatCmd(cmd string) string {
 		quoted[i] = fmt.Sprintf(`"%s"`, p)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// ── Multi-service builds ──
+//
+// When a project defines extra services, we ignore any repo Dockerfile and
+// generate one image that builds the primary app plus every service, then run
+// them all as background processes inside a single container via a generated
+// entrypoint. The primary keeps the project's port + root subdomain; services
+// each bind their own port and get a flat sibling subdomain.
+
+// msProc is one process in a multi-service container.
+type msProc struct {
+	name      string
+	dir       string // relative to repo root; "" means root
+	port      int
+	install   string
+	build     string
+	start     string
+	framework string
+	env       map[string]string
+}
+
+var safeDirRe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+var envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// safeDir normalises a service/primary directory for shell interpolation.
+// Returns "." (repo root) for empty or anything containing unexpected chars —
+// defensive even though the API layer already validates service directories.
+func safeDir(dir string) string {
+	dir = strings.Trim(strings.TrimSpace(dir), "/")
+	dir = strings.TrimPrefix(dir, "./")
+	if dir == "" || strings.Contains(dir, "..") || !safeDirRe.MatchString(dir) {
+		return "."
+	}
+	return dir
+}
+
+// shellSingleQuote wraps a value in single quotes for safe shell embedding,
+// escaping any embedded single quotes.
+func shellSingleQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+func msInstall(p msProc) string {
+	if p.install != "" {
+		return p.install
+	}
+	switch p.framework {
+	case "nextjs":
+		return "npm ci || npm install"
+	case "node":
+		return "npm ci --ignore-scripts || npm install --ignore-scripts"
+	case "python":
+		return "pip install --no-cache-dir -r requirements.txt 2>/dev/null || pip install --no-cache-dir . 2>/dev/null || true"
+	default:
+		return "npm install"
+	}
+}
+
+func msBuild(p msProc) string {
+	if p.build != "" {
+		return p.build
+	}
+	if p.framework == "nextjs" {
+		return "npm run build"
+	}
+	return "" // node/python/static: build step optional
+}
+
+func msStart(p msProc) string {
+	if p.start != "" {
+		return p.start
+	}
+	if p.framework == "python" {
+		return "python app.py"
+	}
+	return "npm start"
+}
+
+// multiServiceProcs returns the primary app followed by each configured service.
+func (e *Engine) multiServiceProcs(project *db.Project, primaryFramework string, primaryPort int) []msProc {
+	procs := []msProc{{
+		name:      "app",
+		dir:       project.RootDir,
+		port:      primaryPort,
+		install:   project.InstallCmd,
+		build:     project.BuildCmd,
+		start:     project.StartCmd,
+		framework: primaryFramework,
+	}}
+	for _, svc := range project.Services {
+		procs = append(procs, msProc{
+			name:      svc.Name,
+			dir:       svc.RootDir,
+			port:      svc.Port,
+			install:   svc.InstallCmd,
+			build:     svc.BuildCmd,
+			start:     svc.StartCmd,
+			framework: svc.Framework,
+			env:       svc.EnvOverrides,
+		})
+	}
+	return procs
+}
+
+// generateMultiServiceDockerfile returns the Dockerfile + entrypoint script for
+// a multi-service build. The Dockerfile installs/builds each service's directory
+// from the repo root; the entrypoint launches them all.
+func (e *Engine) generateMultiServiceDockerfile(project *db.Project, primaryFramework string, primaryPort int) (string, string) {
+	nodeVer := "20"
+	if project.NodeVersion != "" {
+		nodeVer = project.NodeVersion
+	}
+	procs := e.multiServiceProcs(project, primaryFramework, primaryPort)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "FROM node:%s-alpine\n", nodeVer)
+	b.WriteString("WORKDIR /app\n")
+	// Build toolchain + python runtime so node AND python services build/run.
+	b.WriteString("RUN apk add --no-cache python3 py3-pip make g++ 2>/dev/null || true\n")
+	b.WriteString("COPY . .\n")
+	b.WriteString("ENV NODE_OPTIONS=\"--max-old-space-size=1536\"\n")
+
+	for _, p := range procs {
+		dir := safeDir(p.dir)
+		fmt.Fprintf(&b, "RUN cd /app/%s && %s\n", dir, msInstall(p))
+		if build := msBuild(p); build != "" {
+			fmt.Fprintf(&b, "RUN cd /app/%s && %s\n", dir, build)
+		}
+	}
+	for _, p := range procs {
+		fmt.Fprintf(&b, "EXPOSE %d\n", p.port)
+	}
+	// The entrypoint script is part of the build context (written next to the
+	// Dockerfile), so COPY . . already placed it at /app/serverme-entrypoint.sh.
+	b.WriteString(`CMD ["sh", "/app/serverme-entrypoint.sh"]` + "\n")
+
+	return b.String(), e.generateServiceEntrypoint(procs)
+}
+
+// generateServiceEntrypoint builds the launcher script: each process runs in a
+// background subshell with its own PORT + env overrides; the container exits
+// (and Docker restarts it) the moment any process dies.
+func (e *Engine) generateServiceEntrypoint(procs []msProc) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("# Generated by Deployzy — runs each service of a multi-service project.\n")
+	b.WriteString("# Exits non-zero if any process dies so Docker restarts the container.\n")
+	var pidVars []string
+	for i, p := range procs {
+		dir := safeDir(p.dir)
+		pidVar := fmt.Sprintf("PID%d", i)
+		pidVars = append(pidVars, pidVar)
+
+		var env strings.Builder
+		fmt.Fprintf(&env, "export PORT=%d", p.port)
+		// Stable iteration isn't required for correctness, but keeps output tidy.
+		for k, v := range p.env {
+			if !envKeyRe.MatchString(k) {
+				continue
+			}
+			fmt.Fprintf(&env, " && export %s=%s", k, shellSingleQuote(v))
+		}
+
+		fmt.Fprintf(&b, "echo '[serverme] starting %s on port %d'\n", p.name, p.port)
+		fmt.Fprintf(&b, "( cd /app/%s && %s && exec %s ) &\n", dir, env.String(), msStart(p))
+		fmt.Fprintf(&b, "%s=$!\n", pidVar)
+	}
+	b.WriteString("while true; do\n")
+	for i, pidVar := range pidVars {
+		fmt.Fprintf(&b, "  kill -0 $%s 2>/dev/null || { echo '[serverme] process %s exited — stopping container'; exit 1; }\n", pidVar, procs[i].name)
+	}
+	b.WriteString("  sleep 5\n")
+	b.WriteString("done\n")
+	return b.String()
+}
+
+// imageExposedPort returns the first EXPOSEd port of a pulled image (0 if none),
+// via `docker inspect`. Used so an image-source deploy routes to the right port
+// without the user having to set one manually.
+func (e *Engine) imageExposedPort(ctx context.Context, runner *Runner, ref string) int {
+	out, err := runner.Run(ctx, "docker", "inspect", "--format",
+		`{{range $p, $_ := .Config.ExposedPorts}}{{$p}} {{end}}`, ref)
+	if err != nil {
+		return 0
+	}
+	// Output looks like "80/tcp " or "3000/tcp 9229/tcp ". Take the first number.
+	for _, field := range strings.Fields(string(out)) {
+		numPart := field
+		if i := strings.IndexByte(numPart, '/'); i >= 0 {
+			numPart = numPart[:i]
+		}
+		if p, err := strconv.Atoi(numPart); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 0
+}
+
+// writeBuildFile writes a file into the build context, working for both local
+// (filesystem) and remote (SSH heredoc) runners. The quoted heredoc delimiter
+// prevents the remote shell from expanding $VARs in the content.
+func (e *Engine) writeBuildFile(ctx context.Context, runner *Runner, dir, name, content string) {
+	if runner.IsRemote() {
+		runner.RunShell(ctx, fmt.Sprintf("cat > %s/%s << 'SMEOF'\n%s\nSMEOF", dir, name, content))
+	} else {
+		os.WriteFile(dir+"/"+name, []byte(content), 0644)
+	}
 }

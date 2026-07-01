@@ -111,7 +111,7 @@ main() {
     err "Download failed: $DOWNLOAD_URL"
     err ""
     err "The release may not exist yet. Try building from source:"
-    err "  go install github.com/jams24/serverme/cli/cmd/serverme@latest"
+    err "  go install github.com/jams24/deployzy/cli/cmd/deployzy@latest"
     rm -rf "$TMPDIR"
     exit 1
   fi
