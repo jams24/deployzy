@@ -2,8 +2,9 @@ package proto
 
 import "encoding/json"
 
-// Protocol version
-const Version = "1.0.15"
+// Version is overridden at build time via -ldflags "-X .../proto.Version=x.y.z"
+// (goreleaser injects the release tag). Defaults to the current dev version.
+var Version = "1.1.3"
 
 // Message type constants
 const (
