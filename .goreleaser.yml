@@ -23,6 +23,7 @@ builds:
       - arm64
     ldflags:
       - -s -w
+      - -X github.com/serverme/serverme/proto.Version={{ .Version }}
 
   - id: deployzy
     main: ./cmd/deployzy
@@ -39,6 +40,7 @@ builds:
       - arm64
     ldflags:
       - -s -w
+      - -X github.com/serverme/serverme/proto.Version={{ .Version }}
 
 archives:
   - id: server
@@ -58,6 +60,26 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+
+# Auto-update the Homebrew tap formula on each release (CLI only).
+# Needs a HOMEBREW_TAP_TOKEN secret with write access to jams24/homebrew-deployzy.
+brews:
+  - name: deployzy
+    ids:
+      - cli
+    repository:
+      owner: jams24
+      name: homebrew-deployzy
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://deployzy.com"
+    description: "Open-source, free platform to deploy apps, expose localhost (tunnels) & run databases"
+    license: "MIT"
+    install: |
+      bin.install "deployzy"
+    test: |
+      system "#{bin}/deployzy", "version"
 
 checksum:
   name_template: "checksums.txt"
