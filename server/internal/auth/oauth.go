@@ -73,7 +73,7 @@ func (g *OAuthGate) Middleware() func(http.Handler) http.Handler {
 			cookie, err := r.Cookie("__sm_session")
 			if err == nil {
 				if email, ok := g.sessions.Load(cookie.Value); ok {
-					r.Header.Set("X-ServerMe-User", email.(string))
+					r.Header.Set("X-Deployzy-User", email.(string))
 					next.ServeHTTP(w, r)
 					return
 				}

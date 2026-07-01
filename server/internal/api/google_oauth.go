@@ -101,7 +101,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 			redirectWithError(w, r, s.google.FrontendURL, "Failed to create account")
 			return
 		}
-		s.db.GenerateAPIKey(r.Context(), user.ID, "default")
+		s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 		s.log.Info().Str("email", userInfo.Email).Msg("new user created via Google OAuth")
 	}
 

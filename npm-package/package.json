@@ -1,9 +1,9 @@
 {
-  "name": "serverme-cli",
-  "version": "1.0.15",
-  "description": "CLI for ServerMe — open-source tunnel to expose localhost to the internet",
+  "name": "deployzy",
+  "version": "1.1.1",
+  "description": "CLI for Deployzy — open-source tunnel to expose localhost to the internet",
   "bin": {
-    "serverme": "bin/cli.js"
+    "deployzy": "bin/cli.js"
   },
   "files": [
     "bin/"
@@ -12,7 +12,7 @@
     "postinstall": "node bin/install.js"
   },
   "keywords": [
-    "serverme",
+    "deployzy",
     "tunnel",
     "ngrok",
     "localhost",
@@ -20,13 +20,13 @@
     "expose",
     "webhook"
   ],
-  "author": "ServerMe",
+  "author": "Deployzy",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jams24/serverme"
+    "url": "https://github.com/jams24/deployzy"
   },
-  "homepage": "https://serverme.site",
+  "homepage": "https://deployzy.com",
   "engines": {
     "node": ">=16"
   },

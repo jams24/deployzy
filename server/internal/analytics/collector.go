@@ -54,6 +54,12 @@ type Event struct {
 	IsBot       bool
 }
 
+// bwEvent accumulates egress bytes for a project.
+type bwEvent struct {
+	projectID string
+	bytes     int64
+}
+
 // Collector buffers events in a channel and flushes them to Postgres in batches.
 // A bounded channel ensures a flood of traffic can't swamp memory — excess
 // events get dropped (logged at debug).
@@ -61,6 +67,7 @@ type Collector struct {
 	pool *pgxpool.Pool
 	log  zerolog.Logger
 	ch   chan Event
+	bwCh chan bwEvent
 
 	saltMu    sync.RWMutex
 	dailySalt []byte
@@ -75,6 +82,7 @@ func New(pool *pgxpool.Pool, log zerolog.Logger) *Collector {
 		pool:       pool,
 		log:        log.With().Str("component", "analytics").Logger(),
 		ch:         make(chan Event, 4096),
+		bwCh:       make(chan bwEvent, 8192),
 		batchSize:  500,
 		flushEvery: 5 * time.Second,
 	}
@@ -82,9 +90,58 @@ func New(pool *pgxpool.Pool, log zerolog.Logger) *Collector {
 	return c
 }
 
+// TrackBandwidth enqueues egress bytes for a project. Non-blocking — drops if full.
+func (c *Collector) TrackBandwidth(projectID string, bytes int64) {
+	if c == nil || bytes <= 0 || projectID == "" {
+		return
+	}
+	select {
+	case c.bwCh <- bwEvent{projectID: projectID, bytes: bytes}:
+	default:
+	}
+}
+
+// runBandwidthFlusher drains bwCh, accumulates bytes per project in memory,
+// and upserts to bandwidth_usage every 30 seconds.
+func (c *Collector) runBandwidthFlusher(ctx context.Context) {
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+	acc := make(map[string]int64)
+
+	flush := func() {
+		if len(acc) == 0 {
+			return
+		}
+		for pid, n := range acc {
+			c.pool.Exec(ctx,
+				`INSERT INTO bandwidth_usage (project_id, month, bytes)
+				 VALUES ($1, date_trunc('month', now())::date, $2)
+				 ON CONFLICT (project_id, month) DO UPDATE SET bytes = bandwidth_usage.bytes + EXCLUDED.bytes`,
+				pid, n,
+			)
+		}
+		for k := range acc {
+			delete(acc, k)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			flush()
+			return
+		case <-tick.C:
+			flush()
+		case ev := <-c.bwCh:
+			acc[ev.projectID] += ev.bytes
+		}
+	}
+}
+
 // Start runs the flush loop. Call as a goroutine.
 func (c *Collector) Start(ctx context.Context) {
 	c.log.Info().Msg("analytics collector started")
+	go c.runBandwidthFlusher(ctx)
 	flushT := time.NewTicker(c.flushEvery)
 	defer flushT.Stop()
 	// Rotate the visitor-salt at next midnight and every 24h after.

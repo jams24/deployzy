@@ -189,6 +189,10 @@ func (d *DB) AdminGetStats(ctx context.Context) (*AdminStats, error) {
 func (d *DB) AdminUpdateUser(ctx context.Context, userID string, plan *string, isAdmin *bool) error {
 	if plan != nil {
 		d.Pool.Exec(ctx, `UPDATE users SET plan = $2, updated_at = now() WHERE id = $1`, userID, *plan)
+		// If this set them to a paid plan, credit their referrer.
+		if isPaidPlan(*plan) {
+			d.MaybeGrantReferrerReward(ctx, userID)
+		}
 	}
 	if isAdmin != nil {
 		d.Pool.Exec(ctx, `UPDATE users SET is_admin = $2 WHERE id = $1`, userID, *isAdmin)

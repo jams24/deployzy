@@ -44,14 +44,14 @@ class ApiClient {
   }
 
   // Auth
-  async register(email: string, name: string, password: string) {
+  async register(email: string, name: string, password: string, ref?: string) {
     const data = await this.request<{
       user: User;
       token: string;
       api_key: string;
     }>("/api/v1/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, name, password }),
+      body: JSON.stringify({ email, name, password, ref: ref || undefined }),
     });
     this.setToken(data.token);
     return data;
@@ -83,15 +83,37 @@ class ApiClient {
     return this.request<ApiKey[]>("/api/v1/api-keys");
   }
 
-  createApiKey(name: string) {
+  createApiKey(name: string, scope: string = "full") {
     return this.request<{ api_key: string; info: ApiKey }>("/api/v1/api-keys", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, scope }),
     });
   }
 
   deleteApiKey(id: string) {
     return this.request("/api/v1/api-keys/" + id, { method: "DELETE" });
+  }
+
+  // Referrals
+  getReferrals() {
+    return this.request<ReferralStats>("/api/v1/referrals");
+  }
+
+  // Webhooks
+  listWebhooks() {
+    return this.request<Webhook[]>("/api/v1/webhooks");
+  }
+  createWebhook(url: string) {
+    return this.request<Webhook>("/api/v1/webhooks", { method: "POST", body: JSON.stringify({ url }) });
+  }
+  updateWebhook(id: string, enabled: boolean) {
+    return this.request("/api/v1/webhooks/" + id, { method: "PUT", body: JSON.stringify({ enabled }) });
+  }
+  deleteWebhook(id: string) {
+    return this.request("/api/v1/webhooks/" + id, { method: "DELETE" });
+  }
+  testWebhook(id: string) {
+    return this.request<{ delivered: boolean; status: number }>("/api/v1/webhooks/" + id + "/test", { method: "POST" });
   }
 
   // Domains
@@ -191,7 +213,36 @@ export interface ApiKey {
   user_id: string;
   name: string;
   prefix: string;
+  scope: string; // "read" | "deploy" | "full"
   last_used_at: string | null;
+  created_at: string;
+}
+
+export interface ReferredUser {
+  name: string;
+  email: string;
+  plan: string;
+  paid: boolean;
+  joined_at: string;
+}
+export interface ReferralStats {
+  code: string;
+  link: string;
+  total: number;
+  paid: number;
+  pro_months: number;
+  pro_until: string | null;
+  milestone: number;
+  people: ReferredUser[];
+}
+
+export interface Webhook {
+  id: string;
+  url: string;
+  secret: string;
+  enabled: boolean;
+  last_status: number | null;
+  last_delivery_at: string | null;
   created_at: string;
 }
 

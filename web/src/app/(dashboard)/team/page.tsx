@@ -341,7 +341,7 @@ export default function TeamPage() {
                     <p className="text-xs font-medium text-muted-foreground mb-2">Pending Invitations</p>
                     <div className="space-y-2">
                       {selectedTeam.invitations.map((inv) => {
-                        const url = `https://serverme.site/invite/${inv.token}`;
+                        const url = `https://deployzy.com/invite/${inv.token}`;
                         return (
                           <div key={inv.id} className="rounded-lg border border-border/50 p-3">
                             <div className="flex items-center justify-between">

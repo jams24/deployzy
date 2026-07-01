@@ -34,7 +34,7 @@ serverme start
 brew install serverme/tap/serverme
 
 # Go
-go install github.com/jams24/serverme/cli/cmd/serverme@latest
+go install github.com/jams24/deployzy/cli/cmd/deployzy@latest
 
 # Shell script
 curl -fsSL https://get.serverme.site | sh
@@ -43,7 +43,7 @@ curl -fsSL https://get.serverme.site | sh
 ## Links
 
 - Website: https://serverme.site
-- GitHub: https://github.com/jams24/serverme
+- GitHub: https://github.com/jams24/deployzy
 - Docs: https://serverme.site/docs
 
 ## License

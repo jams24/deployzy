@@ -58,6 +58,10 @@ func (d *DB) ActivateSubscription(ctx context.Context, paymentID string) error {
 		`UPDATE users SET plan = 'premium', updated_at = now() WHERE id = $1`,
 		userID,
 	)
+	if err == nil {
+		// This user just became paid — credit whoever referred them.
+		d.MaybeGrantReferrerReward(ctx, userID)
+	}
 	return err
 }
 

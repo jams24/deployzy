@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
@@ -25,9 +27,38 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		Branch         string `json:"branch"`
 		GitHubRepo     string `json:"github_repo"`
 		WorkerServerID string `json:"worker_server_id"`
+		// Deploy source: "git" (default), "image" (prebuilt registry image), or
+		// "upload" (tarball pushed via /upload before deploy).
+		DeploySource   string `json:"deploy_source"`
+		Image          string `json:"image"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Subdomain == "" {
 		writeError(w, http.StatusBadRequest, "name and subdomain required")
+		return
+	}
+
+	// Resolve + validate the deploy source. An "image" ref is interpolated into
+	// `docker pull`/`docker run`, so reject shell metacharacters and whitespace.
+	if req.DeploySource == "" {
+		if req.Image != "" {
+			req.DeploySource = "image"
+		} else {
+			req.DeploySource = "git"
+		}
+	}
+	switch req.DeploySource {
+	case "git", "upload":
+	case "image":
+		if req.Image == "" {
+			writeError(w, http.StatusBadRequest, "image is required when deploy_source is 'image'")
+			return
+		}
+		if !isSafeImageRef(req.Image) {
+			writeError(w, http.StatusBadRequest, "image must be a valid registry reference (e.g. nginx:alpine or ghcr.io/you/app:1.2)")
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "deploy_source must be 'git', 'image', or 'upload'")
 		return
 	}
 
@@ -120,6 +151,17 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		project.WorkerServerID = req.WorkerServerID
 	}
 
+	// Record the deploy source (image/upload/git). Default 'git' is already the
+	// column default, so only persist when it differs or carries an image ref.
+	if req.DeploySource != "git" || req.Image != "" {
+		if err := s.db.SetProjectSource(r.Context(), project.ID, req.DeploySource, req.Image); err != nil {
+			s.log.Error().Err(err).Str("project", project.ID).Msg("set deploy source failed")
+		} else {
+			project.DeploySource = req.DeploySource
+			project.ImageRef = req.Image
+		}
+	}
+
 	// Auto-reserve the subdomain so no tunnel can use it
 	s.db.ReserveSubdomainAuto(r.Context(), u.ID, req.Subdomain)
 
@@ -207,6 +249,65 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdateBuildConfig updates the advanced build settings for a project.
+// serviceNameRe restricts service names to DNS-safe labels — they're used both
+// as a sibling subdomain (<projectsub>-<name>.domain) and interpolated into the
+// generated supervisor script, so anything outside [a-z0-9-] is rejected.
+var serviceNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,29}$`)
+
+const maxServices = 5
+
+// validateServices normalises and validates the multi-service config. Returns
+// the cleaned slice (never nil) and an error message ("" = ok). It enforces:
+// DNS-safe unique names, unique in-range ports, and path-safe directories —
+// the directory and commands are interpolated into a shell build script, so
+// directories must be free of traversal / shell metacharacters.
+func validateServices(in []db.ProjectService) ([]db.ProjectService, string) {
+	out := make([]db.ProjectService, 0, len(in))
+	if len(in) == 0 {
+		return out, ""
+	}
+	if len(in) > maxServices {
+		return nil, fmt.Sprintf("a project can have at most %d services", maxServices)
+	}
+	seenName := map[string]bool{}
+	seenPort := map[int]bool{}
+	for _, svc := range in {
+		name := strings.ToLower(strings.TrimSpace(svc.Name))
+		if !serviceNameRe.MatchString(name) {
+			return nil, "service name must be lowercase letters, numbers, and hyphens (e.g. api)"
+		}
+		if seenName[name] {
+			return nil, "service names must be unique"
+		}
+		seenName[name] = true
+
+		if svc.Port < 1 || svc.Port > 65535 {
+			return nil, "service port must be 1-65535"
+		}
+		if seenPort[svc.Port] {
+			return nil, "service ports must be unique"
+		}
+		seenPort[svc.Port] = true
+
+		dir := strings.TrimSpace(svc.RootDir)
+		if strings.Contains(dir, "..") || strings.HasPrefix(dir, "/") || strings.ContainsAny(dir, ";|&`$()") {
+			return nil, "service base directory must be a relative path inside the repo"
+		}
+
+		out = append(out, db.ProjectService{
+			Name:         name,
+			RootDir:      strings.Trim(dir, "/"),
+			Port:         svc.Port,
+			InstallCmd:   strings.TrimSpace(svc.InstallCmd),
+			BuildCmd:     strings.TrimSpace(svc.BuildCmd),
+			StartCmd:     strings.TrimSpace(svc.StartCmd),
+			Framework:    strings.TrimSpace(svc.Framework),
+			EnvOverrides: svc.EnvOverrides,
+		})
+	}
+	return out, ""
+}
+
 // Distinct endpoint from handleUpdateProject so users can tweak build knobs
 // without also having to re-send repo_url / branch / env_vars.
 func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request) {
@@ -232,10 +333,24 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		ReleaseCmd      string  `json:"release_cmd"`
 		BuildMode       string  `json:"build_mode"`
 		DockerfilePath  string  `json:"dockerfile_path"`
+		// Pointer so we can tell "not sent" (preserve existing services) from
+		// "sent as []" (clear services). The per-project build editor omits this
+		// field; the import/multi-service form sends it explicitly.
+		Services        *[]db.ProjectService `json:"services"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
+	}
+
+	services := project.Services // preserve existing unless the request sets them
+	if req.Services != nil {
+		var svcErr string
+		services, svcErr = validateServices(*req.Services)
+		if svcErr != "" {
+			writeError(w, http.StatusBadRequest, svcErr)
+			return
+		}
 	}
 
 	// Basic sanity clamps so a bad input can't crash docker run
@@ -300,6 +415,7 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		ReleaseCmd:      req.ReleaseCmd,
 		BuildMode:       req.BuildMode,
 		DockerfilePath:  req.DockerfilePath,
+		Services:        services,
 	})
 	if err != nil {
 		s.log.Error().Err(err).Str("project", projectID).Msg("update build config failed")
@@ -425,6 +541,19 @@ func isSafeRepoURL(s string) bool {
 	return safeRepoRe.MatchString(s)
 }
 
+// isSafeImageRef validates a container image reference (e.g. nginx:alpine,
+// ghcr.io/you/app:1.2, registry.io:5000/ns/img@sha256:...). The ref is
+// interpolated into `docker pull`/`docker run`, so only registry-safe chars
+// are allowed and a leading '-' (flag injection) is rejected.
+var safeImageRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]*$`)
+
+func isSafeImageRef(s string) bool {
+	if s == "" || strings.HasPrefix(s, "-") || len(s) > 255 {
+		return false
+	}
+	return safeImageRe.MatchString(s)
+}
+
 // isSafeBranchName rejects anything that could escape into a shell context
 // when the engine interpolates it into git / docker commands.
 var safeBranchRe = regexp.MustCompile(`^[a-zA-Z0-9._/\-]+$`)
@@ -434,6 +563,49 @@ func isSafeBranchName(s string) bool {
 		return false
 	}
 	return len(s) <= 128 && safeBranchRe.MatchString(s)
+}
+
+// handleUploadProject stages a .tar.gz build context for an "upload" deploy
+// source (used by `serverme deploy ./dir`). The body is the raw gzip'd tar.
+// The next deploy untars it as the build context instead of cloning a repo.
+func (s *Server) handleUploadProject(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	const maxUpload = 200 << 20 // 200 MB
+	body := http.MaxBytesReader(w, r.Body, maxUpload)
+	defer body.Close()
+
+	if err := os.MkdirAll("/tmp/serverme-uploads", 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to stage upload")
+		return
+	}
+	// projectID is a validated, owned UUID (GetProject matched it), so it's safe
+	// to interpolate into the staging path.
+	tarPath := fmt.Sprintf("/tmp/serverme-uploads/%s.tar.gz", projectID)
+	f, err := os.Create(tarPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to stage upload")
+		return
+	}
+	if _, err := io.Copy(f, body); err != nil {
+		f.Close()
+		os.Remove(tarPath)
+		writeError(w, http.StatusBadRequest, "upload failed (too large or interrupted)")
+		return
+	}
+	f.Close()
+
+	if err := s.db.SetProjectSource(r.Context(), projectID, "upload", ""); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to set deploy source")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "uploaded"})
 }
 
 func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {

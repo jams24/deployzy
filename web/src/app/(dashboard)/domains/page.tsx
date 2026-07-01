@@ -121,7 +121,7 @@ export default function DomainsPage() {
             <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 text-sm space-y-3">
               <p className="font-medium text-blue-500">Add these DNS records:</p>
               <div className="rounded-md bg-background p-3 font-mono text-xs space-y-1">
-                <p className="text-[10px] text-muted-foreground font-sans font-medium uppercase tracking-wider mb-1">Required — points your domain to ServerMe</p>
+                <p className="text-[10px] text-muted-foreground font-sans font-medium uppercase tracking-wider mb-1">Required — points your domain to Deployzy</p>
                 <span className="text-muted-foreground">Type:</span> CNAME<br />
                 <span className="text-muted-foreground">Name:</span> {instructions.name}<br />
                 <span className="text-muted-foreground">Target:</span> {instructions.target}
@@ -210,9 +210,9 @@ export default function DomainsPage() {
                       <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-muted-foreground">Routes to</span>
                       {d.target_type === "project" ? (
-                        <Badge variant="outline" className="gap-1 text-[10px]"><Rocket className="h-2.5 w-2.5" /> {d.target_subdomain}.serverme.site</Badge>
+                        <Badge variant="outline" className="gap-1 text-[10px]"><Rocket className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.com</Badge>
                       ) : (
-                        <Badge variant="outline" className="gap-1 text-[10px]"><Waypoints className="h-2.5 w-2.5" /> {d.target_subdomain}.serverme.site</Badge>
+                        <Badge variant="outline" className="gap-1 text-[10px]"><Waypoints className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.com</Badge>
                       )}
                       <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground ml-auto" onClick={() => startBinding(d.id)}>
                         Change

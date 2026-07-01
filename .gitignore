@@ -62,3 +62,10 @@ secrets/
 RUNBOOK.md
 .bin/
 SESSION-LOG-*.md
+
+# Session/local + build artifacts (added during rebrand)
+.claude/
+serverme-linux
+servermesrv-new
+cli/dist/
+web/--no-xattrs

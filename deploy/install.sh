@@ -223,7 +223,7 @@ command -v go &> /dev/null || export PATH=$PATH:/usr/local/go/bin
 
 if [[ ! -d /tmp/serverme-src/.git ]]; then
   rm -rf /tmp/serverme-src
-  git clone --depth 1 https://github.com/jams24/serverme.git /tmp/serverme-src > /dev/null 2>&1
+  git clone --depth 1 https://github.com/jams24/deployzy.git /tmp/serverme-src > /dev/null 2>&1
 else
   ( cd /tmp/serverme-src && git pull --quiet )
 fi

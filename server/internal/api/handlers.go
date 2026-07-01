@@ -47,6 +47,7 @@ type registerRequest struct {
 	Email    string `json:"email"`
 	Name     string `json:"name"`
 	Password string `json:"password"`
+	Ref      string `json:"ref"` // optional referral code
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +86,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Referral attribution: if a valid ref code was passed, link this signup.
+	if req.Ref != "" {
+		if referrerID := s.db.ResolveReferralCode(r.Context(), req.Ref); referrerID != "" {
+			s.db.SetReferredBy(r.Context(), user.ID, referrerID)
+		}
+	}
+
 	// Generate JWT
 	token, err := s.jwt.Generate(user.ID, user.Email, user.Plan)
 	if err != nil {
@@ -94,7 +102,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate initial API key
-	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default")
+	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate api key")
 	}
@@ -181,7 +189,8 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 type createAPIKeyRequest struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Scope string `json:"scope"` // "read" | "deploy" | "full" (default)
 }
 
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -194,8 +203,21 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		req.Name = "default"
 	}
+	if req.Scope == "" {
+		req.Scope = "full"
+	}
+	if !db.ValidScope(req.Scope) {
+		writeError(w, http.StatusBadRequest, "scope must be 'read', 'deploy', or 'full'")
+		return
+	}
+	// Only a full-scope session can mint a full-scope key — stops a leaked
+	// deploy/read key from escalating to a full key.
+	if req.Scope == "full" && u.Scope != "full" {
+		writeError(w, http.StatusForbidden, "only a full-access session can create a full-scope key")
+		return
+	}
 
-	fullToken, key, err := s.db.GenerateAPIKey(r.Context(), u.ID, req.Name)
+	fullToken, key, err := s.db.GenerateAPIKey(r.Context(), u.ID, req.Name, req.Scope)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create key")
 		return
@@ -264,7 +286,7 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cnameTarget := "serverme.site"
+	cnameTarget := "deployzy.com"
 	dom, err := s.db.CreateDomain(r.Context(), u.ID, req.Domain, cnameTarget)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create domain")
@@ -398,7 +420,7 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 			"verified": false,
 			"found":    cnames,
 			"expected": expected,
-			"hint":     "If using Cloudflare, make sure the CNAME/A record points to serverme.site",
+			"hint":     "If using Cloudflare, make sure the CNAME/A record points to deployzy.com",
 		})
 	}
 }
@@ -514,7 +536,7 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 			for _, p := range projects {
 				if p.Status == "running" {
 					result = append(result, map[string]interface{}{
-						"url":      fmt.Sprintf("https://%s.%s", p.Subdomain, "serverme.site"),
+						"url":      fmt.Sprintf("https://%s.%s", p.Subdomain, "deployzy.com"),
 						"protocol": "deploy",
 						"name":     p.Name,
 						"user_id":  p.UserID,

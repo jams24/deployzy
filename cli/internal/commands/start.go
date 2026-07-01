@@ -20,9 +20,9 @@ func NewStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start tunnels from config file",
-		Long:  "Start all tunnels defined in the config file (~/.serverme/serverme.yml by default).",
-		Example: `  serverme start
-  serverme start --config ./serverme.yml`,
+		Long:  "Start all tunnels defined in the config file (~/.deployzy/deployzy.yml by default).",
+		Example: `  deployzy start
+  deployzy start --config ./deployzy.yml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if configPath == "" {
 				configPath = config.DefaultPath()
@@ -86,7 +86,7 @@ func NewStartCmd() *cobra.Command {
 			}
 
 			fmt.Println()
-			fmt.Println("ServerMe                               (Ctrl+C to quit)")
+			fmt.Println("Deployzy                               (Ctrl+C to quit)")
 			fmt.Printf("%-20s %s\n", "Config", configPath)
 			fmt.Printf("%-20s %s\n", "Version", proto.Version)
 			fmt.Println()
@@ -120,7 +120,7 @@ func NewStartCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&configPath, "config", "c", "", "Config file path (default: ~/.serverme/serverme.yml)")
+	cmd.Flags().StringVarP(&configPath, "config", "c", "", "Config file path (default: ~/.deployzy/deployzy.yml)")
 
 	return cmd
 }

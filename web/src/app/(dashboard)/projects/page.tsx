@@ -9,10 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Plus, Play, Square, Trash2, ExternalLink, RefreshCw,
-  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3, GitPullRequest,
+  Terminal, Globe, GitBranch, Search, Check, Loader2, Code, Database, Copy, Eye, EyeOff, Settings2, ChevronRight, ChevronDown, Clock, Activity, X, BarChart3, GitPullRequest, Folder, Layers, LayoutGrid, List,
 } from "lucide-react";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
+import { DirectoryPicker } from "@/components/DirectoryPicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -26,6 +27,7 @@ interface Project {
   port_override?: number; memory_mb?: number; cpus?: number;
   health_check_path?: string; release_cmd?: string; commit_sha?: string;
   labels?: string[]; build_mode?: string; dockerfile_path?: string;
+  services?: ProjectServiceData[];
   preview_enabled?: boolean;
   parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
@@ -36,6 +38,35 @@ interface BuildConfig {
   port_override: number; memory_mb: number; cpus: number;
   health_check_path: string; release_cmd: string;
   build_mode: string; dockerfile_path: string;
+}
+// ServiceCfg is one extra service as edited in the UI (env held as text,
+// converted to a map on submit).
+interface ServiceCfg {
+  name: string; root_dir: string; port: number; framework: string;
+  install_cmd: string; build_cmd: string; start_cmd: string; env_text: string;
+}
+// ProjectServiceData is the persisted shape returned by the API (env as a map).
+interface ProjectServiceData {
+  name: string; root_dir: string; port: number; framework: string;
+  install_cmd: string; build_cmd: string; start_cmd: string;
+  env_overrides?: Record<string, string>;
+}
+
+// makeService builds a fresh service row pre-filled with sensible defaults.
+function makeService(existingCount: number): ServiceCfg {
+  const idx = existingCount + 1;
+  return { name: `service-${idx}`, root_dir: "", port: 3000 + idx, framework: "",
+    install_cmd: "npm install", build_cmd: "npm run build", start_cmd: "npm run start", env_text: "" };
+}
+// serviceToCfg / cfgToPayload convert between the persisted map shape and the
+// text-based editing shape.
+function serviceToCfg(s: ProjectServiceData): ServiceCfg {
+  const env = s.env_overrides || {};
+  return {
+    name: s.name, root_dir: s.root_dir, port: s.port, framework: s.framework || "",
+    install_cmd: s.install_cmd, build_cmd: s.build_cmd, start_cmd: s.start_cmd,
+    env_text: Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n"),
+  };
 }
 interface Domain {
   id: string; domain: string; verified: boolean;
@@ -92,7 +123,7 @@ function previewSubdomainExample(parent: string): string {
   const suffix = "-pr-123";
   const max = 63 - suffix.length;
   const p = parent.length > max ? parent.slice(0, max) : parent;
-  return `${p}${suffix}.serverme.site`;
+  return `${p}${suffix}.deployzy.com`;
 }
 
 // Sparkline renders a tiny inline SVG line chart. Keeps us free of a heavy
@@ -109,6 +140,85 @@ function Sparkline({ values, color, height = 32 }: { values: number[]; color: st
     <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
       <polyline fill="none" stroke={color} strokeWidth="1.5" points={pts} />
     </svg>
+  );
+}
+
+// ServiceCards renders the editable list of extra services (shared by the import
+// form and the per-project settings panel). The toggle lives at each call site.
+function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, detectStack }: {
+  services: ServiceCfg[];
+  onChange: (s: ServiceCfg[]) => void;
+  subdomain: string;
+  repoConnected: boolean;
+  onBrowse: (index: number) => void;
+  detectStack: (dir: string) => Promise<string>;
+}) {
+  const update = (i: number, patch: Partial<ServiceCfg>) =>
+    onChange(services.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+  return (
+    <div className="space-y-4">
+      {services.map((svc, i) => (
+        <div key={i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4 space-y-3 relative">
+          <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="absolute right-3 top-3 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-white/5">
+            <X className="h-3.5 w-3.5" />
+          </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Service Name</label>
+              <input type="text" placeholder="service-1" value={svc.name} onChange={(e) => update(i, { name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Port</label>
+              <input type="number" min="1" max="65535" value={svc.port || ""} onChange={(e) => update(i, { port: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Base Directory</label>
+              <div className="relative">
+                <input type="text" placeholder="apps/api" value={svc.root_dir} onChange={(e) => update(i, { root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                <button type="button" title="Browse repository directories" disabled={!repoConnected} onClick={() => onBrowse(i)} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                  <Folder className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Detected Stack</label>
+              <div className="relative">
+                <input type="text" readOnly placeholder="auto" value={svc.framework} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-400 focus:outline-none" />
+                <button type="button" title="Re-detect stack" disabled={!repoConnected} onClick={async () => update(i, { framework: await detectStack(svc.root_dir) })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2">
+            <p className="text-[9px] uppercase tracking-wide text-zinc-600">Public URL</p>
+            <p className="text-xs font-mono text-zinc-300 truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.com</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Install Command</label>
+              <input type="text" placeholder="npm install" value={svc.install_cmd} onChange={(e) => update(i, { install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Build Command</label>
+              <input type="text" placeholder="npm run build" value={svc.build_cmd} onChange={(e) => update(i, { build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Start Command</label>
+              <input type="text" placeholder="npm run start" value={svc.start_cmd} onChange={(e) => update(i, { start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-muted-foreground">Service Env Overrides</label>
+            <textarea rows={2} placeholder={"DATABASE_URL=postgres://...\nSERVICE_MODE=api"} value={svc.env_text} onChange={(e) => update(i, { env_text: e.target.value })} className="w-full rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring resize-y" />
+            <p className="text-[10px] text-muted-foreground">These values only apply to this service. App/global envs are still shared.</p>
+          </div>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" className="gap-2" disabled={services.length >= 5} onClick={() => onChange([...services, makeService(services.length)])}>
+        <Plus className="h-4 w-4" /> Add Service
+      </Button>
+    </div>
   );
 }
 
@@ -156,6 +266,13 @@ function ProjectsContent() {
   const [editingLabels, setEditingLabels] = useState<string | null>(null);
   const [labelsInput, setLabelsInput] = useState("");
   const [labelFilter, setLabelFilter] = useState<string>("");
+  // List vs grid (Railway-style cards). Persisted; grid is the default.
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  useEffect(() => {
+    const v = localStorage.getItem("sm_projects_view");
+    if (v === "grid" || v === "list") setViewMode(v);
+  }, []);
+  function changeView(v: "grid" | "list") { setViewMode(v); localStorage.setItem("sm_projects_view", v); }
   // Domains (inline per-project)
   const [allDomains, setAllDomains] = useState<Domain[]>([]);
   const [newDomain, setNewDomain] = useState<Record<string, string>>({});
@@ -183,6 +300,8 @@ function ProjectsContent() {
   // Metrics
   const [metrics, setMetrics] = useState<Record<string, MetricSample[]>>({});
   const [metricsRange, setMetricsRange] = useState<Record<string, string>>({});
+  // Bandwidth
+  const [bandwidth, setBandwidth] = useState<Record<string, { project_gb: number; account_gb: number; limit_gb: number; pct: number; exceeded: boolean; period_start: string } | null>>({});
   // Cron jobs
   const [crons, setCrons] = useState<Record<string, Cron[]>>({});
   const [editingCron, setEditingCron] = useState<string | null>(null); // projectId currently editing
@@ -195,6 +314,52 @@ function ProjectsContent() {
     health_check_path: "", release_cmd: "",
     build_mode: "", dockerfile_path: "",
   });
+  // Multiple Services — import flow + per-project edit panel.
+  const [importMultiService, setImportMultiService] = useState(false);
+  const [importServices, setImportServices] = useState<ServiceCfg[]>([]);
+  const [editMultiService, setEditMultiService] = useState(false);
+  const [editServices, setEditServices] = useState<ServiceCfg[]>([]);
+  // Directory picker target — which field the picked path writes back to.
+  const [dirPicker, setDirPicker] = useState<
+    | { kind: "root" }
+    | { kind: "service"; index: number }
+    | { kind: "edit-root" }
+    | { kind: "edit-service"; index: number }
+    | null
+  >(null);
+
+  // detectStackFor infers a directory's stack from its files (mirrors the
+  // server's framework detection), powering each service's Detected Stack field.
+  async function detectStackFor(repo: string, branch: string, dir: string): Promise<string> {
+    if (!repo) return "node";
+    const token = localStorage.getItem("sm_token");
+    const qs = new URLSearchParams({ repo, branch: branch || "main", path: dir });
+    try {
+      const r = await fetch(`${API}/api/v1/github/contents?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) return "node";
+      const entries: { name: string; type: string }[] = await r.json();
+      const names = entries.map((e) => e.name);
+      if (names.some((n) => n.startsWith("next.config"))) return "nextjs";
+      if (names.includes("requirements.txt") || names.includes("pyproject.toml") || names.includes("Pipfile")) return "python";
+      if (names.includes("package.json")) return "node";
+      if (names.includes("index.html")) return "static";
+      return "node";
+    } catch {
+      return "node";
+    }
+  }
+  // servicesPayload converts UI rows to the API shape (env text → map), dropping
+  // incomplete rows. Returns [] when multi-service is off.
+  function servicesPayload(enabled: boolean, rows: ServiceCfg[]) {
+    if (!enabled) return [];
+    return rows
+      .filter((s) => s.name && s.root_dir)
+      .map((s) => ({
+        name: s.name, root_dir: s.root_dir, port: s.port, framework: s.framework,
+        install_cmd: s.install_cmd, build_cmd: s.build_cmd, start_cmd: s.start_cmd,
+        env_overrides: s.env_text.trim() ? parseEnvText(s.env_text) : {},
+      }));
+  }
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -319,12 +484,16 @@ function ProjectsContent() {
       });
     }
 
+    // Build the services payload (only when the toggle is on). Env text → map.
+    const services = servicesPayload(importMultiService, importServices);
+
     // Apply build config before deploy if any advanced setting was customized
+    // or the project has extra services.
     const c = importBuildCfg;
-    if (c.install_cmd || c.build_cmd || c.start_cmd || c.root_dir || c.node_version || c.port_override || c.memory_mb || c.cpus || c.dockerfile_path) {
+    if (services.length > 0 || c.install_cmd || c.build_cmd || c.start_cmd || c.root_dir || c.node_version || c.port_override || c.memory_mb || c.cpus || c.dockerfile_path) {
       await fetch(`${API}/api/v1/projects/${project.id}/build-config`, {
         method: "PUT", headers: headers(),
-        body: JSON.stringify(c),
+        body: JSON.stringify({ ...c, services }),
       });
     }
 
@@ -340,6 +509,8 @@ function ProjectsContent() {
       health_check_path: "", release_cmd: "",
       build_mode: "", dockerfile_path: "",
     });
+    setImportMultiService(false);
+    setImportServices([]);
     setImportShowAdvanced(false);
     setShowRepoPicker(false);
     setImportRepo(null);
@@ -412,6 +583,9 @@ function ProjectsContent() {
       build_mode: p.build_mode || "",
       dockerfile_path: p.dockerfile_path || "",
     });
+    const svcs = (p.services || []).map(serviceToCfg);
+    setEditServices(svcs);
+    setEditMultiService(svcs.length > 0);
     setEditingBuild(p.id);
   }
 
@@ -587,6 +761,13 @@ function ProjectsContent() {
     } catch {}
   }
 
+  async function loadBandwidth(projectId: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${projectId}/bandwidth`, { headers: headers() });
+      if (res.ok) { const data = await res.json(); setBandwidth((prev) => ({ ...prev, [projectId]: data })); }
+    } catch {}
+  }
+
   async function loadPreviews(projectId: string) {
     try {
       const res = await fetch(`${API}/api/v1/projects/${projectId}/previews`, { headers: headers() });
@@ -668,7 +849,7 @@ function ProjectsContent() {
     try {
       const res = await fetch(`${API}/api/v1/projects/${id}/build-config`, {
         method: "PUT", headers: headers(),
-        body: JSON.stringify(buildCfg),
+        body: JSON.stringify({ ...buildCfg, services: servicesPayload(editMultiService, editServices) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Failed" }));
@@ -712,6 +893,7 @@ function ProjectsContent() {
     loadCrons(selectedProject);
     loadPreviews(selectedProject);
     loadMetrics(selectedProject, metricsRange[selectedProject] || "1h");
+    loadBandwidth(selectedProject);
     loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h");
     const t = setInterval(() => loadLogs(selectedProject), 5000);
     // Refresh metrics at 30s (matches scraper cadence).
@@ -735,6 +917,15 @@ function ProjectsContent() {
           <p className="mt-1 text-sm text-muted-foreground">Deploy apps from your GitHub repos.</p>
         </div>
         <div className="flex gap-2">
+          {/* Grid / list view toggle */}
+          <div className="flex items-center rounded-md border border-border/40 p-0.5">
+            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-6 w-7 items-center justify-center rounded ${viewMode === "grid" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-6 w-7 items-center justify-center rounded ${viewMode === "list" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              <List className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <Button variant="outline" size="sm" onClick={load} className="gap-1"><RefreshCw className="h-3.5 w-3.5" /></Button>
           {ghConnected ? (
             <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="gap-1"><Plus className="h-3.5 w-3.5" /> Import Repo</Button>
@@ -842,7 +1033,7 @@ function ProjectsContent() {
                   placeholder="my-project"
                   className="h-9 text-sm rounded-r-none font-mono"
                 />
-                <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.serverme.site</span>
+                <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.deployzy.com</span>
               </div>
             </div>
             {userServers.length > 0 && (
@@ -853,7 +1044,7 @@ function ProjectsContent() {
                   value={selectedServer}
                   onChange={(e) => setSelectedServer(e.target.value)}
                 >
-                  <option value="">ServerMe Cloud (default)</option>
+                  <option value="">Deployzy Cloud (default)</option>
                   {userServers.filter(s => s.status === "active").map((s) => (
                     <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
                   ))}
@@ -882,6 +1073,44 @@ function ProjectsContent() {
               <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Click Auto-format if a paste came out mangled.</p>
             </div>
 
+            {/* Multiple Services */}
+            <div className="rounded-lg border border-border/40 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-start gap-2">
+                  <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <span className="text-xs font-medium">Multiple Services</span>
+                    <p className="text-[10px] text-muted-foreground">Deploy multiple directories from this repository as services inside one container.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={importMultiService}
+                  onClick={() => {
+                    const next = !importMultiService;
+                    setImportMultiService(next);
+                    if (next && importServices.length === 0) setImportServices([makeService(0)]);
+                  }}
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${importMultiService ? "bg-violet-600" : "bg-zinc-700"}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${importMultiService ? "left-[18px]" : "left-0.5"}`} />
+                </button>
+              </div>
+              {importMultiService && (
+                <div className="border-t border-border/40 p-4">
+                  <ServiceCards
+                    services={importServices}
+                    onChange={setImportServices}
+                    subdomain={importSubdomain}
+                    repoConnected={!!importRepo?.full_name}
+                    onBrowse={(i) => setDirPicker({ kind: "service", index: i })}
+                    detectStack={(dir) => detectStackFor(importRepo?.full_name || "", importRepo?.default_branch || "main", dir)}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Advanced Build & Runtime Settings */}
             <div className="rounded-lg border border-border/40 overflow-hidden">
               <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors">
@@ -897,7 +1126,12 @@ function ProjectsContent() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
-                      <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <div className="relative">
+                        <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                        <button type="button" title="Browse repository directories" disabled={!importRepo?.full_name} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                          <Folder className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">Node Version</label>
@@ -1002,38 +1236,52 @@ function ProjectsContent() {
               </div>
             );
           })()}
+          <div className={viewMode === "grid"
+            ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
+            : "rounded-xl border border-border/40 divide-y divide-border/40 overflow-hidden bg-card/20"}>
+            {/* table header (list view only) */}
+            {viewMode === "list" && (
+              <div className="hidden md:flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-white/[0.02]">
+                <span className="flex-1">Project</span>
+                <span className="w-44 text-right pr-2">Actions</span>
+              </div>
+            )}
           {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => {
             const ph = getBuildPlaceholders(p.framework);
+            const isGrid = viewMode === "grid";
+            const isSel = selectedProject === p.id;
             return (
-            <Card key={p.id} className={`transition-colors ${selectedProject === p.id ? "border-foreground/20" : ""}`}>
-              <CardContent className="pt-4 pb-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
-                      <Rocket className="h-5 w-5" />
+            <div key={p.id} className={isGrid
+              ? `rounded-xl border bg-card/20 overflow-hidden transition-colors ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20"}`
+              : `transition-colors ${isSel ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
+              <div className={isGrid ? "p-4" : "px-4 py-2.5"}>
+                <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex items-center justify-between gap-3"}>
+                  <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
+                      <Rocket className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{p.name}</span>
-                        <Badge variant="outline" className={`text-[10px] ${statusColor[p.status] || ""}`}>{p.status}</Badge>
-                        <Badge variant="outline" className="text-[10px]">{p.framework}</Badge>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{p.name}</span>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
+                        <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
                         {(p.labels || []).map((l) => (
-                          <Badge key={l} variant="outline" className="text-[10px] text-blue-400 border-blue-500/20 bg-blue-500/5">{l}</Badge>
+                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/20 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
                         ))}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Globe className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground font-mono">{p.subdomain}.serverme.site</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
+                        <Globe className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{p.subdomain}.deployzy.com</span>
                         {p.github_repo && (
                           <>
-                            <GitBranch className="h-3 w-3 text-muted-foreground ml-1" />
-                            <span className="text-xs text-muted-foreground">{p.github_repo}</span>
+                            <GitBranch className="h-3 w-3 ml-1 shrink-0 hidden sm:inline" />
+                            <span className="truncate hidden sm:inline">{p.github_repo}</span>
                           </>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className={`flex items-center gap-1 ${isGrid && !isSel ? "flex-wrap" : "shrink-0"}`}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                         {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} Deploy
@@ -1041,7 +1289,7 @@ function ProjectsContent() {
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" nativeButton={false} render={<a href={`https://${p.subdomain}.serverme.site`} target="_blank" rel="noopener" />}>
+                        <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
                           <ExternalLink className="h-3 w-3" /> Visit
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
@@ -1225,7 +1473,7 @@ function ProjectsContent() {
                             <div className="flex items-center gap-1 shrink-0">
                               {pv.commit_sha && <code className="text-[9px] text-zinc-600 font-mono">{pv.commit_sha.slice(0, 7)}</code>}
                               {pv.status === "running" && (
-                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.serverme.site`} target="_blank" rel="noopener" />}>
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
                                   <ExternalLink className="h-2.5 w-2.5" /> Visit
                                 </Button>
                               )}
@@ -1292,7 +1540,12 @@ function ProjectsContent() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
-                            <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <div className="relative">
+                              <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                              <button type="button" title="Browse repository directories" disabled={!p.github_repo} onClick={() => setDirPicker({ kind: "edit-root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                                <Folder className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Node Version</label>
@@ -1350,6 +1603,44 @@ function ProjectsContent() {
                             <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-zinc-600">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
                             <input type="text" placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setBuildCfg({ ...buildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
+                        </div>
+
+                        {/* Multiple Services */}
+                        <div className="rounded-lg border border-border/40 overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-2.5">
+                            <div className="flex items-start gap-2">
+                              <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
+                              <div>
+                                <span className="text-xs font-medium">Multiple Services</span>
+                                <p className="text-[10px] text-muted-foreground">Deploy multiple directories from this repository as services inside one container.</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={editMultiService}
+                              onClick={() => {
+                                const next = !editMultiService;
+                                setEditMultiService(next);
+                                if (next && editServices.length === 0) setEditServices([makeService(0)]);
+                              }}
+                              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${editMultiService ? "bg-violet-600" : "bg-zinc-700"}`}
+                            >
+                              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${editMultiService ? "left-[18px]" : "left-0.5"}`} />
+                            </button>
+                          </div>
+                          {editMultiService && (
+                            <div className="border-t border-border/40 p-3">
+                              <ServiceCards
+                                services={editServices}
+                                onChange={setEditServices}
+                                subdomain={p.subdomain}
+                                repoConnected={!!p.github_repo}
+                                onBrowse={(i) => setDirPicker({ kind: "edit-service", index: i })}
+                                detectStack={(dir) => detectStackFor(p.github_repo, p.github_branch || p.branch || "main", dir)}
+                              />
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex gap-2 pt-1">
@@ -1627,6 +1918,59 @@ function ProjectsContent() {
                   );
                 })()}
 
+                {/* Bandwidth */}
+                {selectedProject === p.id && (() => {
+                  const bw = bandwidth[p.id];
+                  if (!bw) return null;
+                  const limitUnlimited = bw.limit_gb < 0;
+                  const usedGB = bw.project_gb;
+                  const accountGB = bw.account_gb;
+                  const pct = Math.min(bw.pct, 100);
+                  const fmtGB = (n: number) => {
+                    const bytes = n * 1024 * 1024 * 1024;
+                    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                    return `${n.toFixed(2)} GB`;
+                  };
+                  const barColor = bw.exceeded ? "bg-red-500" : bw.pct >= 80 ? "bg-yellow-500" : "bg-emerald-500";
+                  return (
+                    <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>
+                          <span className="text-xs font-medium">Bandwidth</span>
+                          <span className="text-[10px] text-zinc-600">(this month)</span>
+                        </div>
+                        <button onClick={() => loadBandwidth(p.id)} className="text-[10px] text-zinc-600 hover:text-foreground">refresh</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                          <div className="text-[10px] text-muted-foreground">This project</div>
+                          <div className="text-base font-semibold font-mono">{fmtGB(usedGB)}</div>
+                        </div>
+                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                          <div className="text-[10px] text-muted-foreground">Account total</div>
+                          <div className={`text-base font-semibold font-mono ${bw.exceeded ? "text-red-400" : bw.pct >= 80 ? "text-yellow-400" : ""}`}>{fmtGB(accountGB)}</div>
+                        </div>
+                      </div>
+                      {!limitUnlimited && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span>{fmtGB(accountGB)} used of {bw.limit_gb} GB</span>
+                            <span className={bw.exceeded ? "text-red-400 font-medium" : bw.pct >= 80 ? "text-yellow-400 font-medium" : ""}>{bw.pct.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          {bw.exceeded && <p className="text-[10px] text-red-400">⚠ Bandwidth limit reached — upgrade your plan to restore full traffic.</p>}
+                          {!bw.exceeded && bw.pct >= 80 && <p className="text-[10px] text-yellow-400">⚠ Approaching monthly bandwidth limit.</p>}
+                        </div>
+                      )}
+                      {limitUnlimited && <p className="text-[10px] text-zinc-600">Unlimited bandwidth on your plan.</p>}
+                    </div>
+                  );
+                })()}
+
                 {/* Cron Jobs */}
                 {selectedProject === p.id && !showCrons[p.id] && (
                   <div className="mt-3">
@@ -1763,27 +2107,74 @@ function ProjectsContent() {
                   </div>
                 )}
 
-                {/* Deploy Logs */}
-                {selectedProject === p.id && logs.length > 0 && (
+                {/* Deploy Logs — always shown for the open project; logs are
+                    kept 14 days, so older projects show an empty state instead
+                    of the panel silently vanishing. */}
+                {selectedProject === p.id && (
                   <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden max-h-64 overflow-y-auto">
                     <div className="border-b border-white/[0.04] px-3 py-1.5 text-[10px] text-zinc-600 font-mono flex items-center gap-2">
                       <Terminal className="h-3 w-3" /> Deploy Logs
                     </div>
-                    <div className="p-2 font-mono text-[11px] space-y-0.5">
-                      {logs.map((l, i) => (
-                        <div key={i} className={`px-2 py-0.5 rounded ${l.level === "error" ? "text-red-400" : l.level === "build" ? "text-amber-400" : l.level === "deploy" ? "text-emerald-400" : "text-zinc-500"}`}>
-                          <span className="text-zinc-700">{new Date(l.created_at).toLocaleTimeString()}</span> {l.message}
-                        </div>
-                      ))}
-                    </div>
+                    {logs.length > 0 ? (
+                      <div className="p-2 font-mono text-[11px] space-y-0.5">
+                        {logs.map((l, i) => (
+                          <div key={i} className={`px-2 py-0.5 rounded ${l.level === "error" ? "text-red-400" : l.level === "build" ? "text-amber-400" : l.level === "deploy" ? "text-emerald-400" : "text-zinc-500"}`}>
+                            <span className="text-zinc-700">{new Date(l.created_at).toLocaleTimeString()}</span> {l.message}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-[11px] text-zinc-500 font-mono">
+                        No deploy logs to show. Logs are kept for 14 days — redeploy this project to generate fresh logs.
+                      </div>
+                    )}
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           );
           })}
+          </div>
         </div>
       )}
+
+      {/* Base directory picker — writes back to a root_dir or a service's dir,
+          for either the import form or the per-project edit panel. */}
+      {dirPicker && (() => {
+        const dp = dirPicker;
+        const isEdit = dp.kind === "edit-root" || dp.kind === "edit-service";
+        const editP = isEdit ? projects.find((p) => p.id === editingBuild) : null;
+        const repo = isEdit ? (editP?.github_repo || "") : (importRepo?.full_name || "");
+        const branch = isEdit ? (editP?.github_branch || editP?.branch || "main") : (importRepo?.default_branch || "main");
+        if (!repo) return null;
+        const initial =
+          dp.kind === "root" ? importBuildCfg.root_dir :
+          dp.kind === "edit-root" ? buildCfg.root_dir :
+          dp.kind === "service" ? (importServices[dp.index]?.root_dir || "") :
+          (editServices[dp.index]?.root_dir || "");
+        return (
+          <DirectoryPicker
+            repo={repo}
+            branch={branch}
+            initialPath={initial}
+            onClose={() => setDirPicker(null)}
+            onSelect={async (path) => {
+              if (dp.kind === "root") {
+                setImportBuildCfg({ ...importBuildCfg, root_dir: path });
+              } else if (dp.kind === "edit-root") {
+                setBuildCfg({ ...buildCfg, root_dir: path });
+              } else if (dp.kind === "service") {
+                const fw = await detectStackFor(repo, branch, path);
+                setImportServices((prev) => prev.map((s, j) => (j === dp.index ? { ...s, root_dir: path, framework: fw } : s)));
+              } else {
+                const fw = await detectStackFor(repo, branch, path);
+                setEditServices((prev) => prev.map((s, j) => (j === dp.index ? { ...s, root_dir: path, framework: fw } : s)));
+              }
+              setDirPicker(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

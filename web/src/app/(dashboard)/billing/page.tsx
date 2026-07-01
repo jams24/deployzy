@@ -129,7 +129,7 @@ export default function BillingPage() {
       name: "Free",
       price: "$0",
       accent: "border-zinc-700/40",
-      tagline: "Try ServerMe with a real side project",
+      tagline: "Try Deployzy with a real side project",
       features: [
         "5 reserved subdomains, 5 active tunnels",
         "3 projects, 2 databases, 1 BYOC server",

@@ -711,7 +711,7 @@ export default function AdminPage() {
                         {p.framework && <Badge variant="outline" className="text-[9px] shrink-0">{p.framework}</Badge>}
                       </div>
                       <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
-                        <span className="font-mono">{p.subdomain}.serverme.site</span>
+                        <span className="font-mono">{p.subdomain}.deployzy.com</span>
                         <span>{p.user_email || p.user_id.slice(0, 8)}</span>
                         {p.repo_url && (
                           <span className="flex items-center gap-1">

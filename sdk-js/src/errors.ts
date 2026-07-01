@@ -1,13 +1,13 @@
-/** Base error class for ServerMe SDK. */
-export class ServerMeError extends Error {
+/** Base error class for Deployzy SDK. */
+export class DeployzyError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ServerMeError";
+    this.name = "DeployzyError";
   }
 }
 
 /** Thrown when authentication fails. */
-export class AuthError extends ServerMeError {
+export class AuthError extends DeployzyError {
   constructor(message = "Authentication failed") {
     super(message);
     this.name = "AuthError";
@@ -15,7 +15,7 @@ export class AuthError extends ServerMeError {
 }
 
 /** Thrown when an API request fails. */
-export class ApiError extends ServerMeError {
+export class ApiError extends DeployzyError {
   public statusCode: number;
 
   constructor(statusCode: number, message: string) {

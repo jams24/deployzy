@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { api, type User } from "@/lib/api";
+import { ReferralsSection } from "@/components/dashboard/referrals-section";
+import { WebhooksSection } from "@/components/dashboard/webhooks-section";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -77,6 +79,12 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Referrals */}
+      <ReferralsSection />
+
+      {/* Webhooks */}
+      <WebhooksSection />
 
       {/* Danger Zone */}
       <Card className="mt-6 border-destructive/30">

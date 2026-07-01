@@ -25,7 +25,8 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const data = await api.register(email, name, password);
+      const ref = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("ref") || undefined : undefined;
+      const data = await api.register(email, name, password, ref);
       setApiKey(data.api_key);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -69,8 +70,8 @@ export default function SignUpPage() {
             <div className="text-zinc-500">
               # Save your token and start tunneling
             </div>
-            <div className="mt-1">serverme authtoken {apiKey}</div>
-            <div className="mt-1">serverme http 3000</div>
+            <div className="mt-1">deployzy authtoken {apiKey}</div>
+            <div className="mt-1">deployzy http 3000</div>
           </div>
 
           <Button className="mt-6 w-full" nativeButton={false} render={<Link href="/tunnels" />}>
@@ -85,8 +86,8 @@ export default function SignUpPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <img src="/logo-icon.svg" alt="ServerMe" className="h-8 w-8 rounded-lg" />
-          ServerMe
+          <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+          Deployzy
         </Link>
 
         <h1 className="text-2xl font-bold text-center">Create your account</h1>

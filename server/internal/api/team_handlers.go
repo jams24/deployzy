@@ -117,7 +117,7 @@ func (s *Server) handleInviteMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the invite URL
-	inviteURL := "https://serverme.site/invite/" + inv.Token
+	inviteURL := "https://deployzy.com/invite/" + inv.Token
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"invitation": inv,

@@ -161,22 +161,22 @@ export default function OverviewPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {runningProjects.map((p) => (
-            <Link key={p.id} href="/projects">
-              <Card className="hover:border-foreground/10 transition-colors cursor-pointer">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+            <Link key={p.id} href="/projects" className="min-w-0">
+              <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
+                <CardContent className="p-4 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
                       <Rocket className="h-4 w-4" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{p.name}</span>
-                        <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">running</Badge>
-                        <Badge variant="outline" className="text-[9px]">{p.framework}</Badge>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium truncate">{p.name}</span>
+                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">running</Badge>
+                        <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground font-mono">{p.subdomain}.serverme.site</p>
+                      <p className="text-xs text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.com</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -187,20 +187,20 @@ export default function OverviewPage() {
             </Link>
           ))}
           {activeTunnels.map((t, i) => (
-            <Link key={i} href="/tunnels">
-              <Card className="hover:border-foreground/10 transition-colors cursor-pointer">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+            <Link key={i} href="/tunnels" className="min-w-0">
+              <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
+                <CardContent className="p-4 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
                       <Waypoints className="h-4 w-4" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{t.name || t.url}</span>
-                        <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">active</Badge>
-                        <Badge variant="outline" className="text-[9px]">{t.protocol}</Badge>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium truncate">{t.name || t.url}</span>
+                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">active</Badge>
+                        <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{t.protocol}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground font-mono">{t.url}</p>
+                      <p className="text-xs text-muted-foreground font-mono truncate">{t.url}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">

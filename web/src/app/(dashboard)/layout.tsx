@@ -26,8 +26,8 @@ export default function DashboardLayout({
         {/* Mobile header */}
         <header className="flex h-14 items-center justify-between border-b border-border/40 bg-background px-4 md:hidden">
           <Link href="/" className="flex items-center gap-2 font-bold">
-            <img src="/logo-icon.svg" alt="ServerMe" className="h-7 w-7 rounded-md" />
-            ServerMe
+            <img src="/logo-icon.svg" alt="Deployzy" className="h-7 w-7 rounded-md" />
+            Deployzy
           </Link>
           <div className="flex items-center gap-1">
             <ThemeToggle />

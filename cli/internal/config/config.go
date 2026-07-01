@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the ServerMe CLI configuration file.
+// Config represents the Deployzy CLI configuration file.
 type Config struct {
 	Server    string                   `yaml:"server"`
 	AuthToken string                   `yaml:"authtoken"`
@@ -32,9 +32,9 @@ type TunnelEntry struct {
 func DefaultPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "serverme.yml"
+		return "deployzy.yml"
 	}
-	return filepath.Join(home, ".serverme", "serverme.yml")
+	return filepath.Join(home, ".deployzy", "deployzy.yml")
 }
 
 // Load reads a config file from the given path.
@@ -66,7 +66,7 @@ func Load(path string) (*Config, error) {
 // WriteExample writes an example config file to the given path.
 func WriteExample(path string) error {
 	example := Config{
-		Server:    "tunnel.serverme.dev:443",
+		Server:    "deployzy.com:8443",
 		AuthToken: "your-auth-token-here",
 		LogLevel:  "info",
 		Inspector: "127.0.0.1:4040",

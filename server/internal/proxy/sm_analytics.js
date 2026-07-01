@@ -1,4 +1,4 @@
-/* ServerMe Analytics — cookieless pageview + custom event tracking.
+/* Deployzy Analytics — cookieless pageview + custom event tracking.
  *
  * Auto-tracks:
  *   • initial pageview on load
@@ -9,7 +9,7 @@
  *
  * The script tag's data-sm-endpoint attribute (optional) overrides the
  * ingest URL; by default we POST to the same origin's /__sm-ingest path
- * which the ServerMe proxy routes back to the analytics backend.
+ * which the Deployzy proxy routes back to the analytics backend.
  */
 (function () {
   var script = document.currentScript || (function () {

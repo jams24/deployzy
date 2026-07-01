@@ -58,7 +58,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if stateParam == "" || stateCookie == nil || stateCookie.Value == "" ||
 		subtle.ConstantTimeCompare([]byte(stateParam), []byte(stateCookie.Value)) != 1 {
 		s.log.Warn().Msg("GitHub OAuth state mismatch — possible CSRF attempt")
-		http.Redirect(w, r, "https://serverme.site/projects?error=invalid_state", http.StatusFound)
+		http.Redirect(w, r, "https://deployzy.com/projects?error=invalid_state", http.StatusFound)
 		return
 	}
 	// Consume the cookie so it can't be replayed.
@@ -66,7 +66,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Redirect(w, r, "https://serverme.site/projects?error=github_denied", http.StatusFound)
+		http.Redirect(w, r, "https://deployzy.com/projects?error=github_denied", http.StatusFound)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	tokenResp, err := s.deployer.GitHub.ExchangeCodeForToken(code)
 	if err != nil || tokenResp.AccessToken == "" {
 		s.log.Error().Err(err).Msg("GitHub token exchange failed")
-		http.Redirect(w, r, "https://serverme.site/projects?error=token_exchange", http.StatusFound)
+		http.Redirect(w, r, "https://deployzy.com/projects?error=token_exchange", http.StatusFound)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	ghUser, err := getGitHubUser(tokenResp.AccessToken)
 	if err != nil {
 		s.log.Error().Err(err).Msg("GitHub user info failed")
-		http.Redirect(w, r, "https://serverme.site/projects?error=user_info", http.StatusFound)
+		http.Redirect(w, r, "https://deployzy.com/projects?error=user_info", http.StatusFound)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	// POST /github/connect can persist a complete row (and the refresh
 	// path can kick in on the next expired-token call).
 	redirectURL := fmt.Sprintf(
-		"https://serverme.site/projects?github_connected=true&github_token=%s&github_user=%s&installation_id=%d&refresh_token=%s&expires_in=%d&refresh_expires_in=%d",
+		"https://deployzy.com/projects?github_connected=true&github_token=%s&github_user=%s&installation_id=%d&refresh_token=%s&expires_in=%d&refresh_expires_in=%d",
 		url.QueryEscape(tokenResp.AccessToken),
 		url.QueryEscape(ghUser.Login),
 		installID,
@@ -214,6 +214,32 @@ func (s *Server) handleGitHubCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, commits)
+}
+
+// handleGitHubContents lists directories/files at a path in a repo, powering the
+// "Select Base Directory" picker. Defaults to the repo root; `path` drills in.
+func (s *Server) handleGitHubContents(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	repo := r.URL.Query().Get("repo")
+	branch := r.URL.Query().Get("branch")
+	path := r.URL.Query().Get("path") // optional — empty means repo root
+	if repo == "" {
+		writeError(w, http.StatusBadRequest, "repo is required")
+		return
+	}
+
+	token, ok := s.bestUserGitHubToken(r.Context(), u.ID)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "GitHub connection expired — please reconnect")
+		return
+	}
+
+	entries, err := s.deployer.GitHub.ListRepoContents(token, repo, path, branch)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list directory contents")
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
 }
 
 // handleGitHubWebhook processes push events for auto-deploy.
@@ -464,7 +490,7 @@ func (s *Server) postOrEditPRComment(ctx context.Context, preview *db.Project, r
 		return
 	}
 
-	domain := "serverme.site"
+	domain := "deployzy.com"
 	if s.deployer.Domain != "" {
 		domain = s.deployer.Domain
 	}
@@ -480,7 +506,7 @@ func (s *Server) postOrEditPRComment(ctx context.Context, preview *db.Project, r
 	if len(sha) > 7 {
 		sha = sha[:7]
 	}
-	body := fmt.Sprintf("%s **%s**\n\n- **URL**: %s\n- **Commit**: `%s`\n- **Status**: `%s`\n\n_Automatically deployed by [ServerMe](https://%s) when this PR is updated. Closed PRs are torn down automatically._",
+	body := fmt.Sprintf("%s **%s**\n\n- **URL**: %s\n- **Commit**: `%s`\n- **Status**: `%s`\n\n_Automatically deployed by [Deployzy](https://%s) when this PR is updated. Closed PRs are torn down automatically._",
 		statusEmoji, statusText, url, sha, preview.Status, domain,
 	)
 

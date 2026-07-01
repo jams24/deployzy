@@ -1,6 +1,6 @@
-export { ServerMe } from "./client";
+export { Deployzy } from "./client";
 export type {
-  ServerMeOptions,
+  DeployzyOptions,
   TunnelOptions,
   Tunnel,
   CapturedRequest,
@@ -8,9 +8,15 @@ export type {
   User,
   ApiKey,
   Domain,
+  Project,
+  ProjectService,
+  CreateProjectOptions,
+  BuildConfigInput,
+  DeployLog,
+  WaitForDeployOptions,
 } from "./types";
 export {
-  ServerMeError,
+  DeployzyError,
   AuthError,
   ApiError,
   NotFoundError,

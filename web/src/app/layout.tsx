@@ -24,8 +24,8 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ServerMe — Deploy, Tunnel, Database Platform",
-    template: "%s | ServerMe",
+    default: "Deployzy — Deploy, Tunnel, Database Platform",
+    template: "%s | Deployzy",
   },
   description:
     "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, bring your own VPS — Railway + ngrok + Supabase in one open-source platform.",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     "ngrok alternative",
     "railway alternative",
     "open source",
-    "serverme",
+    "deployzy",
   ],
   icons: {
     icon: "/logo-icon.svg",

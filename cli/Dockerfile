@@ -14,12 +14,12 @@ WORKDIR /build/cli
 RUN go mod download
 
 COPY cli/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /serverme ./cmd/serverme
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /deployzy ./cmd/deployzy
 
 # Final image
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tini
-COPY --from=builder /serverme /usr/local/bin/serverme
+COPY --from=builder /deployzy /usr/local/bin/deployzy
 
-ENTRYPOINT ["serverme"]
+ENTRYPOINT ["deployzy"]
