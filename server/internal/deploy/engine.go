@@ -414,8 +414,26 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
+	// Capacity gate + adaptive cap: never start a build when the build HOST is
+	// low on RAM. `docker build --memory` only bounds the build container, not
+	// the host — so on an already-full box the kernel OOM-kills co-located
+	// services (this is what took the platform down). Check the actual build
+	// host (local, or the assigned BYOC server via SSH) and refuse / right-size.
+	buildMemMB := 2048
+	if availMB := availableMemoryMB(ctx, runner); availMB > 0 {
+		const minFreeMB = 1536 // build cap + host headroom
+		if availMB < minFreeMB {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Build paused — the build host has only %d MB free (need ~%d MB). Free up memory, drain projects, or add/upgrade a server, then redeploy.", availMB, minFreeMB), "error")
+			restoreOldState()
+			return fmt.Errorf("insufficient memory to build: %d MB free on build host", availMB)
+		}
+		if availMB-512 < buildMemMB { // leave a 512 MB host reserve
+			buildMemMB = availMB - 512
+		}
+	}
+
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
-	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", "--memory=2g", "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
+	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", fmt.Sprintf("--memory=%dm", buildMemMB), "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -909,6 +927,18 @@ func extractBuildError(output string) string {
 		start = 0
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+// availableMemoryMB returns MemAvailable (MB) on the host that will run the
+// build — the primary for local deploys, or the assigned BYOC server via SSH.
+// Returns 0 when it can't be probed (callers then fail open, not closed).
+func availableMemoryMB(ctx context.Context, runner *Runner) int {
+	out, err := runner.RunShell(ctx, `awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo`)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
 }
 
 // planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or
