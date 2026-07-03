@@ -97,7 +97,7 @@ export default function NewResourcePage() {
   const [dbTargetServer, setDbTargetServer] = useState(""); // "" = platform, else worker_server_id
 
   // Servers
-  const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
+  const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string; total_memory_mb?: number; total_cpu?: number }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
 
   // Plan limits (used to show real resource caps in the advanced form)
@@ -300,6 +300,14 @@ export default function NewResourcePage() {
     </button>
   );
 
+  // Effective resource caps for the advanced form: on a BYOC server the limit is
+  // the server's own capacity (no plan cap — you're paying for that box);
+  // otherwise the plan max (0 = unlimited, e.g. admin).
+  const byocSrv = userServers.find((s) => s.id === selectedServer);
+  const memCap = byocSrv?.total_memory_mb || (planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 0);
+  const cpuCap = byocSrv?.total_cpu || (planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 0);
+  const capLabel = byocSrv ? "server max" : "plan max";
+
   // ── Step: GitHub Repo Picker ──
   if (step === "github") {
     return (
@@ -487,15 +495,15 @@ export default function NewResourcePage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">
-                      Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
+                      Memory MB <span className="text-zinc-600">(0 = {memCap > 0 ? Math.min(512, memCap) : 512}{memCap > 0 ? `, ${capLabel} ${memCap}` : ""})</span>
                     </label>
-                    <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="number" min="0" max={memCap > 0 ? memCap : 16384} step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">
-                      CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                      CPUs <span className="text-zinc-600">(0 = {cpuCap > 0 ? Math.min(0.5, cpuCap) : 0.5}{cpuCap > 0 ? `, ${capLabel} ${cpuCap}` : ""})</span>
                     </label>
-                    <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="number" min="0" max={cpuCap > 0 ? cpuCap : 8} step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>

@@ -58,7 +58,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	if project.WorkerServerID != "" {
 		// Project already assigned to a server (BYOC or previously assigned)
-		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		server, err := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		if err != nil {
+			e.log.Error().Err(err).Str("project", project.ID).Str("worker_server_id", project.WorkerServerID).Msg("failed to load assigned worker server — deploy may fall back to local")
+		}
 		if server != nil {
 			assignedServer = server
 		}
@@ -118,6 +121,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	} else {
 		runner = NewLocalRunner()
+		if project.WorkerServerID != "" {
+			e.logMsg(ctx, project.ID, "Assigned server unavailable — building on the primary (local) host as a fallback.", "deploy")
+		}
 	}
 
 	// Blue-green: build new container while old one keeps serving traffic.
