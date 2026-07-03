@@ -414,22 +414,28 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
-	// Capacity gate + adaptive cap: never start a build when the build HOST is
-	// low on RAM. `docker build --memory` only bounds the build container, not
-	// the host — so on an already-full box the kernel OOM-kills co-located
-	// services (this is what took the platform down). Check the actual build
-	// host (local, or the assigned BYOC server via SSH) and refuse / right-size.
+	// Capacity gate + adaptive cap: right-size the build to the build HOST's free
+	// RAM so it can't OOM the host. `docker --memory` bounds the container, not
+	// the host — an unbounded build on a full box OOM-kills co-located services
+	// (this took the platform down). Cap the build to available-512MB and only
+	// refuse when the host genuinely can't spare that, so a small BYOC box still
+	// builds (just with a smaller cap). The log names the host so it's clear
+	// whether the build ran on the primary or the BYOC server.
+	buildHost := "the primary server"
+	if runner.IsRemote() {
+		buildHost = "BYOC server " + runner.Host()
+	}
 	buildMemMB := 2048
 	if availMB := availableMemoryMB(ctx, runner); availMB > 0 {
-		const minFreeMB = 1536 // build cap + host headroom
-		if availMB < minFreeMB {
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Build paused — the build host has only %d MB free (need ~%d MB). Free up memory, drain projects, or add/upgrade a server, then redeploy.", availMB, minFreeMB), "error")
-			restoreOldState()
-			return fmt.Errorf("insufficient memory to build: %d MB free on build host", availMB)
-		}
 		if availMB-512 < buildMemMB { // leave a 512 MB host reserve
 			buildMemMB = availMB - 512
 		}
+		if buildMemMB < 512 {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Build paused — %s has only %d MB free (need ~1024 MB). Free up memory or use a bigger server, then redeploy.", buildHost, availMB), "error")
+			restoreOldState()
+			return fmt.Errorf("insufficient memory to build on %s: %d MB free", buildHost, availMB)
+		}
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Building on %s — %d MB free, build capped at %d MB", buildHost, availMB, buildMemMB), "build")
 	}
 
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
