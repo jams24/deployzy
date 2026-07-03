@@ -1,6 +1,6 @@
 # Deployzy
 
-Open-source tunnel to expose your local servers to the internet. Like ngrok, but open source and self-hostable.
+Open-source, free platform to **deploy apps**, **expose localhost** (tunnels), and **run databases** — an open, self-hostable alternative to Railway + ngrok.
 
 ## Features
 
@@ -20,8 +20,9 @@ Open-source tunnel to expose your local servers to the internet. Like ngrok, but
 ## Quick Start
 
 ```bash
-# Install the CLI
-go install github.com/jams24/deployzy/cli/cmd/deployzy@latest
+# Install the CLI (npm or Homebrew)
+npm install -g deployzy
+# or: brew install jams24/deployzy/deployzy
 
 # Authenticate
 deployzy authtoken YOUR_TOKEN
@@ -35,7 +36,7 @@ Output:
 ```
 Deployzy                               (Ctrl+C to quit)
 
-Version              1.0.0
+Version              1.1.3
 Web Inspector        http://127.0.0.1:4040
 
 Forwarding           https://a1b2c3d4.deployzy.com -> localhost:8080
@@ -46,7 +47,7 @@ Forwarding           https://a1b2c3d4.deployzy.com -> localhost:8080
 Deploy your own Deployzy server on any Ubuntu/Debian VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/serverme/serverme/main/deploy/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/jams24/deployzy/main/deploy/install.sh | bash -s -- \
   --domain tunnel.yourdomain.com \
   --email you@example.com
 ```
@@ -110,6 +111,14 @@ tunnels:
 
 ## SDKs
 
+Official SDKs published to npm and PyPI:
+
+| Language | Package | Install |
+|----------|---------|---------|
+| JavaScript / TypeScript | [`deployzy-sdk`](https://www.npmjs.com/package/deployzy-sdk) | `npm install deployzy-sdk` |
+| Python | [`deployzy`](https://pypi.org/project/deployzy/) | `pip install deployzy` |
+| CLI | [`deployzy`](https://www.npmjs.com/package/deployzy) | `npm i -g deployzy` · `brew install jams24/deployzy/deployzy` |
+
 ### JavaScript / TypeScript
 
 ```bash
@@ -157,9 +166,9 @@ Internet → Caddy (TLS) → Deployzy Server → smux over TLS → CLI Client �
 ## Project Structure
 
 ```
-serverme/
+deployzy/
 ├── proto/        # Shared protocol (Go)
-├── server/       # Tunnel server (Go)
+├── server/       # Tunnel + deploy server (Go)
 ├── cli/          # CLI client (Go)
 ├── web/          # Website + Dashboard (Next.js 16)
 ├── sdk-js/       # JavaScript/TypeScript SDK
