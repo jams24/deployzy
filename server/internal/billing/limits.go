@@ -59,7 +59,8 @@ func EnsureCanCreate(ctx context.Context, database *db.DB, user *auth.Authentica
 		return nil
 	}
 
-	limits, err := database.GetPlanLimits(ctx, user.Plan)
+	plan := currentPlan(ctx, database, user)
+	limits, err := database.GetPlanLimits(ctx, plan)
 	if err != nil || limits == nil {
 		return fmt.Errorf("plan lookup failed")
 	}
@@ -72,9 +73,20 @@ func EnsureCanCreate(ctx context.Context, database *db.DB, user *auth.Authentica
 		return nil
 	}
 	if current >= limit {
-		return &LimitError{Plan: user.Plan, Dimension: dim, Limit: limit, Current: current}
+		return &LimitError{Plan: plan, Dimension: dim, Limit: limit, Current: current}
 	}
 	return nil
+}
+
+// currentPlan returns the user's up-to-date plan from the database rather than
+// the (possibly stale) JWT claim, so a plan change takes effect immediately
+// without the user re-logging in. Falls back to the token's plan on error.
+// GetUserByID also applies effectivePlan (referral-reward upgrades).
+func currentPlan(ctx context.Context, database *db.DB, user *auth.AuthenticatedUser) string {
+	if fresh, err := database.GetUserByID(ctx, user.ID); err == nil && fresh != nil && fresh.Plan != "" {
+		return fresh.Plan
+	}
+	return user.Plan
 }
 
 // IsFeatureAllowed checks a boolean per-plan feature flag. Returns true for admins.
@@ -85,7 +97,7 @@ func IsFeatureAllowed(ctx context.Context, database *db.DB, user *auth.Authentic
 	if isAdmin, _ := database.IsUserAdmin(ctx, user.ID); isAdmin {
 		return true
 	}
-	limits, err := database.GetPlanLimits(ctx, user.Plan)
+	limits, err := database.GetPlanLimits(ctx, currentPlan(ctx, database, user))
 	if err != nil || limits == nil {
 		return false
 	}

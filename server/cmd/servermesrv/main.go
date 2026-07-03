@@ -437,14 +437,21 @@ func refreshLocalServerCapacity(ctx context.Context, database *db.DB, log zerolo
 		log.Warn().Msg("refreshLocalServerCapacity: probe returned 0 — leaving placeholders")
 		return
 	}
+	// Derive an honest project ceiling from RAM instead of the 1000 placeholder.
+	// ~256MB baseline per project; the 85%-RAM guard in SelectServerForProject is
+	// the real limiter, this is just so the "X/Y projects" display isn't fiction.
+	maxProj := memMB / 256
+	if maxProj < 3 {
+		maxProj = 3
+	}
 	if _, err := database.Pool.Exec(ctx,
 		`UPDATE worker_servers
-		 SET total_cpu = $1, total_memory_mb = $2
-		 WHERE is_local = true`, cpus, memMB); err != nil {
+		 SET total_cpu = $1, total_memory_mb = $2, max_projects = $3
+		 WHERE is_local = true`, cpus, memMB, maxProj); err != nil {
 		log.Warn().Err(err).Msg("refreshLocalServerCapacity: update failed")
 		return
 	}
-	log.Info().Float64("cpus", cpus).Int("memory_mb", memMB).Msg("local platform server capacity refreshed")
+	log.Info().Float64("cpus", cpus).Int("memory_mb", memMB).Int("max_projects", maxProj).Msg("local platform server capacity refreshed")
 
 	// Also reconcile allocations now that capacity is correct, so the admin
 	// page shows accurate "X / Y MB" right after startup rather than waiting

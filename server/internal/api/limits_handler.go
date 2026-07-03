@@ -28,13 +28,23 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 	ctx := r.Context()
 
-	limits, err := s.db.GetPlanLimits(ctx, u.Plan)
+	isAdmin, _ := s.db.IsUserAdmin(ctx, u.ID)
+
+	// Resolve the *current* plan from the DB (not the possibly-stale JWT claim),
+	// and use the unlimited 'admin' row for admins so the UI reflects reality.
+	plan := u.Plan
+	if fresh, err := s.db.GetUserByID(ctx, u.ID); err == nil && fresh != nil && fresh.Plan != "" {
+		plan = fresh.Plan
+	}
+	if isAdmin {
+		plan = "admin"
+	}
+
+	limits, err := s.db.GetPlanLimits(ctx, plan)
 	if err != nil || limits == nil {
 		writeError(w, http.StatusInternalServerError, "plan lookup failed")
 		return
 	}
-
-	isAdmin, _ := s.db.IsUserAdmin(ctx, u.ID)
 
 	// Counts (cheap, all single-row aggregates).
 	projects, _ := s.db.CountProjectsForUser(ctx, u.ID)
@@ -46,7 +56,7 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 	byoc, _ := s.db.CountBYOCServersForUser(ctx, u.ID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"plan":     u.Plan,
+		"plan":     plan,
 		"is_admin": isAdmin,
 		"limits":   limits,
 		"usage": map[string]int{
