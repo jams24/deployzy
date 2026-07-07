@@ -58,7 +58,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	if project.WorkerServerID != "" {
 		// Project already assigned to a server (BYOC or previously assigned)
-		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		server, err := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+		if err != nil {
+			e.log.Error().Err(err).Str("project", project.ID).Str("worker_server_id", project.WorkerServerID).Msg("failed to load assigned worker server — deploy may fall back to local")
+		}
 		if server != nil {
 			assignedServer = server
 		}
@@ -118,6 +121,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	} else {
 		runner = NewLocalRunner()
+		if project.WorkerServerID != "" {
+			e.logMsg(ctx, project.ID, "Assigned server unavailable — building on the primary (local) host as a fallback.", "deploy")
+		}
 	}
 
 	// Blue-green: build new container while old one keeps serving traffic.
@@ -414,8 +420,32 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	imageName := fmt.Sprintf("sm-project-%s", project.ID[:8])
 	e.logMsg(ctx, project.ID, "Building Docker image (this may take a few minutes)...", "build")
 
+	// Capacity gate + adaptive cap: right-size the build to the build HOST's free
+	// RAM so it can't OOM the host. `docker --memory` bounds the container, not
+	// the host — an unbounded build on a full box OOM-kills co-located services
+	// (this took the platform down). Cap the build to available-512MB and only
+	// refuse when the host genuinely can't spare that, so a small BYOC box still
+	// builds (just with a smaller cap). The log names the host so it's clear
+	// whether the build ran on the primary or the BYOC server.
+	buildHost := "the primary server"
+	if runner.IsRemote() {
+		buildHost = "BYOC server " + runner.Host()
+	}
+	buildMemMB := 2048
+	if availMB := availableMemoryMB(ctx, runner); availMB > 0 {
+		if availMB-512 < buildMemMB { // leave a 512 MB host reserve
+			buildMemMB = availMB - 512
+		}
+		if buildMemMB < 512 {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Build paused — %s has only %d MB free (need ~1024 MB). Free up memory or use a bigger server, then redeploy.", buildHost, availMB), "error")
+			restoreOldState()
+			return fmt.Errorf("insufficient memory to build on %s: %d MB free", buildHost, availMB)
+		}
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Building on %s — %d MB free, build capped at %d MB", buildHost, availMB, buildMemMB), "build")
+	}
+
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
-	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", "--memory=2g", "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
+	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", fmt.Sprintf("--memory=%dm", buildMemMB), "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -909,6 +939,18 @@ func extractBuildError(output string) string {
 		start = 0
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+// availableMemoryMB returns MemAvailable (MB) on the host that will run the
+// build — the primary for local deploys, or the assigned BYOC server via SSH.
+// Returns 0 when it can't be probed (callers then fail open, not closed).
+func availableMemoryMB(ctx context.Context, runner *Runner) int {
+	out, err := runner.RunShell(ctx, `awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo`)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
 }
 
 // planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or
