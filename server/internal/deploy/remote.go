@@ -111,3 +111,37 @@ func (r *Runner) SCPTo(ctx context.Context, localPath, remotePath string) error 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
+
+// StreamLogsCmd returns an *exec.Cmd (not yet started) that streams
+// "docker logs -f" from wherever this runner's host is. For local runners
+// it is a plain docker command; for remote runners it wraps the call in SSH.
+// The caller is responsible for setting Stdout/Stderr and calling Start().
+func (r *Runner) StreamLogsCmd(ctx context.Context, containerName string) *exec.Cmd {
+	dockerArgs := "docker logs -f --tail 200 --timestamps " + shellQuote(containerName)
+	if r.server == nil {
+		return exec.CommandContext(ctx, "bash", "-c", dockerArgs)
+	}
+	return r.sshStreamCmd(ctx, dockerArgs)
+}
+
+// sshStreamCmd builds a streaming SSH *exec.Cmd for the given shell command.
+// Uses a separate temp-key prefix (sm_log_) so it never races the deploy-time
+// key file (sm_ssh_) when both operations run concurrently.
+func (r *Runner) sshStreamCmd(ctx context.Context, cmd string) *exec.Cmd {
+	s := r.server
+	var sshLine string
+	escaped := strings.ReplaceAll(cmd, "'", "'\\''")
+	if s.SSHPassword != "" {
+		sshLine = fmt.Sprintf(
+			"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 -p %d %s@%s '%s'",
+			strings.ReplaceAll(s.SSHPassword, "'", "'\\''"), s.Port, s.SSHUser, s.Host, escaped)
+	} else if s.SSHKey != "" {
+		kp := fmt.Sprintf("/tmp/sm_log_%s", s.ID[:8])
+		sshLine = fmt.Sprintf(
+			"echo '%s' > %s && chmod 600 %s && ssh -i %s -o StrictHostKeyChecking=no -o ConnectTimeout=15 -p %d %s@%s '%s'",
+			strings.ReplaceAll(s.SSHKey, "'", "'\\''"), kp, kp, kp, s.Port, s.SSHUser, s.Host, escaped)
+	} else {
+		return exec.CommandContext(ctx, "bash", "-c", "echo 'no SSH credentials configured' >&2; exit 1")
+	}
+	return exec.CommandContext(ctx, "bash", "-c", sshLine)
+}

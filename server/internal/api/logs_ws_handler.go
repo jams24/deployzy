@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -62,15 +60,17 @@ func (s *Server) handleProjectLogsWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Container name follows sm-<first 8 of project ID>
-	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-
-	// Use docker logs -f with the last 200 lines of backfill so the user sees
-	// recent context immediately. We stream stdout+stderr combined.
+	// Stream docker logs from wherever the container actually lives: local for
+	// platform projects, over SSH for BYOC. The deploy engine's LogStreamCmd
+	// handles the routing so this handler never needs to know the difference.
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "docker", "logs", "-f", "--tail", "200", "--timestamps", containerName)
+	if s.deployer == nil {
+		_ = conn.WriteJSON(map[string]string{"type": "error", "msg": "deploy engine unavailable"})
+		return
+	}
+	cmd := s.deployer.LogStreamCmd(ctx, project)
 	// Merge stdout+stderr into a single pipe so we don't need two scanners.
 	stdoutR, stdoutW, pipeErr := osPipe()
 	if pipeErr != nil {

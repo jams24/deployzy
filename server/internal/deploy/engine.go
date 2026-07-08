@@ -737,6 +737,14 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	return NewLocalRunner()
 }
 
+// LogStreamCmd returns an *exec.Cmd (not yet started) that streams live
+// docker logs for project from wherever its container actually lives —
+// locally for platform projects, over SSH for BYOC.
+func (e *Engine) LogStreamCmd(ctx context.Context, project *db.Project) *exec.Cmd {
+	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
+	return e.getRunner(ctx, project).StreamLogsCmd(ctx, containerName)
+}
+
 // GetProjectPort returns the container port for a deployed project by subdomain.
 func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
 	port, _, ok := e.GetProjectRouting(subdomain)
