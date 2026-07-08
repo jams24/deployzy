@@ -546,6 +546,9 @@ function ProjectsContent() {
   }
 
   async function stop(id: string) {
+    // Optimistic update so the UI flips to "stopped" immediately without
+    // waiting for the load() round-trip.
+    setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "stopped" } : p));
     await fetch(`${API}/api/v1/projects/${id}/stop`, { method: "POST", headers: headers() });
     load();
   }
@@ -1310,7 +1313,8 @@ function ProjectsContent() {
                   <div className={`flex items-center gap-1 ${isGrid && !isSel ? "flex-wrap" : "shrink-0"}`}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                        {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} Deploy
+                        {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                        {p.status === "stopped" ? "Start" : "Deploy"}
                       </Button>
                     )}
                     {p.status === "running" && (
