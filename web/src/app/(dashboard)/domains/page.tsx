@@ -33,11 +33,12 @@ export default function DomainsPage() {
   async function loadTargets() {
     try {
       const tunnels = await api.listTunnels();
-      const t: Target[] = tunnels.map((tun: { name: string; protocol: string; type?: string }) => {
-        const sub = tun.name || "";
+      const t: Target[] = tunnels.map((tun: { name: string; subdomain?: string; protocol: string; type?: string }) => {
         if (tun.type === "project") {
-          return { type: "project" as const, subdomain: sub, label: `Project: ${sub}` };
+          const sub = tun.subdomain || tun.name || "";
+          return { type: "project" as const, subdomain: sub, label: `Project: ${tun.name || sub}` };
         }
+        const sub = tun.name || "";
         return { type: "tunnel" as const, subdomain: sub, label: `Tunnel: ${sub} (${tun.protocol})` };
       }).filter((t: Target) => t.subdomain);
       setTargets(t);
