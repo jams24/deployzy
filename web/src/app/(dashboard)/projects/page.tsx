@@ -31,6 +31,7 @@ interface Project {
   preview_enabled?: boolean;
   parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
+  worker_server_id?: string | null;
 }
 interface BuildConfig {
   install_cmd: string; build_cmd: string; start_cmd: string;
@@ -1328,21 +1329,26 @@ function ProjectsContent() {
                         <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => stop(p.id)}>
                           <Square className="h-3 w-3" /> Stop
                         </Button>
-                        {userServers.filter(s => s.status === "active").length > 0 && (
-                          <select
-                            className="h-7 rounded-md border border-input bg-background px-2 text-xs"
-                            value=""
-                            disabled={deploying === p.id}
-                            title="Move this project to another server (Pro)"
-                            onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
-                          >
-                            <option value="">Move to…</option>
-                            <option value="platform">Platform (shared)</option>
-                            {userServers.filter(s => s.status === "active").map(s => (
-                              <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
-                            ))}
-                          </select>
-                        )}
+                        {(() => {
+                          const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
+                          const showPlatform = !!p.worker_server_id;
+                          if (!showPlatform && otherServers.length === 0) return null;
+                          return (
+                            <select
+                              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                              value=""
+                              disabled={deploying === p.id}
+                              title="Move this project to another server (Pro)"
+                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
+                            >
+                              <option value="">Move to…</option>
+                              {showPlatform && <option value="platform">Platform (shared)</option>}
+                              {otherServers.map(s => (
+                                <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
