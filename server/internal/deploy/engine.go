@@ -687,6 +687,16 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
 	runner.Exec(ctx, "docker", "stop", containerName)
 	runner.Exec(ctx, "docker", "rm", "-f", containerName)
+	// Belt-and-braces: also clear the container from the primary/local host. A
+	// project's container can physically live somewhere other than its currently
+	// assigned server (e.g. it was deployed to the primary before being reassigned
+	// to a BYOC box, or during a move). Stopping a non-existent container is a
+	// harmless no-op, so this guarantees no orphan keeps running after a delete/move.
+	if runner.IsRemote() {
+		local := NewLocalRunner()
+		local.Exec(ctx, "docker", "stop", containerName)
+		local.Exec(ctx, "docker", "rm", "-f", containerName)
+	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
 	// Drop sibling-subdomain routes — the container (and all its services) is gone.
 	e.db.DeleteServiceRoutes(ctx, project.ID)

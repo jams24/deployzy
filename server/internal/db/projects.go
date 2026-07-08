@@ -519,8 +519,15 @@ func (d *DB) GetDeployLogs(ctx context.Context, projectID string, limit int) ([]
 	return logs, nil
 }
 
-// AssignProjectServer links a project to a worker server.
+// AssignProjectServer links a project to a worker server. An empty serverID
+// clears the assignment (NULL) — i.e. moves the project back to the platform.
+// worker_server_id is a UUID column, so "" must become NULL, not ''.
 func (d *DB) AssignProjectServer(ctx context.Context, projectID, serverID string) error {
+	if serverID == "" {
+		_, err := d.Pool.Exec(ctx,
+			`UPDATE projects SET worker_server_id = NULL WHERE id = $1`, projectID)
+		return err
+	}
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE projects SET worker_server_id = $2 WHERE id = $1`,
 		projectID, serverID,

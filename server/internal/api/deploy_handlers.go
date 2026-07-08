@@ -669,6 +669,88 @@ func (s *Server) handleDeployProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "deploying"})
 }
 
+// handleMoveProject moves a running project to a different server (Pro feature).
+// It tears down the current container (wherever it lives), reassigns the
+// project, and redeploys on the target. An empty/"platform" target moves it
+// back to the shared platform.
+func (s *Server) handleMoveProject(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	projectID := chi.URLParam(r, "projectId")
+
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+
+	// Pro feature — admins bypass; free tier can't move running projects.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		user, _ := s.db.GetUserByID(r.Context(), u.ID)
+		if user == nil || user.Plan == "free" || user.Plan == "" {
+			writeError(w, http.StatusForbidden, "Moving a running project to another server is a Pro feature — upgrade to Pro.")
+			return
+		}
+	}
+
+	var body struct {
+		WorkerServerID string `json:"worker_server_id"` // "" or "platform" = platform
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	target := body.WorkerServerID
+	if target == "platform" {
+		target = ""
+	}
+	if target == project.WorkerServerID {
+		writeError(w, http.StatusBadRequest, "project is already on that server")
+		return
+	}
+
+	// Validate a BYOC target belongs to the user and is active. Empty = platform.
+	if target != "" {
+		srv, err := s.db.GetWorkerServer(r.Context(), target)
+		if err != nil || srv == nil {
+			writeError(w, http.StatusBadRequest, "target server not found")
+			return
+		}
+		if srv.UserID == nil || *srv.UserID != u.ID {
+			writeError(w, http.StatusForbidden, "you don't own that server")
+			return
+		}
+		if srv.Status != "active" {
+			writeError(w, http.StatusBadRequest, "target server is offline — bring it online first")
+			return
+		}
+	}
+
+	// Tear down the current container (belt-and-braces removes it wherever it runs),
+	// reassign, then redeploy on the target.
+	s.deployer.Stop(r.Context(), project)
+	s.db.AssignProjectServer(r.Context(), projectID, target)
+	project.WorkerServerID = target
+
+	// Fresh GitHub token for the rebuild on the new host.
+	if s.deployer.GitHub != nil && project.RepoURL != "" && !strings.Contains(project.RepoURL, "@github.com") {
+		if repoName := extractRepoFullName(project.RepoURL); repoName != "" {
+			if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
+				project.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoName)
+			}
+		}
+	}
+
+	go func() {
+		ctx := context.Background()
+		if err := s.deployer.Deploy(ctx, project); err != nil {
+			s.log.Error().Err(err).Str("project", projectID).Msg("move redeploy failed")
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "moving"})
+}
+
 func (s *Server) handleToggleAutoDeploy(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 	projectID := chi.URLParam(r, "projectId")

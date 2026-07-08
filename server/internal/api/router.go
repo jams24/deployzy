@@ -192,6 +192,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(deployScope).Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
 			r.With(deployScope).Post("/projects/{projectId}/upload", s.handleUploadProject)
 			r.With(deployScope).Post("/projects/{projectId}/deploy", s.handleDeployProject)
+			r.With(deployScope).Post("/projects/{projectId}/move", s.handleMoveProject)
 			r.With(deployScope).Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
 			r.With(deployScope).Post("/projects/{projectId}/stop", s.handleStopProject)
 			r.With(deployScope).Delete("/projects/{projectId}", s.handleDeleteProject)

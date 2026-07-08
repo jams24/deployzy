@@ -528,6 +528,23 @@ function ProjectsContent() {
     setTimeout(() => setDeploying(null), 3000);
   }
 
+  // Move a running project to another server (Pro). "" = back to the platform.
+  async function move(id: string, workerServerId: string) {
+    setDeploying(id);
+    const res = await fetch(`${API}/api/v1/projects/${id}/move`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ worker_server_id: workerServerId }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || "Move failed");
+      setDeploying(null);
+      return;
+    }
+    load();
+    loadLogs(id);
+    setTimeout(() => setDeploying(null), 3000);
+  }
+
   async function stop(id: string) {
     await fetch(`${API}/api/v1/projects/${id}/stop`, { method: "POST", headers: headers() });
     load();
@@ -1298,6 +1315,21 @@ function ProjectsContent() {
                         <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => stop(p.id)}>
                           <Square className="h-3 w-3" /> Stop
                         </Button>
+                        {userServers.filter(s => s.status === "active").length > 0 && (
+                          <select
+                            className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                            value=""
+                            disabled={deploying === p.id}
+                            title="Move this project to another server (Pro)"
+                            onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
+                          >
+                            <option value="">Move to…</option>
+                            <option value="platform">Platform (shared)</option>
+                            {userServers.filter(s => s.status === "active").map(s => (
+                              <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                            ))}
+                          </select>
+                        )}
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
