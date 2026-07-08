@@ -903,7 +903,16 @@ function ProjectsContent() {
     setTogglingAutoDeploy(null);
   }
 
-  useEffect(() => { load(); loadGHStatus(); loadDomains(); }, []);
+  // Load the user's servers on mount so the per-project "Move to…" control can
+  // render (previously servers were only fetched when the Import dialog opened).
+  function loadServers() {
+    fetch(`${API}/api/v1/servers`, { headers: headers() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setUserServers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }
+
+  useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
