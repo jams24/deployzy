@@ -919,8 +919,15 @@ function ProjectsContent() {
 
   useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
 
-  // Auto-refresh project list while any project is actively building/deploying.
-  // The interval clears itself as soon as all projects reach a stable state.
+  // Slow unconditional poll — catches auto-deploys (GitHub webhook), BYOC
+  // status changes, and anything else the frontend didn't trigger itself.
+  useEffect(() => {
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Fast poll (3 s) while any project is actively building so the badge
+  // and buttons update quickly without waiting for the 15 s tick.
   useEffect(() => {
     const hasBuilding = projects.some(p => p.status === "building");
     if (!hasBuilding) return;
