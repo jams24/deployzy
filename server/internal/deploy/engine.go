@@ -629,11 +629,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// starting the new one. Running both simultaneously causes conflicts for
 	// stateful single-instance services (e.g. Telegram bots get 409 from
 	// getUpdates when two instances poll at the same time).
+	// We only STOP (not rm) so that if the new container fails to launch we can
+	// docker start the old one back up instead of leaving the service dead.
 	stoppedOldBeforeStart := false
 	if project.HealthCheckPath == "" && oldHostPort > 0 {
 		e.logMsg(ctx, project.ID, "Stopping previous container before starting new one...", "deploy")
 		runner.Exec(ctx, "docker", "stop", containerName)
-		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 		stoppedOldBeforeStart = true
 	}
 
@@ -642,6 +643,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
+		if stoppedOldBeforeStart {
+			// Restart the old container — new one never launched.
+			runner.Exec(ctx, "docker", "start", containerName)
+		}
 		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
 	}
@@ -670,11 +675,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
 		}
 
-		// Stop the old container if we haven't already (zero-downtime path for HTTP services).
+		// Remove the old container. For HTTP services it's still running and
+		// needs stop+rm; for non-HTTP services it was already stopped before the
+		// new one launched, so just rm it.
 		if !stoppedOldBeforeStart {
 			runner.Exec(ctx, "docker", "stop", containerName)
-			runner.Exec(ctx, "docker", "rm", "-f", containerName)
 		}
+		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
 		runner.Exec(ctx, "docker", "rename", newContainerName, containerName)
@@ -688,10 +695,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
 
-		// Clean up the failed new container; old container is untouched.
+		// Clean up the failed new container.
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-
+		if stoppedOldBeforeStart {
+			// Old container was stopped before new launched — restart it so the
+			// service keeps running despite the failed deploy.
+			runner.Exec(ctx, "docker", "start", containerName)
+		}
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
