@@ -523,8 +523,9 @@ function ProjectsContent() {
 
   async function deploy(id: string) {
     setDeploying(id);
+    // Optimistically mark as building so the polling useEffect kicks in immediately.
+    setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "building" } : p));
     await fetch(`${API}/api/v1/projects/${id}/deploy`, { method: "POST", headers: headers() });
-    load();
     loadLogs(id);
     setTimeout(() => setDeploying(null), 3000);
   }
