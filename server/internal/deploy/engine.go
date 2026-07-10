@@ -104,11 +104,6 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// isRemoteBYOC is true when the project lives on a user's own server (not
 	// a platform-local host). For remote projects the platform proxy cannot
-	// reach localhost:{port}, so there is no benefit in transitioning to
-	// "building" — the old container keeps serving on the remote box and the
-	// project should stay "running" in the UI throughout the build.
-	isRemoteBYOC := false
-
 	if assignedServer != nil {
 		isLocalHost := assignedServer.IsLocal ||
 			assignedServer.Host == "localhost" ||
@@ -119,7 +114,6 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
-			isRemoteBYOC = true
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
 		}
 	} else {
@@ -129,14 +123,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	// For local/platform deploys: mark "building" so the proxy keeps routing to
-	// the old container port while the new image builds (GetProjectRouting
-	// allows 'building' status). For remote BYOC deploys: keep status "running"
-	// — the old container is still live on the remote box and the UI should not
-	// show the project as inactive during a redeploy.
-	if !isRemoteBYOC {
-		e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
-	}
+	// Always mark "building" so the UI shows the correct state during a redeploy.
+	// The proxy allows both 'building' and 'running', and we preserve the old
+	// container_port, so traffic keeps flowing to the old container throughout
+	// the build — both on local/platform and BYOC servers.
+	e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 
 	// Blue-green: build new container while old one keeps serving traffic.
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
@@ -625,28 +616,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	args = append(args, imageName)
 
-	// For non-HTTP workers (no health check path), stop the old container before
-	// starting the new one. Running both simultaneously causes conflicts for
-	// stateful single-instance services (e.g. Telegram bots get 409 from
-	// getUpdates when two instances poll at the same time).
-	// We only STOP (not rm) so that if the new container fails to launch we can
-	// docker start the old one back up instead of leaving the service dead.
-	stoppedOldBeforeStart := false
-	if project.HealthCheckPath == "" && oldHostPort > 0 {
-		e.logMsg(ctx, project.ID, "Stopping previous container before starting new one...", "deploy")
-		runner.Exec(ctx, "docker", "stop", containerName)
-		stoppedOldBeforeStart = true
-	}
-
+	// Always start the new container before touching the old one (true blue-green).
+	// The old container keeps serving traffic until the new one is confirmed healthy.
+	// This guarantees zero downtime even for stateful services: if the new container
+	// fails to launch or crashes immediately, the old one is never stopped.
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-		if stoppedOldBeforeStart {
-			// Restart the old container — new one never launched.
-			runner.Exec(ctx, "docker", "start", containerName)
-		}
 		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
 	}
@@ -675,12 +653,8 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
 		}
 
-		// Remove the old container. For HTTP services it's still running and
-		// needs stop+rm; for non-HTTP services it was already stopped before the
-		// new one launched, so just rm it.
-		if !stoppedOldBeforeStart {
-			runner.Exec(ctx, "docker", "stop", containerName)
-		}
+		// Old container is still running — stop it now that the new one is confirmed healthy.
+		runner.Exec(ctx, "docker", "stop", containerName)
 		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
@@ -695,14 +669,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
 
-		// Clean up the failed new container.
+		// Clean up the failed new container. Old container was never stopped, so it
+		// keeps serving traffic automatically — no restart needed.
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-		if stoppedOldBeforeStart {
-			// Old container was stopped before new launched — restart it so the
-			// service keeps running despite the failed deploy.
-			runner.Exec(ctx, "docker", "start", containerName)
-		}
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")

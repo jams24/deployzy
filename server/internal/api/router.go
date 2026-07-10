@@ -215,6 +215,13 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/services/{serviceId}/redis/value", s.handleRedisGetValue)
 			r.With(deployScope).Put("/services/{serviceId}/redis/value", s.handleRedisSetValue)
 			r.With(deployScope).Delete("/services/{serviceId}/redis/value", s.handleRedisDelValue)
+			// MongoDB browser
+			r.Get("/services/{serviceId}/mongo/collections", s.handleMongoCollections)
+			r.Get("/services/{serviceId}/mongo/documents", s.handleMongoDocs)
+			r.With(deployScope).Post("/services/{serviceId}/mongo/documents", s.handleMongoInsertDoc)
+			r.With(deployScope).Put("/services/{serviceId}/mongo/documents", s.handleMongoUpdateDoc)
+			r.With(deployScope).Delete("/services/{serviceId}/mongo/documents", s.handleMongoDeleteDoc)
+			r.Post("/services/{serviceId}/mongo/shell", s.handleMongoShell)
 			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
 			r.With(deployScope).Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
 

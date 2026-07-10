@@ -36,6 +36,7 @@ require (
 	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect

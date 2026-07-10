@@ -269,14 +269,16 @@ export default function ServicesPage() {
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
                       </div>
                     </div>
-                    {(isSQL(s.type) || s.type === "redis") && (
+                    {(isSQL(s.type) || s.type === "redis" || s.type === "mongodb") && (
                       <Link
                         href={
                           s.type === "redis"
                             ? `/redis/${s.id}`
-                            : isProj && s.project_id
-                              ? `/database/${s.id}?type=project&projectId=${s.project_id}`
-                              : `/database/${s.id}?type=service`
+                            : s.type === "mongodb"
+                              ? `/mongo/${s.id}`
+                              : isProj && s.project_id
+                                ? `/database/${s.id}?type=project&projectId=${s.project_id}`
+                                : `/database/${s.id}?type=service`
                         }
                         className="shrink-0"
                       >
