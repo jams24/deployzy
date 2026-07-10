@@ -613,6 +613,18 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	args = append(args, imageName)
 
+	// For non-HTTP workers (no health check path), stop the old container before
+	// starting the new one. Running both simultaneously causes conflicts for
+	// stateful single-instance services (e.g. Telegram bots get 409 from
+	// getUpdates when two instances poll at the same time).
+	stoppedOldBeforeStart := false
+	if project.HealthCheckPath == "" && oldHostPort > 0 {
+		e.logMsg(ctx, project.ID, "Stopping previous container before starting new one...", "deploy")
+		runner.Exec(ctx, "docker", "stop", containerName)
+		runner.Exec(ctx, "docker", "rm", "-f", containerName)
+		stoppedOldBeforeStart = true
+	}
+
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
@@ -646,9 +658,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
 		}
 
-		// Traffic has moved — now safe to stop the old container.
-		runner.Exec(ctx, "docker", "stop", containerName)
-		runner.Exec(ctx, "docker", "rm", "-f", containerName)
+		// Stop the old container if we haven't already (zero-downtime path for HTTP services).
+		if !stoppedOldBeforeStart {
+			runner.Exec(ctx, "docker", "stop", containerName)
+			runner.Exec(ctx, "docker", "rm", "-f", containerName)
+		}
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
 		runner.Exec(ctx, "docker", "rename", newContainerName, containerName)
