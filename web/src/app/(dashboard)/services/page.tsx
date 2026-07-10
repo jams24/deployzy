@@ -269,7 +269,7 @@ export default function ServicesPage() {
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
                       </div>
                     </div>
-                    {s.type === "postgres" && (
+                    {isSQL(s.type) && (
                       <Link
                         href={isProj && s.project_id ? `/database/${s.id}?type=project&projectId=${s.project_id}` : `/database/${s.id}?type=service`}
                         className="shrink-0"
@@ -342,11 +342,14 @@ export default function ServicesPage() {
                             setSqlOpen((o) => {
                               const next = !o[s.id];
                               if (next && sqlText[s.id] === undefined) {
+                                const defaultSQL = s.type === "mysql"
+                                  ? "SHOW TABLES;"
+                                  : "SELECT * FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;";
                                 try {
                                   const saved = localStorage.getItem(`sm_sql_${s.id}`);
-                                  setSqlText((t) => ({ ...t, [s.id]: saved || "SELECT * FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;" }));
+                                  setSqlText((t) => ({ ...t, [s.id]: saved || defaultSQL }));
                                 } catch {
-                                  setSqlText((t) => ({ ...t, [s.id]: "SELECT * FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;" }));
+                                  setSqlText((t) => ({ ...t, [s.id]: defaultSQL }));
                                 }
                               }
                               return { ...o, [s.id]: next };
