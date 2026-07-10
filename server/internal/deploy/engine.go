@@ -448,7 +448,19 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
-	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", fmt.Sprintf("--memory=%dm", buildMemMB), "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
+	// DOCKER_BUILDKIT=0 forces the legacy builder, which is required for
+	// --memory to actually be honoured. BuildKit (default since Docker 23)
+	// silently ignores --memory, letting an unbounded build exhaust the host
+	// and trigger the OOM killer against co-located containers (e.g. the
+	// previously-running version of this very project).
+	buildShellCmd := fmt.Sprintf(
+		"DOCKER_BUILDKIT=0 docker build --no-cache --memory=%dm -f %s -t %s %s",
+		buildMemMB,
+		shellQuote(buildCtx+"/"+effectiveDockerfile),
+		shellQuote(imageName),
+		shellQuote(buildCtx),
+	)
+	output, err := runner.RunShell(buildCtx2, buildShellCmd)
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -461,10 +473,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 	e.logMsg(ctx, project.ID, "Build successful", "build")
 
-	// Find available host port
+	// Find an available host port on the build target (local or remote BYOC).
+	portFree := func(p int) bool { return !isPortInUseOn(ctx, runner, p) }
 	hostPort := 10100 + rand.Intn(900)
 	for i := 0; i < 50; i++ {
-		if !isPortInUse(hostPort) {
+		if portFree(hostPort) {
 			break
 		}
 		hostPort = 10100 + rand.Intn(900)
@@ -511,7 +524,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	usedHostPorts := map[int]bool{hostPort: true}
 	pickHostPort := func() int {
 		p := 10100 + rand.Intn(900)
-		for isPortInUse(p) || usedHostPorts[p] {
+		for !portFree(p) || usedHostPorts[p] {
 			p = 10100 + rand.Intn(900)
 		}
 		usedHostPorts[p] = true
@@ -1079,10 +1092,23 @@ func maskToken(url string) string {
 	return url
 }
 
-// isPortInUse checks if a port is already in use.
+// isPortInUse checks if a port is already in use on the local host.
 func isPortInUse(port int) bool {
 	output, _ := exec.Command("ss", "-tlnp", fmt.Sprintf("sport = :%d", port)).Output()
 	return strings.Contains(string(output), strconv.Itoa(port))
+}
+
+// isPortInUseOn checks if a port is in use on whichever host the runner targets
+// (local platform or remote BYOC server). This prevents assigning a port that's
+// already taken on the BYOC host — isPortInUse alone can't see remote ports.
+func isPortInUseOn(ctx context.Context, runner *Runner, port int) bool {
+	portStr := strconv.Itoa(port)
+	out, err := runner.RunShell(ctx, "ss -tlnp sport = :"+portStr+" 2>/dev/null")
+	if err != nil {
+		// Fall back to local check when the remote probe fails.
+		return isPortInUse(port)
+	}
+	return strings.Contains(string(out), portStr)
 }
 
 // fileExists checks if a file exists.
