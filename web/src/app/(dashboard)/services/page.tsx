@@ -187,12 +187,22 @@ export default function ServicesPage() {
 
   const mask = (url: string, pw: string) => url.replace(`:${pw}@`, ":****@");
 
+  const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
+  const typeColors = (t: string): { icon: string; badge: string } => ({
+    postgres: { icon: "bg-emerald-500/10 text-emerald-400", badge: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+    redis:    { icon: "bg-red-500/10 text-red-400",         badge: "bg-red-500/10 text-red-400 border-red-500/20" },
+    mongodb:  { icon: "bg-green-500/10 text-green-400",     badge: "bg-green-500/10 text-green-400 border-green-500/20" },
+    mysql:    { icon: "bg-orange-500/10 text-orange-400",   badge: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+  }[t] ?? { icon: "bg-zinc-500/10 text-zinc-400", badge: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" });
+  const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
+  const isSQL = (t: string) => t === "postgres" || t === "mysql";
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Databases</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Managed PostgreSQL instances — standalone or linked to a project.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" /></Button>
@@ -210,7 +220,7 @@ export default function ServicesPage() {
             <Database className="h-10 w-10 text-muted-foreground/30 mb-4" />
             <h3 className="font-semibold">No databases yet</h3>
             <p className="mt-1 text-sm text-muted-foreground text-center max-w-sm">
-              Deploy a standalone PostgreSQL database, or a project you create on Deployzy can have one attached automatically.
+              Create a standalone PostgreSQL, Redis, MongoDB, or MySQL database — or attach one automatically when deploying a project.
             </p>
             <Button className="mt-5 gap-2" nativeButton={false} render={<Link href="/new?type=database" />}>
               <Database className="h-4 w-4" /> Create Database
@@ -233,14 +243,14 @@ export default function ServicesPage() {
                 <div className="px-4 py-2.5 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/10 text-blue-400" : typeColors(s.type).icon}`}>
                         <Database className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{s.name}</span>
                           <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">{s.status}</Badge>
-                          <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">PostgreSQL 16</Badge>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 hidden sm:inline-flex ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
                           {isProj && s.project_subdomain && (
                             <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/20 gap-1 hidden lg:inline-flex">
                               <Rocket className="h-2.5 w-2.5" />
@@ -259,14 +269,16 @@ export default function ServicesPage() {
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
                       </div>
                     </div>
-                    <Link
-                      href={isProj && s.project_id ? `/database/${s.id}?type=project&projectId=${s.project_id}` : `/database/${s.id}?type=service`}
-                      className="shrink-0"
-                    >
-                      <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">
-                        <Table2 className="h-3 w-3" /> Editor
-                      </Button>
-                    </Link>
+                    {s.type === "postgres" && (
+                      <Link
+                        href={isProj && s.project_id ? `/database/${s.id}?type=project&projectId=${s.project_id}` : `/database/${s.id}?type=service`}
+                        className="shrink-0"
+                      >
+                        <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">
+                          <Table2 className="h-3 w-3" /> Editor
+                        </Button>
+                      </Link>
+                    )}
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0" onClick={() => remove(s)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -276,8 +288,8 @@ export default function ServicesPage() {
                     <>
                       {/* Connection details */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div><span className="text-muted-foreground">Database:</span> <span className="font-mono">{s.db_name}</span></div>
-                        <div><span className="text-muted-foreground">User:</span> <span className="font-mono">{s.db_user}</span></div>
+                        {s.type !== "redis" && s.db_name && <div><span className="text-muted-foreground">Database:</span> <span className="font-mono">{s.db_name}</span></div>}
+                        {s.type !== "redis" && s.db_user && <div><span className="text-muted-foreground">User:</span> <span className="font-mono">{s.db_user}</span></div>}
                         <div><span className="text-muted-foreground">Host:</span> <span className="font-mono">{s.host}</span></div>
                         <div><span className="text-muted-foreground">Port:</span> <span className="font-mono">{s.port}</span></div>
                       </div>
@@ -287,7 +299,7 @@ export default function ServicesPage() {
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-muted-foreground font-medium">Internal URL</span>
-                            <span className="text-[10px] text-muted-foreground">{isProj ? "Auto-injected as DATABASE_URL" : "Copy into your project's DATABASE_URL"}</span>
+                            <span className="text-[10px] text-muted-foreground">{isProj ? `Auto-injected as ${urlEnvKey(s.type)}` : `Copy into your project's ${urlEnvKey(s.type)}`}</span>
                           </div>
                           <div className="flex items-center gap-1 min-w-0">
                             <code className="flex-1 min-w-0 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
@@ -320,9 +332,8 @@ export default function ServicesPage() {
                         </div>
                       </div>
 
-                      {/* SQL Console — run arbitrary queries against this DB.
-                          10s statement_timeout, 1000-row cap, credentials never leave the server. */}
-                      <div className="border-t border-border/30 pt-3 space-y-2">
+                      {/* SQL Console — postgres only (query endpoint rejects other types) */}
+                      {isSQL(s.type) && <div className="border-t border-border/30 pt-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
                             <Database className="h-3 w-3" /> SQL Console
@@ -409,7 +420,7 @@ export default function ServicesPage() {
                             )}
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {/* Backups — only for project-linked DBs (existing backend endpoints) */}
                       {isProj && s.project_id && (

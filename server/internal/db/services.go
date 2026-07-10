@@ -34,24 +34,45 @@ type Service struct {
 
 // ConnectionURL returns the internal connection string (for containers on same host).
 func (s *Service) ConnectionURL() string {
-	return s.connectionURLWithHost(s.Host)
+	return s.connectionURLWithHostPort(s.Host, s.Port)
 }
 
 // ExternalConnectionURL returns the external connection string (for local dev / external tools).
-func (s *Service) ExternalConnectionURL(publicHost string) string {
-	return s.connectionURLWithHost(publicHost)
+// Uses PublicHost/PublicPort when set (containerized services with mapped ports).
+func (s *Service) ExternalConnectionURL(fallbackHost string) string {
+	host := fallbackHost
+	port := s.Port
+	if s.PublicHost != nil && *s.PublicHost != "" {
+		host = *s.PublicHost
+	}
+	if s.PublicPort != nil && *s.PublicPort > 0 {
+		port = *s.PublicPort
+	}
+	return s.connectionURLWithHostPort(host, port)
 }
 
-func (s *Service) connectionURLWithHost(host string) string {
+func (s *Service) connectionURLWithHostPort(host string, port int) string {
+	ptrStr := func(p *string) string {
+		if p == nil { return "" }
+		return *p
+	}
 	switch s.Type {
 	case "postgres":
-		dbName, dbUser, dbPass := "", "", ""
-		if s.DBName != nil { dbName = *s.DBName }
-		if s.DBUser != nil { dbUser = *s.DBUser }
-		if s.DBPassword != nil { dbPass = *s.DBPassword }
-		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", dbUser, dbPass, host, s.Port, dbName)
+		return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", ptrStr(s.DBUser), ptrStr(s.DBPassword), host, port, ptrStr(s.DBName))
 	case "redis":
-		return fmt.Sprintf("redis://%s:%d", host, s.Port)
+		pw := ptrStr(s.DBPassword)
+		if pw != "" {
+			return fmt.Sprintf("redis://:%s@%s:%d", pw, host, port)
+		}
+		return fmt.Sprintf("redis://%s:%d", host, port)
+	case "mongodb":
+		dbUser, dbPass, dbName := ptrStr(s.DBUser), ptrStr(s.DBPassword), ptrStr(s.DBName)
+		if dbUser != "" {
+			return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin", dbUser, dbPass, host, port, dbName)
+		}
+		return fmt.Sprintf("mongodb://%s:%d/%s", host, port, dbName)
+	case "mysql":
+		return fmt.Sprintf("mysql://%s:%s@%s:%d/%s", ptrStr(s.DBUser), ptrStr(s.DBPassword), host, port, ptrStr(s.DBName))
 	default:
 		return ""
 	}
@@ -98,6 +119,20 @@ func (d *DB) CreateService(ctx context.Context, userID, name, serviceType string
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port`,
 		userID, name, serviceType, dbName, dbName, password, 5432,
+	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt, &svc.SizeMB, &svc.OverQuota, &svc.WorkerServerID, &svc.ContainerName, &svc.PublicHost, &svc.PublicPort)
+	return &svc, err
+}
+
+// CreateContainerService persists a platform-hosted container service (Redis, MongoDB,
+// MySQL). The caller must docker-run the container locally before calling this; cleanup
+// on failure is the caller's responsibility.
+func (d *DB) CreateContainerService(ctx context.Context, userID, name, serviceType, containerName, internalHost string, internalPort int, publicHost string, publicPort int, dbName, dbUser, dbPassword string) (*Service, error) {
+	var svc Service
+	err := d.Pool.QueryRow(ctx,
+		`INSERT INTO services (user_id, name, type, db_name, db_user, db_password, host, port, container_name, public_host, public_port, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active')
+		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port`,
+		userID, name, serviceType, dbName, dbUser, dbPassword, internalHost, internalPort, containerName, publicHost, publicPort,
 	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt, &svc.SizeMB, &svc.OverQuota, &svc.WorkerServerID, &svc.ContainerName, &svc.PublicHost, &svc.PublicPort)
 	return &svc, err
 }
@@ -158,8 +193,8 @@ func (d *DB) DeleteService(ctx context.Context, id, userID string) error {
 		return fmt.Errorf("service not found")
 	}
 
-	// Only drop platform Postgres state when the service actually lives there.
-	if svc.Type == "postgres" && svc.WorkerServerID == nil && svc.DBName != nil && svc.DBUser != nil {
+	// Only drop platform Postgres state when the service actually lives on platform PG.
+	if svc.Type == "postgres" && svc.WorkerServerID == nil && svc.ContainerName == nil && svc.DBName != nil && svc.DBUser != nil {
 		d.Pool.Exec(ctx, fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", *svc.DBName))
 		d.Pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", *svc.DBName))
 		d.Pool.Exec(ctx, fmt.Sprintf("DROP ROLE IF EXISTS %s", *svc.DBUser))
