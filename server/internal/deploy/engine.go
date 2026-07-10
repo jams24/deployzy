@@ -48,11 +48,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	defer mu.Unlock()
 
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
-	// Keep the old port alive so the proxy continues routing to the old container
-	// while the new image is being built. GetProjectRouting allows 'building' status.
-	e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 
-	// Determine if deploying locally or to a remote server
+	// Determine if deploying locally or to a remote server.
+	// This must happen BEFORE updating project status so we know whether the
+	// runner is remote (BYOC) or local (platform).
 	var runner *Runner
 	var assignedServer *db.WorkerServer
 
@@ -103,11 +102,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
+	// isRemoteBYOC is true when the project lives on a user's own server (not
+	// a platform-local host). For remote projects the platform proxy cannot
+	// reach localhost:{port}, so there is no benefit in transitioning to
+	// "building" — the old container keeps serving on the remote box and the
+	// project should stay "running" in the UI throughout the build.
+	isRemoteBYOC := false
+
 	if assignedServer != nil {
-		// Belt-and-braces: treat localhost as local regardless of the is_local
-		// flag. Even if scanning ever leaves IsLocal=false, we must never
-		// try to SSH to "localhost" because that requires root SSH-to-self
-		// to be set up, which it isn't on our box.
 		isLocalHost := assignedServer.IsLocal ||
 			assignedServer.Host == "localhost" ||
 			assignedServer.Host == "127.0.0.1" ||
@@ -117,6 +119,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
+			isRemoteBYOC = true
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
 		}
 	} else {
@@ -124,6 +127,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if project.WorkerServerID != "" {
 			e.logMsg(ctx, project.ID, "Assigned server unavailable — building on the primary (local) host as a fallback.", "deploy")
 		}
+	}
+
+	// For local/platform deploys: mark "building" so the proxy keeps routing to
+	// the old container port while the new image builds (GetProjectRouting
+	// allows 'building' status). For remote BYOC deploys: keep status "running"
+	// — the old container is still live on the remote box and the UI should not
+	// show the project as inactive during a redeploy.
+	if !isRemoteBYOC {
+		e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 	}
 
 	// Blue-green: build new container while old one keeps serving traffic.
