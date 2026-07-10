@@ -917,6 +917,16 @@ function ProjectsContent() {
   }
 
   useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
+
+  // Auto-refresh project list while any project is actively building/deploying.
+  // The interval clears itself as soon as all projects reach a stable state.
+  useEffect(() => {
+    const hasBuilding = projects.some(p => p.status === "building");
+    if (!hasBuilding) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [projects]);
+
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
