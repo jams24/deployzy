@@ -269,9 +269,15 @@ export default function ServicesPage() {
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
                       </div>
                     </div>
-                    {isSQL(s.type) && (
+                    {(isSQL(s.type) || s.type === "redis") && (
                       <Link
-                        href={isProj && s.project_id ? `/database/${s.id}?type=project&projectId=${s.project_id}` : `/database/${s.id}?type=service`}
+                        href={
+                          s.type === "redis"
+                            ? `/redis/${s.id}`
+                            : isProj && s.project_id
+                              ? `/database/${s.id}?type=project&projectId=${s.project_id}`
+                              : `/database/${s.id}?type=service`
+                        }
                         className="shrink-0"
                       >
                         <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">

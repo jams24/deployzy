@@ -209,6 +209,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/services/{serviceId}/tables", s.handleServiceTables)
 			r.Get("/services/{serviceId}/tables/{table}/columns", s.handleServiceTableColumns)
 			r.Get("/services/{serviceId}/tables/{table}/rows", s.handleServiceTableRows)
+			// Redis browser
+			r.Get("/services/{serviceId}/redis/keys", s.handleRedisKeys)
+			r.Post("/services/{serviceId}/redis/exec", s.handleRedisExec)
+			r.Get("/services/{serviceId}/redis/value", s.handleRedisGetValue)
+			r.With(deployScope).Put("/services/{serviceId}/redis/value", s.handleRedisSetValue)
+			r.With(deployScope).Delete("/services/{serviceId}/redis/value", s.handleRedisDelValue)
 			r.Get("/projects/{projectId}/database", s.handleGetProjectDatabase)
 			r.With(deployScope).Delete("/projects/{projectId}/database", s.handleDeleteProjectDatabase)
 
