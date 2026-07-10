@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -49,6 +50,10 @@ export default function ServicesPage() {
   const [rows, setRows] = useState<DBRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPass, setShowPass] = useState<Record<string, boolean>>({});
+  // Confirm-delete modal
+  const [deleteTarget, setDeleteTarget] = useState<DBRow | null>(null);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [deleting, setDeleting] = useState(false);
   // Backup state (only for project-linked DBs — standalone services don't
   // expose backups via the current backend yet)
   const [backups, setBackups] = useState<Record<string, Backup[]>>({}); // projectId → backups
@@ -111,15 +116,21 @@ export default function ServicesPage() {
     setLoading(false);
   }
 
-  async function remove(row: DBRow) {
-    const label = row.kind === "project"
-      ? `Delete the database for project "${row.project_name}"? All data will be permanently lost.`
-      : `Delete this database? All data will be permanently lost.`;
-    if (!confirm(label)) return;
-    const url = row.kind === "project"
-      ? `${API}/api/v1/projects/${row.project_id}/database`
-      : `${API}/api/v1/services/${row.id}`;
+  function promptDelete(row: DBRow) {
+    setDeleteTarget(row);
+    setDeleteInput("");
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const url = deleteTarget.kind === "project"
+      ? `${API}/api/v1/projects/${deleteTarget.project_id}/database`
+      : `${API}/api/v1/services/${deleteTarget.id}`;
     await fetch(url, { method: "DELETE", headers: headers() });
+    setDeleteTarget(null);
+    setDeleteInput("");
+    setDeleting(false);
     load();
   }
 
@@ -197,8 +208,74 @@ export default function ServicesPage() {
   const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
   const isSQL = (t: string) => t === "postgres" || t === "mysql";
 
+  const deleteLabel = deleteTarget
+    ? (deleteTarget.kind === "project" ? `${deleteTarget.project_name} database` : deleteTarget.name)
+    : "";
+  const deleteConfirmReady = deleteInput === deleteLabel && !deleting;
+
   return (
     <div>
+      {/* ── Delete confirmation modal ── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-xl border border-red-500/30 bg-card shadow-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-400 mt-0.5">
+                <AlertTriangle className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-foreground">Delete database</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This will permanently destroy <span className="font-semibold text-foreground">{deleteLabel}</span> and all its data. This action cannot be undone.
+                </p>
+              </div>
+              <button className="ml-auto shrink-0 p-1 rounded text-muted-foreground hover:text-foreground" onClick={() => setDeleteTarget(null)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 space-y-1">
+              <p className="text-[11px] font-medium text-red-400 uppercase tracking-wider">What will be deleted</p>
+              <ul className="text-[12px] text-muted-foreground space-y-0.5">
+                <li>• All data stored in <span className="font-mono text-foreground">{deleteTarget.db_name || deleteLabel}</span></li>
+                <li>• The Docker container ({deleteTarget.type})</li>
+                {deleteTarget.kind === "project" && <li>• Connection to project <span className="font-medium text-foreground">{deleteTarget.project_name}</span></li>}
+              </ul>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[12px] text-muted-foreground">
+                Type <span className="font-mono font-semibold text-foreground">{deleteLabel}</span> to confirm:
+              </label>
+              <Input
+                value={deleteInput}
+                onChange={(e) => setDeleteInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && deleteConfirmReady && confirmDelete()}
+                placeholder={deleteLabel}
+                className="font-mono text-[13px] border-input focus:border-red-500/50"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1 h-9" onClick={() => { setDeleteTarget(null); setDeleteInput(""); }}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 h-9 gap-1.5 bg-red-600 hover:bg-red-700 text-white border-0"
+                disabled={!deleteConfirmReady}
+                onClick={confirmDelete}
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Delete permanently
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Databases</h1>
@@ -287,7 +364,7 @@ export default function ServicesPage() {
                         </Button>
                       </Link>
                     )}
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0" onClick={() => remove(s)}>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0" onClick={() => promptDelete(s)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
