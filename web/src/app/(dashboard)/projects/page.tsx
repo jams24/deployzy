@@ -31,6 +31,7 @@ interface Project {
   preview_enabled?: boolean;
   parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
+  worker_server_id?: string | null;
 }
 interface BuildConfig {
   install_cmd: string; build_cmd: string; start_cmd: string;
@@ -522,13 +523,34 @@ function ProjectsContent() {
 
   async function deploy(id: string) {
     setDeploying(id);
+    // Optimistically mark as building so the polling useEffect kicks in immediately.
+    setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "building" } : p));
     await fetch(`${API}/api/v1/projects/${id}/deploy`, { method: "POST", headers: headers() });
+    loadLogs(id);
+    setTimeout(() => setDeploying(null), 3000);
+  }
+
+  // Move a running project to another server (Pro). "" = back to the platform.
+  async function move(id: string, workerServerId: string) {
+    setDeploying(id);
+    const res = await fetch(`${API}/api/v1/projects/${id}/move`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ worker_server_id: workerServerId }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || "Move failed");
+      setDeploying(null);
+      return;
+    }
     load();
     loadLogs(id);
     setTimeout(() => setDeploying(null), 3000);
   }
 
   async function stop(id: string) {
+    // Optimistic update so the UI flips to "stopped" immediately without
+    // waiting for the load() round-trip.
+    setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "stopped" } : p));
     await fetch(`${API}/api/v1/projects/${id}/stop`, { method: "POST", headers: headers() });
     load();
   }
@@ -886,7 +908,26 @@ function ProjectsContent() {
     setTogglingAutoDeploy(null);
   }
 
-  useEffect(() => { load(); loadGHStatus(); loadDomains(); }, []);
+  // Load the user's servers on mount so the per-project "Move to…" control can
+  // render (previously servers were only fetched when the Import dialog opened).
+  function loadServers() {
+    fetch(`${API}/api/v1/servers`, { headers: headers() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setUserServers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }
+
+  useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
+
+  // Auto-refresh project list while any project is actively building/deploying.
+  // The interval clears itself as soon as all projects reach a stable state.
+  useEffect(() => {
+    const hasBuilding = projects.some(p => p.status === "building");
+    if (!hasBuilding) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [projects]);
+
   useEffect(() => {
     if (!selectedProject) return;
     loadLogs(selectedProject);
@@ -1284,7 +1325,8 @@ function ProjectsContent() {
                   <div className={`flex items-center gap-1 ${isGrid && !isSel ? "flex-wrap" : "shrink-0"}`}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                        {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} Deploy
+                        {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                        {p.status === "stopped" ? "Start" : "Deploy"}
                       </Button>
                     )}
                     {p.status === "running" && (
@@ -1298,6 +1340,26 @@ function ProjectsContent() {
                         <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => stop(p.id)}>
                           <Square className="h-3 w-3" /> Stop
                         </Button>
+                        {(() => {
+                          const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
+                          const showPlatform = !!p.worker_server_id;
+                          if (!showPlatform && otherServers.length === 0) return null;
+                          return (
+                            <select
+                              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                              value=""
+                              disabled={deploying === p.id}
+                              title="Move this project to another server (Pro)"
+                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
+                            >
+                              <option value="">Move to…</option>
+                              {showPlatform && <option value="platform">Platform (shared)</option>}
+                              {otherServers.map(s => (
+                                <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}

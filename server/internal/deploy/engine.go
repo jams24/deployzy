@@ -48,11 +48,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	defer mu.Unlock()
 
 	e.logMsg(ctx, project.ID, "Starting deployment...", "deploy")
-	// Keep the old port alive so the proxy continues routing to the old container
-	// while the new image is being built. GetProjectRouting allows 'building' status.
-	e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 
-	// Determine if deploying locally or to a remote server
+	// Determine if deploying locally or to a remote server.
+	// This must happen BEFORE updating project status so we know whether the
+	// runner is remote (BYOC) or local (platform).
 	var runner *Runner
 	var assignedServer *db.WorkerServer
 
@@ -103,11 +102,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
+	// isRemoteBYOC is true when the project lives on a user's own server (not
+	// a platform-local host). For remote projects the platform proxy cannot
+	// reach localhost:{port}, so there is no benefit in transitioning to
+	// "building" — the old container keeps serving on the remote box and the
+	// project should stay "running" in the UI throughout the build.
+	isRemoteBYOC := false
+
 	if assignedServer != nil {
-		// Belt-and-braces: treat localhost as local regardless of the is_local
-		// flag. Even if scanning ever leaves IsLocal=false, we must never
-		// try to SSH to "localhost" because that requires root SSH-to-self
-		// to be set up, which it isn't on our box.
 		isLocalHost := assignedServer.IsLocal ||
 			assignedServer.Host == "localhost" ||
 			assignedServer.Host == "127.0.0.1" ||
@@ -117,6 +119,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
+			isRemoteBYOC = true
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
 		}
 	} else {
@@ -124,6 +127,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if project.WorkerServerID != "" {
 			e.logMsg(ctx, project.ID, "Assigned server unavailable — building on the primary (local) host as a fallback.", "deploy")
 		}
+	}
+
+	// For local/platform deploys: mark "building" so the proxy keeps routing to
+	// the old container port while the new image builds (GetProjectRouting
+	// allows 'building' status). For remote BYOC deploys: keep status "running"
+	// — the old container is still live on the remote box and the UI should not
+	// show the project as inactive during a redeploy.
+	if !isRemoteBYOC {
+		e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 	}
 
 	// Blue-green: build new container while old one keeps serving traffic.
@@ -613,11 +625,28 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	args = append(args, imageName)
 
+	// For non-HTTP workers (no health check path), stop the old container before
+	// starting the new one. Running both simultaneously causes conflicts for
+	// stateful single-instance services (e.g. Telegram bots get 409 from
+	// getUpdates when two instances poll at the same time).
+	// We only STOP (not rm) so that if the new container fails to launch we can
+	// docker start the old one back up instead of leaving the service dead.
+	stoppedOldBeforeStart := false
+	if project.HealthCheckPath == "" && oldHostPort > 0 {
+		e.logMsg(ctx, project.ID, "Stopping previous container before starting new one...", "deploy")
+		runner.Exec(ctx, "docker", "stop", containerName)
+		stoppedOldBeforeStart = true
+	}
+
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
+		if stoppedOldBeforeStart {
+			// Restart the old container — new one never launched.
+			runner.Exec(ctx, "docker", "start", containerName)
+		}
 		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
 	}
@@ -646,8 +675,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
 		}
 
-		// Traffic has moved — now safe to stop the old container.
-		runner.Exec(ctx, "docker", "stop", containerName)
+		// Remove the old container. For HTTP services it's still running and
+		// needs stop+rm; for non-HTTP services it was already stopped before the
+		// new one launched, so just rm it.
+		if !stoppedOldBeforeStart {
+			runner.Exec(ctx, "docker", "stop", containerName)
+		}
 		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
@@ -662,10 +695,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
 
-		// Clean up the failed new container; old container is untouched.
+		// Clean up the failed new container.
 		runner.Exec(ctx, "docker", "stop", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-
+		if stoppedOldBeforeStart {
+			// Old container was stopped before new launched — restart it so the
+			// service keeps running despite the failed deploy.
+			runner.Exec(ctx, "docker", "start", containerName)
+		}
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
@@ -687,6 +724,16 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
 	runner.Exec(ctx, "docker", "stop", containerName)
 	runner.Exec(ctx, "docker", "rm", "-f", containerName)
+	// Belt-and-braces: also clear the container from the primary/local host. A
+	// project's container can physically live somewhere other than its currently
+	// assigned server (e.g. it was deployed to the primary before being reassigned
+	// to a BYOC box, or during a move). Stopping a non-existent container is a
+	// harmless no-op, so this guarantees no orphan keeps running after a delete/move.
+	if runner.IsRemote() {
+		local := NewLocalRunner()
+		local.Exec(ctx, "docker", "stop", containerName)
+		local.Exec(ctx, "docker", "rm", "-f", containerName)
+	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
 	// Drop sibling-subdomain routes — the container (and all its services) is gone.
 	e.db.DeleteServiceRoutes(ctx, project.ID)
@@ -725,6 +772,14 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 		}
 	}
 	return NewLocalRunner()
+}
+
+// LogStreamCmd returns an *exec.Cmd (not yet started) that streams live
+// docker logs for project from wherever its container actually lives —
+// locally for platform projects, over SSH for BYOC.
+func (e *Engine) LogStreamCmd(ctx context.Context, project *db.Project) *exec.Cmd {
+	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
+	return e.getRunner(ctx, project).StreamLogsCmd(ctx, containerName)
 }
 
 // GetProjectPort returns the container port for a deployed project by subdomain.

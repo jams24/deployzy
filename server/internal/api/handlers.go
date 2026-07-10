@@ -536,12 +536,13 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 			for _, p := range projects {
 				if p.Status == "running" {
 					result = append(result, map[string]interface{}{
-						"url":      fmt.Sprintf("https://%s.%s", p.Subdomain, "deployzy.com"),
-						"protocol": "deploy",
-						"name":     p.Name,
-						"user_id":  p.UserID,
-						"type":     "project",
-						"status":   p.Status,
+						"url":       fmt.Sprintf("https://%s.%s", p.Subdomain, "deployzy.com"),
+						"protocol":  "deploy",
+						"name":      p.Name,
+						"subdomain": p.Subdomain,
+						"user_id":   p.UserID,
+						"type":      "project",
+						"status":    p.Status,
 					})
 				}
 			}
