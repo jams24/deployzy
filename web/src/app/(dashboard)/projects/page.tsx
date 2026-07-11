@@ -166,16 +166,16 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Service Name</label>
-              <input type="text" placeholder="service-1" value={svc.name} onChange={(e) => update(i, { name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input type="text" placeholder="service-1" value={svc.name} onChange={(e) => update(i, { name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Port</label>
-              <input type="number" min="1" max="65535" value={svc.port || ""} onChange={(e) => update(i, { port: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input type="number" min="1" max="65535" value={svc.port || ""} onChange={(e) => update(i, { port: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Base Directory</label>
               <div className="relative">
-                <input type="text" placeholder="apps/api" value={svc.root_dir} onChange={(e) => update(i, { root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                <input type="text" placeholder="apps/api" value={svc.root_dir} onChange={(e) => update(i, { root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                 <button type="button" title="Browse repository directories" disabled={!repoConnected} onClick={() => onBrowse(i)} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
                   <Folder className="h-3.5 w-3.5" />
                 </button>
@@ -184,7 +184,7 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Detected Stack</label>
               <div className="relative">
-                <input type="text" readOnly placeholder="auto" value={svc.framework} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-400 focus:outline-none" />
+                <input type="text" readOnly placeholder="auto" value={svc.framework} className="w-full h-8 rounded-md border border-input bg-[#0d1117] pl-2 pr-8 font-mono text-xs text-zinc-400 focus:outline-none" />
                 <button type="button" title="Re-detect stack" disabled={!repoConnected} onClick={async () => update(i, { framework: await detectStack(svc.root_dir) })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </button>
@@ -192,26 +192,26 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
             </div>
           </div>
           <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2">
-            <p className="text-[9px] uppercase tracking-wide text-zinc-600">Public URL</p>
+            <p className="text-[9px] uppercase tracking-wide text-[#8b949e]">Public URL</p>
             <p className="text-xs font-mono text-zinc-300 truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.com</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Install Command</label>
-              <input type="text" placeholder="npm install" value={svc.install_cmd} onChange={(e) => update(i, { install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input type="text" placeholder="npm install" value={svc.install_cmd} onChange={(e) => update(i, { install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Build Command</label>
-              <input type="text" placeholder="npm run build" value={svc.build_cmd} onChange={(e) => update(i, { build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input type="text" placeholder="npm run build" value={svc.build_cmd} onChange={(e) => update(i, { build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground">Start Command</label>
-              <input type="text" placeholder="npm run start" value={svc.start_cmd} onChange={(e) => update(i, { start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+              <input type="text" placeholder="npm run start" value={svc.start_cmd} onChange={(e) => update(i, { start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
           </div>
           <div className="space-y-1">
             <label className="text-[10px] text-muted-foreground">Service Env Overrides</label>
-            <textarea rows={2} placeholder={"DATABASE_URL=postgres://...\nSERVICE_MODE=api"} value={svc.env_text} onChange={(e) => update(i, { env_text: e.target.value })} className="w-full rounded-md border border-input bg-[#09090b] px-2 py-1.5 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring resize-y" />
+            <textarea rows={2} placeholder={"DATABASE_URL=postgres://...\nSERVICE_MODE=api"} value={svc.env_text} onChange={(e) => update(i, { env_text: e.target.value })} className="w-full rounded-md border border-input bg-[#0d1117] px-2 py-1.5 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring resize-y" />
             <p className="text-[10px] text-muted-foreground">These values only apply to this service. App/global envs are still shared.</p>
           </div>
         </div>
@@ -1116,7 +1116,7 @@ function ProjectsContent() {
                 value={importEnvText}
                 onChange={(e) => setImportEnvText(e.target.value)}
                 placeholder={importPh.env}
-                className="w-full h-24 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full h-24 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] resize-none focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Click Auto-format if a paste came out mangled.</p>
             </div>
@@ -1173,9 +1173,9 @@ function ProjectsContent() {
                 <div className="border-t border-border/40 p-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
+                      <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-[#8b949e]">(monorepos)</span></label>
                       <div className="relative">
-                        <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                        <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                         <button type="button" title="Browse repository directories" disabled={!importRepo?.full_name} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
                           <Folder className="h-3.5 w-3.5" />
                         </button>
@@ -1183,7 +1183,7 @@ function ProjectsContent() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">Node Version</label>
-                      <select value={importBuildCfg.node_version} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                      <select value={importBuildCfg.node_version} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
                         <option value="">Default (20)</option>
                         <option value="18">Node 18</option>
                         <option value="20">Node 20</option>
@@ -1192,43 +1192,43 @@ function ProjectsContent() {
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Install Command</label>
-                      <input type="text" placeholder={importPh.install} value={importBuildCfg.install_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.install} value={importBuildCfg.install_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Build Command</label>
-                      <input type="text" placeholder={importPh.build} value={importBuildCfg.build_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.build} value={importBuildCfg.build_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Start Command</label>
-                      <input type="text" placeholder={importPh.start} value={importBuildCfg.start_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="text" placeholder={importPh.start} value={importBuildCfg.start_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
-                      <input type="number" min="0" max="65535" value={importBuildCfg.port_override || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-muted-foreground">
-                        Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
-                      </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">Port <span className="text-[#8b949e]">(0 = auto)</span></label>
+                      <input type="number" min="0" max="65535" value={importBuildCfg.port_override || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">
-                        CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                        Memory MB <span className="text-[#8b949e]">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                       </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-muted-foreground">
+                        CPUs <span className="text-[#8b949e]">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                      </label>
+                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
-                      <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                      <input type="text" placeholder={importPh.healthCheck} value={importBuildCfg.health_check_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-[#8b949e]">(e.g. /health; empty = skip)</span></label>
+                      <input type="text" placeholder={importPh.healthCheck} value={importBuildCfg.health_check_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
-                      <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                      <input type="text" placeholder={importPh.release} value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">Release Command <span className="text-[#8b949e]">(runs before start, e.g. migrations)</span></label>
+                      <input type="text" placeholder={importPh.release} value={importBuildCfg.release_cmd} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
-                      <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-zinc-600">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
-                      <input type="text" placeholder="Dockerfile" value={importBuildCfg.dockerfile_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-[#8b949e]">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
+                      <input type="text" placeholder="Dockerfile" value={importBuildCfg.dockerfile_path} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. Editable anytime after deployment.</p>
@@ -1447,8 +1447,8 @@ function ProjectsContent() {
                   <div className="mt-4">
                     {editingLabels === p.id ? (
                       <div className="rounded-lg border border-border/40 p-3 space-y-2">
-                        <label className="text-[10px] text-muted-foreground">Labels <span className="text-zinc-600">(comma-separated, max 10)</span></label>
-                        <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                        <label className="text-[10px] text-muted-foreground">Labels <span className="text-[#8b949e]">(comma-separated, max 10)</span></label>
+                        <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                         <div className="flex gap-2">
                           <Button size="sm" className="h-7 text-xs" onClick={() => saveLabels(p.id)}>Save</Button>
                           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingLabels(null)}>Cancel</Button>
@@ -1471,7 +1471,7 @@ function ProjectsContent() {
                       <span className="text-xs font-medium">Custom Domains</span>
                     </div>
                     {allDomains.filter((d) => d.target_type === "project" && d.target_subdomain === p.subdomain).map((d) => (
-                      <div key={d.id} className="flex items-center justify-between text-xs rounded-md bg-[#09090b] px-2.5 py-1.5">
+                      <div key={d.id} className="flex items-center justify-between text-xs rounded-md bg-[#0d1117] px-2.5 py-1.5">
                         <div className="flex items-center gap-2 min-w-0">
                           <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="font-mono text-zinc-300 hover:text-foreground truncate">{d.domain}</a>
                           {d.verified ? (
@@ -1495,7 +1495,7 @@ function ProjectsContent() {
                         placeholder="app.yourdomain.com"
                         value={newDomain[p.id] || ""}
                         onChange={(e) => setNewDomain((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                        className="flex-1 h-7 rounded-md border border-input bg-[#09090b] px-2 font-mono text-[11px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring"
+                        className="flex-1 h-7 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-[11px] text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                       <Button size="sm" className="h-7 px-2 text-xs" onClick={() => addProjectDomain(p)} disabled={addingDomain === p.id || !newDomain[p.id]}>
                         {addingDomain === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
@@ -1527,20 +1527,20 @@ function ProjectsContent() {
                       </label>
                     </div>
                     {!p.preview_enabled ? (
-                      <p className="text-[10px] text-zinc-600">Turn on to auto-deploy every open PR to a <code className="font-mono text-zinc-500">{previewSubdomainExample(p.subdomain)}</code> URL. Closed PRs are torn down automatically.</p>
+                      <p className="text-[10px] text-[#8b949e]">Turn on to auto-deploy every open PR to a <code className="font-mono text-zinc-500">{previewSubdomainExample(p.subdomain)}</code> URL. Closed PRs are torn down automatically.</p>
                     ) : (previews[p.id] || []).length === 0 ? (
-                      <p className="text-[10px] text-zinc-600">No open PRs with a preview. Open a PR on <span className="font-mono">{p.github_repo}</span> and it&apos;ll appear here.</p>
+                      <p className="text-[10px] text-[#8b949e]">No open PRs with a preview. Open a PR on <span className="font-mono">{p.github_repo}</span> and it&apos;ll appear here.</p>
                     ) : (
                       <div className="space-y-1">
                         {(previews[p.id] || []).map((pv) => (
-                          <div key={pv.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[11px] gap-2">
+                          <div key={pv.id} className="flex items-center justify-between rounded-md bg-[#0d1117] px-2.5 py-1.5 text-[11px] gap-2">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/20 shrink-0">#{pv.pr_number}</Badge>
                               <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColor[pv.status] || ""}`}>{pv.status}</Badge>
                               <span className="truncate text-zinc-300">{pv.pr_title || pv.branch}</span>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              {pv.commit_sha && <code className="text-[9px] text-zinc-600 font-mono">{pv.commit_sha.slice(0, 7)}</code>}
+                              {pv.commit_sha && <code className="text-[9px] text-[#8b949e] font-mono">{pv.commit_sha.slice(0, 7)}</code>}
                               {pv.status === "running" && (
                                 <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
                                   <ExternalLink className="h-2.5 w-2.5" /> Visit
@@ -1578,7 +1578,7 @@ function ProjectsContent() {
                           value={envText}
                           onChange={(e) => setEnvText(e.target.value)}
                           placeholder={ph.env}
-                          className="w-full h-32 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                          className="w-full h-32 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                         />
                         <div className="flex gap-2">
                           <Button size="sm" className="h-7 text-xs" onClick={async () => { await saveEnvVars(p.id); deploy(p.id); }}>Save & Redeploy</Button>
@@ -1608,9 +1608,9 @@ function ProjectsContent() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
+                            <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-[#8b949e]">(monorepos)</span></label>
                             <div className="relative">
-                              <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                              <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] pl-2 pr-8 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                               <button type="button" title="Browse repository directories" disabled={!p.github_repo} onClick={() => setDirPicker({ kind: "edit-root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
                                 <Folder className="h-3.5 w-3.5" />
                               </button>
@@ -1618,7 +1618,7 @@ function ProjectsContent() {
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Node Version</label>
-                            <select value={buildCfg.node_version} onChange={(e) => setBuildCfg({ ...buildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                            <select value={buildCfg.node_version} onChange={(e) => setBuildCfg({ ...buildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
                               <option value="">Default (20)</option>
                               <option value="18">Node 18</option>
                               <option value="20">Node 20</option>
@@ -1627,50 +1627,50 @@ function ProjectsContent() {
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Install Command</label>
-                            <input type="text" placeholder={ph.install} value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.install} value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Build Command</label>
-                            <input type="text" placeholder={ph.build} value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.build} value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Start Command</label>
-                            <input type="text" placeholder={ph.start} value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder={ph.start} value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">Port Override <span className="text-zinc-600">(0 = auto)</span></label>
-                            <input type="number" min="0" max="65535" value={buildCfg.port_override || ""} onChange={(e) => setBuildCfg({ ...buildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">
-                              Memory MB <span className="text-zinc-600">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
-                            </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">Port Override <span className="text-[#8b949e]">(0 = auto)</span></label>
+                            <input type="number" min="0" max="65535" value={buildCfg.port_override || ""} onChange={(e) => setBuildCfg({ ...buildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">
-                              CPUs <span className="text-zinc-600">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                              Memory MB <span className="text-[#8b949e]">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                             </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">
+                              CPUs <span className="text-[#8b949e]">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
+                            </label>
+                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
-                            <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                            <input type="text" placeholder={ph.healthCheck} value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-[#8b949e]">(e.g. /health; empty = skip)</span></label>
+                            <input type="text" placeholder={ph.healthCheck} value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
-                            <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                            <input type="text" placeholder={ph.release} value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">Release Command <span className="text-[#8b949e]">(runs before start, e.g. migrations)</span></label>
+                            <input type="text" placeholder={ph.release} value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Build Mode</label>
-                            <select value={buildCfg.build_mode} onChange={(e) => setBuildCfg({ ...buildCfg, build_mode: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                            <select value={buildCfg.build_mode} onChange={(e) => setBuildCfg({ ...buildCfg, build_mode: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
                               <option value="">Auto (use repo Dockerfile if present)</option>
                               <option value="ignore_dockerfile">Ignore repo Dockerfile — always auto-generate</option>
                             </select>
                           </div>
                           <div className="space-y-1 md:col-span-2">
-                            <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-zinc-600">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
-                            <input type="text" placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setBuildCfg({ ...buildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <label className="text-[10px] text-muted-foreground">Dockerfile Path <span className="text-[#8b949e]">(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
+                            <input type="text" placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setBuildCfg({ ...buildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                         </div>
 
@@ -1824,7 +1824,7 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2">
                           <Activity className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-xs font-medium">Resource Metrics</span>
-                          {samples.length === 0 && <span className="text-[10px] text-zinc-600">(collecting...)</span>}
+                          {samples.length === 0 && <span className="text-[10px] text-[#8b949e]">(collecting...)</span>}
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex gap-1">
@@ -1918,25 +1918,25 @@ function ProjectsContent() {
 
                       {/* Headline metrics */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                        <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Pageviews</div>
                           <div className="text-lg font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
                         </div>
-                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                        <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Unique visitors</div>
                           <div className="text-lg font-semibold font-mono text-emerald-400">{fmtNum(data?.overview?.visitors || 0)}</div>
                         </div>
-                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                        <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Bots filtered</div>
                           <div className="text-lg font-semibold font-mono text-zinc-500">{fmtNum(data?.overview?.bots || 0)}</div>
                         </div>
                       </div>
 
                       {/* Time series */}
-                      <div className="rounded-md bg-[#09090b] px-3 py-2 space-y-1">
+                      <div className="rounded-md bg-[#0d1117] px-3 py-2 space-y-1">
                         <div className="flex items-baseline justify-between">
                           <span className="text-[10px] text-muted-foreground">Traffic over time</span>
-                          <span className="text-[10px] text-zinc-600">pageviews · visitors</span>
+                          <span className="text-[10px] text-[#8b949e]">pageviews · visitors</span>
                         </div>
                         <Sparkline values={pvArr} color="#60a5fa" height={40} />
                         <Sparkline values={vArr} color="#10b981" height={24} />
@@ -1954,9 +1954,9 @@ function ProjectsContent() {
                           const rows = top[field] || [];
                           const maxC = rows.length ? Math.max(...rows.map((r) => r.count)) : 1;
                           return (
-                            <div key={field} className="rounded-md bg-[#09090b] px-3 py-2 space-y-1">
+                            <div key={field} className="rounded-md bg-[#0d1117] px-3 py-2 space-y-1">
                               <div className="text-[10px] text-muted-foreground">{label}</div>
-                              {rows.length === 0 && <div className="text-[10px] text-zinc-600 py-1">No data yet</div>}
+                              {rows.length === 0 && <div className="text-[10px] text-[#8b949e] py-1">No data yet</div>}
                               {rows.slice(0, 6).map((row) => (
                                 <div key={row.key} className="relative text-[11px] py-0.5">
                                   <div className="absolute inset-y-0 left-0 bg-emerald-500/10 rounded" style={{ width: `${(row.count / maxC) * 100}%` }} />
@@ -1970,7 +1970,7 @@ function ProjectsContent() {
                           );
                         })}
                       </div>
-                      <p className="text-[10px] text-zinc-600">Cookieless, privacy-first. Visitor IDs rotate daily and can&apos;t be linked across days. Asset requests (CSS/JS/images) are excluded from pageview counts.</p>
+                      <p className="text-[10px] text-[#8b949e]">Cookieless, privacy-first. Visitor IDs rotate daily and can&apos;t be linked across days. Asset requests (CSS/JS/images) are excluded from pageview counts.</p>
 
                       {/* Optional JS snippet for SPA route changes + custom events */}
                       <details className="text-[10px] text-zinc-500">
@@ -2008,16 +2008,16 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2">
                           <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>
                           <span className="text-xs font-medium">Bandwidth</span>
-                          <span className="text-[10px] text-zinc-600">(this month)</span>
+                          <span className="text-[10px] text-[#8b949e]">(this month)</span>
                         </div>
-                        <button onClick={() => loadBandwidth(p.id)} className="text-[10px] text-zinc-600 hover:text-foreground">refresh</button>
+                        <button onClick={() => loadBandwidth(p.id)} className="text-[10px] text-[#8b949e] hover:text-foreground">refresh</button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                        <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">This project</div>
                           <div className="text-base font-semibold font-mono">{fmtGB(usedGB)}</div>
                         </div>
-                        <div className="rounded-md bg-[#09090b] px-3 py-2">
+                        <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Account total</div>
                           <div className={`text-base font-semibold font-mono ${bw.exceeded ? "text-red-400" : bw.pct >= 80 ? "text-yellow-400" : ""}`}>{fmtGB(accountGB)}</div>
                         </div>
@@ -2035,7 +2035,7 @@ function ProjectsContent() {
                           {!bw.exceeded && bw.pct >= 80 && <p className="text-[10px] text-yellow-400">⚠ Approaching monthly bandwidth limit.</p>}
                         </div>
                       )}
-                      {limitUnlimited && <p className="text-[10px] text-zinc-600">Unlimited bandwidth on your plan.</p>}
+                      {limitUnlimited && <p className="text-[10px] text-[#8b949e]">Unlimited bandwidth on your plan.</p>}
                     </div>
                   );
                 })()}
@@ -2067,7 +2067,7 @@ function ProjectsContent() {
                       </div>
                     </div>
                     {(crons[p.id] || []).map((c) => (
-                      <div key={c.id} className="rounded-md bg-[#09090b] px-2.5 py-2 space-y-1">
+                      <div key={c.id} className="rounded-md bg-[#0d1117] px-2.5 py-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/10 text-emerald-500" : "bg-zinc-700/30 text-zinc-500"}`}>{c.enabled ? "on" : "off"}</span>
@@ -2083,19 +2083,19 @@ function ProjectsContent() {
                         </div>
                         <code className="block text-[10px] text-zinc-400 font-mono truncate">$ {c.command}</code>
                         {c.last_run_at && (
-                          <div className="text-[10px] text-zinc-600">Last run: {new Date(c.last_run_at).toLocaleString()}</div>
+                          <div className="text-[10px] text-[#8b949e]">Last run: {new Date(c.last_run_at).toLocaleString()}</div>
                         )}
                       </div>
                     ))}
                     {editingCron === p.id && (
-                      <div className="rounded-md border border-border/40 bg-[#09090b] p-2.5 space-y-2">
+                      <div className="rounded-md border border-border/40 bg-[#0d1117] p-2.5 space-y-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Name</label>
                             <input type="text" placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] text-muted-foreground">Schedule <span className="text-zinc-600">(cron: min hour day month dow)</span></label>
+                            <label className="text-[10px] text-muted-foreground">Schedule <span className="text-[#8b949e]">(cron: min hour day month dow)</span></label>
                             <input type="text" placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                         </div>
@@ -2107,7 +2107,7 @@ function ProjectsContent() {
                           <Button size="sm" className="h-7 text-xs" onClick={() => addCron(p.id)}>Create</Button>
                           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingCron(null)}>Cancel</Button>
                         </div>
-                        <p className="text-[10px] text-zinc-600">Runs in a fresh container built from this project&apos;s image, with the same env vars. Stdout/stderr is captured and shown above.</p>
+                        <p className="text-[10px] text-[#8b949e]">Runs in a fresh container built from this project&apos;s image, with the same env vars. Stdout/stderr is captured and shown above.</p>
                       </div>
                     )}
                   </div>
@@ -2122,28 +2122,28 @@ function ProjectsContent() {
                   </div>
                 )}
                 {selectedProject === p.id && p.status === "running" && liveOpen[p.id] && (
-                  <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden">
-                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.04] text-[10px] text-zinc-600 font-mono">
+                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.08] bg-[#161b22] text-[10px] text-[#8b949e] font-mono">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Terminal className="h-3 w-3 shrink-0" /> <span className="shrink-0">Live Container Logs</span>
-                        {liveOn[p.id] && <span className="flex items-center gap-1 text-emerald-500 shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> streaming</span>}
-                        <span className="text-zinc-700 shrink-0">• {(liveLogs[p.id] || []).length} lines</span>
+                        <Terminal className="h-3 w-3 shrink-0 text-[#58a6ff]" /> <span className="shrink-0 text-[#c9d1d9]">Live Container Logs</span>
+                        {liveOn[p.id] && <span className="flex items-center gap-1 text-[#3fb950] shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-[#3fb950] animate-pulse" /> streaming</span>}
+                        <span className="text-[#6e7681] shrink-0">• {(liveLogs[p.id] || []).length} lines</span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {liveOn[p.id] ? (
-                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => stopLiveLogs(p.id)} title="Stop streaming (keeps buffer)">Pause</Button>
+                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-[#8b949e] hover:text-[#c9d1d9]" onClick={() => stopLiveLogs(p.id)} title="Stop streaming (keeps buffer)">Pause</Button>
                         ) : (
-                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => startLiveLogs(p.id)} title="Resume streaming">Resume</Button>
+                          <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-[#8b949e] hover:text-[#c9d1d9]" onClick={() => startLiveLogs(p.id)} title="Resume streaming">Resume</Button>
                         )}
-                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px]" onClick={() => setLiveLogs((prev) => ({ ...prev, [p.id]: [] }))} title="Clear buffer">Clear</Button>
-                        <label className="flex items-center gap-1 text-[10px] text-zinc-500 select-none cursor-pointer" title="Auto-scroll to bottom on new output">
+                        <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-[#8b949e] hover:text-[#c9d1d9]" onClick={() => setLiveLogs((prev) => ({ ...prev, [p.id]: [] }))} title="Clear buffer">Clear</Button>
+                        <label className="flex items-center gap-1 text-[10px] text-[#8b949e] select-none cursor-pointer" title="Auto-scroll to bottom on new output">
                           <input type="checkbox" checked={!!liveAutoscroll[p.id]} onChange={(e) => setLiveAutoscroll((prev) => ({ ...prev, [p.id]: e.target.checked }))} className="accent-emerald-500 h-3 w-3" />
                           auto
                         </label>
-                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setLiveMin((prev) => ({ ...prev, [p.id]: !prev[p.id] }))} title={liveMin[p.id] ? "Expand" : "Minimize"}>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-[#8b949e] hover:text-[#c9d1d9]" onClick={() => setLiveMin((prev) => ({ ...prev, [p.id]: !prev[p.id] }))} title={liveMin[p.id] ? "Expand" : "Minimize"}>
                           {liveMin[p.id] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => { stopLiveLogs(p.id); setLiveOpen((prev) => ({ ...prev, [p.id]: false })); }} title="Close (stops stream)">
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-[#8b949e] hover:text-[#f85149]" onClick={() => { stopLiveLogs(p.id); setLiveOpen((prev) => ({ ...prev, [p.id]: false })); }} title="Close (stops stream)">
                           <X className="h-3 w-3" />
                         </Button>
                       </div>
@@ -2161,15 +2161,16 @@ function ProjectsContent() {
                         }}
                       >
                         {(liveLogs[p.id] || []).map((l, i) => (
-                          <div key={i} className="px-2 py-0.5 text-zinc-300">
-                            <span className="text-zinc-700">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span> {l.line}
+                          <div key={i} className="px-2 py-0.5 text-[#e6edf3] hover:bg-white/[0.03] rounded">
+                            <span className="text-[#58a6ff] select-none">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span>{" "}
+                            {l.line}
                           </div>
                         ))}
                         {(liveLogs[p.id] || []).length === 0 && liveOn[p.id] && (
-                          <div className="px-2 py-1 text-zinc-600">Waiting for output...</div>
+                          <div className="px-2 py-1 text-[#8b949e] italic">Waiting for output…</div>
                         )}
                         {(liveLogs[p.id] || []).length === 0 && !liveOn[p.id] && (
-                          <div className="px-2 py-1 text-zinc-600">Stream paused. Click Resume to start again.</div>
+                          <div className="px-2 py-1 text-[#8b949e] italic">Stream paused. Click Resume to start again.</div>
                         )}
                       </div>
                     )}
@@ -2180,21 +2181,27 @@ function ProjectsContent() {
                     kept 14 days, so older projects show an empty state instead
                     of the panel silently vanishing. */}
                 {selectedProject === p.id && (
-                  <div className="mt-4 rounded-lg border border-border/40 bg-[#09090b] overflow-hidden max-h-64 overflow-y-auto">
-                    <div className="border-b border-white/[0.04] px-3 py-1.5 text-[10px] text-zinc-600 font-mono flex items-center gap-2">
-                      <Terminal className="h-3 w-3" /> Deploy Logs
+                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-64 overflow-y-auto">
+                    <div className="border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] text-[#8b949e] font-mono flex items-center gap-2 sticky top-0">
+                      <Terminal className="h-3 w-3 text-[#58a6ff]" /> <span className="text-[#c9d1d9]">Deploy Logs</span>
                     </div>
                     {logs.length > 0 ? (
                       <div className="p-2 font-mono text-[11px] space-y-0.5">
                         {logs.map((l, i) => (
-                          <div key={i} className={`px-2 py-0.5 rounded ${l.level === "error" ? "text-red-400" : l.level === "build" ? "text-amber-400" : l.level === "deploy" ? "text-emerald-400" : "text-zinc-500"}`}>
-                            <span className="text-zinc-700">{new Date(l.created_at).toLocaleTimeString()}</span> {l.message}
+                          <div key={i} className={`px-2 py-0.5 rounded hover:bg-white/[0.03] ${
+                            l.level === "error"  ? "text-[#f85149]" :
+                            l.level === "build"  ? "text-[#d29922]" :
+                            l.level === "deploy" ? "text-[#3fb950]" :
+                                                   "text-[#e6edf3]"
+                          }`}>
+                            <span className="text-[#58a6ff] select-none">{new Date(l.created_at).toLocaleTimeString()}</span>{" "}
+                            {l.message}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="p-4 text-[11px] text-zinc-500 font-mono">
-                        No deploy logs to show. Logs are kept for 14 days — redeploy this project to generate fresh logs.
+                      <div className="p-4 text-[11px] text-[#8b949e] font-mono italic">
+                        No deploy logs yet. Logs are kept for 14 days — redeploy to generate fresh logs.
                       </div>
                     )}
                   </div>

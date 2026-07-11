@@ -442,7 +442,7 @@ export default function NewResourcePage() {
               value={envText}
               onChange={(e) => setEnvText(e.target.value)}
               placeholder={ph.env}
-              className="w-full h-28 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              className="w-full h-28 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] resize-none focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <p className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line. Click Auto-format if a paste came out mangled.</p>
           </div>
@@ -465,12 +465,12 @@ export default function NewResourcePage() {
               <div className="border-t border-border/40 p-4 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-zinc-600">(monorepos)</span></label>
-                    <input type="text" placeholder="apps/web" value={rootDir} onChange={(e) => setRootDir(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-[#8b949e]">(monorepos)</span></label>
+                    <input type="text" placeholder="apps/web" value={rootDir} onChange={(e) => setRootDir(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">Node Version</label>
-                    <select value={nodeVersion} onChange={(e) => setNodeVersion(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
+                    <select value={nodeVersion} onChange={(e) => setNodeVersion(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="">Default (20)</option>
                       <option value="18">Node 18</option>
                       <option value="20">Node 20</option>
@@ -479,39 +479,39 @@ export default function NewResourcePage() {
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Install Command</label>
-                    <input type="text" placeholder={ph.install} value={installCmd} onChange={(e) => setInstallCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.install} value={installCmd} onChange={(e) => setInstallCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Build Command</label>
-                    <input type="text" placeholder={ph.build} value={buildCmd} onChange={(e) => setBuildCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.build} value={buildCmd} onChange={(e) => setBuildCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] text-muted-foreground">Start Command</label>
-                    <input type="text" placeholder={ph.start} value={startCmd} onChange={(e) => setStartCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="text" placeholder={ph.start} value={startCmd} onChange={(e) => setStartCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground">Port <span className="text-zinc-600">(0 = auto)</span></label>
-                    <input type="number" min="0" max="65535" value={portOverride || ""} onChange={(e) => setPortOverride(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-muted-foreground">
-                      Memory MB <span className="text-zinc-600">(0 = {memCap > 0 ? Math.min(512, memCap) : 512}{memCap > 0 ? `, ${capLabel} ${memCap}` : ""})</span>
-                    </label>
-                    <input type="number" min="0" max={memCap > 0 ? memCap : 16384} step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">Port <span className="text-[#8b949e]">(0 = auto)</span></label>
+                    <input type="number" min="0" max="65535" value={portOverride || ""} onChange={(e) => setPortOverride(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground">
-                      CPUs <span className="text-zinc-600">(0 = {cpuCap > 0 ? Math.min(0.5, cpuCap) : 0.5}{cpuCap > 0 ? `, ${capLabel} ${cpuCap}` : ""})</span>
+                      Memory MB <span className="text-[#8b949e]">(0 = {memCap > 0 ? Math.min(512, memCap) : 512}{memCap > 0 ? `, ${capLabel} ${memCap}` : ""})</span>
                     </label>
-                    <input type="number" min="0" max={cpuCap > 0 ? cpuCap : 8} step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <input type="number" min="0" max={memCap > 0 ? memCap : 16384} step="128" value={memoryMB || ""} onChange={(e) => setMemoryMB(parseInt(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">
+                      CPUs <span className="text-[#8b949e]">(0 = {cpuCap > 0 ? Math.min(0.5, cpuCap) : 0.5}{cpuCap > 0 ? `, ${capLabel} ${cpuCap}` : ""})</span>
+                    </label>
+                    <input type="number" min="0" max={cpuCap > 0 ? cpuCap : 8} step="0.25" value={cpus || ""} onChange={(e) => setCpus(parseFloat(e.target.value) || 0)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-zinc-600">(e.g. /health; empty = skip)</span></label>
-                    <input type="text" placeholder={ph.healthCheck} value={healthCheckPath} onChange={(e) => setHealthCheckPath(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-[#8b949e]">(e.g. /health; empty = skip)</span></label>
+                    <input type="text" placeholder={ph.healthCheck} value={healthCheckPath} onChange={(e) => setHealthCheckPath(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-[10px] text-muted-foreground">Release Command <span className="text-zinc-600">(runs before start, e.g. migrations)</span></label>
-                    <input type="text" placeholder={ph.release} value={releaseCmd} onChange={(e) => setReleaseCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#09090b] px-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring" />
+                    <label className="text-[10px] text-muted-foreground">Release Command <span className="text-[#8b949e]">(runs before start, e.g. migrations)</span></label>
+                    <input type="text" placeholder={ph.release} value={releaseCmd} onChange={(e) => setReleaseCmd(e.target.value)} className="w-full h-8 rounded-md border border-input bg-[#0d1117] px-2 font-mono text-xs text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground">All fields optional — blank uses defaults. You can also change these later from the project settings.</p>

@@ -387,7 +387,7 @@ export default function ServicesPage() {
                             <span className="text-[10px] text-muted-foreground">{isProj ? `Auto-injected as ${urlEnvKey(s.type)}` : `Copy into your project's ${urlEnvKey(s.type)}`}</span>
                           </div>
                           <div className="flex items-center gap-1 min-w-0">
-                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
                               {showPass[s.id] ? s.connection_url : mask(s.connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
@@ -404,7 +404,7 @@ export default function ServicesPage() {
                             <span className="text-[10px] text-muted-foreground">For local dev / external tools (pgAdmin, DBeaver, etc)</span>
                           </div>
                           <div className="flex items-center gap-1 min-w-0">
-                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
                               {showPass[s.id] ? s.external_connection_url : mask(s.external_connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
@@ -452,11 +452,11 @@ export default function ServicesPage() {
                               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runSQL(s); } }}
                               rows={5}
                               placeholder="SELECT * FROM your_table LIMIT 10;"
-                              className="w-full rounded-md border border-input bg-[#09090b] p-2.5 font-mono text-[11px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+                              className="w-full rounded-md border border-input bg-[#0d1117] p-2.5 font-mono text-[11px] text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring resize-y"
                               spellCheck={false}
                             />
                             <div className="flex items-center justify-between">
-                              <p className="text-[9px] text-zinc-600">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
+                              <p className="text-[9px] text-[#8b949e]">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
                               <Button size="sm" className="h-6 px-3 text-[10px] gap-1" disabled={sqlRunning[s.id] || !(sqlText[s.id] || "").trim()} onClick={() => runSQL(s)}>
                                 {sqlRunning[s.id] ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : null}
                                 Run
@@ -478,14 +478,14 @@ export default function ServicesPage() {
                                   {sqlResult[s.id]!.truncated && <span className="text-amber-500">truncated</span>}
                                 </div>
                                 {sqlResult[s.id]!.columns.length > 0 && (
-                                  <div className="rounded-md border border-border/30 bg-[#09090b] overflow-x-auto max-h-80">
+                                  <div className="rounded-md border border-border/30 bg-[#0d1117] overflow-x-auto max-h-80">
                                     <table className="w-full text-[10px] font-mono">
-                                      <thead className="sticky top-0 bg-[#09090b] border-b border-border/30">
+                                      <thead className="sticky top-0 bg-[#0d1117] border-b border-border/30">
                                         <tr>
                                           {sqlResult[s.id]!.columns.map((c, i) => (
                                             <th key={i} className="px-2 py-1.5 text-left text-zinc-500 font-medium whitespace-nowrap">
                                               {c}
-                                              <span className="ml-1 text-[9px] text-zinc-700">{sqlResult[s.id]!.types[i]}</span>
+                                              <span className="ml-1 text-[9px] text-[#8b949e]">{sqlResult[s.id]!.types[i]}</span>
                                             </th>
                                           ))}
                                         </tr>
@@ -495,7 +495,7 @@ export default function ServicesPage() {
                                           <tr key={i} className={i % 2 ? "bg-white/[0.02]" : ""}>
                                             {r.map((v, j) => (
                                               <td key={j} className="px-2 py-1 text-zinc-300 whitespace-nowrap max-w-xs truncate" title={v === null ? "NULL" : String(v)}>
-                                                {v === null ? <span className="text-zinc-600">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
+                                                {v === null ? <span className="text-[#8b949e]">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
                                               </td>
                                             ))}
                                           </tr>
@@ -527,7 +527,7 @@ export default function ServicesPage() {
                           </div>
 
                           {showSchedule === s.project_id && (
-                            <div className="rounded-md border border-border/30 bg-[#09090b] p-3 space-y-2">
+                            <div className="rounded-md border border-border/30 bg-[#0d1117] p-3 space-y-2">
                               <div className="flex items-center gap-3 flex-wrap">
                                 <label className="flex items-center gap-1.5 text-[10px]">
                                   <input type="checkbox" checked={schedule.enabled} onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })} className="rounded" />
@@ -554,11 +554,11 @@ export default function ServicesPage() {
                           {rowBackups.length > 0 ? (
                             <div className="space-y-1">
                               {rowBackups.map((b) => (
-                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[10px]">
+                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#0d1117] px-2.5 py-1.5 text-[10px]">
                                   <div className="flex items-center gap-2 font-mono text-zinc-400">
-                                    <Database className="h-3 w-3 text-zinc-600" />
+                                    <Database className="h-3 w-3 text-[#8b949e]" />
                                     <span>{new Date(b.created_at).toLocaleString()}</span>
-                                    <span className="text-zinc-600">{(b.file_size / 1024).toFixed(1)} KB</span>
+                                    <span className="text-[#8b949e]">{(b.file_size / 1024).toFixed(1)} KB</span>
                                   </div>
                                   <div className="flex gap-1">
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1" onClick={() => downloadBackup(s.project_id!, b)}><Download className="h-2.5 w-2.5" /> Download</Button>
@@ -569,7 +569,7 @@ export default function ServicesPage() {
                               ))}
                             </div>
                           ) : (
-                            <p className="text-[10px] text-zinc-600">No backups yet</p>
+                            <p className="text-[10px] text-[#8b949e]">No backups yet</p>
                           )}
                         </div>
                       )}

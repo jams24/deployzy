@@ -51,7 +51,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 function TtlBadge({ ttl }: { ttl: number }) {
-  if (ttl === -1) return <span className="text-[10px] text-zinc-600">∞</span>;
+  if (ttl === -1) return <span className="text-[10px] text-[#8b949e]">∞</span>;
   if (ttl === -2) return <span className="text-[10px] text-red-500">gone</span>;
   if (ttl < 60) return <span className="text-[10px] text-amber-400">{ttl}s</span>;
   if (ttl < 3600) return <span className="text-[10px] text-zinc-400">{Math.round(ttl / 60)}m</span>;
@@ -59,7 +59,7 @@ function TtlBadge({ ttl }: { ttl: number }) {
 }
 
 function renderValue(v: unknown, type: string): React.ReactNode {
-  if (v === null || v === undefined) return <span className="text-zinc-600 italic">nil</span>;
+  if (v === null || v === undefined) return <span className="text-[#8b949e] italic">nil</span>;
   if (type === "string") return <span className="font-mono text-[11px] text-zinc-200 break-all whitespace-pre-wrap">{String(v)}</span>;
   if (type === "hash") {
     const obj = v as Record<string, string>;
@@ -110,7 +110,7 @@ function renderValue(v: unknown, type: string): React.ReactNode {
       <div className="space-y-0.5">
         {(v as string[]).map((item, i) => (
           <div key={i} className="flex items-start gap-2 font-mono text-[11px]">
-            <span className="text-zinc-600 shrink-0 w-6 text-right">{i}</span>
+            <span className="text-[#8b949e] shrink-0 w-6 text-right">{i}</span>
             <span className="text-zinc-300 break-all">{item}</span>
           </div>
         ))}
@@ -282,7 +282,7 @@ export default function RedisEditorPage() {
     if (Array.isArray(v)) return (
       <div className="pl-2">
         {(v as unknown[]).map((item, i) => (
-          <div key={i}><span className="text-zinc-600">{i + 1}) </span>{renderCLIResult({ result: item, duration_ms: 0 })}</div>
+          <div key={i}><span className="text-[#8b949e]">{i + 1}) </span>{renderCLIResult({ result: item, duration_ms: 0 })}</div>
         ))}
       </div>
     );
@@ -413,7 +413,7 @@ export default function RedisEditorPage() {
                           : (
                             <button
                               onClick={(e) => deleteKey(k.key, e)}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-400 transition-colors"
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-[#8b949e] hover:text-red-400 transition-colors"
                               style={{ opacity: deletingKey ? 0 : undefined }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -435,7 +435,7 @@ export default function RedisEditorPage() {
                               <TypeBadge type={keyDetail.type} />
                               <span>TTL: <TtlBadge ttl={keyDetail.ttl} /></span>
                               {keyDetail.type === "string" && (
-                                <span className="text-zinc-600">{String(keyDetail.value ?? "").length} bytes</span>
+                                <span className="text-[#8b949e]">{String(keyDetail.value ?? "").length} bytes</span>
                               )}
                               {/* Edit (string only) */}
                               {keyDetail.type === "string" && editingKey !== k.key && (
@@ -459,7 +459,7 @@ export default function RedisEditorPage() {
                                   value={editValue}
                                   onChange={(e) => setEditValue(e.target.value)}
                                   rows={4}
-                                  className="w-full rounded-md border border-blue-500/40 bg-[#09090b] p-2 font-mono text-[11px] text-zinc-200 focus:outline-none resize-y"
+                                  className="w-full rounded-md border border-blue-500/40 bg-[#0d1117] p-2 font-mono text-[11px] text-zinc-200 focus:outline-none resize-y"
                                   spellCheck={false}
                                 />
                                 <div className="flex items-center gap-2">
@@ -474,7 +474,7 @@ export default function RedisEditorPage() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="rounded-md border border-border/30 bg-[#09090b] p-3 overflow-x-auto max-h-80 overflow-y-auto">
+                              <div className="rounded-md border border-border/30 bg-[#0d1117] p-3 overflow-x-auto max-h-80 overflow-y-auto">
                                 {renderValue(keyDetail.value, keyDetail.type)}
                               </div>
                             )}
@@ -512,14 +512,14 @@ export default function RedisEditorPage() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 py-3 font-mono text-[12px] space-y-2">
             {cliHistory.length === 0 && (
-              <p className="text-zinc-600 text-[11px]">Type any Redis command and press Enter. Commands like FLUSHALL and CONFIG are blocked.</p>
+              <p className="text-[#8b949e] text-[11px]">Type any Redis command and press Enter. Commands like FLUSHALL and CONFIG are blocked.</p>
             )}
             {cliHistory.map((h, i) => (
               <div key={i}>
                 <div className="flex items-start gap-2">
                   <span className="text-red-400 shrink-0">›</span>
                   <span className="text-zinc-200">{h.cmd}</span>
-                  <span className="text-zinc-700 text-[10px] ml-auto shrink-0">{h.result.duration_ms}ms</span>
+                  <span className="text-[#8b949e] text-[10px] ml-auto shrink-0">{h.result.duration_ms}ms</span>
                 </div>
                 <div className="pl-4 mt-0.5">{renderCLIResult(h.result)}</div>
               </div>
@@ -534,7 +534,7 @@ export default function RedisEditorPage() {
               onChange={(e) => setCliInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !cliRunning && runCLI()}
               placeholder="SET key value · GET key · KEYS * · HGETALL myhash…"
-              className="flex-1 bg-transparent font-mono text-[12px] text-zinc-200 placeholder:text-zinc-700 focus:outline-none"
+              className="flex-1 bg-transparent font-mono text-[12px] text-zinc-200 placeholder:text-[#8b949e] focus:outline-none"
               disabled={cliRunning}
               autoFocus={activeTab === "cli"}
               spellCheck={false}
