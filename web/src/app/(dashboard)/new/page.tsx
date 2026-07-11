@@ -546,28 +546,39 @@ export default function NewResourcePage() {
             <label className="text-xs font-medium">Database Type</label>
             <select value={dbType} onChange={(e) => setDbType(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
               <option value="postgres">PostgreSQL 16</option>
-              <option value="mysql" disabled>MySQL — coming soon</option>
-              <option value="redis" disabled>Redis — coming soon</option>
-              <option value="mongodb" disabled>MongoDB — coming soon</option>
+              <option value="redis">Redis 7</option>
+              <option value="mongodb">MongoDB 7</option>
+              <option value="mysql">MySQL 8</option>
             </select>
           </div>
 
-          <Card className="border-emerald-500/20">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
-                <Database className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">PostgreSQL 16</p>
-                <p className="text-[11px] text-muted-foreground">Managed instance — your plan size cap applies on platform; your full disk on BYOC</p>
-              </div>
-            </CardContent>
-          </Card>
+          {(() => {
+            const dbMeta: Record<string, { label: string; desc: string; border: string; bg: string; text: string }> = {
+              postgres: { label: "PostgreSQL 16", desc: "Relational SQL — managed instance; plan size cap applies on platform.", border: "border-emerald-500/20", bg: "bg-emerald-500/10", text: "text-emerald-400" },
+              redis:    { label: "Redis 7",        desc: "In-memory key-value store for caching, sessions, and pub/sub.", border: "border-red-500/20", bg: "bg-red-500/10", text: "text-red-400" },
+              mongodb:  { label: "MongoDB 7",      desc: "Flexible document database — schema-free JSON collections.", border: "border-green-500/20", bg: "bg-green-500/10", text: "text-green-400" },
+              mysql:    { label: "MySQL 8",         desc: "Popular relational database with broad ecosystem support.", border: "border-orange-500/20", bg: "bg-orange-500/10", text: "text-orange-400" },
+            };
+            const m = dbMeta[dbType] || dbMeta.postgres;
+            return (
+              <Card className={`${m.border}`}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${m.bg} ${m.text} shrink-0`}>
+                    <Database className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{m.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{m.desc}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           <div className="space-y-2">
             <label className="text-xs font-medium">Deploy to</label>
             <select value={dbTargetServer} onChange={(e) => setDbTargetServer(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Deployzy platform (shared Postgres)</option>
+              <option value="">Deployzy platform</option>
               {userServers.filter((s) => s.status === "active").map((s) => (
                 <option key={s.id} value={s.id}>My server — {s.label} ({s.host})</option>
               ))}

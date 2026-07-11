@@ -80,18 +80,20 @@ func (s *Server) handleServiceQuery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "service not found")
 		return
 	}
-	if svc.Type != "postgres" {
-		writeError(w, http.StatusBadRequest, "query runner only supports postgres services")
-		return
-	}
 
-	dsn := dsnForService(svc)
-	if dsn == "" {
-		writeError(w, http.StatusInternalServerError, "could not resolve service connection")
-		return
+	switch svc.Type {
+	case "postgres":
+		dsn := dsnForService(svc)
+		if dsn == "" {
+			writeError(w, http.StatusInternalServerError, "could not resolve service connection")
+			return
+		}
+		runQueryAndWrite(w, r, dsn)
+	case "mysql":
+		runMySQLQueryAndWrite(w, r, mysqlDSNForService(svc))
+	default:
+		writeError(w, http.StatusBadRequest, "query runner supports postgres and mysql services")
 	}
-
-	runQueryAndWrite(w, r, dsn)
 }
 
 // dsnForService builds a connection string. For platform-hosted services the
@@ -282,34 +284,55 @@ func pgTypeName(oid uint32) string {
 
 // handleServiceTables lists all user-created tables in a standalone service's DB.
 func (s *Server) handleServiceTables(w http.ResponseWriter, r *http.Request) {
-	dsn, err := s.resolveServiceDSN(r)
+	svc, err := s.resolveServiceForEditor(r)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	listTables(w, r, dsn)
+	switch svc.Type {
+	case "postgres":
+		listTables(w, r, dsnForService(svc))
+	case "mysql":
+		listMySQLTables(w, r, mysqlDSNForService(svc))
+	default:
+		writeError(w, http.StatusBadRequest, "only postgres and mysql services support table browsing")
+	}
 }
 
 // handleServiceTableColumns returns column metadata for a table.
 func (s *Server) handleServiceTableColumns(w http.ResponseWriter, r *http.Request) {
-	dsn, err := s.resolveServiceDSN(r)
+	svc, err := s.resolveServiceForEditor(r)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	table := chi.URLParam(r, "table")
-	listColumns(w, r, dsn, table)
+	switch svc.Type {
+	case "postgres":
+		listColumns(w, r, dsnForService(svc), table)
+	case "mysql":
+		listMySQLColumns(w, r, mysqlDSNForService(svc), table)
+	default:
+		writeError(w, http.StatusBadRequest, "only postgres and mysql services support table browsing")
+	}
 }
 
 // handleServiceTableRows returns paginated rows for a table.
 func (s *Server) handleServiceTableRows(w http.ResponseWriter, r *http.Request) {
-	dsn, err := s.resolveServiceDSN(r)
+	svc, err := s.resolveServiceForEditor(r)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	table := chi.URLParam(r, "table")
-	browseRows(w, r, dsn, table)
+	switch svc.Type {
+	case "postgres":
+		browseRows(w, r, dsnForService(svc), table)
+	case "mysql":
+		browseMySQLRows(w, r, mysqlDSNForService(svc), table)
+	default:
+		writeError(w, http.StatusBadRequest, "only postgres and mysql services support table browsing")
+	}
 }
 
 // handleProjectDatabaseTables lists tables in a project-attached DB.
@@ -346,21 +369,17 @@ func (s *Server) handleProjectDatabaseTableRows(w http.ResponseWriter, r *http.R
 
 // ── DSN resolvers (reusable across query + browse endpoints) ─────────────
 
-func (s *Server) resolveServiceDSN(r *http.Request) (string, error) {
+func (s *Server) resolveServiceForEditor(r *http.Request) (*db.Service, error) {
 	u := auth.GetUser(r)
 	serviceID := chi.URLParam(r, "serviceId")
 	svc, _ := s.db.GetService(r.Context(), serviceID)
 	if svc == nil || svc.UserID != u.ID {
-		return "", fmt.Errorf("service not found")
+		return nil, fmt.Errorf("service not found")
 	}
-	if svc.Type != "postgres" {
-		return "", fmt.Errorf("only postgres services are browsable")
+	if svc.Type != "postgres" && svc.Type != "mysql" {
+		return nil, fmt.Errorf("only postgres and mysql services are browsable")
 	}
-	dsn := dsnForService(svc)
-	if dsn == "" {
-		return "", fmt.Errorf("could not resolve connection")
-	}
-	return dsn, nil
+	return svc, nil
 }
 
 func (s *Server) resolveProjectDSN(r *http.Request) (string, error) {

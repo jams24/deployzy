@@ -104,11 +104,6 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// isRemoteBYOC is true when the project lives on a user's own server (not
 	// a platform-local host). For remote projects the platform proxy cannot
-	// reach localhost:{port}, so there is no benefit in transitioning to
-	// "building" — the old container keeps serving on the remote box and the
-	// project should stay "running" in the UI throughout the build.
-	isRemoteBYOC := false
-
 	if assignedServer != nil {
 		isLocalHost := assignedServer.IsLocal ||
 			assignedServer.Host == "localhost" ||
@@ -119,7 +114,6 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
-			isRemoteBYOC = true
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
 		}
 	} else {
@@ -129,14 +123,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
-	// For local/platform deploys: mark "building" so the proxy keeps routing to
-	// the old container port while the new image builds (GetProjectRouting
-	// allows 'building' status). For remote BYOC deploys: keep status "running"
-	// — the old container is still live on the remote box and the UI should not
-	// show the project as inactive during a redeploy.
-	if !isRemoteBYOC {
-		e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
-	}
+	// Always mark "building" so the UI shows the correct state during a redeploy.
+	// The proxy allows both 'building' and 'running', and we preserve the old
+	// container_port, so traffic keeps flowing to the old container throughout
+	// the build — both on local/platform and BYOC servers.
+	e.db.UpdateProjectStatus(ctx, project.ID, "building", project.ContainerID, project.ContainerPort)
 
 	// Blue-green: build new container while old one keeps serving traffic.
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
@@ -156,7 +147,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 
 	// Clean up any leftover "-next" container from a previous interrupted deploy
-	runner.Exec(ctx, "docker", "stop", newContainerName)
+	runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 	runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 
 	// Ensure data directory exists for persistence
@@ -457,7 +448,19 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 
 	buildCtx2, cancelBuild := context.WithTimeout(ctx, 20*time.Minute)
-	output, err := runner.Run(buildCtx2, "docker", "build", "--no-cache", fmt.Sprintf("--memory=%dm", buildMemMB), "-f", buildCtx+"/"+effectiveDockerfile, "-t", imageName, buildCtx)
+	// DOCKER_BUILDKIT=0 forces the legacy builder, which is required for
+	// --memory to actually be honoured. BuildKit (default since Docker 23)
+	// silently ignores --memory, letting an unbounded build exhaust the host
+	// and trigger the OOM killer against co-located containers (e.g. the
+	// previously-running version of this very project).
+	buildShellCmd := fmt.Sprintf(
+		"DOCKER_BUILDKIT=0 docker build --no-cache --memory=%dm -f %s -t %s %s",
+		buildMemMB,
+		shellQuote(buildCtx+"/"+effectiveDockerfile),
+		shellQuote(imageName),
+		shellQuote(buildCtx),
+	)
+	output, err := runner.RunShell(buildCtx2, buildShellCmd)
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -470,10 +473,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 	e.logMsg(ctx, project.ID, "Build successful", "build")
 
-	// Find available host port
+	// Find an available host port on the build target (local or remote BYOC).
+	portFree := func(p int) bool { return !isPortInUseOn(ctx, runner, p) }
 	hostPort := 10100 + rand.Intn(900)
 	for i := 0; i < 50; i++ {
-		if !isPortInUse(hostPort) {
+		if portFree(hostPort) {
 			break
 		}
 		hostPort = 10100 + rand.Intn(900)
@@ -520,7 +524,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	usedHostPorts := map[int]bool{hostPort: true}
 	pickHostPort := func() int {
 		p := 10100 + rand.Intn(900)
-		for isPortInUse(p) || usedHostPorts[p] {
+		for !portFree(p) || usedHostPorts[p] {
 			p = 10100 + rand.Intn(900)
 		}
 		usedHostPorts[p] = true
@@ -625,28 +629,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	args = append(args, imageName)
 
-	// For non-HTTP workers (no health check path), stop the old container before
-	// starting the new one. Running both simultaneously causes conflicts for
-	// stateful single-instance services (e.g. Telegram bots get 409 from
-	// getUpdates when two instances poll at the same time).
-	// We only STOP (not rm) so that if the new container fails to launch we can
-	// docker start the old one back up instead of leaving the service dead.
-	stoppedOldBeforeStart := false
-	if project.HealthCheckPath == "" && oldHostPort > 0 {
-		e.logMsg(ctx, project.ID, "Stopping previous container before starting new one...", "deploy")
-		runner.Exec(ctx, "docker", "stop", containerName)
-		stoppedOldBeforeStart = true
-	}
-
+	// Always start the new container before touching the old one (true blue-green).
+	// The old container keeps serving traffic until the new one is confirmed healthy.
+	// This guarantees zero downtime even for stateful services: if the new container
+	// fails to launch or crashes immediately, the old one is never stopped.
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
-		runner.Exec(ctx, "docker", "stop", newContainerName)
+		runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-		if stoppedOldBeforeStart {
-			// Restart the old container — new one never launched.
-			runner.Exec(ctx, "docker", "start", containerName)
-		}
 		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
 	}
@@ -675,12 +666,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
 		}
 
-		// Remove the old container. For HTTP services it's still running and
-		// needs stop+rm; for non-HTTP services it was already stopped before the
-		// new one launched, so just rm it.
-		if !stoppedOldBeforeStart {
-			runner.Exec(ctx, "docker", "stop", containerName)
-		}
+		// Old container is still running — stop it now that the new one is confirmed healthy.
+		// -t 2 reduces the SIGTERM window from 10s → 2s, preventing duplicate Telegram/WebSocket
+		// polling during the blue-green cutover (two containers alive at once → 409 Conflict).
+		runner.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
@@ -695,14 +684,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
 		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
 
-		// Clean up the failed new container.
-		runner.Exec(ctx, "docker", "stop", newContainerName)
+		// Clean up the failed new container. Old container was never stopped, so it
+		// keeps serving traffic automatically — no restart needed.
+		runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
-		if stoppedOldBeforeStart {
-			// Old container was stopped before new launched — restart it so the
-			// service keeps running despite the failed deploy.
-			runner.Exec(ctx, "docker", "start", containerName)
-		}
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
@@ -722,7 +707,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	runner := e.getRunner(ctx, project)
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-	runner.Exec(ctx, "docker", "stop", containerName)
+	runner.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 	runner.Exec(ctx, "docker", "rm", "-f", containerName)
 	// Belt-and-braces: also clear the container from the primary/local host. A
 	// project's container can physically live somewhere other than its currently
@@ -731,7 +716,7 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	// harmless no-op, so this guarantees no orphan keeps running after a delete/move.
 	if runner.IsRemote() {
 		local := NewLocalRunner()
-		local.Exec(ctx, "docker", "stop", containerName)
+		local.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 		local.Exec(ctx, "docker", "rm", "-f", containerName)
 	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
@@ -1109,10 +1094,23 @@ func maskToken(url string) string {
 	return url
 }
 
-// isPortInUse checks if a port is already in use.
+// isPortInUse checks if a port is already in use on the local host.
 func isPortInUse(port int) bool {
 	output, _ := exec.Command("ss", "-tlnp", fmt.Sprintf("sport = :%d", port)).Output()
 	return strings.Contains(string(output), strconv.Itoa(port))
+}
+
+// isPortInUseOn checks if a port is in use on whichever host the runner targets
+// (local platform or remote BYOC server). This prevents assigning a port that's
+// already taken on the BYOC host — isPortInUse alone can't see remote ports.
+func isPortInUseOn(ctx context.Context, runner *Runner, port int) bool {
+	portStr := strconv.Itoa(port)
+	out, err := runner.RunShell(ctx, "ss -tlnp sport = :"+portStr+" 2>/dev/null")
+	if err != nil {
+		// Fall back to local check when the remote probe fails.
+		return isPortInUse(port)
+	}
+	return strings.Contains(string(out), portStr)
 }
 
 // fileExists checks if a file exists.
