@@ -66,38 +66,42 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.08 0 0);           /* near-black — max contrast on white */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.08 0 0);
+  /* ── Deployzy light theme ────────────────────────────────────────────
+   * Cool-white background, white cards, brand green primary.
+   * Hue 145 = emerald (matches the Deployzy logo arrow).
+   * ─────────────────────────────────────────────────────────────────── */
+  --background: oklch(0.972 0.006 240);    /* cool-white — subtle blue-gray tint */
+  --foreground: oklch(0.13 0.018 248);     /* deep slate — readable, not harsh black */
+  --card: oklch(1 0 0);                    /* pure white cards pop off background */
+  --card-foreground: oklch(0.13 0.018 248);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.08 0 0);
-  --primary: oklch(0.08 0 0);             /* black primary buttons */
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.96 0 0);
-  --secondary-foreground: oklch(0.08 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.44 0 0);    /* clearly readable secondary text */
-  --accent: oklch(0.93 0 0);
-  --accent-foreground: oklch(0.08 0 0);
+  --popover-foreground: oklch(0.13 0.018 248);
+  --primary: oklch(0.52 0.165 145);        /* brand emerald green */
+  --primary-foreground: oklch(1 0 0);      /* white text on green */
+  --secondary: oklch(0.94 0.018 145);      /* light green tint */
+  --secondary-foreground: oklch(0.22 0.05 145);
+  --muted: oklch(0.952 0.007 240);         /* cool light gray panels */
+  --muted-foreground: oklch(0.46 0.018 248); /* readable slate secondary text */
+  --accent: oklch(0.92 0.022 145);         /* green-tinted hover state */
+  --accent-foreground: oklch(0.25 0.06 145);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.22 0 0);             /* dark border — this is the contour */
-  --input: oklch(0.94 0 0);
-  --ring: oklch(0.08 0 0);               /* crisp black focus ring */
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.375rem;                    /* tighter corners — sharper contour feel */
-  --sidebar: oklch(0.99 0 0);
-  --sidebar-foreground: oklch(0.08 0 0);
-  --sidebar-primary: oklch(0.08 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0 0);
-  --sidebar-accent-foreground: oklch(0.08 0 0);
-  --sidebar-border: oklch(0.22 0 0);     /* dark sidebar border */
-  --sidebar-ring: oklch(0.08 0 0);
+  --border: oklch(0.88 0.010 240);         /* soft slate border — visible but not heavy */
+  --input: oklch(1 0 0);                   /* white inputs */
+  --ring: oklch(0.52 0.165 145);           /* green focus ring matches primary */
+  --chart-1: oklch(0.52 0.165 145);        /* green */
+  --chart-2: oklch(0.55 0.18 264);         /* blue */
+  --chart-3: oklch(0.65 0.18 55);          /* amber */
+  --chart-4: oklch(0.55 0.20 310);         /* purple */
+  --chart-5: oklch(0.60 0.20 22);          /* red-orange */
+  --radius: 0.5rem;
+  --sidebar: oklch(0.985 0.006 240);       /* slightly cooler than main bg — subtle separation */
+  --sidebar-foreground: oklch(0.13 0.018 248);
+  --sidebar-primary: oklch(0.52 0.165 145);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.92 0.022 145);
+  --sidebar-accent-foreground: oklch(0.25 0.06 145);
+  --sidebar-border: oklch(0.88 0.010 240);
+  --sidebar-ring: oklch(0.52 0.165 145);
 }
 
 .dark {
@@ -269,7 +273,7 @@ pre {
 html:not(.dark) body {
   background-image:
     /* 1 — dot grid */
-    radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1px),
+    radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px),
     /* 2 — bottom-right arc motif: concentric circles centred at (300,300)
      *     so only the top-left quadrant of each circle is visible in the
      *     bottom-right viewport corner */
@@ -309,17 +313,17 @@ html:not(.dark) .sm-terminal {
     0 16px 48px rgba(0,0,0,0.08);
 }
 
-/* Card contour shadow — a 2 px offset lift that reads like a print stamp.
- * Targets shadcn's data-slot="card" attribute; falls back to nothing if
- * the slot attribute is absent (no visual regression on other elements). */
+/* Card elevation — white card on cool-white background needs a clear shadow */
 html:not(.dark) [data-slot="card"] {
-  box-shadow: 2px 2px 0 rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.07),
+    0 4px 12px rgba(0, 0, 0, 0.04);
 }
 
-/* Input contour: slightly visible background so text fields read as
- * "ink on paper" rather than floating on the void. */
+/* Input: white with a crisp border so fields read clearly */
 html:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
 html:not(.dark) textarea,
 html:not(.dark) select {
-  background-color: oklch(0.975 0 0);
+  background-color: oklch(1 0 0);
+  border-color: oklch(0.84 0.012 240);
 }
