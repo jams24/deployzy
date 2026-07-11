@@ -88,7 +88,7 @@ export default function NotificationsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Notifications</h1>
+      <h1 className="text-xl sm:text-2xl font-bold">Notifications</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Get alerts in Telegram when something happens with your tunnels.
       </p>

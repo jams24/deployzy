@@ -67,15 +67,15 @@ export default function OverviewPage() {
   return (
     <div>
       {/* Greeting */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-start justify-between gap-3 mb-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
             {greeting()}, {user?.name?.split(" ")[0] || "there"}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">What are you shipping today?</p>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">What are you shipping today?</p>
         </div>
-        <Button className="gap-2" nativeButton={false} render={<Link href="/new" />}>
-          <Plus className="h-4 w-4" /> New Resource
+        <Button className="gap-2 shrink-0 h-8 sm:h-9 px-3 sm:px-4 text-sm" nativeButton={false} render={<Link href="/new" />}>
+          <Plus className="h-4 w-4" /><span className="hidden sm:inline"> New Resource</span>
         </Button>
       </div>
 

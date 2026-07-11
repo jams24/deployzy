@@ -959,27 +959,33 @@ function ProjectsContent() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Deploy apps from your GitHub repos.</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Projects</h1>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Deploy apps from your GitHub repos.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Grid / list view toggle */}
           <div className="flex items-center rounded-md border border-border/40 p-0.5">
-            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-6 w-7 items-center justify-center rounded ${viewMode === "grid" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded ${viewMode === "grid" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
-            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-6 w-7 items-center justify-center rounded ${viewMode === "list" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded ${viewMode === "list" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               <List className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Button variant="outline" size="sm" onClick={load} className="gap-1"><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-8 w-8 p-0 sm:w-auto sm:px-3 gap-1">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
           {ghConnected ? (
-            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="gap-1"><Plus className="h-3.5 w-3.5" /> Import Repo</Button>
+            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="gap-1 h-8 px-2.5 sm:px-3">
+              <Plus className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Import Repo</span>
+            </Button>
           ) : (
-            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="gap-1">
-              <GitBranch className="h-3.5 w-3.5" /> Connect GitHub
+            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="gap-1 h-8 px-2.5 sm:px-3">
+              <GitBranch className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Connect GitHub</span>
             </Button>
           )}
         </div>
@@ -987,12 +993,12 @@ function ProjectsContent() {
 
       {/* GitHub status */}
       {ghConnected && (
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-border/40 bg-card/30 px-4 py-2.5">
-          <div className="flex items-center gap-2 text-sm">
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Connected to GitHub as</span>
-            <span className="font-medium">@{ghUsername}</span>
-            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/30 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm min-w-0">
+            <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
+            <span className="font-medium truncate">@{ghUsername}</span>
+            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={disconnectGH} className="text-xs text-muted-foreground">Disconnect</Button>
         </div>
@@ -1303,7 +1309,7 @@ function ProjectsContent() {
               ? `rounded-xl border bg-card/20 overflow-hidden transition-colors ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20"}`
               : `transition-colors ${isSel ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
               <div className={isGrid ? "p-4" : "px-4 py-2.5"}>
-                <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex items-center justify-between gap-3"}>
+                <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
                   <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
                       <Rocket className="h-4 w-4" />
@@ -1329,23 +1335,24 @@ function ProjectsContent() {
                       </div>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-1 ${isGrid && !isSel ? "flex-wrap" : "shrink-0"}`}>
+                  <div className="flex items-center gap-1 flex-wrap shrink-0">
                     {p.status !== "running" && p.status !== "building" && (
-                      <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                      <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                         {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                        {p.status === "stopped" ? "Start" : "Deploy"}
+                        <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Deploy"}</span>
                       </Button>
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
-                          <ExternalLink className="h-3 w-3" /> Visit
+                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
+                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline"> Visit</span>
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                          {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Redeploy
+                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                          {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          <span className="hidden sm:inline"> Redeploy</span>
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => stop(p.id)}>
-                          <Square className="h-3 w-3" /> Stop
+                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Stop" onClick={() => stop(p.id)}>
+                          <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>
                         </Button>
                         {(() => {
                           const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
@@ -1353,7 +1360,7 @@ function ProjectsContent() {
                           if (!showPlatform && otherServers.length === 0) return null;
                           return (
                             <select
-                              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+                              className="h-8 max-w-[110px] sm:max-w-none rounded-md border border-input bg-background px-2 text-xs"
                               value=""
                               disabled={deploying === p.id}
                               title="Move this project to another server (Pro)"
@@ -1370,7 +1377,7 @@ function ProjectsContent() {
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
+                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" title="Delete project" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -2151,7 +2158,7 @@ function ProjectsContent() {
                     {!liveMin[p.id] && (
                       <div
                         ref={(el) => { liveScrollRef.current[p.id] = el; }}
-                        className="p-2 font-mono text-[11px] space-y-0.5 max-h-80 overflow-y-auto"
+                        className="p-2 font-mono text-[11px] space-y-0.5 max-h-48 sm:max-h-80 overflow-y-auto"
                         onScroll={(e) => {
                           const el = e.currentTarget;
                           const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
@@ -2181,7 +2188,7 @@ function ProjectsContent() {
                     kept 14 days, so older projects show an empty state instead
                     of the panel silently vanishing. */}
                 {selectedProject === p.id && (
-                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-64 overflow-y-auto">
+                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-52 sm:max-h-64 overflow-y-auto">
                     <div className="border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] text-[#8b949e] font-mono flex items-center gap-2 sticky top-0">
                       <Terminal className="h-3 w-3 text-[#58a6ff]" /> <span className="text-[#c9d1d9]">Deploy Logs</span>
                     </div>

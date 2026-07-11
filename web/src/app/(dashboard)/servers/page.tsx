@@ -94,13 +94,13 @@ export default function ServersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">My Servers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Bring your own compute — deploy projects to your own servers via SSH.</p>
+          <h1 className="text-xl sm:text-2xl font-bold">My Servers</h1>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Bring your own compute — deploy projects to your own servers via SSH.</p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1">
-          <Plus className="h-3.5 w-3.5" /> Add Server
+        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1 h-8 shrink-0 px-2.5 sm:px-3">
+          <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Add Server</span>
         </Button>
       </div>
 

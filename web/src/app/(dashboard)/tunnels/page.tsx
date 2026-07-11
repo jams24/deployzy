@@ -53,16 +53,16 @@ export default function TunnelsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Tunnels</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-xl sm:text-2xl font-bold">Tunnels</h1>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">
             Active tunnels and deployed projects.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} className="gap-2">
+        <Button variant="outline" size="sm" onClick={load} className="gap-1 h-8 w-8 sm:w-auto sm:px-3 shrink-0" title="Refresh">
           <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
 

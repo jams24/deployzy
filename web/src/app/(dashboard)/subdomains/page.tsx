@@ -101,7 +101,7 @@ export default function SubdomainsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Subdomains</h1>
+      <h1 className="text-xl sm:text-2xl font-bold">Subdomains</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Reserve custom subdomains for your tunnels. Once reserved, only you can use them.
       </p>
@@ -120,7 +120,7 @@ export default function SubdomainsPage() {
                   </Badge>
                 )}
               </div>
-              <div className="mt-2 h-2 w-64 rounded-full bg-muted overflow-hidden">
+              <div className="mt-2 h-2 w-full max-w-xs rounded-full bg-muted overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${count >= limit ? "bg-red-500" : "bg-primary"}`}
                   style={{ width: `${Math.min(100, (count / limit) * 100)}%` }}
