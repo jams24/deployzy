@@ -290,7 +290,7 @@ export default function DatabaseEditorPage() {
     const type = browseData?.types[colIdx] || "text";
     const currentRaw = browseData?.rows[editCell!.rowIdx]?.[colIdx];
     const isLong = type === "json" || (type === "text" && String(currentRaw ?? "").length > 80);
-    const sharedClass = `bg-zinc-900 border border-blue-500 rounded px-1.5 text-[11px] font-mono text-zinc-200 focus:outline-none disabled:opacity-40 w-full min-w-[140px]`;
+    const sharedClass = `bg-muted border border-blue-500 rounded px-1.5 text-[11px] font-mono text-foreground focus:outline-none disabled:opacity-40 w-full min-w-[140px]`;
     if (isLong) {
       return (
         <textarea
@@ -319,7 +319,7 @@ export default function DatabaseEditorPage() {
 
   // ── Render ─────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] subpixel-antialiased">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 shrink-0">
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
@@ -353,7 +353,7 @@ export default function DatabaseEditorPage() {
             <button key={t.name} onClick={() => setSelectedTable(t.name)}
               className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-accent/40 transition-colors flex items-center justify-between gap-2 ${selectedTable === t.name ? "bg-accent/60 text-foreground font-medium" : "text-muted-foreground"}`}>
               <span className="truncate">{t.name}</span>
-              <span className="text-[9px] text-[#8b949e] shrink-0">{t.size_pretty}</span>
+              <span className="text-[9px] text-muted-foreground/60 shrink-0">{t.size_pretty}</span>
             </button>
           ))}
         </div>
@@ -370,7 +370,7 @@ export default function DatabaseEditorPage() {
                   {browseData
                     ? `${browseData.total_rows.toLocaleString()} rows · showing ${browseData.offset + 1}–${Math.min(browseData.offset + browseData.rows.length, browseData.total_rows)}`
                     : "—"}
-                  {hasPK && <span className="ml-2 text-[#8b949e]">· double-click cell to edit</span>}
+                  {hasPK && <span className="ml-2 text-muted-foreground/60">· double-click cell to edit</span>}
                 </span>
                 <div className="flex items-center gap-1.5">
                   {hasPK && !addingRow && (
@@ -402,12 +402,12 @@ export default function DatabaseEditorPage() {
                     {columns.map(col => (
                       <div key={col.name} className="flex flex-col gap-0.5">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-[9px] font-mono text-zinc-500 truncate">
+                          <span className="text-[9px] font-mono text-muted-foreground truncate">
                             {col.name}{col.is_primary_key && <span className="ml-0.5 text-amber-500">·PK</span>}
                           </span>
                           {col.is_nullable === "YES" && (
                             <button onClick={() => setNewRowNulls(p => ({ ...p, [col.name]: !p[col.name] }))}
-                              className={`text-[9px] px-1 py-0.5 rounded border leading-none ${newRowNulls[col.name] ? "border-blue-500 text-blue-400" : "border-[#30363d] text-[#8b949e]"}`}>
+                              className={`text-[9px] px-1 py-0.5 rounded border leading-none ${newRowNulls[col.name] ? "border-blue-500 text-blue-400" : "border-border text-muted-foreground"}`}>
                               NULL
                             </button>
                           )}
@@ -417,7 +417,7 @@ export default function DatabaseEditorPage() {
                           onChange={e => setNewRowValues(p => ({ ...p, [col.name]: e.target.value }))}
                           disabled={newRowNulls[col.name]}
                           placeholder={col.column_default ? `default` : ""}
-                          className="w-full bg-zinc-900 border border-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-blue-500 disabled:opacity-30 placeholder:text-[#8b949e]"
+                          className="w-full bg-muted border border-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-foreground focus:outline-none focus:border-blue-500 disabled:opacity-30 placeholder:text-muted-foreground"
                         />
                       </div>
                     ))}
@@ -443,13 +443,13 @@ export default function DatabaseEditorPage() {
                   <table className="w-full text-[11px] font-mono">
                     <thead className="sticky top-0 bg-background border-b border-border/30 z-10">
                       <tr>
-                        <th className="px-2 py-1.5 text-left text-[9px] text-[#8b949e] w-8">#</th>
+                        <th className="px-2 py-1.5 text-left text-[9px] text-muted-foreground w-8">#</th>
                         {browseData.columns.map((c, i) => (
                           <th key={c} onClick={() => handleSort(c)}
-                            className="px-2 py-1.5 text-left text-zinc-500 font-medium whitespace-nowrap cursor-pointer hover:text-foreground select-none">
+                            className="px-2 py-1.5 text-left text-muted-foreground font-medium whitespace-nowrap cursor-pointer hover:text-foreground select-none">
                             {c}
-                            <span className="ml-0.5 text-[9px] text-[#8b949e]">{browseData.types[i]}</span>
-                            {orderBy === c && <ArrowUpDown className="inline h-2.5 w-2.5 ml-0.5 text-zinc-400" />}
+                            <span className="ml-0.5 text-[9px] text-muted-foreground/60">{browseData.types[i]}</span>
+                            {orderBy === c && <ArrowUpDown className="inline h-2.5 w-2.5 ml-0.5 text-muted-foreground" />}
                           </th>
                         ))}
                         {hasPK && <th className="w-8 px-1" />}
@@ -458,24 +458,24 @@ export default function DatabaseEditorPage() {
                     <tbody>
                       {browseData.rows.map((r, rowIdx) => (
                         <tr key={rowIdx}
-                          className={`${rowIdx % 2 ? "bg-white/[0.02]" : ""} hover:bg-accent/20 group`}
+                          className={`${rowIdx % 2 ? "bg-muted/30" : ""} hover:bg-accent/40 group`}
                           onMouseEnter={() => setHoveredRow(rowIdx)}
                           onMouseLeave={() => setHoveredRow(null)}>
-                          <td className="px-2 py-1 text-[#8b949e] text-[9px]">{browseData.offset + rowIdx + 1}</td>
+                          <td className="px-2 py-1 text-muted-foreground/60 text-[9px]">{browseData.offset + rowIdx + 1}</td>
 
                           {r.map((v, colIdx) => {
                             const isEditing = editCell?.rowIdx === rowIdx && editCell?.colIdx === colIdx;
                             return (
                               <td key={colIdx}
                                 onDoubleClick={() => !isEditing && startEdit(rowIdx, colIdx, v)}
-                                className={`px-2 py-1 text-zinc-300 whitespace-nowrap ${isEditing ? "p-0 align-top" : "max-w-[250px] truncate"} ${!isEditing && hasPK ? "cursor-pointer hover:bg-blue-500/5" : ""}`}
+                                className={`px-2 py-1 text-foreground whitespace-nowrap ${isEditing ? "p-0 align-top" : "max-w-[250px] truncate"} ${!isEditing && hasPK ? "cursor-pointer hover:bg-primary/5" : ""}`}
                                 title={!isEditing && v !== null ? String(v) : undefined}>
                                 {isEditing ? (
                                   <div className="p-1.5 min-w-[160px]">
                                     {renderEditInput(colIdx)}
                                     <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                                       <button onClick={() => setEditIsNull(n => !n)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded border leading-none ${editIsNull ? "border-blue-500 text-blue-400" : "border-[#30363d] text-[#8b949e]"}`}>
+                                        className={`text-[9px] px-1.5 py-0.5 rounded border leading-none ${editIsNull ? "border-blue-500 text-blue-400" : "border-border text-muted-foreground"}`}>
                                         NULL
                                       </button>
                                       <Button size="sm" className="h-5 px-2 text-[9px] gap-0.5" disabled={saving} onClick={saveEdit}>
@@ -488,7 +488,7 @@ export default function DatabaseEditorPage() {
                                     </div>
                                   </div>
                                 ) : v === null ? (
-                                  <span className="text-[#8b949e] italic">NULL</span>
+                                  <span className="text-muted-foreground italic">NULL</span>
                                 ) : typeof v === "object" ? (
                                   JSON.stringify(v)
                                 ) : (
@@ -503,7 +503,7 @@ export default function DatabaseEditorPage() {
                             <td className="px-1 py-1 w-8">
                               {hoveredRow === rowIdx && editCell?.rowIdx !== rowIdx && (
                                 <button onClick={() => deleteRow(rowIdx)} disabled={deletingRow === rowIdx}
-                                  className="p-0.5 rounded hover:bg-red-500/20 text-[#8b949e] hover:text-red-400 transition-colors">
+                                  className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors">
                                   {deletingRow === rowIdx
                                     ? <Loader2 className="h-3 w-3 animate-spin" />
                                     : <Trash2 className="h-3 w-3" />}
@@ -567,11 +567,11 @@ export default function DatabaseEditorPage() {
                   onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runSQL(); } }}
                   rows={6}
                   placeholder="SELECT * FROM your_table LIMIT 10;"
-                  className="w-full rounded-md border border-input bg-[#0d1117] p-2.5 font-mono text-[12px] text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+                  className="w-full rounded-md border border-input bg-muted p-2.5 font-mono text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
                   spellCheck={false}
                 />
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-[#8b949e]">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
+                  <p className="text-[10px] text-muted-foreground">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
                   <Button size="sm" className="h-7 px-4 text-[11px] gap-1.5" disabled={sqlRunning || !sql.trim()} onClick={runSQL}>
                     {sqlRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                     Run query
@@ -594,23 +594,23 @@ export default function DatabaseEditorPage() {
                       {sqlResult.rows_affected > 0 && <span>affected: {sqlResult.rows_affected}</span>}
                       {sqlResult.truncated && <span className="text-amber-500">truncated to 1000</span>}
                     </div>
-                    <div className="rounded-md border border-border/30 bg-[#0d1117] overflow-x-auto max-h-[400px]">
+                    <div className="rounded-md border border-border/30 bg-muted overflow-x-auto max-h-[400px]">
                       <table className="w-full text-[10px] font-mono">
-                        <thead className="sticky top-0 bg-[#0d1117] border-b border-border/30">
+                        <thead className="sticky top-0 bg-muted border-b border-border/30">
                           <tr>
                             {sqlResult.columns.map((c, i) => (
-                              <th key={i} className="px-2 py-1.5 text-left text-zinc-500 font-medium whitespace-nowrap">
-                                {c} <span className="text-[9px] text-[#8b949e]">{sqlResult.types[i]}</span>
+                              <th key={i} className="px-2 py-1.5 text-left text-muted-foreground font-medium whitespace-nowrap">
+                                {c} <span className="text-[9px] text-muted-foreground/60">{sqlResult.types[i]}</span>
                               </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {sqlResult.rows.map((r, i) => (
-                            <tr key={i} className={i % 2 ? "bg-white/[0.02]" : ""}>
+                            <tr key={i} className={i % 2 ? "bg-muted/50" : ""}>
                               {r.map((v, j) => (
-                                <td key={j} className="px-2 py-1 text-zinc-300 whitespace-nowrap max-w-[250px] truncate" title={v === null ? "NULL" : String(v)}>
-                                  {v === null ? <span className="text-[#8b949e] italic">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
+                                <td key={j} className="px-2 py-1 text-foreground whitespace-nowrap max-w-[250px] truncate" title={v === null ? "NULL" : String(v)}>
+                                  {v === null ? <span className="text-muted-foreground italic">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
                                 </td>
                               ))}
                             </tr>
