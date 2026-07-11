@@ -178,6 +178,12 @@ export default function AdminPage() {
     fetchUsers(0, search, plan, false);
   }, [fetchUsers]);
 
+  // Auto-search users on search/plan change (debounced 300ms)
+  useEffect(() => {
+    const t = setTimeout(() => resetUsers(userSearch, userPlanFilter), 300);
+    return () => clearTimeout(t);
+  }, [userSearch, userPlanFilter]);
+
   useEffect(() => {
     const el = userSentinelRef.current; if (!el) return;
     const obs = new IntersectionObserver(entries => {
@@ -226,6 +232,12 @@ export default function AdminPage() {
     setProjects([]); setProjectsOffset(0); setProjectsHasMore(true);
     fetchProjects(0, search, status, false);
   }, [fetchProjects]);
+
+  // Auto-search projects on search/status change (debounced 300ms)
+  useEffect(() => {
+    const t = setTimeout(() => resetProjects(projectSearch, projectStatus), 300);
+    return () => clearTimeout(t);
+  }, [projectSearch, projectStatus]);
 
   useEffect(() => {
     const el = projectSentinelRef.current; if (!el) return;
@@ -361,10 +373,9 @@ export default function AdminPage() {
   };
 
   // ── Boot ───────────────────────────────────────────────────────────────────
+  // Users and projects are loaded by their own debounce effects on mount.
   useEffect(() => {
     loadStats();
-    fetchUsers(0, "", "all", false);
-    fetchProjects(0, "", "all", false);
     loadSessions();
     loadServers();
     loadBackups();
@@ -675,12 +686,11 @@ export default function AdminPage() {
                 className="pl-9 h-9 text-sm"
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") resetUsers(userSearch, userPlanFilter); }}
               />
             </div>
             <select
               value={userPlanFilter}
-              onChange={e => { setUserPlanFilter(e.target.value); resetUsers(userSearch, e.target.value); }}
+              onChange={e => setUserPlanFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">All plans</option>
@@ -688,9 +698,6 @@ export default function AdminPage() {
               <option value="pro">Pro</option>
               <option value="team">Team</option>
             </select>
-            <Button size="sm" className="h-9" onClick={() => resetUsers(userSearch, userPlanFilter)}>
-              <Search className="h-3.5 w-3.5" />
-            </Button>
           </div>
 
           <div className="text-xs text-muted-foreground">{usersTotal} users total</div>
@@ -768,12 +775,11 @@ export default function AdminPage() {
                 className="pl-9 h-9 text-sm"
                 value={projectSearch}
                 onChange={e => setProjectSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") resetProjects(projectSearch, projectStatus); }}
               />
             </div>
             <select
               value={projectStatus}
-              onChange={e => { setProjectStatus(e.target.value); resetProjects(projectSearch, e.target.value); }}
+              onChange={e => setProjectStatus(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">All statuses</option>
