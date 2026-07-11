@@ -101,7 +101,7 @@ export default function SubdomainsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Subdomains</h1>
+      <h1 className="text-xl sm:text-2xl font-bold">Subdomains</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Reserve custom subdomains for your tunnels. Once reserved, only you can use them.
       </p>
@@ -115,12 +115,12 @@ export default function SubdomainsPage() {
                 <span className="text-sm font-medium">{count} / {limit} subdomains used</span>
                 <Badge variant="outline" className="text-[10px] capitalize">{plan}</Badge>
                 {plan === "free" && count >= limit && (
-                  <Badge className="gap-1 text-[10px] bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                  <Badge className="gap-1 text-[10px] bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
                     <Crown className="h-2.5 w-2.5" /> Upgrade for more
                   </Badge>
                 )}
               </div>
-              <div className="mt-2 h-2 w-64 rounded-full bg-muted overflow-hidden">
+              <div className="mt-2 h-2 w-full max-w-xs rounded-full bg-muted overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${count >= limit ? "bg-red-500" : "bg-primary"}`}
                   style={{ width: `${Math.min(100, (count / limit) * 100)}%` }}

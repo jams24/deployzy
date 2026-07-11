@@ -75,7 +75,7 @@ export function LiveStream() {
             >
               <span className="text-zinc-600 w-16 shrink-0">{r.time}</span>
               <span className={`font-medium w-12 shrink-0 ${methodColor[r.method] || "text-zinc-400"}`}>{r.method}</span>
-              <span className={`w-7 text-center text-[10px] rounded px-1 py-0.5 shrink-0 ${r.status < 400 ? "bg-emerald-500/10 text-emerald-400/80" : "bg-red-500/10 text-red-400/80"}`}>
+              <span className={`w-7 text-center text-[10px] rounded px-1 py-0.5 shrink-0 ${r.status < 400 ? "bg-emerald-500/20 text-emerald-400/80" : "bg-red-500/20 text-red-400/80"}`}>
                 {r.status}
               </span>
               <span className="text-zinc-500 flex-1 truncate">{r.path}</span>

@@ -208,8 +208,8 @@ export default function BlogAdminPage() {
                         variant="outline"
                         className={
                           post.status === "published"
-                            ? "text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                            : "text-[10px] bg-amber-500/10 text-amber-500 border-amber-500/20"
+                            ? "text-[10px] bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
+                            : "text-[10px] bg-amber-500/20 text-amber-500 border-amber-500/50"
                         }
                       >
                         {post.status}

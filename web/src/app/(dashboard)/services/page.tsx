@@ -200,10 +200,10 @@ export default function ServicesPage() {
 
   const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
   const typeColors = (t: string): { icon: string; badge: string } => ({
-    postgres: { icon: "bg-emerald-500/10 text-emerald-400", badge: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
-    redis:    { icon: "bg-red-500/10 text-red-400",         badge: "bg-red-500/10 text-red-400 border-red-500/20" },
+    postgres: { icon: "bg-emerald-500/20 text-emerald-400", badge: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" },
+    redis:    { icon: "bg-red-500/20 text-red-400",         badge: "bg-red-500/20 text-red-400 border-red-500/40" },
     mongodb:  { icon: "bg-green-500/10 text-green-400",     badge: "bg-green-500/10 text-green-400 border-green-500/20" },
-    mysql:    { icon: "bg-orange-500/10 text-orange-400",   badge: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+    mysql:    { icon: "bg-orange-500/20 text-orange-400",   badge: "bg-orange-500/20 text-orange-400 border-orange-500/50" },
   }[t] ?? { icon: "bg-zinc-500/10 text-zinc-400", badge: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" });
   const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
   const isSQL = (t: string) => t === "postgres" || t === "mysql";
@@ -218,7 +218,7 @@ export default function ServicesPage() {
       {/* ── Delete confirmation modal ── */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-xl border border-red-500/30 bg-card shadow-2xl p-6 space-y-4">
+          <div className="w-full max-w-md rounded-xl border border-red-500/50 bg-card shadow-2xl p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-400 mt-0.5">
                 <AlertTriangle className="h-4.5 w-4.5" />
@@ -234,7 +234,7 @@ export default function ServicesPage() {
               </button>
             </div>
 
-            <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 space-y-1">
+            <div className="rounded-lg border border-red-500/40 bg-red-500/5 px-3 py-2 space-y-1">
               <p className="text-[11px] font-medium text-red-400 uppercase tracking-wider">What will be deleted</p>
               <ul className="text-[12px] text-muted-foreground space-y-0.5">
                 <li>• All data stored in <span className="font-mono text-foreground">{deleteTarget.db_name || deleteLabel}</span></li>
@@ -276,15 +276,15 @@ export default function ServicesPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Databases</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Databases</h1>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" className="gap-1" nativeButton={false} render={<Link href="/new?type=database" />}>
-            <Plus className="h-3.5 w-3.5" /> New Database
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button variant="outline" size="sm" onClick={load} className="h-8 w-8 p-0" title="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" className="gap-1 h-8 px-2.5 sm:px-3" nativeButton={false} render={<Link href="/new?type=database" />}>
+            <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> New Database</span>
           </Button>
         </div>
       </div>
@@ -318,55 +318,53 @@ export default function ServicesPage() {
             return (
               <div key={s.id} className={`transition-colors ${isOpen ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
                 <div className="px-4 py-2.5 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
                     <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/10 text-blue-400" : typeColors(s.type).icon}`}>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/20 text-blue-400" : typeColors(s.type).icon}`}>
                         <Database className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold truncate">{s.name}</span>
-                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">{s.status}</Badge>
-                          <Badge variant="outline" className={`text-[10px] shrink-0 hidden sm:inline-flex ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
+                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">{s.status}</Badge>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
                           {isProj && s.project_subdomain && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/20 gap-1 hidden lg:inline-flex">
+                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 gap-1 hidden sm:inline-flex">
                               <Rocket className="h-2.5 w-2.5" />
                               {s.project_name}
                             </Badge>
                           )}
-                          {!isProj && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-zinc-500 hidden sm:inline-flex">standalone</Badge>
-                          )}
                           {typeof s.size_mb === "number" && (
-                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/10 text-amber-500 border-amber-500/30" : "text-zinc-400"}`}>
-                              {s.size_mb} MB{s.over_quota ? " · over quota — writes blocked" : ""}
+                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/20 text-amber-500 border-amber-500/50" : "text-zinc-400"}`}>
+                              {s.size_mb} MB{s.over_quota ? " · over quota" : ""}
                             </Badge>
                           )}
                         </div>
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
                       </div>
                     </div>
-                    {(isSQL(s.type) || s.type === "redis" || s.type === "mongodb") && (
-                      <Link
-                        href={
-                          s.type === "redis"
-                            ? `/redis/${s.id}`
-                            : s.type === "mongodb"
-                              ? `/mongo/${s.id}`
-                              : isProj && s.project_id
-                                ? `/database/${s.id}?type=project&projectId=${s.project_id}`
-                                : `/database/${s.id}?type=service`
-                        }
-                        className="shrink-0"
-                      >
-                        <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">
-                          <Table2 className="h-3 w-3" /> Editor
-                        </Button>
-                      </Link>
-                    )}
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0" onClick={() => promptDelete(s)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(isSQL(s.type) || s.type === "redis" || s.type === "mongodb") && (
+                        <Link
+                          href={
+                            s.type === "redis"
+                              ? `/redis/${s.id}`
+                              : s.type === "mongodb"
+                                ? `/mongo/${s.id}`
+                                : isProj && s.project_id
+                                  ? `/database/${s.id}?type=project&projectId=${s.project_id}`
+                                  : `/database/${s.id}?type=service`
+                          }
+                        >
+                          <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">
+                            <Table2 className="h-3 w-3" /><span className="hidden sm:inline"> Editor</span>
+                          </Button>
+                        </Link>
+                      )}
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-8 w-8 p-0" title="Delete" onClick={() => promptDelete(s)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
 
                   {isOpen && (
@@ -387,7 +385,7 @@ export default function ServicesPage() {
                             <span className="text-[10px] text-muted-foreground">{isProj ? `Auto-injected as ${urlEnvKey(s.type)}` : `Copy into your project's ${urlEnvKey(s.type)}`}</span>
                           </div>
                           <div className="flex items-center gap-1 min-w-0">
-                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
                               {showPass[s.id] ? s.connection_url : mask(s.connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
@@ -404,7 +402,7 @@ export default function ServicesPage() {
                             <span className="text-[10px] text-muted-foreground">For local dev / external tools (pgAdmin, DBeaver, etc)</span>
                           </div>
                           <div className="flex items-center gap-1 min-w-0">
-                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#09090b] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
+                            <code className="flex-1 min-w-0 rounded-md border border-input bg-[#0d1117] px-3 py-2 font-mono text-[11px] text-zinc-400 overflow-x-auto">
                               {showPass[s.id] ? s.external_connection_url : mask(s.external_connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
@@ -452,11 +450,11 @@ export default function ServicesPage() {
                               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runSQL(s); } }}
                               rows={5}
                               placeholder="SELECT * FROM your_table LIMIT 10;"
-                              className="w-full rounded-md border border-input bg-[#09090b] p-2.5 font-mono text-[11px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+                              className="w-full rounded-md border border-input bg-[#0d1117] p-2.5 font-mono text-[11px] text-zinc-300 placeholder:text-[#8b949e] focus:outline-none focus:ring-1 focus:ring-ring resize-y"
                               spellCheck={false}
                             />
                             <div className="flex items-center justify-between">
-                              <p className="text-[9px] text-zinc-600">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
+                              <p className="text-[9px] text-[#8b949e]">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
                               <Button size="sm" className="h-6 px-3 text-[10px] gap-1" disabled={sqlRunning[s.id] || !(sqlText[s.id] || "").trim()} onClick={() => runSQL(s)}>
                                 {sqlRunning[s.id] ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : null}
                                 Run
@@ -464,7 +462,7 @@ export default function ServicesPage() {
                             </div>
 
                             {sqlError[s.id] && (
-                              <div className="rounded-md border border-red-500/30 bg-red-500/10 p-2 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all">
+                              <div className="rounded-md border border-red-500/50 bg-red-500/20 p-2 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all">
                                 {sqlError[s.id]}
                               </div>
                             )}
@@ -478,14 +476,14 @@ export default function ServicesPage() {
                                   {sqlResult[s.id]!.truncated && <span className="text-amber-500">truncated</span>}
                                 </div>
                                 {sqlResult[s.id]!.columns.length > 0 && (
-                                  <div className="rounded-md border border-border/30 bg-[#09090b] overflow-x-auto max-h-80">
+                                  <div className="rounded-md border border-border/30 bg-[#0d1117] overflow-x-auto max-h-80">
                                     <table className="w-full text-[10px] font-mono">
-                                      <thead className="sticky top-0 bg-[#09090b] border-b border-border/30">
+                                      <thead className="sticky top-0 bg-[#0d1117] border-b border-border/30">
                                         <tr>
                                           {sqlResult[s.id]!.columns.map((c, i) => (
                                             <th key={i} className="px-2 py-1.5 text-left text-zinc-500 font-medium whitespace-nowrap">
                                               {c}
-                                              <span className="ml-1 text-[9px] text-zinc-700">{sqlResult[s.id]!.types[i]}</span>
+                                              <span className="ml-1 text-[9px] text-[#8b949e]">{sqlResult[s.id]!.types[i]}</span>
                                             </th>
                                           ))}
                                         </tr>
@@ -495,7 +493,7 @@ export default function ServicesPage() {
                                           <tr key={i} className={i % 2 ? "bg-white/[0.02]" : ""}>
                                             {r.map((v, j) => (
                                               <td key={j} className="px-2 py-1 text-zinc-300 whitespace-nowrap max-w-xs truncate" title={v === null ? "NULL" : String(v)}>
-                                                {v === null ? <span className="text-zinc-600">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
+                                                {v === null ? <span className="text-[#8b949e]">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
                                               </td>
                                             ))}
                                           </tr>
@@ -527,7 +525,7 @@ export default function ServicesPage() {
                           </div>
 
                           {showSchedule === s.project_id && (
-                            <div className="rounded-md border border-border/30 bg-[#09090b] p-3 space-y-2">
+                            <div className="rounded-md border border-border/30 bg-[#0d1117] p-3 space-y-2">
                               <div className="flex items-center gap-3 flex-wrap">
                                 <label className="flex items-center gap-1.5 text-[10px]">
                                   <input type="checkbox" checked={schedule.enabled} onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })} className="rounded" />
@@ -554,11 +552,11 @@ export default function ServicesPage() {
                           {rowBackups.length > 0 ? (
                             <div className="space-y-1">
                               {rowBackups.map((b) => (
-                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#09090b] px-2.5 py-1.5 text-[10px]">
+                                <div key={b.id} className="flex items-center justify-between rounded-md bg-[#0d1117] px-2.5 py-1.5 text-[10px]">
                                   <div className="flex items-center gap-2 font-mono text-zinc-400">
-                                    <Database className="h-3 w-3 text-zinc-600" />
+                                    <Database className="h-3 w-3 text-[#8b949e]" />
                                     <span>{new Date(b.created_at).toLocaleString()}</span>
-                                    <span className="text-zinc-600">{(b.file_size / 1024).toFixed(1)} KB</span>
+                                    <span className="text-[#8b949e]">{(b.file_size / 1024).toFixed(1)} KB</span>
                                   </div>
                                   <div className="flex gap-1">
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1" onClick={() => downloadBackup(s.project_id!, b)}><Download className="h-2.5 w-2.5" /> Download</Button>
@@ -569,7 +567,7 @@ export default function ServicesPage() {
                               ))}
                             </div>
                           ) : (
-                            <p className="text-[10px] text-zinc-600">No backups yet</p>
+                            <p className="text-[10px] text-[#8b949e]">No backups yet</p>
                           )}
                         </div>
                       )}

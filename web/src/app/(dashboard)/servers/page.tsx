@@ -94,13 +94,13 @@ export default function ServersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">My Servers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Bring your own compute — deploy projects to your own servers via SSH.</p>
+          <h1 className="text-xl sm:text-2xl font-bold">My Servers</h1>
+          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Bring your own compute — deploy projects to your own servers via SSH.</p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1">
-          <Plus className="h-3.5 w-3.5" /> Add Server
+        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1 h-8 shrink-0 px-2.5 sm:px-3">
+          <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Add Server</span>
         </Button>
       </div>
 
@@ -161,24 +161,24 @@ export default function ServersPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10 text-orange-400 shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-400 shrink-0">
                       <Server className="h-5 w-5" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{s.label}</span>
-                        <Badge variant="outline" className={`text-[10px] ${s.status === "active" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400"}`}>
+                        <Badge variant="outline" className={`text-[10px] ${s.status === "active" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" : "bg-zinc-500/10 text-zinc-400"}`}>
                           {s.status}
                         </Badge>
                         {s.docker_installed ? (
                           <Badge variant="outline" className="text-[10px] gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> Docker</Badge>
                         ) : s.docker_install_status === "installing" ? (
-                          <Badge variant="outline" className="text-[10px] gap-1 text-blue-400 border-blue-500/20">
+                          <Badge variant="outline" className="text-[10px] gap-1 text-blue-400 border-blue-500/50">
                             <Loader2 className="h-2.5 w-2.5 animate-spin" /> Installing Docker…
                           </Badge>
                         ) : (
                           <>
-                            <Badge variant="outline" className={`text-[10px] gap-0.5 ${s.docker_install_status === "failed" ? "text-red-500 border-red-500/30" : "text-amber-500 border-amber-500/20"}`}>
+                            <Badge variant="outline" className={`text-[10px] gap-0.5 ${s.docker_install_status === "failed" ? "text-red-500 border-red-500/50" : "text-amber-500 border-amber-500/50"}`}>
                               <AlertCircle className="h-2.5 w-2.5" /> {s.docker_install_status === "failed" ? "Install failed" : "No Docker"}
                             </Badge>
                             <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => installDocker(s.id)}>

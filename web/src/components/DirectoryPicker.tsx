@@ -113,7 +113,7 @@ export function DirectoryPicker({ repo, branch, initialPath = "", title = "Selec
             </div>
           )}
           {!loading && error && (
-            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-md p-3">{error}</div>
+            <div className="text-xs text-red-400 bg-red-500/20 border border-red-500/40 rounded-md p-3">{error}</div>
           )}
           {!loading && !error && dirs.length === 0 && files.length === 0 && (
             <div className="text-xs text-muted-foreground text-center py-10">This directory is empty.</div>

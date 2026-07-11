@@ -96,7 +96,7 @@ export default function DomainsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Custom Domains</h1>
+      <h1 className="text-xl sm:text-2xl font-bold">Custom Domains</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Bring your own domain for tunnels and deployed projects.
       </p>
@@ -172,7 +172,7 @@ export default function DomainsPage() {
                         </Badge>
                       ) : (
                         <>
-                          <Badge variant="outline" className="gap-1 text-yellow-500 border-yellow-500/20">
+                          <Badge variant="outline" className="gap-1 text-yellow-500 border-yellow-500/50">
                             <AlertCircle className="h-3 w-3" /> Pending
                           </Badge>
                           <Button variant="outline" size="sm" onClick={() => verify(d.id)} className="gap-1">

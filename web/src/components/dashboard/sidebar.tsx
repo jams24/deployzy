@@ -122,7 +122,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors",
                 active
-                  ? "bg-primary/10 text-primary font-medium"
+                  ? "bg-primary/20 text-primary font-medium"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
