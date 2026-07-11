@@ -1920,7 +1920,7 @@ function ProjectsContent() {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Pageviews</div>
-                          <div className="text-lg font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
+                          <div className="text-lg font-semibold font-mono text-[#e6edf3]">{fmtNum(data?.overview?.pageviews || 0)}</div>
                         </div>
                         <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Unique visitors</div>
@@ -1928,7 +1928,7 @@ function ProjectsContent() {
                         </div>
                         <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Bots filtered</div>
-                          <div className="text-lg font-semibold font-mono text-zinc-500">{fmtNum(data?.overview?.bots || 0)}</div>
+                          <div className="text-lg font-semibold font-mono text-[#8b949e]">{fmtNum(data?.overview?.bots || 0)}</div>
                         </div>
                       </div>
 
@@ -2015,11 +2015,11 @@ function ProjectsContent() {
                       <div className="grid grid-cols-2 gap-2">
                         <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">This project</div>
-                          <div className="text-base font-semibold font-mono">{fmtGB(usedGB)}</div>
+                          <div className="text-base font-semibold font-mono text-[#e6edf3]">{fmtGB(usedGB)}</div>
                         </div>
                         <div className="rounded-md bg-[#0d1117] px-3 py-2">
                           <div className="text-[10px] text-muted-foreground">Account total</div>
-                          <div className={`text-base font-semibold font-mono ${bw.exceeded ? "text-red-400" : bw.pct >= 80 ? "text-yellow-400" : ""}`}>{fmtGB(accountGB)}</div>
+                          <div className={`text-base font-semibold font-mono ${bw.exceeded ? "text-red-400" : bw.pct >= 80 ? "text-yellow-400" : "text-[#e6edf3]"}`}>{fmtGB(accountGB)}</div>
                         </div>
                       </div>
                       {!limitUnlimited && (
