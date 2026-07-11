@@ -319,7 +319,7 @@ export default function DatabaseEditorPage() {
 
   // ── Render ─────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] subpixel-antialiased">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 shrink-0">
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
