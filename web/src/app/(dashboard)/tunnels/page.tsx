@@ -45,10 +45,10 @@ export default function TunnelsPage() {
   };
 
   const protocolColor = (proto: string) => {
-    if (proto === "deploy") return "bg-orange-500/10 text-orange-500";
-    if (proto === "http") return "bg-blue-500/10 text-blue-500";
+    if (proto === "deploy") return "bg-orange-500/20 text-orange-500";
+    if (proto === "http") return "bg-blue-500/20 text-blue-500";
     if (proto === "tcp") return "bg-green-500/10 text-green-500";
-    return "bg-violet-500/10 text-violet-500";
+    return "bg-violet-500/20 text-violet-500";
   };
 
   return (

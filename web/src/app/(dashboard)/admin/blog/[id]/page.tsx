@@ -444,8 +444,8 @@ export default function BlogPostEditorPage() {
             variant="outline"
             className={
               post.status === "published"
-                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
+                : "bg-amber-500/20 text-amber-500 border-amber-500/50"
             }
           >
             {post.status || "draft"}

@@ -62,7 +62,7 @@ function JsonViewer({ value, indent = 0 }: { value: unknown; indent?: number }) 
     if (obj["$oid"] && Object.keys(obj).length === 1) {
       return (
         <span className="inline-flex items-center gap-1">
-          <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 h-4 bg-purple-500/10 text-purple-400 border-purple-500/20">ObjectId</Badge>
+          <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 h-4 bg-purple-500/20 text-purple-400 border-purple-500/50">ObjectId</Badge>
           <span className="text-purple-300 font-mono text-[11px]">{String(obj["$oid"])}</span>
         </span>
       );
@@ -173,7 +173,7 @@ function CollapsibleDoc({
 
         {/* _id */}
         <div className="flex items-center gap-1.5 min-w-0 w-52 shrink-0">
-          <Badge variant="outline" className="text-[9px] font-mono px-1 h-4 bg-purple-500/10 text-purple-400 border-purple-500/20 shrink-0">_id</Badge>
+          <Badge variant="outline" className="text-[9px] font-mono px-1 h-4 bg-purple-500/20 text-purple-400 border-purple-500/50 shrink-0">_id</Badge>
           <span className="font-mono text-[11px] text-purple-300 truncate">{id}</span>
         </div>
 

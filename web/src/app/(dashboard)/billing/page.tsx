@@ -204,7 +204,7 @@ export default function BillingPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Usage on the {usage.is_admin ? "Admin (unlimited)" : usage.plan} plan</span>
-                {usage.is_admin && <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Unlimited</Badge>}
+                {usage.is_admin && <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/50">Unlimited</Badge>}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -253,7 +253,7 @@ export default function BillingPage() {
                   ["TCP tunnels", usage.limits.allow_tcp_tunnels],
                   ["Live logs", usage.limits.allow_live_logs],
                 ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/20" : "text-[#8b949e]"}`}>
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-[#8b949e]"}`}>
                     {on ? "✓" : "✗"} {label}
                   </Badge>
                 ))}
@@ -270,17 +270,17 @@ export default function BillingPage() {
             <div>
               <div className="flex items-center gap-2">
                 {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
                     <Crown className="h-3 w-3" />
                     Admin (Unlimited)
                   </Badge>
                 ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
                     <Crown className="h-3 w-3" />
                     Team
                   </Badge>
                 ) : currentPlan === "pro" ? (
-                  <Badge className="gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                  <Badge className="gap-1 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">
                     <Zap className="h-3 w-3" />
                     Pro
                   </Badge>
@@ -338,7 +338,7 @@ export default function BillingPage() {
                     {plan.id === "team" && <Crown className="h-4 w-4 text-yellow-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current</Badge>}
                 </CardTitle>
                 <p className="text-2xl font-bold">
                   {plan.price}
@@ -379,7 +379,7 @@ export default function BillingPage() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10 text-orange-500 text-xs font-bold">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-500 text-xs font-bold">
               ₿
             </div>
             <div>
@@ -416,7 +416,7 @@ export default function BillingPage() {
                       variant="outline"
                       className={`text-[10px] ${
                         s.status === "active" ? "text-green-500 border-green-500/20" :
-                        s.status === "pending" ? "text-yellow-500 border-yellow-500/20" :
+                        s.status === "pending" ? "text-yellow-500 border-yellow-500/50" :
                         "text-muted-foreground"
                       }`}
                     >

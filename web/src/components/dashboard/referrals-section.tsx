@@ -33,7 +33,7 @@ export function ReferralsSection() {
       </CardHeader>
       <CardContent className="space-y-5">
         {data.pro_until && (
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/20 px-4 py-2.5">
             <Award className="h-4 w-4 text-emerald-400 shrink-0" />
             <p className="text-sm text-emerald-400">
               Referral reward active — you have <strong>Pro</strong> until {new Date(data.pro_until).toLocaleDateString()}.
@@ -112,7 +112,7 @@ export function ReferralsSection() {
                     <p className="text-sm font-medium truncate">{p.name || p.email}</p>
                     <p className="text-[11px] text-muted-foreground">{new Date(p.joined_at).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-[10px] rounded-full border px-2 py-0.5 capitalize ${p.paid ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/10" : "border-border/40 text-muted-foreground"}`}>
+                  <span className={`text-[10px] rounded-full border px-2 py-0.5 capitalize ${p.paid ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/20" : "border-border/40 text-muted-foreground"}`}>
                     {p.paid ? "paid · " + p.plan : p.plan}
                   </span>
                 </div>

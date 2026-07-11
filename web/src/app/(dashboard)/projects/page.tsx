@@ -105,11 +105,11 @@ interface GitHubRepo {
 }
 
 const statusColor: Record<string, string> = {
-  running: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-  building: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  running: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
+  building: "bg-amber-500/20 text-amber-500 border-amber-500/50",
   stopped: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-  failed: "bg-red-500/10 text-red-500 border-red-500/20",
-  created: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  failed: "bg-red-500/20 text-red-500 border-red-500/40",
+  created: "bg-blue-500/20 text-blue-400 border-blue-500/50",
 };
 
 const langColor: Record<string, string> = {
@@ -998,7 +998,7 @@ function ProjectsContent() {
             <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
             <span className="font-medium truncate">@{ghUsername}</span>
-            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/20 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
+            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/50 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={disconnectGH} className="text-xs text-muted-foreground">Disconnect</Button>
         </div>
@@ -1285,7 +1285,7 @@ function ProjectsContent() {
                 <span className="text-[10px] text-muted-foreground">Filter:</span>
                 <button onClick={() => setLabelFilter("")} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === "" ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground"}`}>All</button>
                 {allLabels.map((l) => (
-                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-400" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{l}</button>
                 ))}
               </div>
             );
@@ -1311,7 +1311,7 @@ function ProjectsContent() {
               <div className={isGrid ? "p-4" : "px-4 py-2.5"}>
                 <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
                   <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/20 text-primary shrink-0">
                       <Rocket className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
@@ -1320,7 +1320,7 @@ function ProjectsContent() {
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
                         <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
                         {(p.labels || []).map((l) => (
-                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/20 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
+                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
                         ))}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
@@ -1385,7 +1385,7 @@ function ProjectsContent() {
 
                 {/* Delete confirmation */}
                 {confirmDelete === p.id && (
-                  <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                  <div className="mt-4 rounded-lg border border-red-500/50 bg-red-500/5 p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <Trash2 className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-medium text-red-500">Delete Project</span>
@@ -1408,7 +1408,7 @@ function ProjectsContent() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-7 text-xs border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-500"
+                        className="h-7 text-xs border-red-500/50 text-red-500 hover:bg-red-500/20 hover:text-red-500"
                         disabled={deleteText !== p.name}
                         onClick={() => remove(p.id)}
                       >
@@ -1482,9 +1482,9 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2 min-w-0">
                           <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="font-mono text-zinc-300 hover:text-foreground truncate">{d.domain}</a>
                           {d.verified ? (
-                            <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">verified</Badge>
+                            <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">verified</Badge>
                           ) : (
-                            <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/20">needs CNAME</Badge>
+                            <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50">needs CNAME</Badge>
                           )}
                         </div>
                         <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive hover:text-destructive" onClick={() => unbindDomain(d.id)}>Unbind</Button>
@@ -1542,7 +1542,7 @@ function ProjectsContent() {
                         {(previews[p.id] || []).map((pv) => (
                           <div key={pv.id} className="flex items-center justify-between rounded-md bg-[#0d1117] px-2.5 py-1.5 text-[11px] gap-2">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/20 shrink-0">#{pv.pr_number}</Badge>
+                              <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/50 shrink-0">#{pv.pr_number}</Badge>
                               <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColor[pv.status] || ""}`}>{pv.status}</Badge>
                               <span className="truncate text-zinc-300">{pv.pr_title || pv.branch}</span>
                             </div>
@@ -1733,7 +1733,7 @@ function ProjectsContent() {
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
                           <Settings2 className="h-3 w-3" /> Build &amp; Runtime
                           {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd || p.dockerfile_path) ? (
-                            <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">customized</Badge>
+                            <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/50">customized</Badge>
                           ) : null}
                         </Button>
                         {p.github_repo && (
@@ -1748,7 +1748,7 @@ function ProjectsContent() {
                           </span>
                         )}
                         {p.github_repo && commits[p.id]?.[0] && p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
-                          <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/30" title={`Latest on ${p.github_branch || p.branch || "main"} is ${commits[p.id][0].sha.slice(0, 7)}`}>
+                          <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50" title={`Latest on ${p.github_branch || p.branch || "main"} is ${commits[p.id][0].sha.slice(0, 7)}`}>
                             behind {p.github_branch || p.branch || "main"}
                           </Badge>
                         )}
@@ -1763,7 +1763,7 @@ function ProjectsContent() {
                           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; })}>Close</Button>
                         </div>
                         {p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
-                          <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500/90">
+                          <div className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500/90">
                             Currently deployed <code className="font-mono">{p.commit_sha.slice(0, 7)}</code> is behind — latest on {p.github_branch || p.branch || "main"} is <code className="font-mono">{commits[p.id][0].sha.slice(0, 7)}</code>.
                           </div>
                         )}
@@ -1775,7 +1775,7 @@ function ProjectsContent() {
                               <span className="flex-1 truncate">{c.message}</span>
                               <span className="text-[10px] text-muted-foreground hidden md:inline">{c.author}</span>
                               {i === 0 && <Badge variant="outline" className="text-[9px] text-sky-500 border-sky-500/30">latest</Badge>}
-                              {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">current</Badge>}
+                              {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">current</Badge>}
                             </label>
                           ))}
                         </div>
@@ -1882,7 +1882,7 @@ function ProjectsContent() {
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setShowAnalytics((prev) => ({ ...prev, [p.id]: true }))}>
                       <BarChart3 className="h-3 w-3" /> Website Analytics
                       {siteData[p.id]?.realtime?.visitors ? (
-                        <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/20">
+                        <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/50">
                           <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1" />
                           {siteData[p.id].realtime.visitors} live
                         </Badge>
@@ -1966,7 +1966,7 @@ function ProjectsContent() {
                               {rows.length === 0 && <div className="text-[10px] text-[#8b949e] py-1">No data yet</div>}
                               {rows.slice(0, 6).map((row) => (
                                 <div key={row.key} className="relative text-[11px] py-0.5">
-                                  <div className="absolute inset-y-0 left-0 bg-emerald-500/10 rounded" style={{ width: `${(row.count / maxC) * 100}%` }} />
+                                  <div className="absolute inset-y-0 left-0 bg-emerald-500/20 rounded" style={{ width: `${(row.count / maxC) * 100}%` }} />
                                   <div className="relative flex justify-between items-baseline px-1.5 font-mono">
                                     <span className="truncate pr-2 text-zinc-300">{row.key || "(direct)"}</span>
                                     <span className="text-zinc-500 tabular-nums">{row.count}</span>
@@ -2077,11 +2077,11 @@ function ProjectsContent() {
                       <div key={c.id} className="rounded-md bg-[#0d1117] px-2.5 py-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/10 text-emerald-500" : "bg-zinc-700/30 text-zinc-500"}`}>{c.enabled ? "on" : "off"}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/20 text-emerald-500" : "bg-zinc-700/30 text-zinc-500"}`}>{c.enabled ? "on" : "off"}</span>
                             <span className="text-xs font-medium truncate">{c.name}</span>
                             <code className="text-[10px] text-blue-400 font-mono">{c.schedule}</code>
-                            {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/20">success</Badge>}
-                            {c.last_status === "failed" && <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/20">failed</Badge>}
+                            {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">success</Badge>}
+                            {c.last_status === "failed" && <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/40">failed</Badge>}
                           </div>
                           <div className="flex gap-1 shrink-0">
                             <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleCron(c)}>{c.enabled ? "Pause" : "Resume"}</Button>

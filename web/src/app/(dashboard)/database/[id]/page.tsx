@@ -329,7 +329,7 @@ export default function DatabaseEditorPage() {
         <span className="text-sm font-medium">Database Editor</span>
         {selectedTable && <Badge variant="outline" className="text-[10px]">{selectedTable}</Badge>}
         {selectedTable && !hasPK && (
-          <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30">no primary key · read only</Badge>
+          <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/50">no primary key · read only</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {(["browse", "columns", "sql"] as const).map(t => (
@@ -388,7 +388,7 @@ export default function DatabaseEditorPage() {
 
               {/* Save error */}
               {saveError && (
-                <div className="mx-3 mt-1.5 rounded border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] text-red-400 font-mono flex items-center gap-2 shrink-0">
+                <div className="mx-3 mt-1.5 rounded border border-red-500/50 bg-red-500/20 px-2.5 py-1.5 text-[10px] text-red-400 font-mono flex items-center gap-2 shrink-0">
                   <span className="flex-1">{saveError}</span>
                   <button onClick={() => setSaveError("")}><X className="h-3 w-3" /></button>
                 </div>
@@ -548,7 +548,7 @@ export default function DatabaseEditorPage() {
                         <td className="px-3 py-1.5 font-mono text-blue-400">{c.data_type}</td>
                         <td className="px-3 py-1.5">{c.is_nullable === "YES" ? <span className="text-zinc-500">yes</span> : <span className="text-emerald-500">no</span>}</td>
                         <td className="px-3 py-1.5 font-mono text-zinc-500 max-w-[200px] truncate">{c.column_default || "—"}</td>
-                        <td className="px-3 py-1.5">{c.is_primary_key ? <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/30">PK</Badge> : ""}</td>
+                        <td className="px-3 py-1.5">{c.is_primary_key ? <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50">PK</Badge> : ""}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -580,7 +580,7 @@ export default function DatabaseEditorPage() {
               </div>
 
               {sqlError && (
-                <div className="mx-3 mb-2 rounded-md border border-red-500/30 bg-red-500/10 p-2.5 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all shrink-0">
+                <div className="mx-3 mb-2 rounded-md border border-red-500/50 bg-red-500/20 p-2.5 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all shrink-0">
                   {sqlError}
                 </div>
               )}

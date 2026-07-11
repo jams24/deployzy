@@ -56,10 +56,10 @@ export default function OverviewPage() {
   const activeTunnels = tunnels.filter(t => t.type === "tunnel");
 
   const stats = [
-    { label: "Projects", value: projects.length, icon: Rocket, color: "text-violet-400 bg-violet-500/10" },
-    { label: "Active Tunnels", value: activeTunnels.length, icon: Waypoints, color: "text-blue-400 bg-blue-500/10" },
-    { label: "Domains", value: domains.length, icon: Globe, color: "text-emerald-400 bg-emerald-500/10" },
-    { label: "Uptime", value: "99.9%", icon: Activity, color: "text-amber-400 bg-amber-500/10" },
+    { label: "Projects", value: projects.length, icon: Rocket, color: "text-violet-400 bg-violet-500/20" },
+    { label: "Active Tunnels", value: activeTunnels.length, icon: Waypoints, color: "text-blue-400 bg-blue-500/20" },
+    { label: "Domains", value: domains.length, icon: Globe, color: "text-emerald-400 bg-emerald-500/20" },
+    { label: "Uptime", value: "99.9%", icon: Activity, color: "text-amber-400 bg-amber-500/20" },
   ];
 
   if (loading) return <div className="py-12 text-center text-sm text-muted-foreground">Loading...</div>;
@@ -101,7 +101,7 @@ export default function OverviewPage() {
         <Link href="/projects?action=import">
           <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400 shrink-0 transition-transform group-hover:scale-110">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-400 shrink-0 transition-transform group-hover:scale-110">
                 <Rocket className="h-4 w-4" />
               </div>
               <div>
@@ -114,7 +114,7 @@ export default function OverviewPage() {
         <Link href="/services">
           <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0 transition-transform group-hover:scale-110">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0 transition-transform group-hover:scale-110">
                 <Database className="h-4 w-4" />
               </div>
               <div>
@@ -127,7 +127,7 @@ export default function OverviewPage() {
         <Link href="/domains">
           <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/10 text-pink-400 shrink-0 transition-transform group-hover:scale-110">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/20 text-pink-400 shrink-0 transition-transform group-hover:scale-110">
                 <Globe className="h-4 w-4" />
               </div>
               <div>
@@ -167,13 +167,13 @@ export default function OverviewPage() {
               <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
                 <CardContent className="p-4 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/20 text-primary shrink-0">
                       <Rocket className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-medium truncate">{p.name}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">running</Badge>
+                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">running</Badge>
                         <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.com</p>
@@ -191,13 +191,13 @@ export default function OverviewPage() {
               <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
                 <CardContent className="p-4 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 shrink-0">
                       <Waypoints className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-medium truncate">{t.name || t.url}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">active</Badge>
+                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">active</Badge>
                         <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{t.protocol}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground font-mono truncate">{t.url}</p>

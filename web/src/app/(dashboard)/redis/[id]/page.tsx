@@ -34,10 +34,10 @@ interface ExecResult {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  string: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  list:   "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  set:    "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  hash:   "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  string: "bg-blue-500/20 text-blue-400 border-blue-500/50",
+  list:   "bg-purple-500/20 text-purple-400 border-purple-500/50",
+  set:    "bg-emerald-500/20 text-emerald-400 border-emerald-500/50",
+  hash:   "bg-orange-500/20 text-orange-400 border-orange-500/50",
   zset:   "bg-pink-500/10 text-pink-400 border-pink-500/20",
   stream: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
 };
@@ -296,7 +296,7 @@ export default function RedisEditorPage() {
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-red-500/10 text-red-400">
+        <div className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-400">
           <Database className="h-3.5 w-3.5" />
         </div>
         <span className="text-sm font-medium">Redis Browser</span>

@@ -200,10 +200,10 @@ export default function ServicesPage() {
 
   const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
   const typeColors = (t: string): { icon: string; badge: string } => ({
-    postgres: { icon: "bg-emerald-500/10 text-emerald-400", badge: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
-    redis:    { icon: "bg-red-500/10 text-red-400",         badge: "bg-red-500/10 text-red-400 border-red-500/20" },
+    postgres: { icon: "bg-emerald-500/20 text-emerald-400", badge: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" },
+    redis:    { icon: "bg-red-500/20 text-red-400",         badge: "bg-red-500/20 text-red-400 border-red-500/40" },
     mongodb:  { icon: "bg-green-500/10 text-green-400",     badge: "bg-green-500/10 text-green-400 border-green-500/20" },
-    mysql:    { icon: "bg-orange-500/10 text-orange-400",   badge: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+    mysql:    { icon: "bg-orange-500/20 text-orange-400",   badge: "bg-orange-500/20 text-orange-400 border-orange-500/50" },
   }[t] ?? { icon: "bg-zinc-500/10 text-zinc-400", badge: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" });
   const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
   const isSQL = (t: string) => t === "postgres" || t === "mysql";
@@ -218,7 +218,7 @@ export default function ServicesPage() {
       {/* ── Delete confirmation modal ── */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-xl border border-red-500/30 bg-card shadow-2xl p-6 space-y-4">
+          <div className="w-full max-w-md rounded-xl border border-red-500/50 bg-card shadow-2xl p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-400 mt-0.5">
                 <AlertTriangle className="h-4.5 w-4.5" />
@@ -234,7 +234,7 @@ export default function ServicesPage() {
               </button>
             </div>
 
-            <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 space-y-1">
+            <div className="rounded-lg border border-red-500/40 bg-red-500/5 px-3 py-2 space-y-1">
               <p className="text-[11px] font-medium text-red-400 uppercase tracking-wider">What will be deleted</p>
               <ul className="text-[12px] text-muted-foreground space-y-0.5">
                 <li>• All data stored in <span className="font-mono text-foreground">{deleteTarget.db_name || deleteLabel}</span></li>
@@ -320,22 +320,22 @@ export default function ServicesPage() {
                 <div className="px-4 py-2.5 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
                     <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/10 text-blue-400" : typeColors(s.type).icon}`}>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/20 text-blue-400" : typeColors(s.type).icon}`}>
                         <Database className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold truncate">{s.name}</span>
-                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">{s.status}</Badge>
+                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">{s.status}</Badge>
                           <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
                           {isProj && s.project_subdomain && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/20 gap-1 hidden sm:inline-flex">
+                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 gap-1 hidden sm:inline-flex">
                               <Rocket className="h-2.5 w-2.5" />
                               {s.project_name}
                             </Badge>
                           )}
                           {typeof s.size_mb === "number" && (
-                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/10 text-amber-500 border-amber-500/30" : "text-zinc-400"}`}>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/20 text-amber-500 border-amber-500/50" : "text-zinc-400"}`}>
                               {s.size_mb} MB{s.over_quota ? " · over quota" : ""}
                             </Badge>
                           )}
@@ -462,7 +462,7 @@ export default function ServicesPage() {
                             </div>
 
                             {sqlError[s.id] && (
-                              <div className="rounded-md border border-red-500/30 bg-red-500/10 p-2 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all">
+                              <div className="rounded-md border border-red-500/50 bg-red-500/20 p-2 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all">
                                 {sqlError[s.id]}
                               </div>
                             )}

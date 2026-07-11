@@ -28,12 +28,12 @@ const langColor: Record<string, string> = {
 };
 
 const options = [
-  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, color: "text-violet-400 bg-violet-500/10", category: "deploy" },
-  { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-400 bg-emerald-500/10", category: "infra" },
-  { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-400 bg-amber-500/10", category: "deploy" },
-  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, color: "text-blue-400 bg-blue-500/10", category: "deploy" },
+  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, color: "text-violet-400 bg-violet-500/20", category: "deploy" },
+  { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-400 bg-emerald-500/20", category: "infra" },
+  { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-400 bg-amber-500/20", category: "deploy" },
+  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, color: "text-blue-400 bg-blue-500/20", category: "deploy" },
   { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-400 bg-pink-500/10", category: "infra" },
-  { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/10", category: "infra" },
+  { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/20", category: "infra" },
 ];
 
 const templates = [
@@ -554,10 +554,10 @@ export default function NewResourcePage() {
 
           {(() => {
             const dbMeta: Record<string, { label: string; desc: string; border: string; bg: string; text: string }> = {
-              postgres: { label: "PostgreSQL 16", desc: "Relational SQL — managed instance; plan size cap applies on platform.", border: "border-emerald-500/20", bg: "bg-emerald-500/10", text: "text-emerald-400" },
-              redis:    { label: "Redis 7",        desc: "In-memory key-value store for caching, sessions, and pub/sub.", border: "border-red-500/20", bg: "bg-red-500/10", text: "text-red-400" },
+              postgres: { label: "PostgreSQL 16", desc: "Relational SQL — managed instance; plan size cap applies on platform.", border: "border-emerald-500/50", bg: "bg-emerald-500/20", text: "text-emerald-400" },
+              redis:    { label: "Redis 7",        desc: "In-memory key-value store for caching, sessions, and pub/sub.", border: "border-red-500/40", bg: "bg-red-500/20", text: "text-red-400" },
               mongodb:  { label: "MongoDB 7",      desc: "Flexible document database — schema-free JSON collections.", border: "border-green-500/20", bg: "bg-green-500/10", text: "text-green-400" },
-              mysql:    { label: "MySQL 8",         desc: "Popular relational database with broad ecosystem support.", border: "border-orange-500/20", bg: "bg-orange-500/10", text: "text-orange-400" },
+              mysql:    { label: "MySQL 8",         desc: "Popular relational database with broad ecosystem support.", border: "border-orange-500/50", bg: "bg-orange-500/20", text: "text-orange-400" },
             };
             const m = dbMeta[dbType] || dbMeta.postgres;
             return (
@@ -609,7 +609,7 @@ export default function NewResourcePage() {
           {templates.map((t) => (
             <button key={t.name} onClick={() => selectTemplate(t)} className="flex w-full items-center justify-between rounded-lg border border-border/30 p-4 hover:bg-accent/20 transition-colors text-left group">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 shrink-0 transition-transform group-hover:scale-110">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 shrink-0 transition-transform group-hover:scale-110">
                   <Layers className="h-4 w-4" />
                 </div>
                 <div>

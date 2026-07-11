@@ -162,8 +162,8 @@ export default function TeamPage() {
   };
 
   const roleColor = (role: string) => {
-    if (role === "owner") return "text-yellow-500 border-yellow-500/20";
-    if (role === "admin") return "text-blue-500 border-blue-500/20";
+    if (role === "owner") return "text-yellow-500 border-yellow-500/50";
+    if (role === "admin") return "text-blue-500 border-blue-500/50";
     return "text-muted-foreground";
   };
 
@@ -188,7 +188,7 @@ export default function TeamPage() {
                 onClick={() => loadTeam(t.id)}
                 className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                   selectedTeam?.team.id === t.id
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "border-primary bg-primary/20 text-primary"
                     : "border-border text-muted-foreground hover:bg-accent"
                 }`}
               >
@@ -259,7 +259,7 @@ export default function TeamPage() {
                   <div key={m.user_id} className="flex items-center justify-between rounded-lg border border-border/50 p-3">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9">
-                        <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                        <AvatarFallback className="bg-primary/20 text-primary text-xs">
                           {m.name?.[0]?.toUpperCase() || m.email[0].toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
