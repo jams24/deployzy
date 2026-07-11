@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
   RotateCcw,
   GitBranch,
   FolderOpen,
+  FileText,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -416,8 +418,18 @@ export default function AdminPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Admin Panel</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Platform overview and user management.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Admin Panel</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Platform overview and user management.</p>
+        </div>
+        <Link href="/admin/blog">
+          <Button size="sm" variant="outline" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Blog Posts
+          </Button>
+        </Link>
+      </div>
 
       {/* Stats */}
       {stats && (
