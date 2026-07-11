@@ -147,7 +147,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	}
 
 	// Clean up any leftover "-next" container from a previous interrupted deploy
-	runner.Exec(ctx, "docker", "stop", newContainerName)
+	runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 	runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 
 	// Ensure data directory exists for persistence
@@ -636,7 +636,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	containerOutput, err := runner.Run(ctx, "docker", args...)
 	if err != nil {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Run failed: %s", string(containerOutput)), "error")
-		runner.Exec(ctx, "docker", "stop", newContainerName)
+		runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 		restoreOldState()
 		return fmt.Errorf("docker run: %w", err)
@@ -667,7 +667,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 
 		// Old container is still running — stop it now that the new one is confirmed healthy.
-		runner.Exec(ctx, "docker", "stop", containerName)
+		// -t 2 reduces the SIGTERM window from 10s → 2s, preventing duplicate Telegram/WebSocket
+		// polling during the blue-green cutover (two containers alive at once → 409 Conflict).
+		runner.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 		runner.Exec(ctx, "docker", "rm", "-f", containerName)
 
 		// Rename temp → canonical name so `docker ps` shows the right name.
@@ -684,7 +686,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 		// Clean up the failed new container. Old container was never stopped, so it
 		// keeps serving traffic automatically — no restart needed.
-		runner.Exec(ctx, "docker", "stop", newContainerName)
+		runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 		runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 		restoreOldState()
 
@@ -705,7 +707,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	runner := e.getRunner(ctx, project)
 	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
-	runner.Exec(ctx, "docker", "stop", containerName)
+	runner.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 	runner.Exec(ctx, "docker", "rm", "-f", containerName)
 	// Belt-and-braces: also clear the container from the primary/local host. A
 	// project's container can physically live somewhere other than its currently
@@ -714,7 +716,7 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	// harmless no-op, so this guarantees no orphan keeps running after a delete/move.
 	if runner.IsRemote() {
 		local := NewLocalRunner()
-		local.Exec(ctx, "docker", "stop", containerName)
+		local.Exec(ctx, "docker", "stop", "-t", "2", containerName)
 		local.Exec(ctx, "docker", "rm", "-f", containerName)
 	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
