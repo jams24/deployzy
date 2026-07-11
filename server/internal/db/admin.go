@@ -254,7 +254,7 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 	var projects []AdminProject
 	for rows.Next() {
 		var ap AdminProject
-		var envJSON []byte
+		var envJSON, servicesJSON []byte
 		p := &ap.Project
 		err := rows.Scan(
 			&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework,
@@ -263,12 +263,14 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 			&p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled,
 			&p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort,
 			&p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt,
+			&p.DockerfilePath, &servicesJSON, &p.DeploySource, &p.ImageRef, &p.WorkerServerID,
 			&ap.UserEmail,
 		)
 		if err != nil {
 			return nil, 0, err
 		}
 		json.Unmarshal(envJSON, &p.EnvVars)
+		json.Unmarshal(servicesJSON, &p.Services)
 		projects = append(projects, ap)
 	}
 	return projects, total, rows.Err()
