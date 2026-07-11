@@ -24,21 +24,43 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Deployzy — Deploy, Tunnel, Database Platform",
+    default: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
     template: "%s | Deployzy",
   },
   description:
-    "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, bring your own VPS — Railway + ngrok + Supabase in one open-source platform.",
+    "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, Redis, MongoDB, MySQL — bring your own VPS. The open-source Railway + ngrok + Supabase alternative.",
   keywords: [
-    "deploy",
-    "tunnel",
-    "database",
-    "BYOC",
-    "ngrok alternative",
     "railway alternative",
-    "open source",
+    "heroku alternative",
+    "ngrok alternative",
+    "deploy nodejs",
+    "self-hosted deployment",
+    "managed postgresql",
+    "BYOC",
+    "open source PaaS",
     "deployzy",
   ],
+  metadataBase: new URL("https://deployzy.com"),
+  alternates: { canonical: "https://deployzy.com" },
+  openGraph: {
+    type: "website",
+    url: "https://deployzy.com",
+    title: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
+    description:
+      "The open-source Railway + ngrok + Supabase alternative. Deploy apps from GitHub, manage databases, and tunnel localhost — all on your own VPS.",
+    siteName: "Deployzy",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
+    description:
+      "Open-source Railway + ngrok + Supabase alternative. Deploy from GitHub, manage databases, tunnel localhost — on your own VPS.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-snippet": -1, "max-image-preview": "large" },
+  },
   icons: {
     icon: "/logo-icon.svg",
     apple: "/logo-icon.svg",

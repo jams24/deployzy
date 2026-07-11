@@ -9,6 +9,7 @@ import { Menu, X, Terminal, LayoutDashboard } from "lucide-react";
 const links = [
   { href: "/#features", label: "Features" },
   { href: "/#pricing", label: "Pricing" },
+  { href: "/blog", label: "Blog" },
   { href: "/docs", label: "Docs" },
   { href: "https://github.com/jams24/deployzy", label: "GitHub" },
 ];
