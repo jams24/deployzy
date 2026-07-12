@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+
 type broadcastRequest struct {
 	Subject  string `json:"subject"`
 	HTMLBody string `json:"html_body"`
@@ -40,29 +41,18 @@ func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send in batches of 50 (Brevo SMTP limit per connection)
-	const batchSize = 50
+	// Send one individual email per recipient so nobody sees others' addresses.
+	// Pause every 10 sends to stay within Brevo's rate limits.
 	sent, failed := 0, 0
 
-	for i := 0; i < len(recipients); i += batchSize {
-		end := i + batchSize
-		if end > len(recipients) {
-			end = len(recipients)
-		}
-		batch := recipients[i:end]
-		addrs := make([]string, len(batch))
-		for j, r := range batch {
-			addrs[j] = r.Email
-		}
-
-		if err := s.emailSvc.Send(addrs, req.Subject, req.HTMLBody); err != nil {
-			s.log.Error().Err(err).Int("batch_start", i).Msg("broadcast batch failed")
-			failed += len(batch)
+	for i, rcpt := range recipients {
+		if err := s.emailSvc.SendOne(rcpt.Email, req.Subject, req.HTMLBody); err != nil {
+			s.log.Warn().Err(err).Str("to", rcpt.Email).Msg("broadcast send failed")
+			failed++
 		} else {
-			sent += len(batch)
+			sent++
 		}
-		// Brief pause between batches to respect rate limits
-		if end < len(recipients) {
+		if (i+1)%10 == 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
