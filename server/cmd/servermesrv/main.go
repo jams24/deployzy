@@ -46,6 +46,7 @@ func main() {
 	googleClientSecret := flag.String("google-client-secret", "", "Google OAuth Client Secret")
 	frontendURL := flag.String("frontend-url", "https://deployzy.com", "Frontend URL for OAuth redirects")
 	telegramToken := flag.String("telegram-token", "", "Telegram bot token")
+	brevoSMTPKey := flag.String("brevo-smtp-key", "", "Brevo SMTP key for transactional email")
 	inventpayKey := flag.String("inventpay-key", "", "InventPay API key")
 	githubAppID := flag.String("github-app-id", "", "GitHub App ID")
 	githubClientID := flag.String("github-client-id", "", "GitHub App Client ID")
@@ -210,6 +211,18 @@ func main() {
 			}
 		}
 
+		// Email service (Brevo SMTP)
+		var emailSvc *notify.EmailService
+		if *brevoSMTPKey != "" {
+			emailSvc = notify.NewEmailService(
+				"smtp-relay.brevo.com", "587",
+				"9988d2001@smtp-brevo.com", *brevoSMTPKey,
+				"noreply@deployzy.com", "Deployzy",
+				log,
+			)
+			log.Info().Msg("Brevo email service enabled")
+		}
+
 		// Billing
 		var billingClient *billing.InventPay
 		if *inventpayKey != "" {
@@ -276,7 +289,7 @@ func main() {
 			go refreshLocalServerCapacity(context.Background(), database, log)
 		}
 
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, manager, log)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, deployEngine, manager, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,
 			Handler:      apiRouter,

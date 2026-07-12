@@ -35,6 +35,7 @@ type Server struct {
 	google              *GoogleOAuthConfig
 	telegram            *notify.TelegramBot
 	telegramBotUsername string
+	emailSvc            *notify.EmailService
 	billing             *billing.InventPay
 	deployer            *deploy.Engine
 	ctrlManager         *control.Manager
@@ -43,7 +44,7 @@ type Server struct {
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -52,6 +53,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		google:              google,
 		telegram:            telegramBot,
 		telegramBotUsername: telegramUsername,
+		emailSvc:            emailSvc,
 		billing:             billingClient,
 		deployer:            deployEngine,
 		ctrlManager:         ctrlManager,
@@ -286,6 +288,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/backups/run", s.handleRunPlatformBackup)
 				r.Delete("/backups/{timestamp}", s.handleDeletePlatformBackup)
 				r.Get("/backups/file/{filename}", s.handleDownloadPlatformBackup)
+
+				// Email broadcasts (admin only)
+				r.Get("/broadcast/preview", s.handleAdminBroadcastPreview)
+				r.Post("/broadcast", s.handleAdminBroadcast)
 
 				// Blog admin (admin only)
 				r.Get("/blog/posts", s.handleAdminListBlogPosts)

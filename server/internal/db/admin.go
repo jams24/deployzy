@@ -276,6 +276,42 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 	return projects, total, rows.Err()
 }
 
+// EmailRecipient holds the minimal info needed to send an email to a user.
+type EmailRecipient struct {
+	Email string
+	Name  string
+}
+
+// AdminGetEmailRecipients returns all users matching the given plan filter.
+// plan = "" or "all" returns everyone.
+func (d *DB) AdminGetEmailRecipients(ctx context.Context, plan string) ([]EmailRecipient, error) {
+	var rows interface {
+		Next() bool
+		Scan(...interface{}) error
+		Close()
+	}
+	var err error
+	if plan == "" || plan == "all" {
+		rows, err = d.Pool.Query(ctx, `SELECT email, COALESCE(name,'') FROM users ORDER BY created_at DESC`)
+	} else {
+		rows, err = d.Pool.Query(ctx, `SELECT email, COALESCE(name,'') FROM users WHERE plan = $1 ORDER BY created_at DESC`, plan)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []EmailRecipient
+	for rows.Next() {
+		var r EmailRecipient
+		if err := rows.Scan(&r.Email, &r.Name); err != nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
 func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
 }

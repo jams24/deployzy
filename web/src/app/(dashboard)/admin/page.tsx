@@ -17,7 +17,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups";
+type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -136,6 +136,15 @@ export default function AdminPage() {
     timer_active: boolean; local_dir: string; offsite_remote: string;
   } | null>(null);
   const [backupRunning, setBackupRunning] = useState(false);
+
+  // ── Broadcast state ─────────────────────────────────────────────────────────
+  const [bcSubject, setBcSubject] = useState("");
+  const [bcBody, setBcBody] = useState("");
+  const [bcAudience, setBcAudience] = useState("all");
+  const [bcPreviewCount, setBcPreviewCount] = useState<number | null>(null);
+  const [bcSending, setBcSending] = useState(false);
+  const [bcResult, setBcResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+  const [bcError, setBcError] = useState("");
 
   const headers = useCallback(() => {
     const token = localStorage.getItem("sm_token");
@@ -387,6 +396,29 @@ export default function AdminPage() {
     return () => clearInterval(t);
   }, [autoRefresh, loadStats, loadSessions]);
 
+  const loadBroadcastPreview = useCallback(async (audience: string) => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/broadcast/preview?audience=${audience}`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setBcPreviewCount(d.count); }
+    } catch {}
+  }, [headers]);
+
+  const sendBroadcast = async () => {
+    if (!bcSubject.trim() || !bcBody.trim()) return;
+    setBcSending(true); setBcError(""); setBcResult(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/broadcast`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ subject: bcSubject, html_body: bcBody, audience: bcAudience }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBcError(data.error || "Broadcast failed"); }
+      else { setBcResult(data); setBcSubject(""); setBcBody(""); }
+    } catch { setBcError("Network error"); }
+    setBcSending(false);
+  };
+
   if (error === "admin") {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -418,6 +450,7 @@ export default function AdminPage() {
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
+    { id: "broadcast", label: "Broadcast" },
   ];
 
   return (
@@ -1142,6 +1175,98 @@ export default function AdminPage() {
           )}
         </div>
       )}
+      {/* ── BROADCAST TAB ───────────────────────────────────────────────────── */}
+      {tab === "broadcast" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">Email Broadcast</h3>
+            <p className="text-xs text-muted-foreground">Send an HTML email to your users via Brevo. Delivered from noreply@deployzy.com.</p>
+          </div>
+
+          {bcResult && (
+            <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-emerald-500">Broadcast sent</p>
+                <p className="text-xs text-muted-foreground">{bcResult.sent} delivered · {bcResult.failed} failed · {bcResult.total} total recipients</p>
+              </div>
+              <button onClick={() => setBcResult(null)} className="ml-auto text-muted-foreground hover:text-foreground text-xs">Dismiss</button>
+            </div>
+          )}
+
+          {bcError && (
+            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">{bcError}</div>
+          )}
+
+          {/* Audience */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audience</label>
+            <div className="flex gap-2">
+              {(["all", "free", "pro"] as const).map(a => (
+                <button key={a} onClick={() => { setBcAudience(a); loadBroadcastPreview(a); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors capitalize ${
+                    bcAudience === a
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                  }`}>
+                  {a === "all" ? "All users" : a === "free" ? "Free plan" : "Pro plan"}
+                </button>
+              ))}
+              {bcPreviewCount !== null && (
+                <span className="ml-auto text-xs text-muted-foreground self-center">
+                  ~{bcPreviewCount.toLocaleString()} recipient{bcPreviewCount !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Subject line</label>
+            <input
+              type="text"
+              value={bcSubject}
+              onChange={e => setBcSubject(e.target.value)}
+              placeholder="e.g. Introducing custom domains on Deployzy 🚀"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            />
+          </div>
+
+          {/* Body */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">HTML body</label>
+              <span className="text-[10px] text-muted-foreground">Full HTML email. Use inline styles for email clients.</span>
+            </div>
+            <textarea
+              value={bcBody}
+              onChange={e => setBcBody(e.target.value)}
+              rows={12}
+              placeholder={"<!DOCTYPE html>\n<html>\n<body>\n  <h1>Hello!</h1>\n  <p>Your announcement here...</p>\n</body>\n</html>"}
+              className="w-full rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground resize-y"
+              spellCheck={false}
+            />
+          </div>
+
+          {/* Send */}
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={bcSending || !bcSubject.trim() || !bcBody.trim()}
+              onClick={sendBroadcast}
+              className="gap-2"
+            >
+              {bcSending
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sending…</>
+                : <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> Send broadcast</>
+              }
+            </Button>
+            <p className="text-xs text-muted-foreground">This sends immediately to all selected recipients.</p>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

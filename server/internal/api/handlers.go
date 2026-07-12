@@ -13,6 +13,7 @@ import (
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
 	db "github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // --- JSON helpers ---
@@ -105,6 +106,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate api key")
+	}
+
+	// Send welcome email asynchronously so it never blocks the response.
+	if s.emailSvc != nil {
+		go func() {
+			if err := s.emailSvc.SendOne(user.Email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(user.Name)); err != nil {
+				s.log.Warn().Err(err).Str("email", user.Email).Msg("failed to send welcome email")
+			}
+		}()
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
