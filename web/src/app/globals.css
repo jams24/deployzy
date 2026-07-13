@@ -7,18 +7,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Inter + JetBrains Mono — matching ngrok's typography pairing. The
-   * --font-sans / --font-mono CSS variables are set by Next.js's font
-   * loader in app/layout.tsx, so we reference them through here to pick
-   * up the subset + variable-font optimisations. */
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-sans);
 
-  /* ngrok's proportional text-size scale — same font-sizes Tailwind v4
-   * ships with by default, but paired with calc-based line-heights that
-   * produce better reading rhythm. Copied verbatim from ngrok.com's
-   * production CSS so the feel matches exactly. */
   --text-xs:   0.75rem;  --text-xs--line-height:   calc(1     / 0.75);
   --text-sm:   0.875rem; --text-sm--line-height:   calc(1.25  / 0.875);
   --text-base: 1rem;     --text-base--line-height: calc(1.5   / 1);
@@ -66,76 +58,76 @@
 }
 
 :root {
-  /* ── Deployzy light theme ────────────────────────────────────────────
-   * Cool-white background, white cards, brand green primary.
-   * Hue 145 = emerald (matches the Deployzy logo arrow).
+  /* ── Deployzy — clean white theme ────────────────────────────────────
+   * Pure white base, near-black primary buttons, neutral grays.
+   * Indigo ring for focus/interactive accent.
    * ─────────────────────────────────────────────────────────────────── */
-  --background: oklch(0.972 0.006 240);    /* cool-white — subtle blue-gray tint */
-  --foreground: oklch(0.13 0.018 248);     /* deep slate — readable, not harsh black */
-  --card: oklch(1 0 0);                    /* pure white cards pop off background */
-  --card-foreground: oklch(0.13 0.018 248);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.098 0.014 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.098 0.014 264);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.018 248);
-  --primary: oklch(0.52 0.165 145);        /* brand emerald green */
-  --primary-foreground: oklch(1 0 0);      /* white text on green */
-  --secondary: oklch(0.94 0.018 145);      /* light green tint */
-  --secondary-foreground: oklch(0.22 0.05 145);
-  --muted: oklch(0.952 0.007 240);         /* cool light gray panels */
-  --muted-foreground: oklch(0.46 0.018 248); /* readable slate secondary text */
-  --accent: oklch(0.92 0.022 145);         /* green-tinted hover state */
-  --accent-foreground: oklch(0.25 0.06 145);
+  --popover-foreground: oklch(0.098 0.014 264);
+  --primary: oklch(0.13 0.012 264);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.965 0.004 264);
+  --secondary-foreground: oklch(0.18 0.012 264);
+  --muted: oklch(0.97 0.003 264);
+  --muted-foreground: oklch(0.478 0.014 264);
+  --accent: oklch(0.965 0.004 264);
+  --accent-foreground: oklch(0.13 0.012 264);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.88 0.010 240);         /* soft slate border — visible but not heavy */
-  --input: oklch(1 0 0);                   /* white inputs */
-  --ring: oklch(0.52 0.165 145);           /* green focus ring matches primary */
-  --chart-1: oklch(0.52 0.165 145);        /* green */
-  --chart-2: oklch(0.55 0.18 264);         /* blue */
-  --chart-3: oklch(0.65 0.18 55);          /* amber */
-  --chart-4: oklch(0.55 0.20 310);         /* purple */
-  --chart-5: oklch(0.60 0.20 22);          /* red-orange */
+  --border: oklch(0.918 0.006 264);
+  --input: oklch(0.955 0.004 264);
+  --ring: oklch(0.545 0.22 264);
+  --chart-1: oklch(0.545 0.22 264);
+  --chart-2: oklch(0.60 0.20 145);
+  --chart-3: oklch(0.65 0.18 55);
+  --chart-4: oklch(0.55 0.20 310);
+  --chart-5: oklch(0.60 0.20 22);
   --radius: 0.5rem;
-  --sidebar: oklch(0.985 0.006 240);       /* slightly cooler than main bg — subtle separation */
-  --sidebar-foreground: oklch(0.13 0.018 248);
-  --sidebar-primary: oklch(0.52 0.165 145);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.098 0.014 264);
+  --sidebar-primary: oklch(0.13 0.012 264);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.92 0.022 145);
-  --sidebar-accent-foreground: oklch(0.25 0.06 145);
-  --sidebar-border: oklch(0.88 0.010 240);
-  --sidebar-ring: oklch(0.52 0.165 145);
+  --sidebar-accent: oklch(0.965 0.004 264);
+  --sidebar-accent-foreground: oklch(0.13 0.012 264);
+  --sidebar-border: oklch(0.918 0.006 264);
+  --sidebar-ring: oklch(0.545 0.22 264);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.10 0.006 264);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.135 0.008 264);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.135 0.008 264);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.95 0 0);
+  --primary-foreground: oklch(0.12 0.008 264);
+  --secondary: oklch(0.20 0.008 264);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.20 0.008 264);
+  --muted-foreground: oklch(0.62 0.008 264);
+  --accent: oklch(0.20 0.008 264);
+  --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.545 0.22 264);
   --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --chart-2: oklch(0.60 0.20 145);
+  --chart-3: oklch(0.65 0.18 55);
+  --chart-4: oklch(0.55 0.20 310);
+  --chart-5: oklch(0.60 0.20 22);
+  --sidebar: oklch(0.135 0.008 264);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.95 0 0);
+  --sidebar-primary-foreground: oklch(0.12 0.008 264);
+  --sidebar-accent: oklch(0.20 0.008 264);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.545 0.22 264);
 }
 
 @layer base {
@@ -150,27 +142,12 @@
   }
 }
 
-/* ── Readable-by-default text scale ─────────────────────────────
- * Tailwind's stock scale (12/14/16px) is fine with a well-drawn display
- * font like Roobert, but with Inter at small sizes the xheight + stroke
- * contrast makes 12px body copy hard to read on 1440p+ monitors.
- *
- * This block bumps the named sizes up one step (~+1px) AND uses the same
- * proportional line-height formula ngrok's CSS uses (target-height / font-
- * size) so the reading rhythm stays tight regardless of the bump.
- *
- * Arbitrary-px values (text-[10px] etc) used throughout the dashboard
- * for labels and mono snippets also get a small nudge — they're still
- * "small text" but no longer squinty.
- * ─────────────────────────────────────────────────────────────── */
 @layer utilities {
-  /* Named sizes — bumped one step, ngrok-style line-height ratios */
-  .text-xs   { font-size: 0.8125rem; line-height: calc(1.25 / 0.8125); } /* 13px */
-  .text-sm   { font-size: 0.9375rem; line-height: calc(1.5  / 0.9375); } /* 15px */
-  .text-base { font-size: 1.0625rem; line-height: calc(1.625 / 1.0625); } /* 17px */
-  .text-lg   { font-size: 1.1875rem; line-height: calc(1.75 / 1.1875); } /* 19px */
+  .text-xs   { font-size: 0.8125rem; line-height: calc(1.25 / 0.8125); }
+  .text-sm   { font-size: 0.9375rem; line-height: calc(1.5  / 0.9375); }
+  .text-base { font-size: 1.0625rem; line-height: calc(1.625 / 1.0625); }
+  .text-lg   { font-size: 1.1875rem; line-height: calc(1.75 / 1.1875); }
 
-  /* Common arbitrary values we use for labels, badges, monospace values */
   .text-\[9px\]  { font-size: 11px; }
   .text-\[10px\] { font-size: 12px; }
   .text-\[11px\] { font-size: 13px; }
@@ -178,7 +155,6 @@
   .text-\[13px\] { font-size: 14.5px; }
 }
 
-/* Prevent horizontal overflow on mobile */
 html, body {
   overflow-x: hidden;
   max-width: 100vw;
@@ -192,9 +168,39 @@ pre {
   overflow-x: auto;
 }
 
+/* Smooth scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.82 0.006 264); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.65 0.008 264); }
+.dark ::-webkit-scrollbar-thumb { background: oklch(0.28 0.008 264); }
+.dark ::-webkit-scrollbar-thumb:hover { background: oklch(0.38 0.008 264); }
+
+/* Card elevation */
+html:not(.dark) [data-slot="card"] {
+  border: 1px solid oklch(0.918 0.006 264);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Input style */
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) textarea,
+html:not(.dark) select {
+  background-color: oklch(1 0 0);
+  border-color: oklch(0.88 0.008 264);
+}
+
+/* Dark terminal cards */
+html:not(.dark) .sm-terminal {
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.08),
+    0 4px 16px rgba(0,0,0,0.08),
+    0 16px 48px rgba(0,0,0,0.06);
+}
+
 /* Animations */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -208,122 +214,31 @@ pre {
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes countUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse-line {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-
 @keyframes stream {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in-up {
-  animation: fadeInUp 0.6s ease-out both;
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out both;
-}
+.animate-fade-in-up { animation: fadeInUp 0.5s ease-out both; }
+.animate-fade-in { animation: fadeIn 0.4s ease-out both; }
+.animate-slide-in-right { animation: slideInRight 0.5s ease-out both; }
+.animate-stream { animation: stream 0.3s ease-out both; }
 
-.animate-slide-in-right {
-  animation: slideInRight 0.6s ease-out both;
-}
-
-.animate-stream {
-  animation: stream 0.3s ease-out both;
-}
-
-/* Stagger children */
 .stagger-children > * { opacity: 0; animation: fadeInUp 0.5s ease-out forwards; }
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2) { animation-delay: 80ms; }
-.stagger-children > *:nth-child(3) { animation-delay: 160ms; }
-.stagger-children > *:nth-child(4) { animation-delay: 240ms; }
-.stagger-children > *:nth-child(5) { animation-delay: 320ms; }
-.stagger-children > *:nth-child(6) { animation-delay: 400ms; }
-.stagger-children > *:nth-child(7) { animation-delay: 480ms; }
-.stagger-children > *:nth-child(8) { animation-delay: 560ms; }
-.stagger-children > *:nth-child(9) { animation-delay: 640ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 360ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 420ms; }
+.stagger-children > *:nth-child(9) { animation-delay: 480ms; }
 
-/* Scroll reveal */
-.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
 .reveal.visible { opacity: 1; transform: translateY(0); }
-
-/* ── Light-mode artwork: engineering-notebook aesthetic ──────────────────
- *
- * Three layers on the body background:
- *   1. Dot grid  — faint Moleskine/Figma-style graph paper that repeats
- *                  across the full scrollable page.
- *   2. Arc motif — concentric quarter-circles anchored to the bottom-right
- *                  of the viewport (like a radar or technical bullseye).
- *                  Each ring fades so only the nearest 2–3 arcs are legible.
- *   3. Corner bracket — a tiny registration-mark "L" in the top-left corner,
- *                  the kind you see on engineering drawings and print layouts.
- *
- * All layers are purely decorative: pointer-events are unaffected because
- * background-image never intercepts mouse events, and the colours sit at
- * ≤10% opacity so they vanish behind any solid-background element.
- * ─────────────────────────────────────────────────────────────────────── */
-html:not(.dark) body {
-  background-image:
-    /* 1 — dot grid */
-    radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px),
-    /* 2 — bottom-right arc motif: concentric circles centred at (300,300)
-     *     so only the top-left quadrant of each circle is visible in the
-     *     bottom-right viewport corner */
-    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><circle cx="300" cy="300" r="58"  fill="none" stroke="black" stroke-opacity="0.18" stroke-width="1"/><circle cx="300" cy="300" r="96"  fill="none" stroke="black" stroke-opacity="0.13" stroke-width="1"/><circle cx="300" cy="300" r="136" fill="none" stroke="black" stroke-opacity="0.09" stroke-width="1"/><circle cx="300" cy="300" r="178" fill="none" stroke="black" stroke-opacity="0.055" stroke-width="1"/><circle cx="300" cy="300" r="222" fill="none" stroke="black" stroke-opacity="0.03" stroke-width="1"/><line x1="297" y1="242" x2="303" y2="242" stroke="black" stroke-opacity="0.18" stroke-width="1"/><line x1="297" y1="204" x2="303" y2="204" stroke="black" stroke-opacity="0.13" stroke-width="1"/><line x1="297" y1="164" x2="303" y2="164" stroke="black" stroke-opacity="0.09" stroke-width="1"/><line x1="242" y1="297" x2="242" y2="303" stroke="black" stroke-opacity="0.18" stroke-width="1"/><line x1="204" y1="297" x2="204" y2="303" stroke="black" stroke-opacity="0.13" stroke-width="1"/><line x1="164" y1="297" x2="164" y2="303" stroke="black" stroke-opacity="0.09" stroke-width="1"/></svg>'),
-    /* 3 — top-left registration bracket */
-    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52"><path d="M 22 5 L 5 5 L 5 22" fill="none" stroke="black" stroke-opacity="0.32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="5" r="2.5" fill="black" fill-opacity="0.3"/></svg>');
-
-  background-size:
-    22px 22px,     /* dot grid — tiles */
-    300px 300px,   /* arc motif — fixed to viewport bottom-right */
-    52px 52px;     /* bracket — fixed to viewport top-left */
-
-  background-position:
-    0 0,
-    right bottom,
-    left top;
-
-  background-repeat:
-    repeat,
-    no-repeat,
-    no-repeat;
-
-  /* Dot grid scrolls with page content; decorative corners stay pinned */
-  background-attachment:
-    scroll,
-    fixed,
-    fixed;
-}
-
-/* Dark preview cards (terminal, dashboard mock, code blocks) need a shadow
- * frame in light mode so they look intentional rather than a black void
- * floating on white paper. sm-terminal = "this card is meant to be dark." */
-html:not(.dark) .sm-terminal {
-  box-shadow:
-    0 0 0 1px rgba(0,0,0,0.10),
-    0 4px 16px rgba(0,0,0,0.10),
-    0 16px 48px rgba(0,0,0,0.08);
-}
-
-/* Card elevation — white card on cool-white background needs a clear shadow */
-html:not(.dark) [data-slot="card"] {
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.07),
-    0 4px 12px rgba(0, 0, 0, 0.04);
-}
-
-/* Input: white with a crisp border so fields read clearly */
-html:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
-html:not(.dark) textarea,
-html:not(.dark) select {
-  background-color: oklch(1 0 0);
-  border-color: oklch(0.84 0.012 240);
-}
