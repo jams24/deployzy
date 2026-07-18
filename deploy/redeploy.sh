@@ -5,19 +5,16 @@
 # What it does (in order):
 #   1. Cross-compiles the Go server for linux/amd64
 #   2. Builds the Next.js frontend with NEXT_PUBLIC_API_URL baked in
-#   3. Tars everything, scps to the VPS, swaps binaries, restarts all
-#      three services (serverme, serverme-texis, serverme-web)
+#   3. Uploads, swaps binaries, restarts all three services
+#      (deployzy, deployzy-texis, deployzy-web)
 #   4. Verifies md5 matches + all three services are active
-#
-# This lives in repo so the correct sequence (especially restarting
-# serverme-texis, which is easy to forget) is always applied.
 #
 # Usage:
 #   ./deploy/redeploy.sh user@host [--server-only|--web-only]
 #
 # Env overrides:
 #   SSH_PASS     — if set, uses sshpass (dev convenience)
-#   API_URL      — overrides NEXT_PUBLIC_API_URL (default: https://api.${DOMAIN_FROM_HOST})
+#   API_URL      — overrides NEXT_PUBLIC_API_URL (default: https://api.deployzy.com)
 #   REMOTE_DIR   — remote staging dir (default: /tmp)
 #
 
@@ -32,12 +29,9 @@ HOST="${1:-}"
 MODE="${2:-all}"
 [[ -z "$HOST" ]] && err "usage: $0 user@host [--server-only|--web-only]"
 
-# API URL for the frontend build — defaults to production domain, not the SSH host.
-# Override with: API_URL=https://api.custom.host ./redeploy.sh ...
 API_URL="${API_URL:-https://api.deployzy.com}"
 REMOTE_DIR="${REMOTE_DIR:-/tmp}"
 
-# SSH/SCP wrappers — use sshpass if SSH_PASS is set, otherwise rely on keys.
 SSH_OPTS="-o StrictHostKeyChecking=no"
 if [[ -n "${SSH_PASS:-}" ]]; then
   command -v sshpass >/dev/null || err "sshpass not installed (brew install sshpass)"
@@ -67,8 +61,9 @@ build_web() {
   cd web
   echo "NEXT_PUBLIC_API_URL=$API_URL" > .env.production
   npm run build --silent
-  cd .next/standalone && tar czf /tmp/serverme-web.tar.gz . && cd - > /dev/null
-  tar czf /tmp/serverme-static.tar.gz .next/static public 2>/dev/null
+  # Use rsync-friendly tar: extract standalone contents directly, not the folder
+  cd .next/standalone && tar czf /tmp/deployzy-web.tar.gz . && cd - > /dev/null
+  tar czf /tmp/deployzy-static.tar.gz .next/static public 2>/dev/null
   cd ..
   log "web built"
 }
@@ -77,8 +72,8 @@ build_web() {
 deploy() {
   log "Uploading to $HOST:$REMOTE_DIR"
   local files=()
-  [[ "$MODE" != "--web-only"   ]] && files+=("server/serverme-linux")
-  [[ "$MODE" != "--server-only" ]] && files+=("/tmp/serverme-web.tar.gz" "/tmp/serverme-static.tar.gz")
+  [[ "$MODE" != "--web-only"    ]] && files+=("server/serverme-linux")
+  [[ "$MODE" != "--server-only" ]] && files+=("/tmp/deployzy-web.tar.gz" "/tmp/deployzy-static.tar.gz")
   _scp "${files[@]}" "$HOST:$REMOTE_DIR/"
 
   log "Swapping + restarting on remote"
@@ -86,40 +81,46 @@ deploy() {
 set -e
 echo '── Server binary ──'
 if [[ -f $REMOTE_DIR/serverme-linux ]]; then
-  systemctl stop serverme
-  mv $REMOTE_DIR/serverme-linux /usr/local/bin/servermesrv
-  chmod +x /usr/local/bin/servermesrv
-  systemctl start serverme
+  systemctl stop deployzy
+  mv $REMOTE_DIR/serverme-linux /usr/local/bin/deployzysrv
+  # Keep servermesrv in sync for any legacy references
+  cp /usr/local/bin/deployzysrv /usr/local/bin/servermesrv
+  chmod +x /usr/local/bin/deployzysrv /usr/local/bin/servermesrv
+  systemctl start deployzy
 fi
 
 echo '── Web bundle (zero-downtime swap) ──'
-if [[ -f $REMOTE_DIR/serverme-web.tar.gz ]]; then
-  # Extract the new bundle into a staging dir while the old one keeps serving,
-  # so the only downtime is the swap + restart (~1s). Caddy's lb_try_duration on
-  # the deployzy.com upstream retries through that window, so requests don't 502.
-  rm -rf /opt/serverme-web-next && mkdir -p /opt/serverme-web-next
-  ( cd /opt/serverme-web-next && tar xzf $REMOTE_DIR/serverme-web.tar.gz 2>/dev/null && { [[ -f $REMOTE_DIR/serverme-static.tar.gz ]] && tar xzf $REMOTE_DIR/serverme-static.tar.gz 2>/dev/null; true; } )
-  systemctl stop serverme-web
-  rm -rf /opt/serverme-web-prev
-  mv /opt/serverme-web /opt/serverme-web-prev
-  mv /opt/serverme-web-next /opt/serverme-web
-  systemctl start serverme-web
-  rm -rf /opt/serverme-web-prev
-  rm -f $REMOTE_DIR/serverme-web.tar.gz $REMOTE_DIR/serverme-static.tar.gz
+if [[ -f $REMOTE_DIR/deployzy-web.tar.gz ]]; then
+  # Extract new bundle into staging dir while the old one keeps serving.
+  # Caddy's lb_try_duration retries through the ~1s restart window.
+  rm -rf /opt/deployzy-web-next && mkdir -p /opt/deployzy-web-next
+  tar xzf $REMOTE_DIR/deployzy-web.tar.gz -C /opt/deployzy-web-next 2>/dev/null
+  [[ -f $REMOTE_DIR/deployzy-static.tar.gz ]] && tar xzf $REMOTE_DIR/deployzy-static.tar.gz -C /opt/deployzy-web-next 2>/dev/null || true
+  systemctl stop deployzy-web
+  rm -rf /opt/deployzy-web-prev
+  mv /opt/deployzy-web /opt/deployzy-web-prev
+  mv /opt/deployzy-web-next /opt/deployzy-web
+  # Keep the compat symlink valid
+  ln -sfn /opt/deployzy-web /opt/serverme-web
+  systemctl start deployzy-web
+  rm -rf /opt/deployzy-web-prev
+  rm -f $REMOTE_DIR/deployzy-web.tar.gz $REMOTE_DIR/deployzy-static.tar.gz
 fi
 
-# ALWAYS restart serverme-texis too — any serverme stop/start cycle drops
-# its tunnel. Catching this in the script so future deploys can't forget.
-systemctl restart serverme-texis 2>/dev/null || true
+# ALWAYS restart deployzy-texis — any deployzy stop/start drops its tunnel.
+systemctl restart deployzy-texis 2>/dev/null || true
 
 sleep 2
 echo '── Status ──'
-for s in serverme serverme-texis serverme-web; do
+for s in deployzy deployzy-texis deployzy-web; do
   if systemctl list-unit-files --no-legend 2>/dev/null | grep -q "^\$s"; then
-    printf "  %-20s %s\n" "\$s" "\$(systemctl is-active \$s)"
+    printf "  %-25s %s\n" "\$s" "\$(systemctl is-active \$s)"
   fi
 done
-printf "  %-20s %s\n" "binary md5" "\$(md5sum /usr/local/bin/servermesrv | cut -d' ' -f1)"
+printf "  %-25s %s\n" "binary md5" "\$(md5sum /usr/local/bin/deployzysrv | cut -d' ' -f1)"
+
+echo '── API health ──'
+curl -sf http://localhost:9081/api/v1/health || echo "HEALTH CHECK FAILED"
 REMOTE
 }
 
