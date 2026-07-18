@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +25,30 @@ import (
 
 //go:embed sm_analytics.js
 var smAnalyticsJS []byte
+
+//go:embed error_page.html
+var errorPageHTML string
+
+var errorPageTmpl = template.Must(template.New("error").Parse(errorPageHTML))
+
+type errorPageData struct {
+	Code      string
+	Title     string
+	BadgeText string
+	DotColor  string
+	Heading   string
+	Body      string
+	Host      string
+	Reason    string
+	DashURL   string
+}
+
+func writeErrorPage(w http.ResponseWriter, status int, data errorPageData) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = errorPageTmpl.Execute(w, data)
+}
 
 const maxBodyCapture = 10 * 1024 // 10KB
 
@@ -157,7 +182,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if tun == nil {
-					http.Error(w, "Domain is configured but the target service is not running.", http.StatusBadGateway)
+					writeErrorPage(w, http.StatusBadGateway, errorPageData{
+						Code:      "502",
+						Title:     "Service Unavailable",
+						BadgeText: "Service offline",
+						DotColor:  "#ef4444",
+						Heading:   "Service not running",
+						Body:      "This domain is configured on Deployzy but the target service isn't running. Start or redeploy it from your dashboard.",
+						Host:      hostname,
+						Reason:    "service_not_running",
+						DashURL:   "https://deployzy.com/projects",
+					})
 					return
 				}
 			}
@@ -165,7 +200,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if tun == nil {
 			p.log.Debug().Str("host", hostname).Msg("no tunnel found")
-			http.Error(w, "Tunnel not found. If you're trying to connect, make sure your tunnel is active.", http.StatusNotFound)
+			writeErrorPage(w, http.StatusNotFound, errorPageData{
+				Code:      "404",
+				Title:     "Not Found",
+				BadgeText: "No active deployment",
+				DotColor:  "#6b7280",
+				Heading:   "Nothing deployed here yet",
+				Body:      "This subdomain exists on Deployzy but has no active tunnel or deployment. If you own this project, deploy it from your dashboard.",
+				Host:      hostname,
+				Reason:    "route_not_registered",
+				DashURL:   "https://deployzy.com/projects",
+			})
 			return
 		}
 	}
@@ -205,7 +250,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, ok := p.manager.Get(tun.ClientID)
 	if !ok {
 		p.log.Warn().Str("client_id", tun.ClientID).Msg("client not connected")
-		http.Error(w, "Tunnel client is not connected", http.StatusBadGateway)
+		writeErrorPage(w, http.StatusBadGateway, errorPageData{
+			Code:      "502",
+			Title:     "Tunnel Offline",
+			BadgeText: "Tunnel disconnected",
+			DotColor:  "#f59e0b",
+			Heading:   "Tunnel client not connected",
+			Body:      "The tunnel for this subdomain was registered but the client isn't connected right now. Start the Deployzy client to resume the tunnel.",
+			Host:      hostname,
+			Reason:    "tunnel_client_disconnected",
+			DashURL:   "https://deployzy.com/tunnels",
+		})
 		return
 	}
 
