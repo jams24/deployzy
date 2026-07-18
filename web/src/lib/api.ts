@@ -236,11 +236,15 @@ class ApiClient {
     return this.request<{ status: string }>(`/api/v1/admin/templates/${id}`, { method: "DELETE" });
   }
 
-  deployFromTemplate(slug: string, payload: { name: string; subdomain?: string; env_vars: Record<string, string> }) {
+  deployFromTemplate(slug: string, payload: { name: string; subdomain?: string; env_vars: Record<string, string>; worker_server_id?: string }) {
     return this.request<{ project: Record<string, unknown>; post_deploy: string }>(
       `/api/v1/templates/${slug}/deploy`,
       { method: "POST", body: JSON.stringify(payload) }
     );
+  }
+
+  listUserServers() {
+    return this.request<WorkerServer[]>(`/api/v1/servers${this.teamQ()}`);
   }
 }
 
@@ -377,6 +381,18 @@ export interface Template {
   star_count: number;
   is_starred: boolean;
   created_at: string;
+}
+
+export interface WorkerServer {
+  id: string;
+  label: string;
+  host: string;
+  region: string;
+  status: string;
+  total_memory_mb: number;
+  current_projects: number;
+  max_projects: number;
+  docker_installed: boolean;
 }
 
 export interface CapturedRequest {

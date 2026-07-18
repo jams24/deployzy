@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   GitBranch, Database, Container, Layers, Search, Rocket,
   ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
+  Download,
 } from "lucide-react";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
+import { api, Template, EnvVarSchema } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -36,12 +38,6 @@ const options = [
   { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/20", category: "infra" },
 ];
 
-const templates = [
-  { name: "Next.js Starter", desc: "Full-stack React with App Router", repo: "https://github.com/serverme/template-nextjs.git", framework: "nextjs", lang: "TypeScript" },
-  { name: "Express API", desc: "Node.js REST API server", repo: "https://github.com/serverme/template-express.git", framework: "node", lang: "JavaScript" },
-  { name: "Flask API", desc: "Python lightweight web framework", repo: "https://github.com/serverme/template-flask.git", framework: "python", lang: "Python" },
-  { name: "Static Site", desc: "HTML/CSS/JS with nginx", repo: "https://github.com/serverme/template-static.git", framework: "static", lang: "HTML" },
-];
 
 function detectFramework(language: string | null): string {
   switch (language) {
@@ -90,6 +86,17 @@ export default function NewResourcePage() {
 
   // Docker image
   const [dockerImage, setDockerImage] = useState("");
+
+  // Template picker (API-backed)
+  const [apiTemplates, setApiTemplates]         = useState<Template[]>([]);
+  const [templateSearch, setTemplateSearch]     = useState("");
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [templateEnvVars, setTemplateEnvVars]   = useState<Record<string, string>>({});
+  const [templateName, setTemplateName]         = useState("");
+  const [templateServer, setTemplateServer]     = useState("platform");
+  const [templateDeploying, setTemplateDeploying] = useState(false);
+  const [templateError, setTemplateError]       = useState("");
 
   // Database
   const [dbName, setDbName] = useState("");
@@ -155,24 +162,7 @@ export default function NewResourcePage() {
     setStep("configure");
   }
 
-  function selectTemplate(t: typeof templates[0]) {
-    setSelectedRepo(null);
-    setProjectName(t.name.toLowerCase().replace(/\s+/g, "-"));
-    setSubdomain(t.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
-    setRepoUrl(t.repo);
-    setBranch("main");
-    setGithubRepo("");
-    setFramework(t.framework);
-    setEnvText("");
-    setInstallCmd(""); setBuildCmd(""); setStartCmd("");
-    setRootDir(""); setNodeVersion("");
-    setPortOverride(0); setMemoryMB(0); setCpus(0);
-    setHealthCheckPath(""); setReleaseCmd("");
-    setShowAdvanced(false);
-    setStep("configure");
-  }
-
-  function startDocker() {
+function startDocker() {
     setSelectedRepo(null);
     setProjectName("");
     setSubdomain("");
@@ -263,6 +253,26 @@ export default function NewResourcePage() {
     setCreating(false);
   }
 
+  async function deployTemplate() {
+    if (!selectedTemplate || !templateName.trim()) return;
+    setTemplateDeploying(true);
+    setTemplateError("");
+    try {
+      const payload: { name: string; env_vars: Record<string, string>; worker_server_id?: string } = {
+        name: templateName,
+        env_vars: templateEnvVars,
+      };
+      if (templateServer && templateServer !== "platform") {
+        payload.worker_server_id = templateServer;
+      }
+      await api.deployFromTemplate(selectedTemplate.slug, payload);
+      router.push("/projects");
+    } catch (e: unknown) {
+      setTemplateError(e instanceof Error ? e.message : "Deploy failed");
+      setTemplateDeploying(false);
+    }
+  }
+
   // Deep-link support: /new?type=database opens the database form directly
   // (used by the "New Database" button) instead of the resource picker.
   useEffect(() => {
@@ -279,7 +289,18 @@ export default function NewResourcePage() {
         setStep("github");
         break;
       case "database": setDbName(""); setStep("database"); break;
-      case "template": setStep("template"); break;
+      case "template":
+        setTemplateSearch("");
+        setSelectedTemplate(null);
+        setTemplateEnvVars({});
+        setTemplateError("");
+        setTemplatesLoading(true);
+        setStep("template");
+        api.listTemplates({ sort: "popular", limit: 50 })
+          .then((res) => setApiTemplates(res.templates ?? []))
+          .catch(() => {})
+          .finally(() => setTemplatesLoading(false));
+        break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
@@ -597,35 +618,189 @@ export default function NewResourcePage() {
     );
   }
 
+  // ── Step: Template Configure ──
+  if (step === "template" && selectedTemplate) {
+    const userFacingVars = selectedTemplate.env_vars.filter((ev: EnvVarSchema) => ev.type !== "auto");
+    return (
+      <div className="max-w-lg mx-auto mt-8">
+        <button onClick={() => setSelectedTemplate(null)} className="text-xs text-muted-foreground hover:text-foreground mb-4 flex items-center gap-1">
+          <ArrowLeft className="h-3 w-3" /> Back to templates
+        </button>
+
+        <div className="flex items-center gap-3 mb-5">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl"
+            style={{ background: selectedTemplate.color + "18", border: `1.5px solid ${selectedTemplate.color}30` }}
+          >
+            {selectedTemplate.icon}
+          </div>
+          <div>
+            <h1 className="text-lg font-bold">{selectedTemplate.name}</h1>
+            <p className="text-xs text-muted-foreground">{selectedTemplate.tagline}</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Project name</label>
+            <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={selectedTemplate.slug} className="h-9 text-sm" />
+          </div>
+
+          {userFacingVars.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground">Configuration</p>
+              {userFacingVars.map((ev: EnvVarSchema) => (
+                <div key={ev.key} className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-medium">{ev.label || ev.key}</label>
+                    {ev.required && <span className="text-[10px] text-destructive font-medium">*</span>}
+                  </div>
+                  {ev.description && <p className="text-[10px] text-muted-foreground">{ev.description}</p>}
+                  {ev.type === "select" && ev.options ? (
+                    <select
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      value={templateEnvVars[ev.key] ?? ""}
+                      onChange={(e) => setTemplateEnvVars((p) => ({ ...p, [ev.key]: e.target.value }))}
+                    >
+                      <option value="">Select…</option>
+                      {ev.options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  ) : (
+                    <Input
+                      type={ev.type === "secret" ? "password" : "text"}
+                      value={templateEnvVars[ev.key] ?? ""}
+                      onChange={(e) => setTemplateEnvVars((p) => ({ ...p, [ev.key]: e.target.value }))}
+                      placeholder={ev.placeholder || ev.default || ev.key}
+                      className="h-9 text-sm"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {userServers.filter((s) => s.status === "active").length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Deploy to</label>
+              <select
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                value={templateServer}
+                onChange={(e) => setTemplateServer(e.target.value)}
+              >
+                <option value="platform">Deployzy platform (managed)</option>
+                {userServers.filter((s) => s.status === "active").map((s) => (
+                  <option key={s.id} value={s.id}>{s.label} — {s.host}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {templateError && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+              {templateError}
+            </div>
+          )}
+
+          <Button
+            className="w-full gap-2"
+            onClick={deployTemplate}
+            disabled={templateDeploying || !templateName.trim()}
+          >
+            {templateDeploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+            Deploy Template
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Step: Template Picker ──
   if (step === "template") {
+    const filteredTemplates = apiTemplates.filter((t) =>
+      !templateSearch ||
+      t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+      t.tagline.toLowerCase().includes(templateSearch.toLowerCase()) ||
+      t.tags.some((tag) => tag.toLowerCase().includes(templateSearch.toLowerCase()))
+    );
+
+    function openTemplate(t: Template) {
+      setSelectedTemplate(t);
+      setTemplateName(t.slug);
+      setTemplateEnvVars({});
+      setTemplateError("");
+      setTemplateServer("platform");
+    }
+
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
-        <h1 className="text-xl font-bold mb-1">Choose a Template</h1>
-        <p className="text-sm text-muted-foreground mb-6">Start with a pre-configured project.</p>
 
-        <div className="space-y-2">
-          {templates.map((t) => (
-            <button key={t.name} onClick={() => selectTemplate(t)} className="flex w-full items-center justify-between rounded-lg border border-border/30 p-4 hover:bg-accent/20 transition-colors text-left group">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400 shrink-0 transition-transform group-hover:scale-110">
-                  <Layers className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{t.name}</span>
-                    <Badge variant="outline" className="text-[9px]">{t.lang}</Badge>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">{t.desc}</p>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          ))}
+        {/* Search box — always visible at top */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            autoFocus
+            className="pl-9 h-9 text-sm"
+            placeholder="Search templates…"
+            value={templateSearch}
+            onChange={(e) => setTemplateSearch(e.target.value)}
+          />
         </div>
 
-        <p className="mt-4 text-[11px] text-muted-foreground text-center">More templates coming soon</p>
+        {/* Scrollable template list */}
+        <div className="rounded-xl border border-border overflow-hidden">
+          {templatesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredTemplates.length === 0 ? (
+            <div className="flex flex-col items-center py-10 text-muted-foreground gap-2">
+              <Layers className="h-7 w-7 opacity-30" />
+              <p className="text-sm">No templates found</p>
+            </div>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+              {filteredTemplates.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => openTemplate(t)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors group"
+                >
+                  {/* Icon */}
+                  <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg"
+                    style={{ background: t.color + "18", border: `1.5px solid ${t.color}30` }}
+                  >
+                    {t.icon}
+                  </div>
+
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-foreground truncate">{t.name}</span>
+                      {t.is_featured && (
+                        <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                          Featured
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">{t.tagline}</p>
+                  </div>
+
+                  {/* Deploy count */}
+                  {t.deploy_count > 0 && (
+                    <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground shrink-0">
+                      <Download className="h-2.5 w-2.5" />
+                      {t.deploy_count.toLocaleString()}
+                    </div>
+                  )}
+
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

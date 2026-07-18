@@ -1420,7 +1420,7 @@ function ProjectsContent() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs border-red-500/50 text-red-500 hover:bg-red-500/20 hover:text-red-500"
-                        disabled={deleteText !== p.name}
+                        disabled={deleteText.trim() !== p.name.trim()}
                         onClick={() => remove(p.id)}
                       >
                         <Trash2 className="h-3 w-3 mr-1" /> Delete Forever

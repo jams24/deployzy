@@ -39,7 +39,7 @@ interface UsageResponse {
   plan: string;
   is_admin: boolean;
   limits: PlanLimits;
-  usage: Record<string, number>;
+  usage: Record<string, number>; // projects, databases, services, custom_domains, crons, byoc_servers, subdomains, preview_deploys
 }
 
 export default function BillingPage() {
@@ -114,7 +114,7 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
     : 0;
 
-  // Plan catalog — kept in sync with the plan_limits seed in migration 022.
+  // Plan catalog — mirrors plan_limits table; update both together when changing limits.
   type PlanCard = {
     id: string;
     name: string;
@@ -132,10 +132,10 @@ export default function BillingPage() {
       tagline: "Try Deployzy with a real side project",
       features: [
         "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 2 databases, 1 BYOC server",
-        "1 custom domain",
-        "256 MB RAM / 0.25 vCPU per project",
-        "50 GB bandwidth, 60 build min / mo",
+        "3 projects, 1 database, 1 standalone service",
+        "1 BYOC server, 1 custom domain",
+        "512 MB RAM / 0.25 vCPU per project",
+        "50 GB bandwidth, 120 build min / mo",
         "7-day analytics retention",
       ],
     },
@@ -147,8 +147,8 @@ export default function BillingPage() {
       tagline: "For freelancers + indie hackers",
       features: [
         "10 reserved subdomains, 15 active tunnels",
-        "10 projects, 10 databases, 5 BYOC servers",
-        "5 custom domains, 5 standalone services",
+        "10 projects, 5 databases, 5 BYOC servers",
+        "5 custom domains, 10 standalone services",
         "5 scheduled jobs, 5 active PR previews",
         "1 GB RAM / 1 vCPU per project (configurable)",
         "500 GB bandwidth, 600 build min / mo",
@@ -165,7 +165,7 @@ export default function BillingPage() {
       tagline: "For small teams shipping in production",
       features: [
         "Everything in Pro, plus:",
-        "50 subdomains / tunnels / projects / databases",
+        "50 subdomains / tunnels / projects, 20 databases",
         "15 BYOC servers, 25 custom domains + services",
         "25 scheduled jobs, 25 active PR previews",
         "Up to 8 GB RAM / 4 vCPU per project",
@@ -193,7 +193,7 @@ export default function BillingPage() {
           { label: "Projects", used: usage.usage.projects ?? 0, max: usage.limits.max_projects },
           { label: "Project databases", used: usage.usage.databases ?? 0, max: usage.limits.max_databases },
           { label: "Standalone services", used: usage.usage.services ?? 0, max: usage.limits.max_services },
-          { label: "Subdomains", used: 0, max: usage.limits.max_subdomains },
+          { label: "Subdomains", used: usage.usage.subdomains ?? 0, max: usage.limits.max_subdomains },
           { label: "Custom domains", used: usage.usage.custom_domains ?? 0, max: usage.limits.max_custom_domains },
           { label: "Scheduled jobs", used: usage.usage.crons ?? 0, max: usage.limits.max_crons },
           { label: "BYOC servers", used: usage.usage.byoc_servers ?? 0, max: usage.limits.max_byoc_servers },

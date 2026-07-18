@@ -418,10 +418,10 @@ const plans = [
     cta: "Get started",
     features: [
       "5 subdomains, 5 active tunnels",
-      "3 projects, 2 databases",
-      "1 custom domain, 1 BYOC server",
-      "256 MB RAM / 0.25 vCPU per project",
-      "50 GB bandwidth, 60 build min/mo",
+      "3 projects, 1 database, 1 standalone service",
+      "1 BYOC server, 1 custom domain",
+      "512 MB RAM / 0.25 vCPU per project",
+      "50 GB bandwidth, 120 build min/mo",
       "Cookieless website analytics (7d)",
     ],
   },
@@ -431,7 +431,7 @@ const plans = [
     cta: "Upgrade to Pro",
     features: [
       "10 subdomains, 15 tunnels, 10 projects",
-      "10 databases, 5 services, 5 BYOC servers",
+      "5 databases, 10 services, 5 BYOC servers",
       "5 custom domains, 5 PR previews",
       "1 GB RAM / 1 vCPU (configurable)",
       "500 GB bandwidth, 600 build min/mo",
@@ -446,7 +446,7 @@ const plans = [
     cta: "Contact us",
     features: [
       "Everything in Pro, plus:",
-      "50 subdomains / projects / databases",
+      "50 subdomains / projects, 20 databases",
       "15 BYOC servers, 25 custom domains",
       "25 scheduled jobs, 25 active PR previews",
       "Up to 8 GB RAM / 4 vCPU per project",

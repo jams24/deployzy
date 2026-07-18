@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { api, Template, EnvVarSchema } from "@/lib/api";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
+import { api, Template, EnvVarSchema, WorkerServer } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +40,72 @@ const SORT_OPTIONS = [
   { value: "featured", label: "Featured" },
 ];
 
+// ─── Minimal markdown renderer ────────────────────────────────────────────────
+// Handles: ## headings, **bold**, `inline code`, ```code blocks```
+function renderMarkdown(raw: string) {
+  const blocks: ReactNode[] = [];
+  const codeBlockRe = /```[\w]*\n?([\s\S]*?)```/g;
+  const parts = raw.split(codeBlockRe);
+  // split alternates: [text, codeContent, text, codeContent, ...]
+
+  parts.forEach((part, idx) => {
+    if (idx % 2 === 1) {
+      // code block content
+      blocks.push(
+        <pre key={idx} className="my-2 rounded-md bg-muted px-3 py-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all">
+          {part.trim()}
+        </pre>
+      );
+      return;
+    }
+
+    // process inline text lines
+    part.split("\n").forEach((line, li) => {
+      const key = `${idx}-${li}`;
+      const trimmed = line.trimEnd();
+      if (!trimmed) return;
+
+      // h2 / h3
+      if (trimmed.startsWith("## ")) {
+        blocks.push(
+          <p key={key} className="mt-3 mb-1 font-semibold text-sm text-foreground">
+            {inlineFormat(trimmed.slice(3))}
+          </p>
+        );
+        return;
+      }
+      if (trimmed.startsWith("### ")) {
+        blocks.push(
+          <p key={key} className="mt-2 mb-0.5 font-medium text-sm text-foreground">
+            {inlineFormat(trimmed.slice(4))}
+          </p>
+        );
+        return;
+      }
+
+      blocks.push(
+        <p key={key} className="text-sm text-foreground/80 leading-relaxed">
+          {inlineFormat(trimmed)}
+        </p>
+      );
+    });
+  });
+
+  return blocks;
+}
+
+function inlineFormat(text: string): ReactNode[] {
+  // tokenise by **bold** and `code`
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return tokens.map((tok, i) => {
+    if (tok.startsWith("**") && tok.endsWith("**"))
+      return <strong key={i} className="font-semibold text-foreground">{tok.slice(2, -2)}</strong>;
+    if (tok.startsWith("`") && tok.endsWith("`"))
+      return <code key={i} className="rounded bg-muted px-1 py-0.5 text-xs font-mono text-foreground">{tok.slice(1, -1)}</code>;
+    return tok;
+  });
+}
+
 // ─── Deploy Modal ─────────────────────────────────────────────────────────────
 function DeployModal({
   template,
@@ -48,11 +114,19 @@ function DeployModal({
   template: Template;
   onClose: () => void;
 }) {
-  const [name, setName]       = useState(template.name);
-  const [envVars, setEnvVars] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [done, setDone]       = useState<{ projectId: string; postDeploy: string } | null>(null);
+  const [name, setName]             = useState(template.name);
+  const [envVars, setEnvVars]       = useState<Record<string, string>>({});
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [done, setDone]             = useState<{ projectId: string; postDeploy: string } | null>(null);
+  const [servers, setServers]       = useState<WorkerServer[]>([]);
+  const [serverChoice, setServerChoice] = useState<string>("platform");
+
+  useEffect(() => {
+    api.listUserServers()
+      .then((list) => setServers(list.filter((s) => s.status === "active" && s.docker_installed)))
+      .catch(() => {});
+  }, []);
 
   function setEnv(key: string, val: string) {
     setEnvVars((prev) => ({ ...prev, [key]: val }));
@@ -62,10 +136,14 @@ function DeployModal({
     setLoading(true);
     setError("");
     try {
-      const res = await api.deployFromTemplate(template.slug, {
+      const payload: { name: string; env_vars: Record<string, string>; worker_server_id?: string } = {
         name,
         env_vars: envVars,
-      });
+      };
+      if (serverChoice && serverChoice !== "platform") {
+        payload.worker_server_id = serverChoice;
+      }
+      const res = await api.deployFromTemplate(template.slug, payload);
       setDone({ projectId: res.project.id as string, postDeploy: res.post_deploy });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Deploy failed");
@@ -78,31 +156,33 @@ function DeployModal({
 
   if (done) {
     return (
-      <DialogContent className="max-w-lg">
-        <div className="flex flex-col items-center gap-4 py-6 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10">
-            <CheckCircle className="h-8 w-8 text-green-500" />
+      <DialogContent className="w-[min(90vw,32rem)] max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex flex-col items-center gap-4 pt-4 pb-2 text-center shrink-0">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+            <CheckCircle className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <h3 className="text-xl font-semibold">Project Created!</h3>
-          <p className="text-sm text-muted-foreground">
-            Your <strong>{template.name}</strong> project is ready. Head to Projects to deploy it.
-          </p>
-
-          {done.postDeploy && (
-            <div className="w-full rounded-lg border border-border bg-muted/40 p-4 text-left">
-              <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Next steps</p>
-              <pre className="whitespace-pre-wrap text-sm text-foreground">{done.postDeploy}</pre>
-            </div>
-          )}
-
-          <div className="flex gap-3 w-full">
-            <Button className="flex-1" onClick={() => window.location.href = "/projects"}>
-              Go to Projects
-            </Button>
-            <Button variant="outline" className="flex-1" onClick={onClose}>
-              Deploy Another
-            </Button>
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Project Created</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Your <span className="font-medium text-foreground">{template.name}</span> project is ready. Go to Projects to deploy it.
+            </p>
           </div>
+        </div>
+
+        {done.postDeploy && (
+          <div className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Next steps</p>
+            {renderMarkdown(done.postDeploy)}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2 shrink-0">
+          <Button className="flex-1" onClick={() => window.location.href = "/projects"}>
+            Go to Projects
+          </Button>
+          <Button variant="outline" className="flex-1" onClick={onClose}>
+            Deploy Another
+          </Button>
         </div>
       </DialogContent>
     );
@@ -111,13 +191,13 @@ function DeployModal({
   return (
     <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-3">
-          <span className="text-2xl">{template.icon}</span>
+        <DialogTitle className="flex items-center gap-2.5">
+          <span className="text-xl">{template.icon}</span>
           Deploy {template.name}
         </DialogTitle>
       </DialogHeader>
 
-      <div className="space-y-4 mt-2">
+      <div className="space-y-4 mt-1">
         {/* Project name */}
         <div className="space-y-1.5">
           <Label>Project name</Label>
@@ -143,8 +223,32 @@ function DeployModal({
           </div>
         )}
 
+        {/* Server selection — only shown when user has BYOC servers */}
+        {servers.length > 0 && (
+          <div className="space-y-1.5">
+            <Label>Deploy to</Label>
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              value={serverChoice}
+              onChange={(e) => setServerChoice(e.target.value)}
+            >
+              <option value="platform">Deployzy platform (managed)</option>
+              {servers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label} — {s.host}{s.region ? ` (${s.region})` : ""} · {s.total_memory_mb} MB
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {serverChoice === "platform"
+                ? "Deployed and managed on Deployzy infrastructure."
+                : "Deployed to your own server via SSH."}
+            </p>
+          </div>
+        )}
+
         {error && (
-          <div className="rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+          <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive">
             {error}
           </div>
         )}
@@ -233,118 +337,85 @@ function TemplateCard({
   onStar: (t: Template) => void;
 }) {
   return (
-    <div
-      className="group relative flex flex-col rounded-2xl border border-border bg-card overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-transparent"
-      style={{ "--card-color": template.color } as React.CSSProperties}
-    >
-      {/* Colored banner */}
-      <div
-        className="relative h-28 flex items-center justify-center overflow-hidden"
-        style={{
-          background: `linear-gradient(135deg, ${template.color}22 0%, ${template.color}0a 100%)`,
-          borderBottom: `1px solid ${template.color}20`,
-        }}
-      >
-        {/* Subtle noise / grid texture */}
+    <div className="group flex flex-col rounded-xl border border-border bg-card transition-shadow hover:shadow-md">
+      {/* Header row: icon + name + badges */}
+      <div className="flex items-start gap-3 p-4 pb-3">
+        {/* Flat icon box — no gradient, just low-opacity solid color */}
         <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: `radial-gradient(${template.color} 1px, transparent 1px)`,
-            backgroundSize: "18px 18px",
-          }}
-        />
-
-        {/* Icon */}
-        <div
-          className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl text-3xl shadow-sm"
-          style={{
-            background: `${template.color}18`,
-            border: `1.5px solid ${template.color}35`,
-            backdropFilter: "blur(4px)",
-          }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl"
+          style={{ background: template.color + "18", border: `1.5px solid ${template.color}30` }}
         >
           {template.icon}
         </div>
 
-        {/* Star pill — top-right */}
-        <button
-          onClick={() => onStar(template)}
-          className={`absolute top-3 right-3 z-10 flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium backdrop-blur-sm transition-all ${
-            template.is_starred
-              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-              : "bg-black/10 text-muted-foreground border border-border hover:bg-amber-500/15 hover:text-amber-400 hover:border-amber-500/25 dark:bg-white/5"
-          }`}
-        >
-          <Star className={`h-3 w-3 ${template.is_starred ? "fill-amber-400" : ""}`} />
-          {template.star_count}
-        </button>
-
-        {/* Badges — top-left */}
-        <div className="absolute top-3 left-3 z-10 flex gap-1">
-          {template.is_featured && (
-            <span className="rounded-full bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 text-[10px] font-semibold text-amber-400 backdrop-blur-sm">
-              ✦ Featured
-            </span>
-          )}
-          {template.is_official && !template.is_featured && (
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm"
-              style={{
-                background: `${template.color}25`,
-                border: `1px solid ${template.color}40`,
-                color: template.color,
-              }}
-            >
-              Official
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex flex-col flex-1 p-4 gap-3">
-        {/* Name + tagline */}
-        <div>
-          <h3 className="font-semibold text-foreground leading-snug">{template.name}</h3>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="font-semibold text-sm text-foreground leading-snug truncate">
+              {template.name}
+            </h3>
+            {template.is_featured && (
+              <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                Featured
+              </span>
+            )}
+            {template.is_official && !template.is_featured && (
+              <span className="shrink-0 rounded-full bg-muted border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                Official
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
             {template.tagline}
           </p>
         </div>
+      </div>
 
-        {/* Tags */}
-        {template.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {template.tags.slice(0, 4).map((tag) => (
-              <span
-                key={tag}
-                className="rounded-md bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Footer */}
-        <div className="flex items-center gap-2 pt-2 border-t border-border">
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground flex-1">
-            <Download className="h-3 w-3" />
-            {template.deploy_count > 0
-              ? `${template.deploy_count.toLocaleString()} deploys`
-              : "Be the first to deploy"}
-          </div>
-          <button
-            onClick={() => onDeploy(template)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
-            style={{ background: `linear-gradient(135deg, ${template.color}, ${template.color}cc)` }}
-          >
-            <Rocket className="h-3 w-3" />
-            Deploy
-          </button>
+      {/* Tags */}
+      {template.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 px-4 pb-3">
+          {template.tags.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              {tag}
+            </span>
+          ))}
         </div>
+      )}
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Footer */}
+      <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
+        {/* Star button */}
+        <button
+          onClick={() => onStar(template)}
+          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+            template.is_starred
+              ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          <Star className={`h-3 w-3 ${template.is_starred ? "fill-amber-500 text-amber-500" : ""}`} />
+          {template.star_count}
+        </button>
+
+        <div className="flex items-center gap-1 text-[11px] text-muted-foreground flex-1">
+          <Download className="h-3 w-3" />
+          {template.deploy_count > 0
+            ? `${template.deploy_count.toLocaleString()} deploys`
+            : "Be the first"}
+        </div>
+
+        <button
+          onClick={() => onDeploy(template)}
+          className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background transition-opacity hover:opacity-80"
+        >
+          <Rocket className="h-3 w-3" />
+          Deploy
+        </button>
       </div>
     </div>
   );
@@ -398,11 +469,10 @@ export default function TemplatesPage() {
         )
       );
     } catch {
-      // not logged in — could show a login prompt
+      // not logged in — silent
     }
   }
 
-  // Category pill list: "all" + whatever the DB returned
   const categoryPills = [
     { category: "all", count: total },
     ...categories,
@@ -476,22 +546,24 @@ export default function TemplatesPage() {
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-2xl border border-border overflow-hidden animate-pulse">
-              <div className="h-28 bg-muted/40" />
-              <div className="p-4 space-y-3">
-                <div className="h-4 w-32 rounded bg-muted/60" />
-                <div className="h-3 w-full rounded bg-muted/40" />
-                <div className="h-3 w-3/4 rounded bg-muted/40" />
-                <div className="flex gap-1.5 pt-1">
-                  {[40, 52, 36].map((w) => (
-                    <div key={w} className="h-5 rounded-md bg-muted/50" style={{ width: w }} />
-                  ))}
+            <div key={i} className="rounded-xl border border-border overflow-hidden animate-pulse">
+              <div className="p-4 pb-3 flex gap-3">
+                <div className="h-10 w-10 rounded-lg bg-muted/60 shrink-0" />
+                <div className="flex-1 space-y-1.5 pt-0.5">
+                  <div className="h-3.5 w-28 rounded bg-muted/60" />
+                  <div className="h-3 w-full rounded bg-muted/40" />
+                  <div className="h-3 w-3/4 rounded bg-muted/40" />
                 </div>
-                <div className="h-px bg-border mt-2" />
-                <div className="flex items-center justify-between pt-1">
-                  <div className="h-3 w-20 rounded bg-muted/40" />
-                  <div className="h-7 w-20 rounded-lg bg-muted/60" />
-                </div>
+              </div>
+              <div className="flex gap-1 px-4 pb-3">
+                {[40, 52, 36].map((w) => (
+                  <div key={w} className="h-4 rounded bg-muted/50" style={{ width: w }} />
+                ))}
+              </div>
+              <div className="h-px bg-border mx-0" />
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="h-3 w-16 rounded bg-muted/40" />
+                <div className="h-7 w-20 rounded-lg bg-muted/60" />
               </div>
             </div>
           ))}

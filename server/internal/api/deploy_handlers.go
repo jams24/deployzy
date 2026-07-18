@@ -512,6 +512,12 @@ func (s *Server) handleTogglePreviewEnabled(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Only gate enabling — disabling should always work.
+	if req.Enabled && !billing.IsFeatureAllowed(r.Context(), s.db, u, "previews") {
+		writeError(w, http.StatusPaymentRequired, "PR preview deployments require a paid plan — upgrade to Pro")
+		return
+	}
+
 	if err := s.db.UpdateProjectPreviewEnabled(r.Context(), projectID, req.Enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return

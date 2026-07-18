@@ -128,9 +128,10 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 	slug := chi.URLParam(r, "slug")
 
 	var req struct {
-		Name      string            `json:"name"`
-		Subdomain string            `json:"subdomain"`
-		EnvVars   map[string]string `json:"env_vars"`
+		Name           string            `json:"name"`
+		Subdomain      string            `json:"subdomain"`
+		EnvVars        map[string]string `json:"env_vars"`
+		WorkerServerID string            `json:"worker_server_id"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -211,13 +212,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 		}
 	} else if t.SourceRepo != nil && *t.SourceRepo != "" {
 		if isSafeRepoURL(*t.SourceRepo) {
-			s.db.UpdateProjectConfig(r.Context(), project.ID, *t.SourceRepo, "main", "", "", nil)
+			s.db.UpdateProjectConfig(r.Context(), project.ID, *t.SourceRepo, "main", "", "", merged)
 			project.RepoURL = *t.SourceRepo
 			project.Branch = "main"
 		}
 	}
 
 	s.db.ReserveSubdomainAuto(r.Context(), u.ID, subdomain)
+
+	// Assign to BYOC server if the user requested it and owns that server
+	if req.WorkerServerID != "" {
+		srv, err := s.db.GetWorkerServer(r.Context(), req.WorkerServerID)
+		if err == nil && srv != nil && srv.UserID != nil && *srv.UserID == u.ID {
+			s.db.AssignProjectServer(r.Context(), project.ID, req.WorkerServerID)
+			project.WorkerServerID = req.WorkerServerID
+		}
+	}
 
 	// Bump deploy counter asynchronously
 	go s.db.IncrementTemplateDeployCount(r.Context(), t.ID)
