@@ -2,7 +2,7 @@
 #
 # ServerMe — Self-Hosted Installation Script (v2 — full platform)
 #
-# Installs everything the live serverme.site runs:
+# Installs everything the live deployzy.com runs:
 #   • serverme (tunnel + API server)
 #   • serverme-web (Next.js dashboard)
 #   • PostgreSQL 16 (with external-access config for managed DBs)
@@ -12,7 +12,7 @@
 #   • Daily cleanup + nightly backup (systemd timers)
 #
 # Usage:
-#   sudo ./install.sh --domain serverme.site --email you@example.com
+#   sudo ./install.sh --domain deployzy.com --email you@example.com
 #
 # Optional GitHub App / Billing / Telegram integrations — see --help.
 #
@@ -82,7 +82,7 @@ while [[ $# -gt 0 ]]; do
 ServerMe Self-Hosted Installer
 
 Required:
-  --domain <domain>              Base domain (e.g. serverme.site)
+  --domain <domain>              Base domain (e.g. deployzy.com)
   --email <email>                Email for Let's Encrypt
 
 Optional integrations — skip any you don't use:

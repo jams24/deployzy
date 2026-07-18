@@ -197,6 +197,51 @@ class ApiClient {
       `/api/v1/tunnels/${encodeURIComponent(tunnelUrl)}/requests`
     );
   }
+
+  // Templates
+  listTemplates(params: { category?: string; search?: string; sort?: string; limit?: number; offset?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.category) q.set("category", params.category);
+    if (params.search) q.set("search", params.search);
+    if (params.sort) q.set("sort", params.sort);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    const qs = q.toString() ? "?" + q.toString() : "";
+    return this.request<{ templates: Template[]; total: number; limit: number; offset: number }>(`/api/v1/templates${qs}`);
+  }
+
+  listTemplateCategories() {
+    return this.request<{ category: string; count: number }[]>("/api/v1/templates/categories");
+  }
+
+  getTemplate(slug: string) {
+    return this.request<Template>(`/api/v1/templates/${slug}`);
+  }
+
+  toggleTemplateStar(slug: string) {
+    return this.request<{ starred: boolean; star_count: number }>(`/api/v1/templates/${slug}/star`, { method: "POST" });
+  }
+
+  // Admin — templates
+  adminListTemplates() {
+    return this.request<Template[]>("/api/v1/admin/templates");
+  }
+  adminCreateTemplate(payload: Partial<Template>) {
+    return this.request<Template>("/api/v1/admin/templates", { method: "POST", body: JSON.stringify(payload) });
+  }
+  adminUpdateTemplate(id: string, payload: Partial<Template>) {
+    return this.request<Template>(`/api/v1/admin/templates/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  }
+  adminDeleteTemplate(id: string) {
+    return this.request<{ status: string }>(`/api/v1/admin/templates/${id}`, { method: "DELETE" });
+  }
+
+  deployFromTemplate(slug: string, payload: { name: string; subdomain?: string; env_vars: Record<string, string> }) {
+    return this.request<{ project: Record<string, unknown>; post_deploy: string }>(
+      `/api/v1/templates/${slug}/deploy`,
+      { method: "POST", body: JSON.stringify(payload) }
+    );
+  }
 }
 
 // Types
@@ -296,6 +341,42 @@ export interface Tunnel {
   protocol: string;
   name: string;
   client_id: string;
+}
+
+export interface EnvVarSchema {
+  key: string;
+  label: string;
+  description: string;
+  required: boolean;
+  type: "text" | "secret" | "select" | "auto";
+  options?: string[];
+  default: string;
+  placeholder: string;
+}
+
+export interface Template {
+  id: string;
+  slug: string;
+  name: string;
+  tagline: string;
+  description: string;
+  category: string;
+  tags: string[];
+  icon: string;
+  color: string;
+  source_repo?: string;
+  docker_image?: string;
+  env_vars: EnvVarSchema[];
+  ports: number[];
+  min_memory_mb: number;
+  post_deploy: string;
+  is_official: boolean;
+  is_featured: boolean;
+  is_active: boolean;
+  deploy_count: number;
+  star_count: number;
+  is_starred: boolean;
+  created_at: string;
 }
 
 export interface CapturedRequest {

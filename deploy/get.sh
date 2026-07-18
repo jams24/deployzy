@@ -3,8 +3,8 @@
 # ServerMe CLI Installer
 #
 # Usage:
-#   curl -fsSL https://get.serverme.site | sh
-#   wget -qO- https://get.serverme.site | sh
+#   curl -fsSL https://get.deployzy.com | sh
+#   wget -qO- https://get.deployzy.com | sh
 #
 # Options:
 #   SERVERME_VERSION=1.0.0  Install a specific version
@@ -189,7 +189,7 @@ main() {
   printf "    serverme authtoken YOUR_TOKEN\n"
   printf "    serverme http 3000\n"
   printf "\n"
-  printf "  ${BOLD}Docs:${NC} https://serverme.site/docs\n"
+  printf "  ${BOLD}Docs:${NC} https://deployzy.com/docs\n"
   printf "\n"
 }
 

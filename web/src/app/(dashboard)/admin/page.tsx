@@ -12,7 +12,7 @@ import {
   Radio, WifiOff, ExternalLink, RefreshCw, X, Zap, Square,
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
-  Clock, UserCheck, Layers, ChevronUp, ChevronDown,
+  Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -64,13 +64,13 @@ interface BackupRun {
 const STATUS_COLORS: Record<string, string> = {
   running:  "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
   building: "bg-sky-500/20 text-sky-500 border-sky-500/50",
-  stopped:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  stopped:  "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
   failed:   "bg-red-500/20 text-red-500 border-red-500/40",
   created:  "bg-amber-500/20 text-amber-500 border-amber-500/50",
 };
 
 const PLAN_COLORS: Record<string, string> = {
-  free: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  free: "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
   pro:  "bg-blue-500/20 text-blue-400 border-blue-500/50",
   team: "bg-violet-500/20 text-violet-400 border-violet-500/50",
 };
@@ -487,6 +487,11 @@ export default function AdminPage() {
           <Link href="/admin/blog">
             <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
               <FileText className="h-3.5 w-3.5" /><span className="hidden sm:inline">Blog</span>
+            </Button>
+          </Link>
+          <Link href="/admin/templates">
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+              <LayoutTemplate className="h-3.5 w-3.5" /><span className="hidden sm:inline">Templates</span>
             </Button>
           </Link>
         </div>

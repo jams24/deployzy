@@ -227,19 +227,19 @@ export default function BillingPage() {
                 })}
               </div>
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Memory cap</div>
                   <div className="font-mono">{usage.limits.max_memory_mb < 0 ? "∞" : `${usage.limits.max_memory_mb} MB`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">CPU cap</div>
                   <div className="font-mono">{usage.limits.max_cpus < 0 ? "∞" : `${usage.limits.max_cpus} vCPU`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Bandwidth/mo</div>
                   <div className="font-mono">{usage.limits.max_bandwidth_gb < 0 ? "∞" : `${usage.limits.max_bandwidth_gb} GB`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Build min/mo</div>
                   <div className="font-mono">{usage.limits.max_build_minutes_monthly < 0 ? "∞" : usage.limits.max_build_minutes_monthly}</div>
                 </div>
@@ -253,7 +253,7 @@ export default function BillingPage() {
                   ["TCP tunnels", usage.limits.allow_tcp_tunnels],
                   ["Live logs", usage.limits.allow_live_logs],
                 ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-[#8b949e]"}`}>
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-muted-foreground"}`}>
                     {on ? "✓" : "✗"} {label}
                   </Badge>
                 ))}

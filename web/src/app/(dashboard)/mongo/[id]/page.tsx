@@ -182,7 +182,7 @@ function CollapsibleDoc({
           {previewEntries.map(([k, v]) => (
             <span key={k} className="flex items-center gap-1 shrink-0 text-[11px] font-mono">
               <span className="text-orange-300">{k}:</span>
-              <span className="text-zinc-400 max-w-[100px] truncate">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
+              <span className="text-muted-foreground max-w-[100px] truncate">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
             </span>
           ))}
           {Object.keys(docObj).length - 1 > previewEntries.length && (

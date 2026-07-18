@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Rocket, Database, Waypoints, Server, BarChart3,
   Link2, Globe, Eye, Key, Bell, Users, CreditCard, Settings,
-  ShieldCheck, LogOut, Plus, ChevronDown, Check,
+  ShieldCheck, LogOut, Plus, ChevronDown, Check, LayoutTemplate,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,10 +16,11 @@ const navGroups = [
   {
     label: "Deploy",
     items: [
-      { href: "/overview",  icon: LayoutDashboard, label: "Overview" },
-      { href: "/projects",  icon: Rocket,          label: "Projects" },
-      { href: "/services",  icon: Database,         label: "Databases" },
-      { href: "/servers",   icon: Server,           label: "Servers" },
+      { href: "/overview",   icon: LayoutDashboard,  label: "Overview" },
+      { href: "/projects",   icon: Rocket,           label: "Projects" },
+      { href: "/templates",  icon: LayoutTemplate,   label: "Templates" },
+      { href: "/services",   icon: Database,          label: "Databases" },
+      { href: "/servers",    icon: Server,            label: "Servers" },
     ],
   },
   {
@@ -94,12 +95,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const initials = workspaceName.slice(0, 2).toUpperCase();
 
   return (
-    <aside className="flex h-full w-[220px] flex-col bg-background border-r border-border shrink-0">
+    <aside className="flex h-full w-[220px] flex-col bg-sidebar border-r border-sidebar-border shrink-0">
 
       {/* Logo */}
       <div className="flex h-[52px] items-center gap-2.5 px-4 border-b border-border shrink-0">
         <Link href="/" className="flex items-center gap-2.5" onClick={onNavigate}>
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-6 w-6 rounded" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-6 w-6 rounded" />
           <span className="font-semibold text-[14px] tracking-tight text-foreground">Deployzy</span>
         </Link>
       </div>
@@ -172,7 +173,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
       <nav className="flex-1 overflow-y-auto px-3 pb-3 space-y-4">
         {navGroups.map(group => (
           <div key={group.label}>
-            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
               {group.label}
             </p>
             <div className="space-y-px">
@@ -190,7 +191,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
                         : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     )}
                   >
-                    <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-foreground" : "text-muted-foreground/70")} />
+                    <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-foreground" : "text-muted-foreground")} />
                     {item.label}
                   </Link>
                 );
@@ -201,7 +202,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
 
         {isAdmin && (
           <div>
-            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
               System
             </p>
             <Link
@@ -214,7 +215,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
-              <adminItem.icon className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+              <adminItem.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
               {adminItem.label}
             </Link>
           </div>
@@ -235,7 +236,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           }}
           className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <LogOut className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+          <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
           Sign out
         </button>
       </div>

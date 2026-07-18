@@ -252,6 +252,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/services/{serviceId}", s.handleGetService)
 			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
 
+			// Templates — star and deploy require auth
+			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
+			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
+
 			// User BYOC Servers (account-level infra → full)
 			r.Get("/servers", s.handleListUserServers)
 			r.With(fullScope).Post("/servers", s.handleAddUserServer)
@@ -293,6 +297,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/broadcast/preview", s.handleAdminBroadcastPreview)
 				r.Post("/broadcast", s.handleAdminBroadcast)
 
+				// Templates admin (admin only)
+				r.Get("/templates", s.handleAdminListTemplates)
+				r.Post("/templates", s.handleAdminCreateTemplate)
+				r.Put("/templates/{templateId}", s.handleAdminUpdateTemplate)
+				r.Delete("/templates/{templateId}", s.handleAdminDeleteTemplate)
+
 				// Blog admin (admin only)
 				r.Get("/blog/posts", s.handleAdminListBlogPosts)
 				r.Get("/blog/posts/{id}", s.handleAdminGetBlogPost)
@@ -309,6 +319,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	// Public blog routes (no auth)
 	r.Get("/api/v1/blog/posts", s.handleListBlogPosts)
 	r.Get("/api/v1/blog/posts/{slug}", s.handleGetBlogPost)
+
+	// Templates — list/detail public with optional auth for star state; star/deploy require login
+	r.With(auth.OptionalAuthMiddleware(jwtMgr, database)).Get("/api/v1/templates", s.handleListTemplates)
+	r.Get("/api/v1/templates/categories", s.handleListTemplateCategories)
+	r.With(auth.OptionalAuthMiddleware(jwtMgr, database)).Get("/api/v1/templates/{slug}", s.handleGetTemplate)
 	r.Get("/api/v1/blog/images/{filename}", s.handleServeBlogImage)
 
 	// Telegram webhook (public, no auth — Telegram sends here)

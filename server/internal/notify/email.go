@@ -104,6 +104,105 @@ func (e *EmailService) SendOne(to, subject, htmlBody string) error {
 	return e.Send([]string{to}, subject, htmlBody)
 }
 
+// TeamInviteEmail returns the HTML body for a team invitation email.
+func TeamInviteEmail(inviterName, teamName, inviteURL string) string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>You've been invited to ` + teamName + `</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
+  <tr>
+    <td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <!-- Logo -->
+        <tr>
+          <td align="center" style="padding-bottom:32px;">
+            <div style="display:inline-flex;align-items:center;gap:10px;">
+              <div style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:inline-block;"></div>
+              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Deployzy</span>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Card -->
+        <tr>
+          <td style="background:#111111;border:1px solid #1f1f1f;border-radius:16px;padding:40px 40px 36px;overflow:hidden;">
+
+            <!-- Icon -->
+            <div style="width:52px;height:52px;background:#1a1a2e;border:1px solid #6366f1;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:24px;">
+              <span style="font-size:22px;">👥</span>
+            </div>
+
+            <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;line-height:1.3;">
+              You've been invited
+            </p>
+            <p style="margin:0 0 28px;font-size:15px;color:#888888;line-height:1.6;">
+              <strong style="color:#cccccc;">` + inviterName + `</strong> has invited you to join the
+              <strong style="color:#cccccc;">` + teamName + `</strong> workspace on Deployzy.
+            </p>
+
+            <div style="height:1px;background:#1f1f1f;margin-bottom:28px;"></div>
+
+            <p style="margin:0 0 16px;font-size:13px;color:#666666;line-height:1.6;">
+              As a team member you'll be able to collaborate on projects, databases, tunnels, and deployments — all in one place.
+            </p>
+
+            <!-- What you get -->
+            <table cellpadding="0" cellspacing="0" width="100%" style="background:#0d0d0d;border:1px solid #1f1f1f;border-radius:10px;padding:0;margin-bottom:32px;">
+              <tr><td style="padding:14px 20px;border-bottom:1px solid #1f1f1f;">
+                <span style="font-size:13px;color:#aaaaaa;">✦ &nbsp;Access shared projects &amp; deployments</span>
+              </td></tr>
+              <tr><td style="padding:14px 20px;border-bottom:1px solid #1f1f1f;">
+                <span style="font-size:13px;color:#aaaaaa;">✦ &nbsp;Shared databases &amp; tunnels</span>
+              </td></tr>
+              <tr><td style="padding:14px 20px;">
+                <span style="font-size:13px;color:#aaaaaa;">✦ &nbsp;Collaborative deploy logs &amp; metrics</span>
+              </td></tr>
+            </table>
+
+            <!-- CTA -->
+            <table cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td align="center">
+                  <a href="` + inviteURL + `"
+                     style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:13px 36px;border-radius:8px;letter-spacing:0.2px;">
+                    Accept Invitation →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:20px 0 0;font-size:12px;color:#444444;text-align:center;line-height:1.7;">
+              This invitation expires in <strong style="color:#666666;">7 days</strong>.<br/>
+              If you weren't expecting this, you can safely ignore it.
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="padding:24px 0 0;">
+            <p style="margin:0;font-size:12px;color:#333333;line-height:1.8;">
+              <a href="https://deployzy.com" style="color:#6366f1;text-decoration:none;">deployzy.com</a>
+              &nbsp;·&nbsp; Made with ♥ for developers
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`
+}
+
 // WelcomeEmail returns the HTML body for a welcome email.
 func WelcomeEmail(name string) string {
 	displayName := name

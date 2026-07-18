@@ -31,18 +31,18 @@ export function Navbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 w-full">
+    <header className="fixed top-0 left-0 right-0 z-50 w-full bg-background/95 backdrop-blur-md border-b border-border/40">
       {/* ── Desktop nav ──────────────────────────────────────── */}
       <div className={`hidden md:flex items-center justify-between h-16 max-w-6xl mx-auto px-6 transition-all ${scrolled ? "py-2" : "py-3"}`}>
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-7 w-7 rounded-md" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-7 w-7 rounded-md" />
           <span className="font-semibold text-[15px] tracking-tight text-foreground">Deployzy</span>
         </Link>
 
         {/* Pill nav */}
-        <nav className={`flex items-center rounded-full border border-border bg-background/90 backdrop-blur-md px-1.5 py-1 gap-0.5 shadow-sm transition-shadow ${scrolled ? "shadow-md" : ""}`}>
+        <nav className="flex items-center rounded-full border border-border bg-background/80 backdrop-blur-sm px-1.5 py-1 gap-0.5 shadow-sm">
           {links.map(l => (
             <Link
               key={l.href}
@@ -87,7 +87,7 @@ export function Navbar() {
       {/* ── Mobile nav ───────────────────────────────────────── */}
       <div className="md:hidden flex items-center justify-between h-14 px-4 border-b border-border bg-background/95 backdrop-blur-md">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-6 w-6 rounded" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-6 w-6 rounded" />
           <span className="font-semibold text-[14px]">Deployzy</span>
         </Link>
         <button

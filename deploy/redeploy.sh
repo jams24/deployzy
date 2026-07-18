@@ -34,7 +34,7 @@ MODE="${2:-all}"
 
 # API URL for the frontend build — defaults to production domain, not the SSH host.
 # Override with: API_URL=https://api.custom.host ./redeploy.sh ...
-API_URL="${API_URL:-https://api.serverme.site}"
+API_URL="${API_URL:-https://api.deployzy.com}"
 REMOTE_DIR="${REMOTE_DIR:-/tmp}"
 
 # SSH/SCP wrappers — use sshpass if SSH_PASS is set, otherwise rely on keys.
@@ -96,7 +96,7 @@ echo '── Web bundle (zero-downtime swap) ──'
 if [[ -f $REMOTE_DIR/serverme-web.tar.gz ]]; then
   # Extract the new bundle into a staging dir while the old one keeps serving,
   # so the only downtime is the swap + restart (~1s). Caddy's lb_try_duration on
-  # the serverme.site upstream retries through that window, so requests don't 502.
+  # the deployzy.com upstream retries through that window, so requests don't 502.
   rm -rf /opt/serverme-web-next && mkdir -p /opt/serverme-web-next
   ( cd /opt/serverme-web-next && tar xzf $REMOTE_DIR/serverme-web.tar.gz 2>/dev/null && { [[ -f $REMOTE_DIR/serverme-static.tar.gz ]] && tar xzf $REMOTE_DIR/serverme-static.tar.gz 2>/dev/null; true; } )
   systemctl stop serverme-web

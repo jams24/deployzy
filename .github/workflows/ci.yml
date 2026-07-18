@@ -42,4 +42,4 @@ jobs:
         working-directory: web
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://api.serverme.site
+          NEXT_PUBLIC_API_URL: https://api.deployzy.com

@@ -67,7 +67,7 @@ function DashboardTopbar({ onMenuClick }: { onMenuClick: () => void }) {
 
       {/* Mobile logo */}
       <Link href="/" className="md:hidden flex items-center gap-2">
-        <img src="/logo-icon.svg" alt="Deployzy" className="h-5 w-5 rounded" />
+        <img src="/logo-mark.png" alt="Deployzy" className="h-5 w-5 rounded" />
         <span className="font-semibold text-[14px]">Deployzy</span>
       </Link>
 

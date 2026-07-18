@@ -229,7 +229,7 @@ export default async function BlogPostPage({
       "@type": "Organization",
       name: "Deployzy",
       url: "https://deployzy.com",
-      logo: { "@type": "ImageObject", url: "https://deployzy.com/logo-icon.svg" },
+      logo: { "@type": "ImageObject", url: "https://deployzy.com/logo-mark.png" },
     },
     mainEntityOfPage: { "@type": "WebPage", "@id": `https://deployzy.com/blog/${post.slug}` },
     keywords: post.tags.join(", "),
@@ -316,7 +316,7 @@ export default async function BlogPostPage({
             <div className="sticky top-24 space-y-5">
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <img src="/logo-icon.svg" alt="Deployzy" className="h-7 w-7 rounded-md" />
+                  <img src="/logo-mark.png" alt="Deployzy" className="h-7 w-7 rounded-md" />
                   <span className="font-bold text-sm">Deployzy</span>
                 </div>
                 <p className="text-[13px] text-muted-foreground leading-relaxed mb-4">
