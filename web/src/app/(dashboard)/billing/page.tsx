@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
+import { Check, CreditCard, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -47,6 +47,7 @@ export default function BillingPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -308,126 +309,152 @@ export default function BillingPage() {
               )}
             </div>
             {!isPremium && !usage?.is_admin && (
-              <div className="flex flex-col gap-2 shrink-0">
-                <Button
-                  onClick={() => checkout("pro", "card")}
-                  disabled={checkoutLoading}
-                  className="gap-2"
-                >
-                  {checkoutLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Zap className="h-4 w-4" />
-                  )}
-                  Upgrade to Pro — $12/mo
-                </Button>
-                <Button
-                  onClick={() => checkout("pro", "crypto")}
-                  disabled={checkoutLoading}
-                  variant="outline"
-                  className="gap-2 text-xs"
-                >
-                  Pay with crypto (USDT)
-                </Button>
-              </div>
+              <Button
+                onClick={() => checkout("pro", payMethod)}
+                disabled={checkoutLoading}
+                className="gap-2 shrink-0"
+              >
+                {checkoutLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4" />
+                )}
+                Upgrade to Pro — $12/mo
+              </Button>
             )}
           </div>
         </CardContent>
       </Card>
 
+      {/* Payment method selector — drives the Upgrade buttons below */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Payment Method</CardTitle>
+          <p className="text-xs text-muted-foreground">Choose how you want to pay before upgrading.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setPayMethod("card")}
+              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                payMethod === "card"
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border/60 hover:border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-500">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  Credit / debit card
+                  {payMethod === "card" && <Check className="h-3.5 w-3.5 text-primary" />}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  Visa, Mastercard, Amex — via{" "}
+                  <a href="https://polar.sh" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                    Polar <ExternalLink className="inline h-2.5 w-2.5" />
+                  </a>
+                </p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayMethod("crypto")}
+              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                payMethod === "crypto"
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border/60 hover:border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500 font-bold">
+                ₿
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  Cryptocurrency
+                  {payMethod === "crypto" && <Check className="h-3.5 w-3.5 text-primary" />}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  BTC, ETH, USDT, SOL, LTC — via{" "}
+                  <a href="https://inventpay.io" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                    InventPay <ExternalLink className="inline h-2.5 w-2.5" />
+                  </a>
+                </p>
+              </div>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Plan Comparison — three real tiers */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 lg:grid-cols-3 items-stretch">
         {planCards.map((plan) => {
           const isCurrent = currentPlan === plan.id;
           const canUpgradeToThis = !isCurrent && plan.id !== "free";
+          const isPro = plan.id === "pro";
           return (
-            <Card key={plan.id} className={isCurrent ? plan.accent : ""}>
+            <Card
+              key={plan.id}
+              className={`relative flex flex-col ${
+                isPro
+                  ? "border-primary/50 shadow-[0_0_24px_-8px] shadow-primary/20"
+                  : isCurrent
+                  ? plan.accent
+                  : ""
+              }`}
+            >
+              {isPro && !isCurrent && (
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
+                  <Badge className="text-[10px] px-2.5 shadow-sm">Most popular</Badge>
+                </div>
+              )}
               <CardHeader>
                 <CardTitle className="text-base flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     {plan.id === "team" && <Crown className="h-4 w-4 text-yellow-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
                 </CardTitle>
-                <p className="text-2xl font-bold">
+                <p className="text-3xl font-bold tracking-tight">
                   {plan.price}
                   {plan.id !== "free" && <span className="text-sm font-normal text-muted-foreground">/mo{plan.id === "team" && " per seat"}</span>}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{plan.tagline}</p>
+                <p className="text-xs text-muted-foreground">{plan.tagline}</p>
               </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
+              <CardContent className="flex flex-1 flex-col">
+                <ul className="space-y-2.5 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" ? "text-yellow-500" : plan.id === "pro" ? "text-emerald-500" : "text-zinc-500"}`} />
+                    <li key={f} className="flex items-start gap-2.5 text-[13px] leading-snug">
+                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" ? "text-yellow-500" : isPro ? "text-emerald-500" : "text-zinc-500"}`} />
                       <span className="text-muted-foreground">{f}</span>
                     </li>
                   ))}
                 </ul>
-                {canUpgradeToThis && (
-                  <div className="mt-6 space-y-2">
+                <div className="mt-6 h-10">
+                  {canUpgradeToThis ? (
                     <Button
-                      onClick={() => checkout(plan.id as "pro" | "team", "card")}
+                      onClick={() => checkout(plan.id as "pro" | "team", payMethod)}
                       disabled={checkoutLoading}
                       className="w-full gap-2"
-                      variant={plan.id === "pro" ? "default" : "outline"}
+                      variant={isPro ? "default" : "outline"}
                     >
                       {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                       Upgrade to {plan.name}
                     </Button>
-                    <Button
-                      onClick={() => checkout(plan.id as "pro" | "team", "crypto")}
-                      disabled={checkoutLoading}
-                      variant="ghost"
-                      className="w-full text-xs text-muted-foreground"
-                    >
-                      or pay with crypto (USDT)
+                  ) : isCurrent ? (
+                    <Button variant="outline" disabled className="w-full">
+                      Your current plan
                     </Button>
-                  </div>
-                )}
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
-
-      {/* Payment info */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">Payment Method</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-500 text-xs font-bold">
-              💳
-            </div>
-            <div>
-              <p className="text-sm font-medium">Credit / debit card via Polar</p>
-              <p className="text-xs text-muted-foreground">
-                Visa, Mastercard, Amex and more. Powered by{" "}
-                <a href="https://polar.sh" target="_blank" rel="noopener" className="text-primary hover:underline">
-                  Polar <ExternalLink className="inline h-2.5 w-2.5" />
-                </a>
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-500 text-xs font-bold">
-              ₿
-            </div>
-            <div>
-              <p className="text-sm font-medium">Cryptocurrency via InventPay</p>
-              <p className="text-xs text-muted-foreground">
-                Pay with BTC, ETH, USDT, SOL, LTC and more. Powered by{" "}
-                <a href="https://inventpay.io" target="_blank" rel="noopener" className="text-primary hover:underline">
-                  InventPay <ExternalLink className="inline h-2.5 w-2.5" />
-                </a>
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* History */}
       {status?.history && status.history.length > 0 && (
