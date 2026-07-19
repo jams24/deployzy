@@ -1,6 +1,6 @@
 {
   "name": "deployzy",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "CLI for Deployzy — open-source tunnel to expose localhost to the internet",
   "bin": {
     "deployzy": "bin/cli.js"

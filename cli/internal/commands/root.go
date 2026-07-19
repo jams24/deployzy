@@ -34,7 +34,7 @@ Examples:
 	}
 
 	// Global flags
-	root.PersistentFlags().StringVarP(&serverAddr, "server", "s", "deployzy.com:8443", "Deployzy server address")
+	root.PersistentFlags().StringVarP(&serverAddr, "server", "s", "ctrl.deployzy.com:8443", "Deployzy server address")
 	root.PersistentFlags().StringVar(&authToken, "authtoken", "", "Authentication token")
 	root.PersistentFlags().BoolVar(&tlsSkip, "tls-skip-verify", true, "Skip TLS certificate verification")
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
