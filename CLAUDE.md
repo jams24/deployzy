@@ -94,18 +94,31 @@ cd web
 NODE_ENV=production npm run build
 
 # 2. Stage to -next dir (rsync, NOT tar — tar silently drops .next/ on Linux)
+#    IMPORTANT: the app runs in Next.js STANDALONE mode — systemd runs
+#    `node server.js` from /opt/deployzy-web. The layout MUST be:
+#      /opt/deployzy-web/server.js        ← from .next/standalone/
+#      /opt/deployzy-web/node_modules/    ← from .next/standalone/
+#      /opt/deployzy-web/.next/static/    ← from .next/static/ (NOT in standalone)
+#      /opt/deployzy-web/public/          ← from public/ (NOT in standalone)
+#    Rsyncing only .next/ deletes server.js and takes the whole site DOWN
+#    (this happened 2026-07-19).
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/.next/ root@163.245.208.218:/opt/deployzy-web-next/.next/
+  web/.next/standalone/ root@163.245.208.218:/opt/deployzy-web-next/
+rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
+  web/.next/static/ root@163.245.208.218:/opt/deployzy-web-next/.next/static/
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
   web/public/ root@163.245.208.218:/opt/deployzy-web-next/public/
 
-# 3. Atomic swap
+# 3. Verify server.js exists, then atomic swap
 sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
+  test -f /opt/deployzy-web-next/server.js &&
   mv /opt/deployzy-web /opt/deployzy-web-old &&
   mv /opt/deployzy-web-next /opt/deployzy-web &&
   systemctl restart deployzy-web &&
+  sleep 5 && systemctl is-active deployzy-web &&
   rm -rf /opt/deployzy-web-old
 '
+# 4. ALWAYS verify: curl -s -o /dev/null -w "%{http_code}" https://deployzy.com/
 ```
 
 ---
