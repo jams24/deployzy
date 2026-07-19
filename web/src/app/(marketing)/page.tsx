@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatedCounter } from "@/components/marketing/animated-counter";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
+import { PlanCta } from "@/components/marketing/plan-cta";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
@@ -308,7 +309,7 @@ export default function HomePage() {
                       </li>
                     ))}
                   </ul>
-                  <Button className="mt-6 w-full h-9 text-xs" variant={plan.popular ? "default" : "outline"} nativeButton={false} render={<Link href={(plan as any).ctaHref ?? "/sign-up"} />}>{plan.cta}</Button>
+                  <PlanCta planId={plan.name.toLowerCase()} cta={plan.cta} popular={plan.popular} />
                 </div>
               </ScrollReveal>
             ))}
