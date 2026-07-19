@@ -27,15 +27,12 @@ func (d *DB) CountActivePreviewsForUser(ctx context.Context, userID string) (int
 }
 
 func (d *DB) CountServicesForUser(ctx context.Context, userID string) (int, error) {
-	// Unified cap: standalone services + project-attached databases share the
-	// same plan limit so users can't bypass by creating one of each.
+	// Standalone services only. Project-attached databases have their own
+	// separate cap (max_databases / DimDatabase) — the pricing page sells
+	// them as two distinct allowances, so they must be enforced separately.
 	var n int
 	err := d.Pool.QueryRow(ctx,
-		`SELECT
-		   (SELECT COUNT(*) FROM services WHERE user_id = $1)
-		 + (SELECT COUNT(*) FROM project_databases pdb
-		    JOIN projects p ON p.id = pdb.project_id
-		    WHERE p.user_id = $1 AND p.parent_project_id IS NULL)`, userID,
+		`SELECT COUNT(*) FROM services WHERE user_id = $1`, userID,
 	).Scan(&n)
 	return n, err
 }

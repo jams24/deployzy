@@ -25,7 +25,7 @@ type Dimension string
 const (
 	DimProject       Dimension = "project"
 	DimDatabase      Dimension = "database"
-	DimService       Dimension = "service"
+	DimService       Dimension = "standalone service"
 	DimCustomDomain  Dimension = "custom_domain"
 	DimCron          Dimension = "cron"
 	DimBYOCServer    Dimension = "byoc_server"

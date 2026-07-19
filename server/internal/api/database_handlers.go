@@ -42,10 +42,10 @@ func (s *Server) handleCreateProjectDatabase(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Plan limit: project-attached databases now share the standalone-service
-	// cap (DimService) so users can't bypass the limit by creating them via
-	// projects. DimDatabase is kept as a secondary check for older callers.
-	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimService); err != nil {
+	// Plan limit: project-attached databases count against max_databases
+	// (DimDatabase). Standalone services have their own separate cap — the
+	// pricing page advertises them as two distinct allowances.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimDatabase); err != nil {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
