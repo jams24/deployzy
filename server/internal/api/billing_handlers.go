@@ -13,8 +13,9 @@ import (
 // Keep in sync with the marketing page (web/src/app/(marketing)/page.tsx)
 // and the Polar product prices in the Polar dashboard.
 var planPricing = map[string]float64{
-	"pro":  12,
-	"team": 35,
+	"hobby": 5,
+	"pro":   12,
+	"team":  35,
 }
 
 // checkoutRequest selects which plan to buy and how to pay for it.
@@ -40,7 +41,7 @@ func (s *Server) handleCreateCheckout(w http.ResponseWriter, r *http.Request) {
 
 	amount, ok := planPricing[req.Plan]
 	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown plan (want pro or team)")
+		writeError(w, http.StatusBadRequest, "unknown plan (want hobby, pro, or team)")
 		return
 	}
 

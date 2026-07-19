@@ -94,7 +94,7 @@ func (d *DB) SweepExpiredSubscriptions(ctx context.Context) (int64, error) {
 	tag, err := d.Pool.Exec(ctx,
 		`UPDATE users u SET plan = 'free', updated_at = now()
 		 WHERE u.is_admin = false
-		   AND u.plan IN ('pro', 'team', 'premium')
+		   AND u.plan IN ('hobby', 'pro', 'team', 'premium')
 		   AND EXISTS (
 		         SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)
 		   AND NOT EXISTS (

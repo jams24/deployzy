@@ -66,7 +66,7 @@ export default function BillingPage() {
     setLoading(false);
   }
 
-  async function checkout(plan: "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
+  async function checkout(plan: "hobby" | "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
     setCheckoutLoading(true);
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
@@ -130,7 +130,7 @@ export default function BillingPage() {
       name: "Free",
       price: "$0",
       accent: "border-[#30363d]/40",
-      tagline: "Try Deployzy with a real side project",
+      tagline: "For hobby projects and learning",
       features: [
         "5 reserved subdomains, 5 active tunnels",
         "3 projects, 2 databases, 1 standalone service",
@@ -141,11 +141,29 @@ export default function BillingPage() {
       ],
     },
     {
+      id: "hobby",
+      name: "Hobby",
+      price: "$5",
+      accent: "border-emerald-500/30",
+      tagline: "Perfect for indie hackers and side projects",
+      features: [
+        "All Free features, plus:",
+        "5 projects, 3 databases, 3 standalone services",
+        "8 subdomains, 8 tunnels, 2 BYOC servers",
+        "2 custom domains, 2 PR previews, 2 cron jobs",
+        "1 GB RAM / 0.5 vCPU per project",
+        "150 GB bandwidth, 300 build min / mo",
+        "TCP/TLS tunnels, private repos, live logs",
+        "Health checks, release cmds, Telegram alerts",
+        "30-day analytics retention",
+      ],
+    },
+    {
       id: "pro",
       name: "Pro",
       price: "$12",
       accent: "border-primary/30",
-      tagline: "For freelancers + indie hackers",
+      tagline: "Built for production-ready applications",
       features: [
         "10 reserved subdomains, 15 active tunnels",
         "10 projects, 5 databases, 5 BYOC servers",
@@ -389,10 +407,11 @@ export default function BillingPage() {
       </Card>
 
       {/* Plan Comparison — three real tiers */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3 items-stretch">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
         {planCards.map((plan) => {
           const isCurrent = currentPlan === plan.id;
-          const canUpgradeToThis = !isCurrent && plan.id !== "free";
+          const tierOrder = ["free", "hobby", "pro", "team"];
+          const canUpgradeToThis = tierOrder.indexOf(plan.id) > tierOrder.indexOf(currentPlan);
           const isPro = plan.id === "pro";
           return (
             <Card
@@ -436,7 +455,7 @@ export default function BillingPage() {
                 <div className="mt-6 h-10">
                   {canUpgradeToThis ? (
                     <Button
-                      onClick={() => checkout(plan.id as "pro" | "team", payMethod)}
+                      onClick={() => checkout(plan.id as "hobby" | "pro" | "team", payMethod)}
                       disabled={checkoutLoading}
                       className="w-full gap-2"
                       variant={isPro ? "default" : "outline"}

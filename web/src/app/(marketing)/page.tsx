@@ -288,7 +288,7 @@ export default function HomePage() {
               desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits."
             />
           </ScrollReveal>
-          <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3 items-stretch">
+          <div className="mt-12 grid gap-4 max-w-6xl mx-auto sm:grid-cols-2 lg:grid-cols-4 items-stretch">
             {plans.map((plan, i) => (
               <ScrollReveal key={plan.name} delay={i * 150} className="h-full">
                 <div className={`flex h-full flex-col rounded-lg border p-6 sm:p-8 transition-all hover:border-foreground/20 ${plan.popular ? "border-foreground/20" : "border-border/40"}`}>
@@ -414,11 +414,11 @@ const extras = [
 const plans = [
   {
     name: "Free", price: "$0", period: null, popular: false,
-    desc: "Try Deployzy with a real side project.",
+    desc: "For hobby projects and learning.",
     cta: "Get started",
     features: [
+      "3 projects, 2 databases, 1 service",
       "5 subdomains, 5 active tunnels",
-      "3 projects, 2 databases, 1 standalone service",
       "1 BYOC server, 1 custom domain",
       "512 MB RAM / 0.25 vCPU per project",
       "50 GB bandwidth, 120 build min/mo",
@@ -426,18 +426,33 @@ const plans = [
     ],
   },
   {
+    name: "Hobby", price: "$5", period: "mo", popular: false,
+    desc: "Perfect for indie hackers and side projects.",
+    cta: "Start with Hobby",
+    features: [
+      "All Free features, plus:",
+      "5 projects, 3 databases, 3 services",
+      "8 subdomains, 8 tunnels, 2 BYOC servers",
+      "2 custom domains, 2 PR previews, 2 cron jobs",
+      "1 GB RAM / 0.5 vCPU per project",
+      "150 GB bandwidth, 300 build min/mo",
+      "TCP/TLS tunnels, private repos, live logs",
+      "Health checks, release commands, Telegram alerts",
+      "30-day analytics retention",
+    ],
+  },
+  {
     name: "Pro", price: "$12", period: "mo", popular: true,
-    desc: "For freelancers + indie hackers.",
+    desc: "Built for production-ready applications.",
     cta: "Upgrade to Pro",
     features: [
-      "10 subdomains, 15 tunnels, 10 projects",
-      "5 databases, 10 services, 5 BYOC servers",
-      "5 custom domains, 5 PR previews",
+      "All Hobby features, plus:",
+      "10 projects, 5 databases, 10 services",
+      "10 subdomains, 15 tunnels, 5 BYOC servers",
+      "5 custom domains, 5 PR previews, 5 cron jobs",
       "1 GB RAM / 1 vCPU (configurable)",
       "500 GB bandwidth, 600 build min/mo",
-      "Live logs, release commands, health checks",
-      "Private repos, TCP/TLS tunnels, Telegram alerts",
-      "90-day analytics retention",
+      "7-day backups, 90-day analytics",
     ],
   },
   {
@@ -445,7 +460,7 @@ const plans = [
     desc: "For small teams shipping in production.",
     cta: "Upgrade to Team",
     features: [
-      "Everything in Pro, plus:",
+      "All Pro features, plus:",
       "50 subdomains / projects, 20 databases",
       "15 BYOC servers, 25 custom domains",
       "25 scheduled jobs, 25 active PR previews",

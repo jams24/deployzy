@@ -57,6 +57,7 @@ func main() {
 	inventpayWebhookSecret := flag.String("inventpay-webhook-secret", "", "InventPay webhook secret")
 	polarToken := flag.String("polar-token", "", "Polar.sh access token (card payments)")
 	polarWebhookSecret := flag.String("polar-webhook-secret", "", "Polar.sh webhook signing secret")
+	polarHobbyProduct := flag.String("polar-hobby-product", "", "Polar product ID for the Hobby plan")
 	polarProProduct := flag.String("polar-pro-product", "", "Polar product ID for the Pro plan")
 	polarTeamProduct := flag.String("polar-team-product", "", "Polar product ID for the Team plan")
 	polarSandbox := flag.Bool("polar-sandbox", false, "Use the Polar sandbox API")
@@ -250,6 +251,9 @@ func main() {
 		var polarClient *billing.Polar
 		if *polarToken != "" {
 			products := map[string]string{}
+			if *polarHobbyProduct != "" {
+				products["hobby"] = *polarHobbyProduct
+			}
 			if *polarProProduct != "" {
 				products["pro"] = *polarProProduct
 			}
