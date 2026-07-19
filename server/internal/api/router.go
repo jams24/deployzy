@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
+	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/db"
@@ -39,12 +40,14 @@ type Server struct {
 	billing             *billing.InventPay
 	deployer            *deploy.Engine
 	ctrlManager         *control.Manager
+	cfDNS               *cf.Client // nil when Cloudflare token not configured
+	cfDomain            string     // base domain for auto-DNS (e.g. "deployzy.com")
 	log                 zerolog.Logger
 	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -57,6 +60,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		billing:             billingClient,
 		deployer:            deployEngine,
 		ctrlManager:         ctrlManager,
+		cfDNS:               cfClient,
+		cfDomain:            cfDomain,
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 

@@ -18,6 +18,7 @@ import (
 	"github.com/serverme/serverme/proto"
 	"github.com/serverme/serverme/server/internal/api"
 	"github.com/serverme/serverme/server/internal/auth"
+	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/billing"
@@ -56,6 +57,9 @@ func main() {
 	inventpayWebhookSecret := flag.String("inventpay-webhook-secret", "", "InventPay webhook secret")
 	telegramBotUsername := flag.String("telegram-bot", "serverme_alerts_bot", "Telegram bot username")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	serviceHost := flag.String("service-host", "", "Public hostname/IP for TCP services (DB, Redis). Defaults to --domain if unset. Override when --domain is behind a proxy like Cloudflare that blocks non-HTTP ports.")
+	cfToken := flag.String("cloudflare-token", "", "Cloudflare API token (DNS edit permission) for auto-creating DNS records when servers are added")
+	cfZoneID := flag.String("cloudflare-zone-id", "", "Cloudflare Zone ID for the base domain")
 	flag.Parse()
 
 	// Logger
@@ -244,7 +248,11 @@ func main() {
 					log.Info().Msg("GitHub App enabled")
 				}
 			}
-			deployEngine = deploy.NewEngine(database, *domain, githubApp, log)
+			svcHost := *serviceHost
+		if svcHost == "" {
+			svcHost = *domain
+		}
+		deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
 			// Reset any projects stuck in "building" from a previous process that was
 			// killed mid-deploy — otherwise they'd show as building forever.
 			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
@@ -289,7 +297,8 @@ func main() {
 			go refreshLocalServerCapacity(context.Background(), database, log)
 		}
 
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, deployEngine, manager, log)
+		cfClient := cf.New(*cfToken, *cfZoneID)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, deployEngine, manager, cfClient, *domain, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,
 			Handler:      apiRouter,

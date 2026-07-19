@@ -24,18 +24,25 @@ import (
 type Engine struct {
 	db          *db.DB
 	Domain      string
+	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
 	GitHub      *GitHubApp
+	emailSvc    notify.Mailer
 	log         zerolog.Logger
 	deployLocks sync.Map // per-project mutex to prevent concurrent deploys
 }
 
 // NewEngine creates a new deploy engine.
-func NewEngine(database *db.DB, domain string, github *GitHubApp, log zerolog.Logger) *Engine {
+func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
+	if serviceHost == "" {
+		serviceHost = domain
+	}
 	return &Engine{
-		db:     database,
-		Domain: domain,
-		GitHub: github,
-		log:    log.With().Str("component", "deploy").Logger(),
+		db:          database,
+		Domain:      domain,
+		ServiceHost: serviceHost,
+		GitHub:      github,
+		emailSvc:    emailSvc,
+		log:         log.With().Str("component", "deploy").Logger(),
 	}
 }
 
@@ -682,7 +689,8 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		go e.fireWebhooks(project, "deploy.succeeded", "running")
 	} else {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
+		crashLogs := string(crashOut)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(crashLogs, 2000)), "error")
 
 		// Clean up the failed new container. Old container was never stopped, so it
 		// keeps serving traffic automatically — no restart needed.
@@ -691,6 +699,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
+		go e.sendDeployFailedEmail(project, crashLogs)
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -769,28 +778,33 @@ func (e *Engine) LogStreamCmd(ctx context.Context, project *db.Project) *exec.Cm
 
 // GetProjectPort returns the container port for a deployed project by subdomain.
 func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
-	port, _, ok := e.GetProjectRouting(subdomain)
+	_, port, _, ok := e.GetProjectRouting(subdomain)
 	return port, ok
 }
 
-// GetProjectRouting returns port + project ID in one query — used by the proxy
-// so it can both forward the request AND emit an analytics event tagged with
-// the right project without a second DB round trip.
-func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
+// GetProjectRouting returns (serverHost, port, projectID, ok).
+// serverHost is "" for platform-local projects; for BYOC projects it's the
+// remote VPS IP so the proxy can forward directly instead of trying localhost.
+func (e *Engine) GetProjectRouting(subdomain string) (string, int, string, bool) {
 	ctx := context.Background()
 	rows, err := e.db.Pool.Query(ctx,
-		`SELECT container_port, id FROM projects WHERE subdomain = $1 AND status IN ('running', 'building') AND container_port > 0`,
+		`SELECT p.container_port, p.id,
+		        CASE WHEN ws.is_local OR ws.host IN ('localhost', '127.0.0.1', '') THEN ''
+		             ELSE COALESCE(ws.host, '') END AS server_host
+		 FROM projects p
+		 LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
+		 WHERE p.subdomain = $1 AND p.status IN ('running', 'building') AND p.container_port > 0`,
 		subdomain,
 	)
 	if err != nil {
-		return 0, "", false
+		return "", 0, "", false
 	}
 	defer rows.Close()
 	if rows.Next() {
 		var port int
-		var id string
-		rows.Scan(&port, &id)
-		return port, id, port > 0
+		var id, serverHost string
+		rows.Scan(&port, &id, &serverHost)
+		return serverHost, port, id, port > 0
 	}
 	rows.Close()
 
@@ -798,25 +812,28 @@ func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
 	// live in service_routes and point at the host port the service was last
 	// published on; only resolvable while the parent project is up.
 	srRows, err := e.db.Pool.Query(ctx,
-		`SELECT sr.host_port, sr.project_id
+		`SELECT sr.host_port, sr.project_id,
+		        CASE WHEN ws.is_local OR ws.host IN ('localhost', '127.0.0.1', '') THEN ''
+		             ELSE COALESCE(ws.host, '') END AS server_host
 		   FROM service_routes sr
 		   JOIN projects p ON p.id = sr.project_id
+		   LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
 		  WHERE sr.subdomain = $1
 		    AND p.status IN ('running', 'building')
 		    AND sr.host_port > 0`,
 		subdomain,
 	)
 	if err != nil {
-		return 0, "", false
+		return "", 0, "", false
 	}
 	defer srRows.Close()
 	if srRows.Next() {
 		var port int
-		var id string
-		srRows.Scan(&port, &id)
-		return port, id, port > 0
+		var id, serverHost string
+		srRows.Scan(&port, &id, &serverHost)
+		return serverHost, port, id, port > 0
 	}
-	return 0, "", false
+	return "", 0, "", false
 }
 
 func (e *Engine) registerRoute(subdomain string, port int) {
@@ -850,6 +867,27 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 	for _, wh := range hooks {
 		code := notify.DeliverWebhook(wh.URL, wh.Secret, payload)
 		e.db.RecordWebhookDelivery(ctx, wh.ID, code)
+	}
+}
+
+// sendDeployFailedEmail emails the project owner when a new container fails to
+// pass the health check. Best-effort; must be called in a goroutine.
+func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
+	if e.emailSvc == nil {
+		return
+	}
+	ctx := context.Background()
+	user, err := e.db.GetUserByID(ctx, project.UserID)
+	if err != nil || user == nil {
+		e.log.Warn().Str("project", project.ID).Msg("deploy-failed email: could not load user")
+		return
+	}
+	projectURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s", project.ID)
+	logsURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s/logs", project.ID)
+	body := notify.DeployFailedEmail(project.Name, projectURL, logsURL, crashLogs)
+	subject := fmt.Sprintf("Deploy failed — %s", project.Name)
+	if err := e.emailSvc.SendOne(user.Email, subject, body); err != nil {
+		e.log.Warn().Err(err).Str("to", user.Email).Str("project", project.ID).Msg("deploy-failed email send failed")
 	}
 }
 

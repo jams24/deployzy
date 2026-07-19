@@ -11,6 +11,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Mailer is the minimal interface the deploy engine needs to send alert emails.
+type Mailer interface {
+	SendOne(to, subject, htmlBody string) error
+}
+
 type EmailService struct {
 	host      string
 	port      string
@@ -104,6 +109,151 @@ func (e *EmailService) SendOne(to, subject, htmlBody string) error {
 	return e.Send([]string{to}, subject, htmlBody)
 }
 
+// brandShell wraps content in the standard Deployzy email shell:
+// logo header → card content → footer. Pass the inner card HTML only.
+func brandShell(cardHTML, footerNote string) string {
+	if footerNote == "" {
+		footerNote = "You're receiving this because you have a Deployzy account."
+	}
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
+  <tr>
+    <td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <!-- Logo -->
+        <tr>
+          <td align="center" style="padding-bottom:32px;">
+            <a href="https://deployzy.com" style="text-decoration:none;display:inline-block;">
+              <img src="https://deployzy.com/logo-dark.svg" width="140" height="28" alt="Deployzy" style="display:block;border:0;"/>
+            </a>
+          </td>
+        </tr>
+
+        <!-- Card -->
+        <tr>
+          <td style="background:#111111;border:1px solid #1f1f1f;border-radius:16px;overflow:hidden;">
+            <div style="padding:40px 40px 36px;">
+              ` + cardHTML + `
+            </div>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:28px 0 0;">
+            <table cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td align="center" style="padding-bottom:16px;">
+                  <div style="height:1px;background:#1a1a1a;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td align="center">
+                  <p style="margin:0 0 6px;font-size:12px;color:#444444;line-height:1.7;">` + footerNote + `</p>
+                  <p style="margin:0;font-size:12px;color:#333333;line-height:1.8;">
+                    <a href="https://deployzy.com" style="color:#6366f1;text-decoration:none;font-weight:500;">deployzy.com</a>
+                    &nbsp;·&nbsp;
+                    <a href="https://deployzy.com/docs" style="color:#444444;text-decoration:none;">Docs</a>
+                    &nbsp;·&nbsp;
+                    <a href="https://deployzy.com/dashboard" style="color:#444444;text-decoration:none;">Dashboard</a>
+                    &nbsp;·&nbsp;
+                    <a href="mailto:support@deployzy.com" style="color:#444444;text-decoration:none;">Support</a>
+                    &nbsp;·&nbsp;
+                    <span style="color:#333333;">Made with ♥ for developers</span>
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`
+}
+
+// BroadcastEmail wraps a raw HTML body in the Deployzy brand shell.
+// Used by the admin broadcast so every campaign email has a consistent header/footer.
+func BroadcastEmail(subject, bodyHTML string) string {
+	return brandShell(bodyHTML, "You're receiving this because you have a Deployzy account. &nbsp;<a href=\"https://deployzy.com/dashboard/settings\" style=\"color:#444444;\">Unsubscribe</a>")
+}
+
+// DeployFailedEmail returns the HTML body for a deploy-failure notification.
+func DeployFailedEmail(projectName, projectURL, logsURL, crashLogs string) string {
+	truncated := crashLogs
+	if len(truncated) > 1800 {
+		truncated = "…" + truncated[len(truncated)-1800:]
+	}
+
+	card := `
+    <!-- Status badge -->
+    <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="background:#1a0a0a;border:1px solid #3d1212;border-radius:20px;padding:5px 12px;">
+          <span style="font-size:11px;font-weight:600;color:#ef4444;letter-spacing:0.5px;text-transform:uppercase;">⬤ &nbsp;Deploy Failed</span>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#ffffff;line-height:1.3;">
+      <strong style="color:#f87171;">` + projectName + `</strong> failed to deploy
+    </p>
+    <p style="margin:0 0 28px;font-size:14px;color:#888888;line-height:1.6;">
+      Your new container was unhealthy and never went live. The previous version is still serving traffic.
+    </p>
+
+    <div style="height:1px;background:#1f1f1f;margin-bottom:24px;"></div>
+
+    <!-- Crash log -->
+    <p style="margin:0 0 10px;font-size:11px;font-weight:600;color:#6b6b6b;text-transform:uppercase;letter-spacing:0.8px;">Last 20 lines of container output</p>
+    <div style="background:#0d0d0d;border:1px solid #2a1010;border-left:3px solid #ef4444;border-radius:8px;padding:16px 18px;margin-bottom:28px;overflow:hidden;">
+      <pre style="margin:0;font-family:'SF Mono',Consolas,'Courier New',monospace;font-size:12px;color:#cc8888;line-height:1.7;white-space:pre-wrap;word-break:break-all;">` + htmlEscape(truncated) + `</pre>
+    </div>
+
+    <!-- Actions -->
+    <table cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td style="padding-right:10px;" width="50%">
+          <a href="` + logsURL + `"
+             style="display:block;text-align:center;background:transparent;border:1px solid #2a2a2a;color:#cccccc;font-size:13px;font-weight:500;text-decoration:none;padding:11px 20px;border-radius:8px;">
+            View Full Logs
+          </a>
+        </td>
+        <td width="50%">
+          <a href="` + projectURL + `"
+             style="display:block;text-align:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;padding:11px 20px;border-radius:8px;">
+            Open Project →
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:20px 0 0;font-size:12px;color:#444444;line-height:1.7;text-align:center;">
+      Common causes: missing env variables, wrong start command, out-of-memory, or a port mismatch.<br/>
+      Check your <strong style="color:#666666;">Start Command</strong> and <strong style="color:#666666;">Environment Variables</strong> in project settings.
+    </p>`
+
+	return brandShell(card, "You're receiving this because you have a Deployzy project. &nbsp;<a href=\"https://deployzy.com/dashboard/settings\" style=\"color:#444444;\">Manage notifications</a>")
+}
+
+// htmlEscape escapes < > & for safe embedding in HTML.
+func htmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
 // TeamInviteEmail returns the HTML body for a team invitation email.
 func TeamInviteEmail(inviterName, teamName, inviteURL string) string {
 	return `<!DOCTYPE html>
@@ -122,10 +272,9 @@ func TeamInviteEmail(inviterName, teamName, inviteURL string) string {
         <!-- Logo -->
         <tr>
           <td align="center" style="padding-bottom:32px;">
-            <div style="display:inline-flex;align-items:center;gap:10px;">
-              <div style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:inline-block;"></div>
-              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Deployzy</span>
-            </div>
+            <a href="https://deployzy.com" style="text-decoration:none;display:inline-block;">
+              <img src="https://deployzy.com/logo-dark.svg" width="140" height="28" alt="Deployzy" style="display:block;border:0;"/>
+            </a>
           </td>
         </tr>
 
@@ -225,10 +374,9 @@ func WelcomeEmail(name string) string {
         <!-- Logo / Header -->
         <tr>
           <td align="center" style="padding-bottom:32px;">
-            <div style="display:inline-flex;align-items:center;gap:10px;">
-              <div style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:inline-block;"></div>
-              <span style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Deployzy</span>
-            </div>
+            <a href="https://deployzy.com" style="text-decoration:none;display:inline-block;">
+              <img src="https://deployzy.com/logo-dark.svg" width="140" height="28" alt="Deployzy" style="display:block;border:0;"/>
+            </a>
           </td>
         </tr>
 

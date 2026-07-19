@@ -55,10 +55,10 @@ const maxBodyCapture = 10 * 1024 // 10KB
 // ProjectLookup finds deployed projects by subdomain.
 type ProjectLookup interface {
 	GetProjectPort(subdomain string) (int, bool)
-	// GetProjectRouting returns (port, projectID, ok). Implementations that
-	// haven't been updated yet can return ("", "", false) — the proxy will
-	// just skip the analytics event in that case.
-	GetProjectRouting(subdomain string) (int, string, bool)
+	// GetProjectRouting returns (serverHost, port, projectID, ok).
+	// serverHost is "" for platform-local projects (proxy to 127.0.0.1),
+	// or the remote VPS IP/host for BYOC projects (proxy directly to that host).
+	GetProjectRouting(subdomain string) (string, int, string, bool)
 }
 
 // DomainResolver resolves a verified custom domain to its target.
@@ -155,8 +155,8 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.projects != nil {
 			parts := strings.SplitN(hostname, ".", 2)
 			if len(parts) >= 1 {
-				if port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
-					p.proxyToProject(w, r, port, projID)
+				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
+					p.proxyToProject(w, r, svrHost, port, projID)
 					return
 				}
 			}
@@ -175,8 +175,8 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				case "project":
 					if p.projects != nil {
-						if port, projID, pok := p.projects.GetProjectRouting(targetSub); pok {
-							p.proxyToProject(w, r, port, projID)
+						if svrHost, port, projID, pok := p.projects.GetProjectRouting(targetSub); pok {
+							p.proxyToProject(w, r, svrHost, port, projID)
 							return
 						}
 					}
@@ -436,13 +436,13 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 	var projectID string
 	parts := strings.SplitN(hostname, ".", 2)
 	if len(parts) >= 1 {
-		if _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
+		if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
 			projectID = pid
 		}
 	}
 	if projectID == "" && p.domains != nil {
 		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
-			if _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
+			if _, _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
 				projectID = pid
 			}
 		}
@@ -588,14 +588,19 @@ func (l *slidingIPLimiter) allow(ip string) bool {
 	return true
 }
 
-// proxyToProject reverse-proxies a request to a deployed project's container
-// and records an analytics event on the way out.
-func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port int, projectID string) {
+// proxyToProject reverse-proxies a request to a deployed project's container.
+// serverHost is "" for local platform projects (use 127.0.0.1), or the BYOC
+// server's IP/host for containers running on a remote VPS.
+func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serverHost string, port int, projectID string) {
 	start := time.Now()
+	targetHost := "127.0.0.1"
+	if serverHost != "" {
+		targetHost = serverHost
+	}
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
-			req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
+			req.URL.Host = fmt.Sprintf("%s:%d", targetHost, port)
 			req.Host = r.Host
 		},
 	}

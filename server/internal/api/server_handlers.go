@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -96,10 +98,33 @@ func (s *Server) handleAdminAddServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	// Auto-create a DNS-only A record: database-<label>.deployzy.com → host IP
+	dnsResult := ""
+	if s.cfDNS != nil && s.cfDomain != "" && isIP(ws.Host) {
+		recordName := fmt.Sprintf("database-%s.%s", sanitizeLabel(ws.Label), s.cfDomain)
+		if err := s.cfDNS.UpsertARecord(recordName, ws.Host, false); err != nil {
+			s.log.Warn().Err(err).Str("record", recordName).Msg("cloudflare DNS create failed")
+			dnsResult = "dns_failed: " + err.Error()
+		} else {
+			dnsResult = recordName
+			server.ServiceHost = recordName
+			s.db.SetWorkerServerServiceHost(r.Context(), server.ID, recordName)
+		}
+	}
+	// Fall back to raw IP if no CF DNS was created
+	if server.ServiceHost == "" && isIP(server.Host) {
+		server.ServiceHost = server.Host
+		s.db.SetWorkerServerServiceHost(r.Context(), server.ID, server.Host)
+	}
+
+	resp := map[string]interface{}{
 		"server":           server,
 		"docker_installed": dockerOK,
-	})
+	}
+	if dnsResult != "" {
+		resp["dns_record"] = dnsResult
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleAdminDeleteServer(w http.ResponseWriter, r *http.Request) {
@@ -206,11 +231,34 @@ func (s *Server) handleAddUserServer(w http.ResponseWriter, r *http.Request) {
 
 	server.SSHPassword = ""
 	server.SSHKey = ""
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+
+	// Auto-create a DNS-only A record for this BYOC server: database-<label>.deployzy.com → host IP
+	dnsResult := ""
+	if s.cfDNS != nil && s.cfDomain != "" && isIP(ws.Host) {
+		recordName := fmt.Sprintf("database-%s.%s", sanitizeLabel(ws.Label), s.cfDomain)
+		if err := s.cfDNS.UpsertARecord(recordName, ws.Host, false); err != nil {
+			s.log.Warn().Err(err).Str("record", recordName).Msg("cloudflare DNS create failed")
+		} else {
+			dnsResult = recordName
+			server.ServiceHost = recordName
+			s.db.SetWorkerServerServiceHost(r.Context(), server.ID, recordName)
+		}
+	}
+	// Fall back to raw IP if no CF DNS was created
+	if server.ServiceHost == "" && isIP(server.Host) {
+		server.ServiceHost = server.Host
+		s.db.SetWorkerServerServiceHost(r.Context(), server.ID, server.Host)
+	}
+
+	resp := map[string]interface{}{
 		"server":           server,
 		"docker_installed": dockerOK,
 		"message":          dockerMessage(dockerOK),
-	})
+	}
+	if dnsResult != "" {
+		resp["dns_record"] = dnsResult
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleDeleteUserServer(w http.ResponseWriter, r *http.Request) {
@@ -382,6 +430,24 @@ func lastLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.LastIndex(s, "\n"); i >= 0 {
 		return s[i+1:]
+	}
+	return s
+}
+
+// isIP returns true when s is a valid IPv4 or IPv6 address (not a hostname).
+func isIP(s string) bool {
+	return net.ParseIP(s) != nil
+}
+
+var labelSanitizer = regexp.MustCompile(`[^a-z0-9-]`)
+
+// sanitizeLabel lowercases and strips characters unsafe for a DNS label.
+func sanitizeLabel(label string) string {
+	s := strings.ToLower(label)
+	s = labelSanitizer.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 40 {
+		s = s[:40]
 	}
 	return s
 }

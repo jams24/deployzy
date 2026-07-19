@@ -308,7 +308,7 @@ export default function HomePage() {
                       </li>
                     ))}
                   </ul>
-                  <Button className="mt-6 w-full h-9 text-xs" variant={plan.popular ? "default" : "outline"} nativeButton={false} render={<Link href="/sign-up" />}>{plan.cta}</Button>
+                  <Button className="mt-6 w-full h-9 text-xs" variant={plan.popular ? "default" : "outline"} nativeButton={false} render={<Link href={(plan as any).ctaHref ?? "/sign-up"} />}>{plan.cta}</Button>
                 </div>
               </ScrollReveal>
             ))}
@@ -443,7 +443,7 @@ const plans = [
   {
     name: "Team", price: "$35", period: "mo per seat", popular: false,
     desc: "For small teams shipping in production.",
-    cta: "Contact us",
+    cta: "Contact us", ctaHref: "mailto:support@deployzy.com",
     features: [
       "Everything in Pro, plus:",
       "50 subdomains / projects, 20 databases",

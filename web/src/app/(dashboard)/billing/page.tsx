@@ -362,7 +362,7 @@ export default function BillingPage() {
                   </Button>
                 )}
                 {canUpgradeToThis && plan.id === "team" && (
-                  <Button variant="outline" disabled className="mt-6 w-full gap-2" title="Team billing coming soon">
+                  <Button variant="outline" className="mt-6 w-full gap-2" nativeButton={false} render={<a href="mailto:support@deployzy.com" />}>
                     Contact us for Team
                   </Button>
                 )}

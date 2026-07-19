@@ -18,7 +18,7 @@ const footerLinks = {
     { label: "GitHub", href: "https://github.com/jams24/deployzy" },
     { label: "Blog", href: "/blog" },
     { label: "Status", href: "/status" },
-    { label: "Contact", href: "mailto:hello@deployzy.com" },
+    { label: "Contact", href: "mailto:support@deployzy.com" },
   ],
 };
 

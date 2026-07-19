@@ -13,10 +13,19 @@ import (
 func (s *Server) resolveDBPublicHost(ctx context.Context, project *db.Project) string {
 	if project.WorkerServerID != "" {
 		if server, _ := s.db.GetWorkerServer(ctx, project.WorkerServerID); server != nil {
+			// Prefer the DNS-only service_host over the raw Host (which may be
+			// localhost on the main VPS, or a CF-proxied IP for BYOC servers).
+			if server.ServiceHost != "" {
+				return server.ServiceHost
+			}
 			return server.Host
 		}
 	}
-	// Fallback: use the deployer's domain or platform host
+	// Use ServiceHost (raw VPS IP / non-proxied host) for TCP services.
+	// Falls back to Domain only when ServiceHost is unset.
+	if s.deployer != nil && s.deployer.ServiceHost != "" {
+		return s.deployer.ServiceHost
+	}
 	if s.deployer != nil && s.deployer.Domain != "" {
 		return s.deployer.Domain
 	}
@@ -105,12 +114,7 @@ func (s *Server) handleListAllDatabases(w http.ResponseWriter, r *http.Request) 
 
 	// Standalone services
 	svcs, _ := s.db.ListServices(ctx, u.ID)
-	publicHost := ""
-	if s.deployer != nil && s.deployer.Domain != "" {
-		publicHost = s.deployer.Domain
-	} else {
-		publicHost = "localhost"
-	}
+	publicHost := s.resolveServicePublicHost()
 	for _, svc := range svcs {
 		svc := svc
 		dbName, dbUser, dbPass := "", "", ""

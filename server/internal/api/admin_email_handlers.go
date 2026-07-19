@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 
@@ -41,12 +43,15 @@ func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Wrap the body in the standard Deployzy brand shell (logo, footer).
+	wrappedBody := notify.BroadcastEmail(req.Subject, req.HTMLBody)
+
 	// Send one individual email per recipient so nobody sees others' addresses.
 	// Pause every 10 sends to stay within Brevo's rate limits.
 	sent, failed := 0, 0
 
 	for i, rcpt := range recipients {
-		if err := s.emailSvc.SendOne(rcpt.Email, req.Subject, req.HTMLBody); err != nil {
+		if err := s.emailSvc.SendOne(rcpt.Email, req.Subject, wrappedBody); err != nil {
 			s.log.Warn().Err(err).Str("to", rcpt.Email).Msg("broadcast send failed")
 			failed++
 		} else {
