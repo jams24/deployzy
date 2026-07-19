@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -480,7 +481,8 @@ function ProjectsContent() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Failed to create project" }));
-      alert(err.error || "Failed to create project");
+      const msg = err.error || "Failed to create project";
+      if (!showPlanLimit(msg)) alert(msg);
       setImporting(false);
       return;
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { showPlanLimit } from "@/components/upgrade-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,7 +56,8 @@ export default function ServersPage() {
         }
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
-        alert(err.error || "Failed to add server");
+        const msg = err.error || "Failed to add server";
+        if (!showPlanLimit(msg)) alert(msg);
       }
     } catch {}
     setAdding(false);

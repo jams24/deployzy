@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { UpgradeDialogHost } from "@/components/upgrade-dialog";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { AuthGuard } from "@/components/dashboard/auth-guard";
@@ -140,6 +141,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
               {children}
             </div>
+            <UpgradeDialogHost />
           </main>
         </div>
       </div>

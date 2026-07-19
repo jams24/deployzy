@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -198,7 +199,8 @@ function startDocker() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Failed" }));
-      alert(err.error || "Failed to create project");
+      const msg = err.error || "Failed to create project";
+      if (!showPlanLimit(msg)) alert(msg);
       setCreating(false);
       return;
     }
@@ -247,7 +249,8 @@ function startDocker() {
       if (res.ok) router.push("/services");
       else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
-        alert(err.error || "Failed to create database");
+        const msg = err.error || "Failed to create database";
+        if (!showPlanLimit(msg)) alert(msg);
       }
     } catch {}
     setCreating(false);

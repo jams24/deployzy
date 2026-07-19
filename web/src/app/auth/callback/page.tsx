@@ -13,7 +13,7 @@ function CallbackHandler() {
     const token = searchParams.get("token");
     if (token) {
       api.setToken(token);
-      router.replace("/tunnels");
+      router.replace("/overview");
     } else {
       router.replace("/sign-in?error=Authentication failed");
     }
