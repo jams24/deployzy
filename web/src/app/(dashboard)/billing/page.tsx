@@ -162,7 +162,7 @@ export default function BillingPage() {
       id: "team",
       name: "Team",
       price: "$35",
-      accent: "border-yellow-500/30",
+      accent: "border-emerald-500/30",
       tagline: "For small teams shipping in production",
       features: [
         "Everything in Pro, plus:",
@@ -205,7 +205,7 @@ export default function BillingPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Usage on the {usage.is_admin ? "Admin (unlimited)" : usage.plan} plan</span>
-                {usage.is_admin && <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/50">Unlimited</Badge>}
+                {usage.is_admin && <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/40">Unlimited</Badge>}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -221,7 +221,7 @@ export default function BillingPage() {
                         <span className="font-mono">{r.used} / {fmt(r.max)}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                        <div className={`h-full ${isUnl ? "bg-yellow-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
+                        <div className={`h-full ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
                       </div>
                     </div>
                   );
@@ -271,12 +271,12 @@ export default function BillingPage() {
             <div>
               <div className="flex items-center gap-2">
                 {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Admin (Unlimited)
                   </Badge>
                 ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Team
                   </Badge>
@@ -413,10 +413,10 @@ export default function BillingPage() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    {plan.id === "team" && <Crown className="h-4 w-4 text-yellow-500" />}
+                    {plan.id === "team" && <Crown className="h-4 w-4 text-emerald-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
                 </CardTitle>
                 <p className="text-3xl font-bold tracking-tight">
                   {plan.price}
@@ -428,7 +428,7 @@ export default function BillingPage() {
                 <ul className="space-y-2.5 flex-1">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-[13px] leading-snug">
-                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" ? "text-yellow-500" : isPro ? "text-emerald-500" : "text-zinc-500"}`} />
+                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" || isPro ? "text-emerald-500" : "text-zinc-500"}`} />
                       <span className="text-muted-foreground">{f}</span>
                     </li>
                   ))}
