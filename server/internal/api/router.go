@@ -38,6 +38,7 @@ type Server struct {
 	telegramBotUsername string
 	emailSvc            *notify.EmailService
 	billing             *billing.InventPay
+	polar               *billing.Polar // nil when card payments not configured
 	deployer            *deploy.Engine
 	ctrlManager         *control.Manager
 	cfDNS               *cf.Client // nil when Cloudflare token not configured
@@ -47,7 +48,7 @@ type Server struct {
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -58,6 +59,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		telegramBotUsername: telegramUsername,
 		emailSvc:            emailSvc,
 		billing:             billingClient,
+		polar:               polarClient,
 		deployer:            deployEngine,
 		ctrlManager:         ctrlManager,
 		cfDNS:               cfClient,
@@ -334,8 +336,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	// Telegram webhook (public, no auth — Telegram sends here)
 	r.Post("/api/v1/telegram/webhook", s.handleTelegramWebhook)
 
-	// Billing webhook (public — InventPay sends here)
+	// Billing webhooks (public — payment providers call these; both verify
+	// signatures and reject unsigned payloads)
 	r.Post("/api/v1/billing/webhook", s.handleBillingWebhook)
+	r.Post("/api/v1/billing/webhook/polar", s.handlePolarWebhook)
 
 	// GitHub (public routes)
 	r.Get("/api/v1/github/connect", s.handleGitHubConnect)

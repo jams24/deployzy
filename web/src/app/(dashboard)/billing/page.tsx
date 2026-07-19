@@ -65,17 +65,17 @@ export default function BillingPage() {
     setLoading(false);
   }
 
-  async function checkout() {
+  async function checkout(plan: "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
     setCheckoutLoading(true);
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
         method: "POST",
         headers: headers(),
+        body: JSON.stringify({ plan, method }),
       });
       if (res.ok) {
         const data = await res.json();
-        // Open InventPay invoice page
-        // Redirect to payment page
+        // Redirect to the hosted payment page (InventPay invoice or Polar checkout)
         window.location.href = data.invoice_url;
       } else {
         const err = await res.json();
@@ -132,7 +132,7 @@ export default function BillingPage() {
       tagline: "Try Deployzy with a real side project",
       features: [
         "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 1 database, 1 standalone service",
+        "3 projects, 2 databases, 1 standalone service",
         "1 BYOC server, 1 custom domain",
         "512 MB RAM / 0.25 vCPU per project",
         "50 GB bandwidth, 120 build min / mo",
@@ -308,18 +308,28 @@ export default function BillingPage() {
               )}
             </div>
             {!isPremium && !usage?.is_admin && (
-              <Button
-                onClick={checkout}
-                disabled={checkoutLoading}
-                className="gap-2 shrink-0"
-              >
-                {checkoutLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Zap className="h-4 w-4" />
-                )}
-                Upgrade to Pro — $12/mo
-              </Button>
+              <div className="flex flex-col gap-2 shrink-0">
+                <Button
+                  onClick={() => checkout("pro", "card")}
+                  disabled={checkoutLoading}
+                  className="gap-2"
+                >
+                  {checkoutLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4" />
+                  )}
+                  Upgrade to Pro — $12/mo
+                </Button>
+                <Button
+                  onClick={() => checkout("pro", "crypto")}
+                  disabled={checkoutLoading}
+                  variant="outline"
+                  className="gap-2 text-xs"
+                >
+                  Pay with crypto (USDT)
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>
@@ -355,16 +365,26 @@ export default function BillingPage() {
                     </li>
                   ))}
                 </ul>
-                {canUpgradeToThis && plan.id === "pro" && (
-                  <Button onClick={checkout} disabled={checkoutLoading} className="mt-6 w-full gap-2">
-                    {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                    Upgrade to Pro
-                  </Button>
-                )}
-                {canUpgradeToThis && plan.id === "team" && (
-                  <Button variant="outline" className="mt-6 w-full gap-2" nativeButton={false} render={<a href="mailto:support@deployzy.com" />}>
-                    Contact us for Team
-                  </Button>
+                {canUpgradeToThis && (
+                  <div className="mt-6 space-y-2">
+                    <Button
+                      onClick={() => checkout(plan.id as "pro" | "team", "card")}
+                      disabled={checkoutLoading}
+                      className="w-full gap-2"
+                      variant={plan.id === "pro" ? "default" : "outline"}
+                    >
+                      {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                      Upgrade to {plan.name}
+                    </Button>
+                    <Button
+                      onClick={() => checkout(plan.id as "pro" | "team", "crypto")}
+                      disabled={checkoutLoading}
+                      variant="ghost"
+                      className="w-full text-xs text-muted-foreground"
+                    >
+                      or pay with crypto (USDT)
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -377,7 +397,21 @@ export default function BillingPage() {
         <CardHeader>
           <CardTitle className="text-base">Payment Method</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-500 text-xs font-bold">
+              💳
+            </div>
+            <div>
+              <p className="text-sm font-medium">Credit / debit card via Polar</p>
+              <p className="text-xs text-muted-foreground">
+                Visa, Mastercard, Amex and more. Powered by{" "}
+                <a href="https://polar.sh" target="_blank" rel="noopener" className="text-primary hover:underline">
+                  Polar <ExternalLink className="inline h-2.5 w-2.5" />
+                </a>
+              </p>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-500 text-xs font-bold">
               ₿

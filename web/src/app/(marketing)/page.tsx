@@ -418,7 +418,7 @@ const plans = [
     cta: "Get started",
     features: [
       "5 subdomains, 5 active tunnels",
-      "3 projects, 1 database, 1 standalone service",
+      "3 projects, 2 databases, 1 standalone service",
       "1 BYOC server, 1 custom domain",
       "512 MB RAM / 0.25 vCPU per project",
       "50 GB bandwidth, 120 build min/mo",
@@ -443,7 +443,7 @@ const plans = [
   {
     name: "Team", price: "$35", period: "mo per seat", popular: false,
     desc: "For small teams shipping in production.",
-    cta: "Contact us", ctaHref: "mailto:support@deployzy.com",
+    cta: "Upgrade to Team",
     features: [
       "Everything in Pro, plus:",
       "50 subdomains / projects, 20 databases",

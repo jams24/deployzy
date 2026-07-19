@@ -55,6 +55,11 @@ func main() {
 	githubWebhookSecret := flag.String("github-webhook-secret", "", "GitHub App Webhook Secret")
 	githubPrivateKey := flag.String("github-private-key", "", "GitHub App Private Key PEM file path")
 	inventpayWebhookSecret := flag.String("inventpay-webhook-secret", "", "InventPay webhook secret")
+	polarToken := flag.String("polar-token", "", "Polar.sh access token (card payments)")
+	polarWebhookSecret := flag.String("polar-webhook-secret", "", "Polar.sh webhook signing secret")
+	polarProProduct := flag.String("polar-pro-product", "", "Polar product ID for the Pro plan")
+	polarTeamProduct := flag.String("polar-team-product", "", "Polar product ID for the Team plan")
+	polarSandbox := flag.Bool("polar-sandbox", false, "Use the Polar sandbox API")
 	telegramBotUsername := flag.String("telegram-bot", "serverme_alerts_bot", "Telegram bot username")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	serviceHost := flag.String("service-host", "", "Public hostname/IP for TCP services (DB, Redis). Defaults to --domain if unset. Override when --domain is behind a proxy like Cloudflare that blocks non-HTTP ports.")
@@ -145,6 +150,15 @@ func main() {
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned captured_requests")
 			}
+			// Lapsed subscriptions: mark expired and downgrade users whose
+			// paid period ended back to free. Only touches users whose plan
+			// came from a subscription — admin grants and referral rewards
+			// are untouched.
+			if n, err := database.SweepExpiredSubscriptions(ctx); err != nil {
+				log.Warn().Err(err).Msg("subscription expiry sweep failed")
+			} else if n > 0 {
+				log.Info().Int64("users", n).Msg("downgraded users with expired subscriptions")
+			}
 			// Abandoned build dirs — cleaned on successful deploy, but a
 			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
 			// behind. Remove anything older than 24h on the control plane
@@ -233,6 +247,18 @@ func main() {
 			billingClient = billing.NewInventPay(*inventpayKey, *inventpayWebhookSecret)
 			log.Info().Msg("InventPay billing enabled")
 		}
+		var polarClient *billing.Polar
+		if *polarToken != "" {
+			products := map[string]string{}
+			if *polarProProduct != "" {
+				products["pro"] = *polarProProduct
+			}
+			if *polarTeamProduct != "" {
+				products["team"] = *polarTeamProduct
+			}
+			polarClient = billing.NewPolar(*polarToken, *polarWebhookSecret, products, *polarSandbox)
+			log.Info().Bool("sandbox", *polarSandbox).Int("products", len(products)).Msg("Polar card billing enabled")
+		}
 
 		// Deploy engine
 		var deployEngine *deploy.Engine
@@ -298,7 +324,7 @@ func main() {
 		}
 
 		cfClient := cf.New(*cfToken, *cfZoneID)
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, deployEngine, manager, cfClient, *domain, log)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,
 			Handler:      apiRouter,
