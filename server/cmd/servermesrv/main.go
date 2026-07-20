@@ -325,6 +325,17 @@ func main() {
 			// Refresh the local platform row with real hardware values so the
 			// scheduler knows what's actually available on this host.
 			go refreshLocalServerCapacity(context.Background(), database, log)
+
+			// Crash sweeper: containers deploy with --restart on-failure:5,
+			// so a broken app stops instead of restart-looping forever. This
+			// flips such projects to 'crashed' in the dashboard every 2 min.
+			go func() {
+				t := time.NewTicker(2 * time.Minute)
+				defer t.Stop()
+				for range t.C {
+					deployEngine.SweepCrashedContainers(context.Background())
+				}
+			}()
 		}
 
 		cfClient := cf.New(*cfToken, *cfZoneID)

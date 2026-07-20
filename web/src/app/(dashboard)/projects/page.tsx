@@ -110,6 +110,7 @@ const statusColor: Record<string, string> = {
   building: "bg-amber-500/20 text-amber-500 border-amber-500/50",
   stopped: "bg-zinc-500/10 text-muted-foreground border-zinc-500/20",
   failed: "bg-red-500/20 text-red-500 border-red-500/40",
+  crashed: "bg-red-500/20 text-red-500 border-red-500/40",
   created: "bg-blue-500/20 text-blue-400 border-blue-500/50",
 };
 

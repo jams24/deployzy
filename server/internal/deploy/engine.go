@@ -594,7 +594,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("CPU clamped to plan ceiling: %.2f vCPU (requested %.2f)", planCPUMax, cpus), "build")
 		cpus = planCPUMax
 	}
-	args = append(args, "--restart", "unless-stopped",
+	// on-failure:5 instead of unless-stopped: an app that fails 5 consecutive
+	// starts will never succeed on the 5,000th. Infinite restart loops from
+	// broken deploys once drove a 1-core host to load 24 and starved every
+	// build on the box (2026-07-20). The crash sweeper marks these projects
+	// 'crashed' so the dashboard shows what happened.
+	args = append(args, "--restart", "on-failure:5",
 		"--memory", fmt.Sprintf("%dm", memMB),
 		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64),
 		// Container hardening — prevents privilege escalation and raw-socket
@@ -766,6 +771,38 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 		}
 	}
 	return NewLocalRunner()
+}
+
+// SweepCrashedContainers finds projects marked 'running' whose containers
+// have given up (exited after exhausting their on-failure restart budget, or
+// dead) and flips their status to 'crashed' so the dashboard tells the truth
+// and the owner can see logs + redeploy. Called periodically from main.
+func (e *Engine) SweepCrashedContainers(ctx context.Context) {
+	projects, err := e.db.ListRunningProjects(ctx)
+	if err != nil {
+		e.log.Warn().Err(err).Msg("crash sweep: list running projects failed")
+		return
+	}
+	for i := range projects {
+		p := &projects[i]
+		containerName := fmt.Sprintf("sm-%s", p.ID[:8])
+		runner := e.getRunner(ctx, p)
+		out, err := runner.RunShell(ctx,
+			fmt.Sprintf("docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing", containerName))
+		if err != nil {
+			continue // host unreachable — worker health monitor handles that
+		}
+		state := strings.TrimSpace(string(out))
+		if state == "exited" || state == "dead" {
+			logs := ""
+			if lout, lerr := runner.RunShell(ctx, "docker logs --tail 5 "+containerName+" 2>&1"); lerr == nil {
+				logs = strings.TrimSpace(string(lout))
+			}
+			e.db.UpdateProjectStatus(ctx, p.ID, "crashed", p.ContainerID, p.ContainerPort)
+			e.logMsg(ctx, p.ID, "Container crashed and exhausted its restart budget (5 failed starts). Marked as crashed — check logs and redeploy after fixing. Last output:\n"+logs, "deploy")
+			e.log.Warn().Str("project", p.Name).Str("container", containerName).Msg("crash sweep: marked project crashed")
+		}
+	}
 }
 
 // LogStreamCmd returns an *exec.Cmd (not yet started) that streams live
