@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
+	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -150,6 +151,30 @@ func (s *Server) handleAdminUpdateServerStatus(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "status must be active, draining, or offline")
 		return
 	}
+
+	// Activation must be earned, not declared: verify the server actually
+	// answers over SSH before marking it active — otherwise a dead server
+	// gets scheduled deploys that all fail.
+	if req.Status == "active" {
+		srv, err := s.db.GetWorkerServer(r.Context(), serverID)
+		if err != nil || srv == nil {
+			writeError(w, http.StatusNotFound, "server not found")
+			return
+		}
+		if !srv.IsLocal {
+			runner := deploy.NewRemoteRunner(srv)
+			pingCtx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+			_, perr := runner.RunShell(pingCtx, "echo ok")
+			cancel()
+			if perr != nil {
+				writeError(w, http.StatusBadGateway,
+					"server is not reachable over SSH — fix connectivity/credentials first: "+perr.Error())
+				return
+			}
+			s.db.UpdateWorkerHeartbeat(r.Context(), serverID)
+		}
+	}
+
 	s.db.UpdateWorkerServerStatus(r.Context(), serverID, req.Status)
 	writeJSON(w, http.StatusOK, map[string]string{"status": req.Status})
 }

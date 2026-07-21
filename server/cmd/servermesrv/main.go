@@ -538,7 +538,15 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 		}
 		for i := range workers {
 			w := workers[i]
-			runner := deploy.NewRemoteRunner(&w)
+			// The local platform row has no SSH credentials — SSH'ing to
+			// ourselves always errored, which left its live metrics stuck at
+			// zero. Probe it with a local runner instead.
+			var runner *deploy.Runner
+			if w.IsLocal || w.Host == "localhost" || w.Host == "127.0.0.1" {
+				runner = deploy.NewLocalRunner()
+			} else {
+				runner = deploy.NewRemoteRunner(&w)
+			}
 			pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			_, err := runner.RunShell(pingCtx, "echo ok")
 			cancel()
