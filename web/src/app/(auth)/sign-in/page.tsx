@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Terminal } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 function SignInForm() {
   const router = useRouter();
@@ -27,6 +27,16 @@ function SignInForm() {
       const redirect = searchParams.get("redirect");
       router.push(redirect && redirect.startsWith("/") ? redirect : "/overview");
     } catch (err: unknown) {
+      // Unverified signup: the API has already emailed a fresh code, so send
+      // the user to the verification step instead of showing a dead end.
+      if (err instanceof ApiError && err.verificationRequired) {
+        const redirect = searchParams.get("redirect");
+        router.push(
+          `/verify-email?email=${encodeURIComponent(email)}` +
+            (redirect ? `&redirect=${encodeURIComponent(redirect)}` : "")
+        );
+        return;
+      }
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);

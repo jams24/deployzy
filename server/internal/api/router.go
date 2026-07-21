@@ -89,6 +89,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Use(rateLimitMiddleware(authRateLimiter))
 			r.Post("/auth/register", s.handleRegister)
 			r.Post("/auth/login", s.handleLogin)
+			r.Post("/auth/verify-email", s.handleVerifyEmail)
+			r.Post("/auth/resend-verification", s.handleResendVerification)
 		})
 
 		// Google OAuth

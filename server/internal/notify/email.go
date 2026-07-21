@@ -485,3 +485,35 @@ func WelcomeEmail(name string) string {
 </body>
 </html>`
 }
+
+// VerifyCodeEmail renders the 6-digit signup confirmation code. Uses the brand
+// shell so it matches every other transactional email.
+func VerifyCodeEmail(name, code string) string {
+	displayName := name
+	if displayName == "" {
+		displayName = "there"
+	}
+	card := `
+            <p style="margin:0 0 8px;font-size:24px;font-weight:700;color:#ffffff;line-height:1.3;">
+              Confirm your email
+            </p>
+            <p style="margin:0 0 28px;font-size:15px;color:#888888;line-height:1.6;">
+              Hi ` + displayName + `, enter this code to finish creating your Deployzy account.
+            </p>
+
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center" style="background:#0a0a0a;border:1px solid #1f1f1f;border-radius:12px;padding:24px 16px;">
+                  <p style="margin:0;font-size:34px;font-weight:700;letter-spacing:10px;color:#34D399;font-family:'SFMono-Regular',Consolas,monospace;">
+                    ` + code + `
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:24px 0 0;font-size:13px;color:#666666;line-height:1.6;">
+              This code expires in 15 minutes. If you didn't sign up for Deployzy,
+              you can safely ignore this email — no account will be created.
+            </p>`
+	return brandShell(card, "You're receiving this because someone signed up for Deployzy with this address.")
+}

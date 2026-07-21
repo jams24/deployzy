@@ -153,6 +153,13 @@ func main() {
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned captured_requests")
 			}
+			// Abandoned signups: password accounts that never confirmed their
+			// email within 7 days are removed so they don't squat the address.
+			if n, err := database.DeleteUnverifiedStaleUsers(ctx, 7*24*time.Hour); err != nil {
+				log.Warn().Err(err).Msg("prune unverified signups failed")
+			} else if n > 0 {
+				log.Info().Int64("users", n).Msg("removed abandoned unverified signups")
+			}
 			// Lapsed subscriptions: mark expired and downgrade users whose
 			// paid period ended back to free. Only touches users whose plan
 			// came from a subscription — admin grants and referral rewards

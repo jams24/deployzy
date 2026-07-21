@@ -94,7 +94,39 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate JWT
+	// Password signups must confirm their address before the account becomes
+	// usable — no JWT and no API key are issued until then. (Google OAuth
+	// users skip this: Google already proved mailbox ownership.) If email
+	// isn't configured we can't deliver a code, so fall back to issuing
+	// credentials immediately rather than locking the user out.
+	if s.emailSvc != nil {
+		code, err := s.db.GenerateVerifyCode(r.Context(), user.ID)
+		if err != nil {
+			s.log.Error().Err(err).Msg("generate verify code")
+			writeError(w, http.StatusInternalServerError, "failed to start verification")
+			return
+		}
+		go func(email, name, code string) {
+			if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+				s.log.Warn().Err(err).Str("email", email).Msg("failed to send verification email")
+			}
+		}(user.Email, user.Name, code)
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"verification_required": true,
+			"email":                 user.Email,
+		})
+		return
+	}
+
+	s.db.MarkEmailVerified(r.Context(), user.ID)
+	s.issueCredentials(w, r, user, http.StatusCreated)
+}
+
+// issueCredentials mints the JWT + initial API key for a verified user and
+// writes the standard auth payload. Shared by the register fallback and the
+// email-verification endpoint so both return an identical shape.
+func (s *Server) issueCredentials(w http.ResponseWriter, r *http.Request, user *db.User, status int) {
 	token, err := s.jwt.Generate(user.ID, user.Email, user.Plan)
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate token")
@@ -102,7 +134,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate initial API key
 	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate api key")
@@ -110,19 +141,107 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Send welcome email asynchronously so it never blocks the response.
 	if s.emailSvc != nil {
-		go func() {
-			if err := s.emailSvc.SendOne(user.Email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(user.Name)); err != nil {
-				s.log.Warn().Err(err).Str("email", user.Email).Msg("failed to send welcome email")
+		go func(email, name string) {
+			if err := s.emailSvc.SendOne(email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(name)); err != nil {
+				s.log.Warn().Err(err).Str("email", email).Msg("failed to send welcome email")
 			}
-		}()
+		}(user.Email, user.Name)
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"user":    user,
-		"token":   token,
-		"api_key": fullToken,
+	writeJSON(w, status, map[string]interface{}{
+		"user":         user,
+		"token":        token,
+		"api_key":      fullToken,
 		"api_key_info": apiKey,
 	})
+}
+
+type verifyEmailRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// handleVerifyEmail confirms a signup code and, on success, issues the JWT +
+// API key the register call withheld.
+func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req verifyEmailRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Code == "" {
+		writeError(w, http.StatusBadRequest, "email and code required")
+		return
+	}
+
+	user, err := s.db.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		s.log.Error().Err(err).Msg("verify: get user")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// Same generic message whether the address is unknown or the code is
+	// wrong — don't let this endpoint enumerate registered emails.
+	if user == nil {
+		writeError(w, http.StatusBadRequest, "invalid or expired code")
+		return
+	}
+
+	result, err := s.db.CheckVerifyCode(r.Context(), user.ID, strings.TrimSpace(req.Code))
+	if err != nil {
+		s.log.Error().Err(err).Msg("verify: check code")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	switch result {
+	case db.VerifyOK, db.VerifyAlreadyVerified:
+		user.EmailVerified = true
+		s.issueCredentials(w, r, user, http.StatusOK)
+	case db.VerifyExpired, db.VerifyNoCode:
+		writeError(w, http.StatusBadRequest, "code expired — request a new one")
+	case db.VerifyTooManyAttempts:
+		writeError(w, http.StatusTooManyRequests, "too many attempts — request a new code")
+	default:
+		writeError(w, http.StatusBadRequest, "invalid or expired code")
+	}
+}
+
+// handleResendVerification issues a fresh code, rate-limited to one per
+// minute. Always reports success so it can't be used to probe for accounts.
+func (s *Server) handleResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &req); err != nil || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email required")
+		return
+	}
+
+	ok := map[string]string{"status": "sent"}
+	user, err := s.db.GetUserByEmail(r.Context(), req.Email)
+	if err != nil || user == nil || user.EmailVerified || s.emailSvc == nil {
+		writeJSON(w, http.StatusOK, ok)
+		return
+	}
+	if allowed, _ := s.db.CanResendVerifyCode(r.Context(), user.ID); !allowed {
+		writeError(w, http.StatusTooManyRequests, "please wait a minute before requesting another code")
+		return
+	}
+
+	code, err := s.db.GenerateVerifyCode(r.Context(), user.ID)
+	if err != nil {
+		s.log.Error().Err(err).Msg("resend: generate code")
+		writeJSON(w, http.StatusOK, ok)
+		return
+	}
+	go func(email, name, code string) {
+		if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+			s.log.Warn().Err(err).Str("email", email).Msg("failed to resend verification email")
+		}
+	}(user.Email, user.Name, code)
+
+	writeJSON(w, http.StatusOK, ok)
 }
 
 type loginRequest struct {
@@ -145,6 +264,27 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if user == nil || !user.CheckPassword(req.Password) {
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+
+	// Unverified password signup: send a fresh code and tell the client to
+	// show the verification step instead of logging in. Flagged distinctly so
+	// the frontend can route rather than just print an error.
+	if !user.EmailVerified && s.emailSvc != nil {
+		if allowed, _ := s.db.CanResendVerifyCode(r.Context(), user.ID); allowed {
+			if code, err := s.db.GenerateVerifyCode(r.Context(), user.ID); err == nil {
+				go func(email, name, code string) {
+					if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+						s.log.Warn().Err(err).Str("email", email).Msg("failed to send verification email")
+					}
+				}(user.Email, user.Name, code)
+			}
+		}
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"error":                 "Please confirm your email to continue — we've sent you a code.",
+			"verification_required": true,
+			"email":                 user.Email,
+		})
 		return
 	}
 

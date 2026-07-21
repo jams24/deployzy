@@ -1,5 +1,20 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
+export class ApiError extends Error {
+  status: number;
+  data: Record<string, unknown>;
+  constructor(message: string, status: number, data: Record<string, unknown>) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+  /** True when the backend wants the user to confirm their email first. */
+  get verificationRequired(): boolean {
+    return this.data?.verification_required === true;
+  }
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -39,21 +54,23 @@ class ApiClient {
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
     const data = await res.json();
 
-    if (!res.ok) throw new Error(data.error || "Request failed");
+    if (!res.ok) throw new ApiError(data.error || "Request failed", res.status, data);
     return data;
   }
 
   // Auth
   async register(email: string, name: string, password: string, ref?: string) {
     const data = await this.request<{
-      user: User;
-      token: string;
-      api_key: string;
+      user?: User;
+      token?: string;
+      api_key?: string;
+      verification_required?: boolean;
+      email?: string;
     }>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, name, password, ref: ref || undefined }),
     });
-    this.setToken(data.token);
+    if (data.token) this.setToken(data.token);
     return data;
   }
 
@@ -67,6 +84,26 @@ class ApiClient {
     );
     this.setToken(data.token);
     return data;
+  }
+
+  async verifyEmail(email: string, code: string) {
+    const data = await this.request<{
+      user: User;
+      token: string;
+      api_key: string;
+    }>("/api/v1/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    });
+    if (data.token) this.setToken(data.token);
+    return data;
+  }
+
+  resendVerification(email: string) {
+    return this.request<{ status: string }>("/api/v1/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
   }
 
   logout() {

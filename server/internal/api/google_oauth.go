@@ -102,7 +102,13 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
+		// Google already proved the user owns this mailbox — no code needed.
+		s.db.MarkEmailVerified(r.Context(), user.ID)
 		s.log.Info().Str("email", userInfo.Email).Msg("new user created via Google OAuth")
+	} else if !user.EmailVerified {
+		// Signed up with a password and never confirmed, but has now proved
+		// ownership via Google — clear the pending verification.
+		s.db.MarkEmailVerified(r.Context(), user.ID)
 	}
 
 	token, err := s.jwt.Generate(user.ID, user.Email, user.Plan)
