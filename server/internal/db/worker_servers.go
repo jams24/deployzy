@@ -62,10 +62,10 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 	if userID == nil {
 		// Admin: every server — platform AND user BYOC — so the operations
 		// console sees the whole fleet. Platform (is_local first), then BYOC.
-		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers ORDER BY COALESCE(is_local, false) DESC, created_at DESC`
+		query = `SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers ORDER BY COALESCE(is_local, false) DESC, created_at DESC`
 	} else {
 		// User: list their BYOC servers
-		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE user_id = $1 ORDER BY created_at DESC`
+		query = `SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE user_id = $1 ORDER BY created_at DESC`
 		args = append(args, *userID)
 	}
 
@@ -88,7 +88,7 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 func (d *DB) GetWorkerServer(ctx context.Context, id string) (*WorkerServer, error) {
 	var s WorkerServer
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE id = $1`,
+		`SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(ssh_password, ''), COALESCE(ssh_key, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE id = $1`,
 		id,
 	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
 	if err == pgx.ErrNoRows {
@@ -247,8 +247,14 @@ func (d *DB) UpdateWorkerHeartbeat(ctx context.Context, id string) error {
 // were flagged during a transient outage; callers that only ever act on
 // healthy workers should check Status themselves.
 func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
+	// COALESCE the nullable text columns: the local platform row has NULL
+	// ssh_password/ssh_key/ssh_user, and scanning NULL into a plain string
+	// errors. The old silent `continue` on scan error made that row invisible
+	// to the heartbeat monitor forever — its metrics never updated and its
+	// heartbeat stayed NULL (bitten 2026-07-21; see also the pgx scan-error
+	// rule in CLAUDE.md).
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		`SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(ssh_password, ''), COALESCE(ssh_key, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 		 FROM worker_servers WHERE status IN ('active', 'offline')`,
 	)
 	if err != nil {
@@ -259,7 +265,7 @@ func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
 	for rows.Next() {
 		var s WorkerServer
 		if err := rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg); err != nil {
-			continue
+			return nil, fmt.Errorf("scan worker row: %w", err)
 		}
 		out = append(out, s)
 	}
