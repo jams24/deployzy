@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -25,15 +26,39 @@ import (
 //go:embed sm_analytics.js
 var smAnalyticsJS []byte
 
+//go:embed error_page.html
+var errorPageHTML string
+
+var errorPageTmpl = template.Must(template.New("error").Parse(errorPageHTML))
+
+type errorPageData struct {
+	Code      string
+	Title     string
+	BadgeText string
+	DotColor  string
+	Heading   string
+	Body      string
+	Host      string
+	Reason    string
+	DashURL   string
+}
+
+func writeErrorPage(w http.ResponseWriter, status int, data errorPageData) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = errorPageTmpl.Execute(w, data)
+}
+
 const maxBodyCapture = 10 * 1024 // 10KB
 
 // ProjectLookup finds deployed projects by subdomain.
 type ProjectLookup interface {
 	GetProjectPort(subdomain string) (int, bool)
-	// GetProjectRouting returns (port, projectID, ok). Implementations that
-	// haven't been updated yet can return ("", "", false) — the proxy will
-	// just skip the analytics event in that case.
-	GetProjectRouting(subdomain string) (int, string, bool)
+	// GetProjectRouting returns (serverHost, port, projectID, ok).
+	// serverHost is "" for platform-local projects (proxy to 127.0.0.1),
+	// or the remote VPS IP/host for BYOC projects (proxy directly to that host).
+	GetProjectRouting(subdomain string) (string, int, string, bool)
 }
 
 // DomainResolver resolves a verified custom domain to its target.
@@ -130,8 +155,8 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.projects != nil {
 			parts := strings.SplitN(hostname, ".", 2)
 			if len(parts) >= 1 {
-				if port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
-					p.proxyToProject(w, r, port, projID)
+				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
+					p.proxyToProject(w, r, svrHost, port, projID)
 					return
 				}
 			}
@@ -150,14 +175,24 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				case "project":
 					if p.projects != nil {
-						if port, projID, pok := p.projects.GetProjectRouting(targetSub); pok {
-							p.proxyToProject(w, r, port, projID)
+						if svrHost, port, projID, pok := p.projects.GetProjectRouting(targetSub); pok {
+							p.proxyToProject(w, r, svrHost, port, projID)
 							return
 						}
 					}
 				}
 				if tun == nil {
-					http.Error(w, "Domain is configured but the target service is not running.", http.StatusBadGateway)
+					writeErrorPage(w, http.StatusBadGateway, errorPageData{
+						Code:      "502",
+						Title:     "Service Unavailable",
+						BadgeText: "Service offline",
+						DotColor:  "#ef4444",
+						Heading:   "Service not running",
+						Body:      "This domain is configured on Deployzy but the target service isn't running. Start or redeploy it from your dashboard.",
+						Host:      hostname,
+						Reason:    "service_not_running",
+						DashURL:   "https://deployzy.com/projects",
+					})
 					return
 				}
 			}
@@ -165,7 +200,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if tun == nil {
 			p.log.Debug().Str("host", hostname).Msg("no tunnel found")
-			http.Error(w, "Tunnel not found. If you're trying to connect, make sure your tunnel is active.", http.StatusNotFound)
+			writeErrorPage(w, http.StatusNotFound, errorPageData{
+				Code:      "404",
+				Title:     "Not Found",
+				BadgeText: "No active deployment",
+				DotColor:  "#6b7280",
+				Heading:   "Nothing deployed here yet",
+				Body:      "This subdomain exists on Deployzy but has no active tunnel or deployment. If you own this project, deploy it from your dashboard.",
+				Host:      hostname,
+				Reason:    "route_not_registered",
+				DashURL:   "https://deployzy.com/projects",
+			})
 			return
 		}
 	}
@@ -205,7 +250,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, ok := p.manager.Get(tun.ClientID)
 	if !ok {
 		p.log.Warn().Str("client_id", tun.ClientID).Msg("client not connected")
-		http.Error(w, "Tunnel client is not connected", http.StatusBadGateway)
+		writeErrorPage(w, http.StatusBadGateway, errorPageData{
+			Code:      "502",
+			Title:     "Tunnel Offline",
+			BadgeText: "Tunnel disconnected",
+			DotColor:  "#f59e0b",
+			Heading:   "Tunnel client not connected",
+			Body:      "The tunnel for this subdomain was registered but the client isn't connected right now. Start the Deployzy client to resume the tunnel.",
+			Host:      hostname,
+			Reason:    "tunnel_client_disconnected",
+			DashURL:   "https://deployzy.com/tunnels",
+		})
 		return
 	}
 
@@ -381,13 +436,13 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 	var projectID string
 	parts := strings.SplitN(hostname, ".", 2)
 	if len(parts) >= 1 {
-		if _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
+		if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
 			projectID = pid
 		}
 	}
 	if projectID == "" && p.domains != nil {
 		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
-			if _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
+			if _, _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
 				projectID = pid
 			}
 		}
@@ -533,14 +588,19 @@ func (l *slidingIPLimiter) allow(ip string) bool {
 	return true
 }
 
-// proxyToProject reverse-proxies a request to a deployed project's container
-// and records an analytics event on the way out.
-func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, port int, projectID string) {
+// proxyToProject reverse-proxies a request to a deployed project's container.
+// serverHost is "" for local platform projects (use 127.0.0.1), or the BYOC
+// server's IP/host for containers running on a remote VPS.
+func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serverHost string, port int, projectID string) {
 	start := time.Now()
+	targetHost := "127.0.0.1"
+	if serverHost != "" {
+		targetHost = serverHost
+	}
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
-			req.URL.Host = fmt.Sprintf("127.0.0.1:%d", port)
+			req.URL.Host = fmt.Sprintf("%s:%d", targetHost, port)
 			req.Host = r.Host
 		},
 	}

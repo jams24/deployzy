@@ -13,10 +13,19 @@ import (
 func (s *Server) resolveDBPublicHost(ctx context.Context, project *db.Project) string {
 	if project.WorkerServerID != "" {
 		if server, _ := s.db.GetWorkerServer(ctx, project.WorkerServerID); server != nil {
+			// Prefer the DNS-only service_host over the raw Host (which may be
+			// localhost on the main VPS, or a CF-proxied IP for BYOC servers).
+			if server.ServiceHost != "" {
+				return server.ServiceHost
+			}
 			return server.Host
 		}
 	}
-	// Fallback: use the deployer's domain or platform host
+	// Use ServiceHost (raw VPS IP / non-proxied host) for TCP services.
+	// Falls back to Domain only when ServiceHost is unset.
+	if s.deployer != nil && s.deployer.ServiceHost != "" {
+		return s.deployer.ServiceHost
+	}
 	if s.deployer != nil && s.deployer.Domain != "" {
 		return s.deployer.Domain
 	}
@@ -33,10 +42,10 @@ func (s *Server) handleCreateProjectDatabase(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Plan limit: project-attached databases now share the standalone-service
-	// cap (DimService) so users can't bypass the limit by creating them via
-	// projects. DimDatabase is kept as a secondary check for older callers.
-	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimService); err != nil {
+	// Plan limit: project-attached databases count against max_databases
+	// (DimDatabase). Standalone services have their own separate cap — the
+	// pricing page advertises them as two distinct allowances.
+	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimDatabase); err != nil {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
@@ -105,12 +114,7 @@ func (s *Server) handleListAllDatabases(w http.ResponseWriter, r *http.Request) 
 
 	// Standalone services
 	svcs, _ := s.db.ListServices(ctx, u.ID)
-	publicHost := ""
-	if s.deployer != nil && s.deployer.Domain != "" {
-		publicHost = s.deployer.Domain
-	} else {
-		publicHost = "localhost"
-	}
+	publicHost := s.resolveServicePublicHost()
 	for _, svc := range svcs {
 		svc := svc
 		dbName, dbUser, dbPass := "", "", ""

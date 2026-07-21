@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Terminal } from "lucide-react";
 import { api } from "@/lib/api";
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,7 +24,8 @@ export default function SignInPage() {
 
     try {
       await api.login(email, password);
-      router.push("/tunnels");
+      const redirect = searchParams.get("redirect");
+      router.push(redirect && redirect.startsWith("/") ? redirect : "/overview");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -35,7 +37,7 @@ export default function SignInPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg" />
           Deployzy
         </Link>
 
@@ -113,4 +115,8 @@ export default function SignInPage() {
       </div>
     </div>
   );
+}
+
+export default function SignInPage() {
+  return <Suspense><SignInForm /></Suspense>;
 }

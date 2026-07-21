@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Terminal, Copy, Check } from "lucide-react";
 import { api } from "@/lib/api";
 
-export default function SignUpPage() {
+function SignUpForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -66,7 +67,7 @@ export default function SignUpPage() {
             </Button>
           </div>
 
-          <div className="mt-4 rounded-lg border border-border bg-zinc-950 p-4 text-left font-mono text-sm text-zinc-300">
+          <div className="mt-4 rounded-lg border border-border bg-[#0d1117] p-4 text-left font-mono text-sm text-[#e6edf3]">
             <div className="text-zinc-500">
               # Save your token and start tunneling
             </div>
@@ -74,8 +75,11 @@ export default function SignUpPage() {
             <div className="mt-1">deployzy http 3000</div>
           </div>
 
-          <Button className="mt-6 w-full" nativeButton={false} render={<Link href="/tunnels" />}>
-            Go to Dashboard
+          <Button className="mt-6 w-full" onClick={() => {
+            const redirect = searchParams.get("redirect");
+            router.push(redirect && redirect.startsWith("/") ? redirect : "/overview");
+          }}>
+            {searchParams.get("redirect")?.startsWith("/invite/") ? "Accept Invitation →" : "Go to Dashboard"}
           </Button>
         </div>
       </div>
@@ -86,7 +90,7 @@ export default function SignUpPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg" />
           Deployzy
         </Link>
 
@@ -176,4 +180,8 @@ export default function SignUpPage() {
       </div>
     </div>
   );
+}
+
+export default function SignUpPage() {
+  return <Suspense><SignUpForm /></Suspense>;
 }

@@ -8,7 +8,7 @@ Use once, on a clean Ubuntu 22.04+ / Debian 12+ VPS, as root.
 
 ```bash
 sudo ./install.sh \
-  --domain serverme.site \
+  --domain deployzy.com \
   --email you@example.com \
   # optional integrations below
   --google-id "<client-id>" --google-secret "<secret>" \
@@ -38,7 +38,7 @@ Migrations run automatically on first server start (embedded via goose).
 
 ### After install
 
-1. Point DNS: `A serverme.site → <vps-ip>` + `CNAME *.serverme.site → serverme.site` + `CNAME api.serverme.site → serverme.site`.
+1. Point DNS: `A deployzy.com → <vps-ip>` + `CNAME *.deployzy.com → deployzy.com` + `CNAME api.deployzy.com → deployzy.com`.
 2. Register the first account with a regular `curl POST /auth/register`.
 3. Mark that user admin:
    ```bash
@@ -51,9 +51,9 @@ Migrations run automatically on first server start (embedded via goose).
 Use every time you want to push local changes.
 
 ```bash
-SSH_PASS='...' ./redeploy.sh root@serverme.site            # full (server + web)
-SSH_PASS='...' ./redeploy.sh root@serverme.site --server-only
-SSH_PASS='...' ./redeploy.sh root@serverme.site --web-only
+SSH_PASS='...' ./redeploy.sh root@deployzy.com            # full (server + web)
+SSH_PASS='...' ./redeploy.sh root@deployzy.com --server-only
+SSH_PASS='...' ./redeploy.sh root@deployzy.com --web-only
 ```
 
 What it does:
@@ -61,7 +61,7 @@ What it does:
 1. Cross-compiles the Go server (`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`)
 2. Builds the Next.js app with `NEXT_PUBLIC_API_URL=https://api.<host>` baked in (derived from the SSH target if not overridden via `API_URL=…`)
 3. Tars + scps the artifacts
-4. On the remote: stops each service, swaps, restarts, **and always restarts `serverme-texis` too** — that service loses its tunnel whenever `serverme` is stopped; codifying the restart here avoids the easily-forgotten "why is texis.serverme.site down?" class of incidents.
+4. On the remote: stops each service, swaps, restarts, **and always restarts `serverme-texis` too** — that service loses its tunnel whenever `serverme` is stopped; codifying the restart here avoids the easily-forgotten "why is texis.deployzy.com down?" class of incidents.
 5. Prints final service status + running binary MD5 so you can confirm the swap actually happened.
 
 ## VPS drift — what to do if the live server was changed by hand

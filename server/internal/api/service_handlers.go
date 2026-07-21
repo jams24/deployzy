@@ -16,7 +16,12 @@ import (
 
 // resolveServicePublicHost returns the public host users should use to connect
 // to standalone services from outside Docker (local dev, pgAdmin, etc).
+// Uses ServiceHost (raw VPS IP) so the address bypasses Cloudflare, which
+// blocks non-HTTP/HTTPS ports.
 func (s *Server) resolveServicePublicHost() string {
+	if s.deployer != nil && s.deployer.ServiceHost != "" {
+		return s.deployer.ServiceHost
+	}
 	if s.deployer != nil && s.deployer.Domain != "" {
 		return s.deployer.Domain
 	}
@@ -62,8 +67,8 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Platform path — postgres uses central managed PG; others get local containers.
-	publicHost := s.resolveServicePublicHost()
+	// Platform path — postgres uses central managed PG; others get containers on
+	// the best available platform server.
 	var svc *db.Service
 	var err error
 	if req.Type == "postgres" {
@@ -74,17 +79,19 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		svc, err = s.provisionPlatformContainer(r.Context(), u.ID, req.Name, req.Type, publicHost)
+		svc, err = s.provisionPlatformContainer(r.Context(), u.ID, req.Name, req.Type)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to provision "+req.Type+": "+err.Error())
 			return
 		}
 	}
 
+	// ExternalConnectionURL uses svc.PublicHost when set (remote container case),
+	// falling back to the platform's own service host.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"service":                 svc,
 		"connection_url":          svc.ConnectionURL(),
-		"external_connection_url": svc.ExternalConnectionURL(publicHost),
+		"external_connection_url": svc.ExternalConnectionURL(s.resolveServicePublicHost()),
 	})
 }
 
@@ -157,8 +164,14 @@ func (s *Server) provisionBYOCService(ctx context.Context, userID, name, service
 		return nil, fmt.Errorf("docker run failed: %s", lastLine(string(out)))
 	}
 
+	// Use ServiceHost for the public connection address — it's a DNS-only
+	// subdomain for BYOC servers, never a Cloudflare-proxied hostname.
+	svcPublicHost := server.ServiceHost
+	if svcPublicHost == "" {
+		svcPublicHost = server.Host
+	}
 	svc, err := s.db.CreateBYOCService(ctx, userID, name, serviceType,
-		workerServerID, containerName, server.Host, dbName, dbUser, password, int(publicPort))
+		workerServerID, containerName, svcPublicHost, dbName, dbUser, password, int(publicPort))
 	if err != nil {
 		go runRemoteSSH(server, fmt.Sprintf("docker rm -f %s", containerName), 1*time.Minute)
 		return nil, fmt.Errorf("persist: %w", err)
@@ -167,10 +180,25 @@ func (s *Server) provisionBYOCService(ctx context.Context, userID, name, service
 	return svc, nil
 }
 
-// provisionPlatformContainer runs a Redis/MongoDB/MySQL container locally on the
-// platform host and records it. Postgres on the platform uses the central managed PG
-// (see CreateService), not this function.
-func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, serviceType, publicHost string) (*db.Service, error) {
+// provisionPlatformContainer runs a Redis/MongoDB/MySQL container on the best
+// available platform server and records it. If all platform servers are remote,
+// it SSHes in; if the selected server is local it runs Docker directly.
+// Postgres uses the central managed PG (see CreateService), not this function.
+func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, serviceType string) (*db.Service, error) {
+	// Pick the platform server with the most capacity headroom.
+	server, _ := s.db.PickPlatformServerForService(ctx)
+
+	isLocal := server == nil || server.IsLocal ||
+		server.Host == "" || server.Host == "localhost" || server.Host == "127.0.0.1"
+
+	// Public host for connection strings: prefer server's DNS-only service_host.
+	var publicHost string
+	if server != nil && server.ServiceHost != "" {
+		publicHost = server.ServiceHost
+	} else {
+		publicHost = s.resolveServicePublicHost()
+	}
+
 	dbName, password := db.NewServiceCredentials()
 	dbUser := dbName
 	containerName := "sm-svc-" + dbName
@@ -214,19 +242,34 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 		return nil, fmt.Errorf("unsupported type: %s", serviceType)
 	}
 
-	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	out, err := exec.CommandContext(execCtx, "bash", "-c", dockerRun).CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("docker run failed: %s", lastLine(string(out)))
+	if isLocal {
+		execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(execCtx, "bash", "-c", dockerRun).CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("docker run failed: %s", lastLine(string(out)))
+		}
+		svc, err := s.db.CreateContainerService(ctx, userID, name, serviceType, containerName,
+			"172.17.0.1", internalPort, publicHost, publicPort, dbName, dbUser, password)
+		if err != nil {
+			go exec.Command("docker", "rm", "-f", containerName).Run()
+			return nil, fmt.Errorf("persist: %w", err)
+		}
+		return svc, nil
 	}
 
-	svc, err := s.db.CreateContainerService(ctx, userID, name, serviceType, containerName,
-		"172.17.0.1", internalPort, publicHost, publicPort, dbName, dbUser, password)
+	// Remote platform server — SSH in to run the container.
+	out, err := runRemoteSSH(server, dockerRun, 5*time.Minute)
 	if err != nil {
-		go exec.Command("docker", "rm", "-f", containerName).Run()
+		return nil, fmt.Errorf("docker run failed on %s: %s", server.Label, lastLine(string(out)))
+	}
+	svc, err := s.db.CreateBYOCService(ctx, userID, name, serviceType,
+		server.ID, containerName, publicHost, dbName, dbUser, password, publicPort)
+	if err != nil {
+		go runRemoteSSH(server, fmt.Sprintf("docker rm -f %s", containerName), 1*time.Minute)
 		return nil, fmt.Errorf("persist: %w", err)
 	}
+	_ = internalPort
 	return svc, nil
 }
 

@@ -159,7 +159,7 @@ cat <<NEXT
 ────────────────────────────────────────────────────────────────────────
 Restore finished. Next steps:
 
-  • Verify at https://serverme.site/admin that users & projects are present.
+  • Verify at https://deployzy.com/admin that users & projects are present.
   • Point DNS at this host if it's a new box.
   • Every project with a GitHub repo needs its container rebuilt. Either:
       - click "Redeploy all running" in the admin UI, or

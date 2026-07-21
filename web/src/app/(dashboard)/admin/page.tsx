@@ -12,12 +12,12 @@ import {
   Radio, WifiOff, ExternalLink, RefreshCw, X, Zap, Square,
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
-  Clock, UserCheck, Layers, ChevronUp, ChevronDown,
+  Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups";
+type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -47,6 +47,8 @@ interface WorkerServer {
   id: string; label: string; host: string; region: string;
   total_cpu: number; total_memory_mb: number; allocated_cpu: number;
   allocated_memory_mb: number; max_projects: number; current_projects: number;
+  used_memory_mb: number; load_avg: number;
+  user_id: string | null;
   status: string; docker_installed: boolean; priority?: number; is_local?: boolean;
 }
 
@@ -64,13 +66,13 @@ interface BackupRun {
 const STATUS_COLORS: Record<string, string> = {
   running:  "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
   building: "bg-sky-500/20 text-sky-500 border-sky-500/50",
-  stopped:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  stopped:  "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
   failed:   "bg-red-500/20 text-red-500 border-red-500/40",
   created:  "bg-amber-500/20 text-amber-500 border-amber-500/50",
 };
 
 const PLAN_COLORS: Record<string, string> = {
-  free: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  free: "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
   pro:  "bg-blue-500/20 text-blue-400 border-blue-500/50",
   team: "bg-violet-500/20 text-violet-400 border-violet-500/50",
 };
@@ -137,6 +139,15 @@ export default function AdminPage() {
   } | null>(null);
   const [backupRunning, setBackupRunning] = useState(false);
 
+  // ── Broadcast state ─────────────────────────────────────────────────────────
+  const [bcSubject, setBcSubject] = useState("");
+  const [bcBody, setBcBody] = useState("");
+  const [bcAudience, setBcAudience] = useState("all");
+  const [bcPreviewCount, setBcPreviewCount] = useState<number | null>(null);
+  const [bcSending, setBcSending] = useState(false);
+  const [bcResult, setBcResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+  const [bcError, setBcError] = useState("");
+
   const headers = useCallback(() => {
     const token = localStorage.getItem("sm_token");
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -177,6 +188,12 @@ export default function AdminPage() {
     setUsers([]); setUsersOffset(0); setUsersHasMore(true);
     fetchUsers(0, search, plan, false);
   }, [fetchUsers]);
+
+  // Auto-search users on search/plan change (debounced 300ms)
+  useEffect(() => {
+    const t = setTimeout(() => resetUsers(userSearch, userPlanFilter), 300);
+    return () => clearTimeout(t);
+  }, [userSearch, userPlanFilter]);
 
   useEffect(() => {
     const el = userSentinelRef.current; if (!el) return;
@@ -226,6 +243,12 @@ export default function AdminPage() {
     setProjects([]); setProjectsOffset(0); setProjectsHasMore(true);
     fetchProjects(0, search, status, false);
   }, [fetchProjects]);
+
+  // Auto-search projects on search/status change (debounced 300ms)
+  useEffect(() => {
+    const t = setTimeout(() => resetProjects(projectSearch, projectStatus), 300);
+    return () => clearTimeout(t);
+  }, [projectSearch, projectStatus]);
 
   useEffect(() => {
     const el = projectSentinelRef.current; if (!el) return;
@@ -361,10 +384,9 @@ export default function AdminPage() {
   };
 
   // ── Boot ───────────────────────────────────────────────────────────────────
+  // Users and projects are loaded by their own debounce effects on mount.
   useEffect(() => {
     loadStats();
-    fetchUsers(0, "", "all", false);
-    fetchProjects(0, "", "all", false);
     loadSessions();
     loadServers();
     loadBackups();
@@ -375,6 +397,29 @@ export default function AdminPage() {
     const t = setInterval(() => { loadStats(); loadSessions(); }, 15000);
     return () => clearInterval(t);
   }, [autoRefresh, loadStats, loadSessions]);
+
+  const loadBroadcastPreview = useCallback(async (audience: string) => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/broadcast/preview?audience=${audience}`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setBcPreviewCount(d.count); }
+    } catch {}
+  }, [headers]);
+
+  const sendBroadcast = async () => {
+    if (!bcSubject.trim() || !bcBody.trim()) return;
+    setBcSending(true); setBcError(""); setBcResult(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/broadcast`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ subject: bcSubject, html_body: bcBody, audience: bcAudience }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBcError(data.error || "Broadcast failed"); }
+      else { setBcResult(data); setBcSubject(""); setBcBody(""); }
+    } catch { setBcError("Network error"); }
+    setBcSending(false);
+  };
 
   if (error === "admin") {
     return (
@@ -407,6 +452,7 @@ export default function AdminPage() {
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
+    { id: "broadcast", label: "Broadcast" },
   ];
 
   return (
@@ -443,6 +489,11 @@ export default function AdminPage() {
           <Link href="/admin/blog">
             <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
               <FileText className="h-3.5 w-3.5" /><span className="hidden sm:inline">Blog</span>
+            </Button>
+          </Link>
+          <Link href="/admin/templates">
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+              <LayoutTemplate className="h-3.5 w-3.5" /><span className="hidden sm:inline">Templates</span>
             </Button>
           </Link>
         </div>
@@ -609,8 +660,8 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {servers.map(s => {
-                  const memPct = s.total_memory_mb > 0 ? (s.allocated_memory_mb / s.total_memory_mb) * 100 : 0;
-                  const cpuPct = s.total_cpu > 0 ? (s.allocated_cpu / s.total_cpu) * 100 : 0;
+                  const memPct = s.total_memory_mb > 0 ? (s.used_memory_mb / s.total_memory_mb) * 100 : 0;
+                  const cpuPct = s.total_cpu > 0 ? (s.load_avg / s.total_cpu) * 100 : 0;
                   const projPct = s.max_projects > 0 ? (s.current_projects / s.max_projects) * 100 : 0;
                   return (
                     <div key={s.id} className="rounded-lg border border-border/50 p-3">
@@ -623,12 +674,13 @@ export default function AdminPage() {
                             : "bg-red-500/20 text-red-500"
                           }`}>{s.status}</Badge>
                           {s.is_local && <Badge variant="outline" className="text-[9px]">primary</Badge>}
+                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-400 border-violet-500/30">BYOC</Badge>}
                         </div>
                         <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <UtilBar label="RAM" used={s.allocated_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" />
-                        <UtilBar label="CPU" used={s.allocated_cpu} total={s.total_cpu} pct={cpuPct} unit="cores" />
+                        <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" />
+                        <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" />
                         <UtilBar label="Projects" used={s.current_projects} total={s.max_projects} pct={projPct} unit="" />
                       </div>
                     </div>
@@ -675,12 +727,11 @@ export default function AdminPage() {
                 className="pl-9 h-9 text-sm"
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") resetUsers(userSearch, userPlanFilter); }}
               />
             </div>
             <select
               value={userPlanFilter}
-              onChange={e => { setUserPlanFilter(e.target.value); resetUsers(userSearch, e.target.value); }}
+              onChange={e => setUserPlanFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">All plans</option>
@@ -688,9 +739,6 @@ export default function AdminPage() {
               <option value="pro">Pro</option>
               <option value="team">Team</option>
             </select>
-            <Button size="sm" className="h-9" onClick={() => resetUsers(userSearch, userPlanFilter)}>
-              <Search className="h-3.5 w-3.5" />
-            </Button>
           </div>
 
           <div className="text-xs text-muted-foreground">{usersTotal} users total</div>
@@ -768,12 +816,11 @@ export default function AdminPage() {
                 className="pl-9 h-9 text-sm"
                 value={projectSearch}
                 onChange={e => setProjectSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") resetProjects(projectSearch, projectStatus); }}
               />
             </div>
             <select
               value={projectStatus}
-              onChange={e => { setProjectStatus(e.target.value); resetProjects(projectSearch, e.target.value); }}
+              onChange={e => setProjectStatus(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">All statuses</option>
@@ -1022,8 +1069,8 @@ export default function AdminPage() {
           ) : (
             <div className="space-y-3">
               {servers.map(s => {
-                const memPct = s.total_memory_mb > 0 ? (s.allocated_memory_mb / s.total_memory_mb) * 100 : 0;
-                const cpuPct = s.total_cpu > 0 ? (s.allocated_cpu / s.total_cpu) * 100 : 0;
+                const memPct = s.total_memory_mb > 0 ? (s.used_memory_mb / s.total_memory_mb) * 100 : 0;
+                const cpuPct = s.total_cpu > 0 ? (s.load_avg / s.total_cpu) * 100 : 0;
                 const projPct = s.max_projects > 0 ? (s.current_projects / s.max_projects) * 100 : 0;
                 return (
                   <Card key={s.id}>
@@ -1042,6 +1089,7 @@ export default function AdminPage() {
                                 : "bg-red-500/20 text-red-500"
                               }`}>{s.status}</Badge>
                               {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-400 border-blue-500/30">primary · local</Badge>}
+                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-400 border-violet-500/30">BYOC</Badge>}
                               {s.docker_installed && <Badge variant="outline" className="text-[9px]">Docker</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.host}</p>
@@ -1066,10 +1114,13 @@ export default function AdminPage() {
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-3">
-                        <UtilBar label="RAM" used={s.allocated_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
-                        <UtilBar label="CPU" used={parseFloat(s.allocated_cpu.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />
+                        <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
+                        <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />
                         <UtilBar label="Projects" used={s.current_projects} total={s.max_projects} pct={projPct} unit="" large />
                       </div>
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Measured live (refreshed every 2 min). Allocated limits: {s.allocated_memory_mb} MB RAM · {s.allocated_cpu.toFixed(1)} vCPU across {s.current_projects} projects — limits are caps, not reservations, so they may exceed the hardware.
+                      </p>
                     </CardContent>
                   </Card>
                 );
@@ -1136,6 +1187,98 @@ export default function AdminPage() {
           )}
         </div>
       )}
+      {/* ── BROADCAST TAB ───────────────────────────────────────────────────── */}
+      {tab === "broadcast" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">Email Broadcast</h3>
+            <p className="text-xs text-muted-foreground">Send an HTML email to your users via Brevo. Delivered from noreply@deployzy.com.</p>
+          </div>
+
+          {bcResult && (
+            <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-emerald-500">Broadcast sent</p>
+                <p className="text-xs text-muted-foreground">{bcResult.sent} delivered · {bcResult.failed} failed · {bcResult.total} total recipients</p>
+              </div>
+              <button onClick={() => setBcResult(null)} className="ml-auto text-muted-foreground hover:text-foreground text-xs">Dismiss</button>
+            </div>
+          )}
+
+          {bcError && (
+            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">{bcError}</div>
+          )}
+
+          {/* Audience */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audience</label>
+            <div className="flex gap-2">
+              {(["all", "free", "pro"] as const).map(a => (
+                <button key={a} onClick={() => { setBcAudience(a); loadBroadcastPreview(a); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors capitalize ${
+                    bcAudience === a
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                  }`}>
+                  {a === "all" ? "All users" : a === "free" ? "Free plan" : "Pro plan"}
+                </button>
+              ))}
+              {bcPreviewCount !== null && (
+                <span className="ml-auto text-xs text-muted-foreground self-center">
+                  ~{bcPreviewCount.toLocaleString()} recipient{bcPreviewCount !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Subject line</label>
+            <input
+              type="text"
+              value={bcSubject}
+              onChange={e => setBcSubject(e.target.value)}
+              placeholder="e.g. Introducing custom domains on Deployzy 🚀"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            />
+          </div>
+
+          {/* Body */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">HTML body</label>
+              <span className="text-[10px] text-muted-foreground">Full HTML email. Use inline styles for email clients.</span>
+            </div>
+            <textarea
+              value={bcBody}
+              onChange={e => setBcBody(e.target.value)}
+              rows={12}
+              placeholder={"<!DOCTYPE html>\n<html>\n<body>\n  <h1>Hello!</h1>\n  <p>Your announcement here...</p>\n</body>\n</html>"}
+              className="w-full rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground resize-y"
+              spellCheck={false}
+            />
+          </div>
+
+          {/* Send */}
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={bcSending || !bcSubject.trim() || !bcBody.trim()}
+              onClick={sendBroadcast}
+              className="gap-2"
+            >
+              {bcSending
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sending…</>
+                : <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> Send broadcast</>
+              }
+            </Button>
+            <p className="text-xs text-muted-foreground">This sends immediately to all selected recipients.</p>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

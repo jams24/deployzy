@@ -254,7 +254,7 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 	var projects []AdminProject
 	for rows.Next() {
 		var ap AdminProject
-		var envJSON []byte
+		var envJSON, servicesJSON []byte
 		p := &ap.Project
 		err := rows.Scan(
 			&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework,
@@ -263,15 +263,53 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 			&p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled,
 			&p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort,
 			&p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt,
+			&p.DockerfilePath, &servicesJSON, &p.DeploySource, &p.ImageRef, &p.WorkerServerID,
 			&ap.UserEmail,
 		)
 		if err != nil {
 			return nil, 0, err
 		}
 		json.Unmarshal(envJSON, &p.EnvVars)
+		json.Unmarshal(servicesJSON, &p.Services)
 		projects = append(projects, ap)
 	}
 	return projects, total, rows.Err()
+}
+
+// EmailRecipient holds the minimal info needed to send an email to a user.
+type EmailRecipient struct {
+	Email string
+	Name  string
+}
+
+// AdminGetEmailRecipients returns all users matching the given plan filter.
+// plan = "" or "all" returns everyone.
+func (d *DB) AdminGetEmailRecipients(ctx context.Context, plan string) ([]EmailRecipient, error) {
+	var rows interface {
+		Next() bool
+		Scan(...interface{}) error
+		Close()
+	}
+	var err error
+	if plan == "" || plan == "all" {
+		rows, err = d.Pool.Query(ctx, `SELECT email, COALESCE(name,'') FROM users ORDER BY created_at DESC`)
+	} else {
+		rows, err = d.Pool.Query(ctx, `SELECT email, COALESCE(name,'') FROM users WHERE plan = $1 ORDER BY created_at DESC`, plan)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []EmailRecipient
+	for rows.Next() {
+		var r EmailRecipient
+		if err := rows.Scan(&r.Email, &r.Name); err != nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 func itoa(n int) string {

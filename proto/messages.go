@@ -4,7 +4,7 @@ import "encoding/json"
 
 // Version is overridden at build time via -ldflags "-X .../proto.Version=x.y.z"
 // (goreleaser injects the release tag). Defaults to the current dev version.
-var Version = "1.1.3"
+var Version = "1.1.4"
 
 // Message type constants
 const (

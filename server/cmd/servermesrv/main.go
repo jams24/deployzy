@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/serverme/serverme/proto"
 	"github.com/serverme/serverme/server/internal/api"
 	"github.com/serverme/serverme/server/internal/auth"
+	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/billing"
@@ -46,6 +48,7 @@ func main() {
 	googleClientSecret := flag.String("google-client-secret", "", "Google OAuth Client Secret")
 	frontendURL := flag.String("frontend-url", "https://deployzy.com", "Frontend URL for OAuth redirects")
 	telegramToken := flag.String("telegram-token", "", "Telegram bot token")
+	brevoSMTPKey := flag.String("brevo-smtp-key", "", "Brevo SMTP key for transactional email")
 	inventpayKey := flag.String("inventpay-key", "", "InventPay API key")
 	githubAppID := flag.String("github-app-id", "", "GitHub App ID")
 	githubClientID := flag.String("github-client-id", "", "GitHub App Client ID")
@@ -53,8 +56,17 @@ func main() {
 	githubWebhookSecret := flag.String("github-webhook-secret", "", "GitHub App Webhook Secret")
 	githubPrivateKey := flag.String("github-private-key", "", "GitHub App Private Key PEM file path")
 	inventpayWebhookSecret := flag.String("inventpay-webhook-secret", "", "InventPay webhook secret")
+	polarToken := flag.String("polar-token", "", "Polar.sh access token (card payments)")
+	polarWebhookSecret := flag.String("polar-webhook-secret", "", "Polar.sh webhook signing secret")
+	polarHobbyProduct := flag.String("polar-hobby-product", "", "Polar product ID for the Hobby plan")
+	polarProProduct := flag.String("polar-pro-product", "", "Polar product ID for the Pro plan")
+	polarTeamProduct := flag.String("polar-team-product", "", "Polar product ID for the Team plan")
+	polarSandbox := flag.Bool("polar-sandbox", false, "Use the Polar sandbox API")
 	telegramBotUsername := flag.String("telegram-bot", "serverme_alerts_bot", "Telegram bot username")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	serviceHost := flag.String("service-host", "", "Public hostname/IP for TCP services (DB, Redis). Defaults to --domain if unset. Override when --domain is behind a proxy like Cloudflare that blocks non-HTTP ports.")
+	cfToken := flag.String("cloudflare-token", "", "Cloudflare API token (DNS edit permission) for auto-creating DNS records when servers are added")
+	cfZoneID := flag.String("cloudflare-zone-id", "", "Cloudflare Zone ID for the base domain")
 	flag.Parse()
 
 	// Logger
@@ -122,13 +134,14 @@ func main() {
 		run := func() {
 			ctx := context.Background()
 			now := time.Now()
-			// Site analytics: 90-day retention (privacy + usefulness window).
-			if err := database.PruneOldSiteEvents(ctx, now.AddDate(0, 0, -90)); err != nil {
+			// Site analytics + deploy logs: retention comes from each
+			// owner's plan (plan_limits.analytics_retention_days /
+			// deploy_log_retention_days), so paid tiers actually get the
+			// longer windows the pricing page sells. Admins are exempt.
+			if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune site_events failed")
 			}
-			// Deploy logs: 14-day retention per project — most useful during a
-			// recent build; older rows are just noise.
-			if n, err := database.PruneOldDeployLogs(ctx, now.AddDate(0, 0, -14)); err != nil {
+			if n, err := database.PruneDeployLogsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune deploy_logs failed")
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned deploy_logs")
@@ -139,6 +152,15 @@ func main() {
 				log.Warn().Err(err).Msg("prune captured_requests failed")
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned captured_requests")
+			}
+			// Lapsed subscriptions: mark expired and downgrade users whose
+			// paid period ended back to free. Only touches users whose plan
+			// came from a subscription — admin grants and referral rewards
+			// are untouched.
+			if n, err := database.SweepExpiredSubscriptions(ctx); err != nil {
+				log.Warn().Err(err).Msg("subscription expiry sweep failed")
+			} else if n > 0 {
+				log.Info().Int64("users", n).Msg("downgraded users with expired subscriptions")
 			}
 			// Abandoned build dirs — cleaned on successful deploy, but a
 			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
@@ -210,11 +232,38 @@ func main() {
 			}
 		}
 
+		// Email service (Brevo SMTP)
+		var emailSvc *notify.EmailService
+		if *brevoSMTPKey != "" {
+			emailSvc = notify.NewEmailService(
+				"smtp-relay.brevo.com", "587",
+				"9988d2001@smtp-brevo.com", *brevoSMTPKey,
+				"noreply@deployzy.com", "Deployzy",
+				log,
+			)
+			log.Info().Msg("Brevo email service enabled")
+		}
+
 		// Billing
 		var billingClient *billing.InventPay
 		if *inventpayKey != "" {
 			billingClient = billing.NewInventPay(*inventpayKey, *inventpayWebhookSecret)
 			log.Info().Msg("InventPay billing enabled")
+		}
+		var polarClient *billing.Polar
+		if *polarToken != "" {
+			products := map[string]string{}
+			if *polarHobbyProduct != "" {
+				products["hobby"] = *polarHobbyProduct
+			}
+			if *polarProProduct != "" {
+				products["pro"] = *polarProProduct
+			}
+			if *polarTeamProduct != "" {
+				products["team"] = *polarTeamProduct
+			}
+			polarClient = billing.NewPolar(*polarToken, *polarWebhookSecret, products, *polarSandbox)
+			log.Info().Bool("sandbox", *polarSandbox).Int("products", len(products)).Msg("Polar card billing enabled")
 		}
 
 		// Deploy engine
@@ -231,7 +280,11 @@ func main() {
 					log.Info().Msg("GitHub App enabled")
 				}
 			}
-			deployEngine = deploy.NewEngine(database, *domain, githubApp, log)
+			svcHost := *serviceHost
+		if svcHost == "" {
+			svcHost = *domain
+		}
+		deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
 			// Reset any projects stuck in "building" from a previous process that was
 			// killed mid-deploy — otherwise they'd show as building forever.
 			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
@@ -274,9 +327,21 @@ func main() {
 			// Refresh the local platform row with real hardware values so the
 			// scheduler knows what's actually available on this host.
 			go refreshLocalServerCapacity(context.Background(), database, log)
+
+			// Crash sweeper: containers deploy with --restart on-failure:5,
+			// so a broken app stops instead of restart-looping forever. This
+			// flips such projects to 'crashed' in the dashboard every 2 min.
+			go func() {
+				t := time.NewTicker(2 * time.Minute)
+				defer t.Stop()
+				for range t.C {
+					deployEngine.SweepCrashedContainers(context.Background())
+				}
+			}()
 		}
 
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, billingClient, deployEngine, manager, log)
+		cfClient := cf.New(*cfToken, *cfZoneID)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, log)
 		apiServer := &http.Server{
 			Addr:         *apiAddr,
 			Handler:      apiRouter,
@@ -474,7 +539,15 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 		}
 		for i := range workers {
 			w := workers[i]
-			runner := deploy.NewRemoteRunner(&w)
+			// The local platform row has no SSH credentials — SSH'ing to
+			// ourselves always errored, which left its live metrics stuck at
+			// zero. Probe it with a local runner instead.
+			var runner *deploy.Runner
+			if w.IsLocal || w.Host == "localhost" || w.Host == "127.0.0.1" {
+				runner = deploy.NewLocalRunner()
+			} else {
+				runner = deploy.NewRemoteRunner(&w)
+			}
 			pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			_, err := runner.RunShell(pingCtx, "echo ok")
 			cancel()
@@ -488,8 +561,46 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 			} else {
 				database.UpdateWorkerHeartbeat(ctx, w.ID)
 				delete(fails, w.ID)
+				// Self-heal: a worker previously marked offline that answers
+				// again comes back automatically. Offline used to be a
+				// one-way door — a transient SSH timeout (e.g. control host
+				// under load) stranded healthy workers offline forever.
+				if w.Status == "offline" {
+					log.Info().Str("worker", w.Label).Str("host", w.Host).Msg("worker responding again — marking active")
+					database.UpdateWorkerServerStatus(ctx, w.ID, "active")
+				}
+				// Refresh real hardware capacity + live usage on each
+				// heartbeat so the Servers/Admin pages show measured values
+				// (used RAM, load) rather than allocation sums, and totals
+				// track reality instead of the add-time snapshot.
+				probeCtx, pcancel := context.WithTimeout(ctx, 15*time.Second)
+				// SMPROBE marker: SSH sessions can prepend noise (locale
+				// warnings, MOTD) to combined output — parse only our line.
+				out, perr := runner.RunShell(probeCtx,
+					`echo "SMPROBE $(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) $(cut -d' ' -f1 /proc/loadavg)"`)
+				pcancel()
+				if perr == nil {
+					for _, line := range strings.Split(string(out), "\n") {
+						parts := strings.Fields(strings.TrimSpace(line))
+						if len(parts) == 5 && parts[0] == "SMPROBE" {
+							cpu, _ := strconv.ParseFloat(parts[1], 64)
+							memTotal, _ := strconv.Atoi(parts[2])
+							memAvail, _ := strconv.Atoi(parts[3])
+							load, _ := strconv.ParseFloat(parts[4], 64)
+							if cpu > 0 && memTotal > 0 {
+								database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, memTotal)
+								database.UpdateWorkerServerLiveMetrics(ctx, w.ID, memTotal-memAvail, load)
+							}
+							break
+						}
+					}
+				}
 			}
 		}
+		// Recount projects/allocations on every server each cycle so moves,
+		// crashes, and deletions can't leave the Servers page showing stale
+		// project counts or allocation bars.
+		database.ReconcileAllServerAllocations(ctx)
 	}
 	check()
 	t := time.NewTicker(2 * time.Minute)

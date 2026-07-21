@@ -13,7 +13,7 @@ function CallbackHandler() {
     const token = searchParams.get("token");
     if (token) {
       api.setToken(token);
-      router.replace("/tunnels");
+      router.replace("/overview");
     } else {
       router.replace("/sign-in?error=Authentication failed");
     }
@@ -27,7 +27,7 @@ export default function AuthCallbackPage() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
         <div className="flex justify-center mb-4">
-          <img src="/logo-icon.svg" alt="Deployzy" className="h-10 w-10 rounded-lg animate-pulse" />
+          <img src="/logo-mark.png" alt="Deployzy" className="h-10 w-10 rounded-lg animate-pulse" />
         </div>
         <p className="text-sm text-muted-foreground">Signing you in...</p>
         <Suspense>

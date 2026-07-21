@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // --- Teams ---
@@ -118,6 +119,28 @@ func (s *Server) handleInviteMember(w http.ResponseWriter, r *http.Request) {
 
 	// Build the invite URL
 	inviteURL := "https://deployzy.com/invite/" + inv.Token
+
+	// Send invite email asynchronously
+	if s.emailSvc != nil {
+		team, _ := s.db.GetTeam(r.Context(), teamID)
+		teamName := teamID
+		if team != nil {
+			teamName = team.Name
+		}
+		inviter, _ := s.db.GetUserByID(r.Context(), u.ID)
+		inviterName := u.Email
+		if inviter != nil && inviter.Name != "" {
+			inviterName = inviter.Name
+		}
+		emailSvc := s.emailSvc
+		go func() {
+			subject := inviterName + " invited you to join " + teamName + " on Deployzy"
+			body := notify.TeamInviteEmail(inviterName, teamName, inviteURL)
+			if err := emailSvc.SendOne(req.Email, subject, body); err != nil {
+				s.log.Warn().Err(err).Str("to", req.Email).Msg("failed to send team invite email")
+			}
+		}()
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"invitation": inv,

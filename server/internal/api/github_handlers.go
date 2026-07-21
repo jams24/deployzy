@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -183,6 +184,19 @@ func (s *Server) handleGitHubRepos(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "failed to list repos")
 		return
+	}
+
+	// Filter out private repos for users whose plan doesn't include them.
+	// This prevents free-tier users from accidentally picking a private repo
+	// that would fail at clone time due to missing token scope.
+	if !billing.IsFeatureAllowed(r.Context(), s.db, u, "private_repos") {
+		filtered := repos[:0]
+		for _, repo := range repos {
+			if !repo.Private {
+				filtered = append(filtered, repo)
+			}
+		}
+		repos = filtered
 	}
 
 	writeJSON(w, http.StatusOK, repos)

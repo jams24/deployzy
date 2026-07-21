@@ -13,6 +13,7 @@ import (
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
 	db "github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // --- JSON helpers ---
@@ -105,6 +106,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate api key")
+	}
+
+	// Send welcome email asynchronously so it never blocks the response.
+	if s.emailSvc != nil {
+		go func() {
+			if err := s.emailSvc.SendOne(user.Email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(user.Name)); err != nil {
+				s.log.Warn().Err(err).Str("email", user.Email).Msg("failed to send welcome email")
+			}
+		}()
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -286,7 +296,10 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cnameTarget := "deployzy.com"
+	// cname.deployzy.com is a DNS-only (grey-cloud) A record pointing to our VPS.
+	// Using deployzy.com directly breaks custom domains because deployzy.com is
+	// Cloudflare-proxied — CF can't terminate TLS for a domain it doesn't own.
+	cnameTarget := "cname.deployzy.com"
 	dom, err := s.db.CreateDomain(r.Context(), u.ID, req.Domain, cnameTarget)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create domain")
@@ -299,7 +312,7 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 			"type":   "CNAME",
 			"name":   req.Domain,
 			"target": cnameTarget,
-			"note":   "Add this CNAME record to your DNS, then call POST /api/v1/domains/{id}/verify",
+			"note":   "Add a CNAME record pointing to cname.deployzy.com, then call POST /api/v1/domains/{id}/verify",
 		},
 	})
 }
@@ -348,22 +361,31 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try multiple verification methods
+	// Try multiple verification methods.
+	// Accept both cname.deployzy.com (current) and deployzy.com (legacy) as valid targets.
+	validTargets := []string{"cname.deployzy.com", "deployzy.com"}
 	verified := false
 	method := ""
 	expected := targetDomain.CnameTarget
-
-	// Method 1: CNAME lookup
-	cnames, _ := net.LookupCNAME(targetDomain.Domain)
-	if cnames == expected || cnames == expected+"." {
-		verified = true
-		method = "cname"
+	if expected == "" {
+		expected = "cname.deployzy.com"
 	}
 
-	// Method 2: A-record comparison (Cloudflare flattens root CNAMEs)
+	cnames, _ := net.LookupCNAME(targetDomain.Domain)
+
+	// Method 1: CNAME lookup against any valid target
+	for _, t := range validTargets {
+		if cnames == t || cnames == t+"." {
+			verified = true
+			method = "cname"
+			break
+		}
+	}
+
+	// Method 2: A-record resolves to same IP as cname.deployzy.com (handles CF-flattened CNAMEs)
 	if !verified {
 		ips, _ := net.LookupHost(targetDomain.Domain)
-		serverIPs, _ := net.LookupHost(expected)
+		serverIPs, _ := net.LookupHost("cname.deployzy.com")
 		for _, ip := range ips {
 			for _, sip := range serverIPs {
 				if ip == sip {
@@ -378,12 +400,12 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Method 3: Check against known server IP using external DNS (dig)
+	// Method 3: External DNS check via 8.8.8.8
 	if !verified {
 		out, err := exec.Command("dig", "+short", targetDomain.Domain, "@8.8.8.8").Output()
 		if err == nil {
 			domainIP := strings.TrimSpace(string(out))
-			out2, err2 := exec.Command("dig", "+short", expected, "@8.8.8.8").Output()
+			out2, err2 := exec.Command("dig", "+short", "cname.deployzy.com", "@8.8.8.8").Output()
 			if err2 == nil {
 				serverIP := strings.TrimSpace(string(out2))
 				if domainIP != "" && serverIP != "" && domainIP == serverIP {
@@ -394,11 +416,11 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Method 4: Direct IP check using curl (last resort)
+	// Method 4: Local DNS fallback
 	if !verified {
 		out, _ := exec.Command("dig", "+short", targetDomain.Domain).Output()
 		domainIP := strings.TrimSpace(string(out))
-		out2, _ := exec.Command("dig", "+short", expected).Output()
+		out2, _ := exec.Command("dig", "+short", "cname.deployzy.com").Output()
 		serverIP := strings.TrimSpace(string(out2))
 		if domainIP != "" && serverIP != "" && domainIP == serverIP {
 			verified = true
@@ -419,8 +441,8 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"verified": false,
 			"found":    cnames,
-			"expected": expected,
-			"hint":     "If using Cloudflare, make sure the CNAME/A record points to deployzy.com",
+			"expected": "cname.deployzy.com",
+			"hint":     "Set your CNAME to point to cname.deployzy.com (not deployzy.com) to bypass Cloudflare's proxy",
 		})
 	}
 }

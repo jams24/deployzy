@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
+	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/db"
@@ -35,15 +36,19 @@ type Server struct {
 	google              *GoogleOAuthConfig
 	telegram            *notify.TelegramBot
 	telegramBotUsername string
+	emailSvc            *notify.EmailService
 	billing             *billing.InventPay
+	polar               *billing.Polar // nil when card payments not configured
 	deployer            *deploy.Engine
 	ctrlManager         *control.Manager
+	cfDNS               *cf.Client // nil when Cloudflare token not configured
+	cfDomain            string     // base domain for auto-DNS (e.g. "deployzy.com")
 	log                 zerolog.Logger
 	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, billingClient *billing.InventPay, deployEngine *deploy.Engine, ctrlManager *control.Manager, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -52,9 +57,13 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		google:              google,
 		telegram:            telegramBot,
 		telegramBotUsername: telegramUsername,
+		emailSvc:            emailSvc,
 		billing:             billingClient,
+		polar:               polarClient,
 		deployer:            deployEngine,
 		ctrlManager:         ctrlManager,
+		cfDNS:               cfClient,
+		cfDomain:            cfDomain,
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 
@@ -250,6 +259,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/services/{serviceId}", s.handleGetService)
 			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
 
+			// Templates — star and deploy require auth
+			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
+			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
+
 			// User BYOC Servers (account-level infra → full)
 			r.Get("/servers", s.handleListUserServers)
 			r.With(fullScope).Post("/servers", s.handleAddUserServer)
@@ -287,6 +300,16 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Delete("/backups/{timestamp}", s.handleDeletePlatformBackup)
 				r.Get("/backups/file/{filename}", s.handleDownloadPlatformBackup)
 
+				// Email broadcasts (admin only)
+				r.Get("/broadcast/preview", s.handleAdminBroadcastPreview)
+				r.Post("/broadcast", s.handleAdminBroadcast)
+
+				// Templates admin (admin only)
+				r.Get("/templates", s.handleAdminListTemplates)
+				r.Post("/templates", s.handleAdminCreateTemplate)
+				r.Put("/templates/{templateId}", s.handleAdminUpdateTemplate)
+				r.Delete("/templates/{templateId}", s.handleAdminDeleteTemplate)
+
 				// Blog admin (admin only)
 				r.Get("/blog/posts", s.handleAdminListBlogPosts)
 				r.Get("/blog/posts/{id}", s.handleAdminGetBlogPost)
@@ -303,13 +326,20 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	// Public blog routes (no auth)
 	r.Get("/api/v1/blog/posts", s.handleListBlogPosts)
 	r.Get("/api/v1/blog/posts/{slug}", s.handleGetBlogPost)
+
+	// Templates — list/detail public with optional auth for star state; star/deploy require login
+	r.With(auth.OptionalAuthMiddleware(jwtMgr, database)).Get("/api/v1/templates", s.handleListTemplates)
+	r.Get("/api/v1/templates/categories", s.handleListTemplateCategories)
+	r.With(auth.OptionalAuthMiddleware(jwtMgr, database)).Get("/api/v1/templates/{slug}", s.handleGetTemplate)
 	r.Get("/api/v1/blog/images/{filename}", s.handleServeBlogImage)
 
 	// Telegram webhook (public, no auth — Telegram sends here)
 	r.Post("/api/v1/telegram/webhook", s.handleTelegramWebhook)
 
-	// Billing webhook (public — InventPay sends here)
+	// Billing webhooks (public — payment providers call these; both verify
+	// signatures and reject unsigned payloads)
 	r.Post("/api/v1/billing/webhook", s.handleBillingWebhook)
+	r.Post("/api/v1/billing/webhook/polar", s.handlePolarWebhook)
 
 	// GitHub (public routes)
 	r.Get("/api/v1/github/connect", s.handleGitHubConnect)

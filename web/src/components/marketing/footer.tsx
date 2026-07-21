@@ -18,7 +18,7 @@ const footerLinks = {
     { label: "GitHub", href: "https://github.com/jams24/deployzy" },
     { label: "Blog", href: "/blog" },
     { label: "Status", href: "/status" },
-    { label: "Contact", href: "mailto:hello@deployzy.com" },
+    { label: "Contact", href: "mailto:support@deployzy.com" },
   ],
 };
 
@@ -32,7 +32,7 @@ export function Footer() {
               href="/"
               className="flex items-center gap-2 font-bold text-lg"
             >
-              <img src="/logo-icon.svg" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+              <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg" />
               Deployzy
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">

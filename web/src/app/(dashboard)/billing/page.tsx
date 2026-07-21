@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
+import { Check, CreditCard, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -39,7 +39,7 @@ interface UsageResponse {
   plan: string;
   is_admin: boolean;
   limits: PlanLimits;
-  usage: Record<string, number>;
+  usage: Record<string, number>; // projects, databases, services, custom_domains, crons, byoc_servers, subdomains, preview_deploys
 }
 
 export default function BillingPage() {
@@ -47,6 +47,7 @@ export default function BillingPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -65,17 +66,17 @@ export default function BillingPage() {
     setLoading(false);
   }
 
-  async function checkout() {
+  async function checkout(plan: "hobby" | "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
     setCheckoutLoading(true);
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
         method: "POST",
         headers: headers(),
+        body: JSON.stringify({ plan, method }),
       });
       if (res.ok) {
         const data = await res.json();
-        // Open InventPay invoice page
-        // Redirect to payment page
+        // Redirect to the hosted payment page (InventPay invoice or Polar checkout)
         window.location.href = data.invoice_url;
       } else {
         const err = await res.json();
@@ -114,7 +115,7 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
     : 0;
 
-  // Plan catalog — kept in sync with the plan_limits seed in migration 022.
+  // Plan catalog — mirrors plan_limits table; update both together when changing limits.
   type PlanCard = {
     id: string;
     name: string;
@@ -129,14 +130,32 @@ export default function BillingPage() {
       name: "Free",
       price: "$0",
       accent: "border-[#30363d]/40",
-      tagline: "Try Deployzy with a real side project",
+      tagline: "For hobby projects and learning",
       features: [
         "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 2 databases, 1 BYOC server",
-        "1 custom domain",
-        "256 MB RAM / 0.25 vCPU per project",
-        "50 GB bandwidth, 60 build min / mo",
-        "7-day analytics retention",
+        "3 projects, 2 databases, 1 standalone service",
+        "1 BYOC server, 1 custom domain",
+        "512 MB RAM / 0.25 vCPU per project",
+        "50 GB bandwidth, 120 build min / mo",
+        "7-day analytics, 3-day deploy logs",
+      ],
+    },
+    {
+      id: "hobby",
+      name: "Hobby",
+      price: "$5",
+      accent: "border-emerald-500/30",
+      tagline: "Perfect for indie hackers and side projects",
+      features: [
+        "All Free features, plus:",
+        "5 projects, 3 databases, 3 standalone services",
+        "8 subdomains, 8 tunnels, 2 BYOC servers",
+        "2 custom domains, 2 PR previews, 2 cron jobs",
+        "1 GB RAM / 0.5 vCPU per project",
+        "150 GB bandwidth, 300 build min / mo",
+        "TCP/TLS tunnels, private repos, live logs",
+        "Health checks, release cmds, Telegram alerts",
+        "30-day analytics, 7-day deploy logs",
       ],
     },
     {
@@ -144,33 +163,33 @@ export default function BillingPage() {
       name: "Pro",
       price: "$12",
       accent: "border-primary/30",
-      tagline: "For freelancers + indie hackers",
+      tagline: "Built for production-ready applications",
       features: [
         "10 reserved subdomains, 15 active tunnels",
-        "10 projects, 10 databases, 5 BYOC servers",
-        "5 custom domains, 5 standalone services",
+        "10 projects, 5 databases, 5 BYOC servers",
+        "5 custom domains, 10 standalone services",
         "5 scheduled jobs, 5 active PR previews",
         "1 GB RAM / 1 vCPU per project (configurable)",
         "500 GB bandwidth, 600 build min / mo",
         "Live container logs, release commands, health checks",
         "Private GitHub repos, TCP tunnels, Telegram alerts",
-        "90-day analytics retention",
+        "90-day analytics, 7-day backups, 14-day deploy logs",
       ],
     },
     {
       id: "team",
       name: "Team",
       price: "$35",
-      accent: "border-yellow-500/30",
+      accent: "border-emerald-500/30",
       tagline: "For small teams shipping in production",
       features: [
         "Everything in Pro, plus:",
-        "50 subdomains / tunnels / projects / databases",
+        "50 subdomains / tunnels / projects, 20 databases",
         "15 BYOC servers, 25 custom domains + services",
         "25 scheduled jobs, 25 active PR previews",
         "Up to 8 GB RAM / 4 vCPU per project",
         "1 TB bandwidth, 1800 build min / mo",
-        "30-day backup retention, 1-year analytics",
+        "30-day backups, 1-year analytics, 30-day deploy logs",
         "Multi-user collaboration (min 2 seats)",
         "Priority support",
       ],
@@ -193,7 +212,7 @@ export default function BillingPage() {
           { label: "Projects", used: usage.usage.projects ?? 0, max: usage.limits.max_projects },
           { label: "Project databases", used: usage.usage.databases ?? 0, max: usage.limits.max_databases },
           { label: "Standalone services", used: usage.usage.services ?? 0, max: usage.limits.max_services },
-          { label: "Subdomains", used: 0, max: usage.limits.max_subdomains },
+          { label: "Subdomains", used: usage.usage.subdomains ?? 0, max: usage.limits.max_subdomains },
           { label: "Custom domains", used: usage.usage.custom_domains ?? 0, max: usage.limits.max_custom_domains },
           { label: "Scheduled jobs", used: usage.usage.crons ?? 0, max: usage.limits.max_crons },
           { label: "BYOC servers", used: usage.usage.byoc_servers ?? 0, max: usage.limits.max_byoc_servers },
@@ -204,7 +223,7 @@ export default function BillingPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Usage on the {usage.is_admin ? "Admin (unlimited)" : usage.plan} plan</span>
-                {usage.is_admin && <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/50">Unlimited</Badge>}
+                {usage.is_admin && <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/40">Unlimited</Badge>}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -220,26 +239,26 @@ export default function BillingPage() {
                         <span className="font-mono">{r.used} / {fmt(r.max)}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                        <div className={`h-full ${isUnl ? "bg-yellow-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
+                        <div className={`h-full ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Memory cap</div>
                   <div className="font-mono">{usage.limits.max_memory_mb < 0 ? "∞" : `${usage.limits.max_memory_mb} MB`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">CPU cap</div>
                   <div className="font-mono">{usage.limits.max_cpus < 0 ? "∞" : `${usage.limits.max_cpus} vCPU`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Bandwidth/mo</div>
                   <div className="font-mono">{usage.limits.max_bandwidth_gb < 0 ? "∞" : `${usage.limits.max_bandwidth_gb} GB`}</div>
                 </div>
-                <div className="rounded bg-[#0d1117] px-2 py-1.5">
+                <div className="rounded bg-muted px-2 py-1.5">
                   <div className="text-muted-foreground">Build min/mo</div>
                   <div className="font-mono">{usage.limits.max_build_minutes_monthly < 0 ? "∞" : usage.limits.max_build_minutes_monthly}</div>
                 </div>
@@ -253,7 +272,7 @@ export default function BillingPage() {
                   ["TCP tunnels", usage.limits.allow_tcp_tunnels],
                   ["Live logs", usage.limits.allow_live_logs],
                 ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-[#8b949e]"}`}>
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-muted-foreground"}`}>
                     {on ? "✓" : "✗"} {label}
                   </Badge>
                 ))}
@@ -270,12 +289,12 @@ export default function BillingPage() {
             <div>
               <div className="flex items-center gap-2">
                 {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Admin (Unlimited)
                   </Badge>
                 ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Team
                   </Badge>
@@ -309,7 +328,7 @@ export default function BillingPage() {
             </div>
             {!isPremium && !usage?.is_admin && (
               <Button
-                onClick={checkout}
+                onClick={() => checkout("pro", payMethod)}
                 disabled={checkoutLoading}
                 className="gap-2 shrink-0"
               >
@@ -325,75 +344,136 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
+      {/* Payment method selector — drives the Upgrade buttons below */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Payment Method</CardTitle>
+          <p className="text-xs text-muted-foreground">Choose how you want to pay before upgrading.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setPayMethod("card")}
+              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                payMethod === "card"
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border/60 hover:border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-500">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  Credit / debit card
+                  {payMethod === "card" && <Check className="h-3.5 w-3.5 text-primary" />}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  Visa, Mastercard, Amex — via{" "}
+                  <a href="https://polar.sh" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                    Polar <ExternalLink className="inline h-2.5 w-2.5" />
+                  </a>
+                </p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayMethod("crypto")}
+              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                payMethod === "crypto"
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border/60 hover:border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500 font-bold">
+                ₿
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  Cryptocurrency
+                  {payMethod === "crypto" && <Check className="h-3.5 w-3.5 text-primary" />}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  BTC, ETH, USDT, SOL, LTC — via{" "}
+                  <a href="https://inventpay.io" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                    InventPay <ExternalLink className="inline h-2.5 w-2.5" />
+                  </a>
+                </p>
+              </div>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Plan Comparison — three real tiers */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
         {planCards.map((plan) => {
           const isCurrent = currentPlan === plan.id;
-          const canUpgradeToThis = !isCurrent && plan.id !== "free";
+          const tierOrder = ["free", "hobby", "pro", "team"];
+          const canUpgradeToThis = tierOrder.indexOf(plan.id) > tierOrder.indexOf(currentPlan);
+          const isPro = plan.id === "pro";
           return (
-            <Card key={plan.id} className={isCurrent ? plan.accent : ""}>
+            <Card
+              key={plan.id}
+              className={`relative flex flex-col ${
+                isPro
+                  ? "border-primary/50 shadow-[0_0_24px_-8px] shadow-primary/20"
+                  : isCurrent
+                  ? plan.accent
+                  : ""
+              }`}
+            >
+              {isPro && !isCurrent && (
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
+                  <Badge className="text-[10px] px-2.5 shadow-sm">Most popular</Badge>
+                </div>
+              )}
               <CardHeader>
                 <CardTitle className="text-base flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    {plan.id === "team" && <Crown className="h-4 w-4 text-yellow-500" />}
+                    {plan.id === "team" && <Crown className="h-4 w-4 text-emerald-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
                 </CardTitle>
-                <p className="text-2xl font-bold">
+                <p className="text-3xl font-bold tracking-tight">
                   {plan.price}
                   {plan.id !== "free" && <span className="text-sm font-normal text-muted-foreground">/mo{plan.id === "team" && " per seat"}</span>}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{plan.tagline}</p>
+                <p className="text-xs text-muted-foreground">{plan.tagline}</p>
               </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
+              <CardContent className="flex flex-1 flex-col">
+                <ul className="space-y-2.5 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" ? "text-yellow-500" : plan.id === "pro" ? "text-emerald-500" : "text-zinc-500"}`} />
+                    <li key={f} className="flex items-start gap-2.5 text-[13px] leading-snug">
+                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" || isPro ? "text-emerald-500" : "text-zinc-500"}`} />
                       <span className="text-muted-foreground">{f}</span>
                     </li>
                   ))}
                 </ul>
-                {canUpgradeToThis && plan.id === "pro" && (
-                  <Button onClick={checkout} disabled={checkoutLoading} className="mt-6 w-full gap-2">
-                    {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                    Upgrade to Pro
-                  </Button>
-                )}
-                {canUpgradeToThis && plan.id === "team" && (
-                  <Button variant="outline" disabled className="mt-6 w-full gap-2" title="Team billing coming soon">
-                    Contact us for Team
-                  </Button>
-                )}
+                <div className="mt-6 h-10">
+                  {canUpgradeToThis ? (
+                    <Button
+                      onClick={() => checkout(plan.id as "hobby" | "pro" | "team", payMethod)}
+                      disabled={checkoutLoading}
+                      className="w-full gap-2"
+                      variant={isPro ? "default" : "outline"}
+                    >
+                      {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                      Upgrade to {plan.name}
+                    </Button>
+                  ) : isCurrent ? (
+                    <Button variant="outline" disabled className="w-full">
+                      Your current plan
+                    </Button>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
-
-      {/* Payment info */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">Payment Method</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-500 text-xs font-bold">
-              ₿
-            </div>
-            <div>
-              <p className="text-sm font-medium">Cryptocurrency via InventPay</p>
-              <p className="text-xs text-muted-foreground">
-                Pay with BTC, ETH, USDT, SOL, LTC and more. Powered by{" "}
-                <a href="https://inventpay.io" target="_blank" rel="noopener" className="text-primary hover:underline">
-                  InventPay <ExternalLink className="inline h-2.5 w-2.5" />
-                </a>
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* History */}
       {status?.history && status.history.length > 0 && (

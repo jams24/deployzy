@@ -78,7 +78,7 @@ export default function TunnelsPage() {
             <p className="mt-2 text-sm text-muted-foreground max-w-sm text-center">
               Start a tunnel from your terminal to see it here.
             </p>
-            <div className="mt-6 rounded-lg border border-border bg-zinc-950 px-6 py-4 font-mono text-sm text-zinc-300">
+            <div className="mt-6 rounded-lg border border-border bg-muted px-6 py-4 font-mono text-sm text-foreground">
               <span className="text-zinc-500">$</span> deployzy http 3000
             </div>
           </CardContent>

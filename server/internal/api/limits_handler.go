@@ -54,6 +54,7 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 	customDomains, _ := s.db.CountCustomDomainsForUser(ctx, u.ID)
 	crons, _ := s.db.CountCronsForUser(ctx, u.ID)
 	byoc, _ := s.db.CountBYOCServersForUser(ctx, u.ID)
+	subdomains, _ := s.db.CountUserSubdomains(ctx, u.ID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"plan":     plan,
@@ -67,6 +68,7 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 			"custom_domains":   customDomains,
 			"crons":            crons,
 			"byoc_servers":     byoc,
+			"subdomains":       subdomains,
 		},
 	})
 }

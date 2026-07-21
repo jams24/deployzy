@@ -24,18 +24,25 @@ import (
 type Engine struct {
 	db          *db.DB
 	Domain      string
+	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
 	GitHub      *GitHubApp
+	emailSvc    notify.Mailer
 	log         zerolog.Logger
 	deployLocks sync.Map // per-project mutex to prevent concurrent deploys
 }
 
 // NewEngine creates a new deploy engine.
-func NewEngine(database *db.DB, domain string, github *GitHubApp, log zerolog.Logger) *Engine {
+func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
+	if serviceHost == "" {
+		serviceHost = domain
+	}
 	return &Engine{
-		db:     database,
-		Domain: domain,
-		GitHub: github,
-		log:    log.With().Str("component", "deploy").Logger(),
+		db:          database,
+		Domain:      domain,
+		ServiceHost: serviceHost,
+		GitHub:      github,
+		emailSvc:    emailSvc,
+		log:         log.With().Str("component", "deploy").Logger(),
 	}
 }
 
@@ -483,13 +490,22 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		hostPort = 10100 + rand.Intn(900)
 	}
 
-	// Auto-inject DATABASE_URL if project has a managed database
+	// Auto-inject DATABASE_URL if project has a managed database.
+	// The internal URL (172.17.0.1 = Docker bridge = "this host") only works
+	// when the app runs on the same box as its Postgres. A project on a BYOC
+	// worker must dial back to the platform DB via the public service host —
+	// otherwise Prisma just times out (took frenchpathai's login down after
+	// a move to a worker, 2026-07-21).
 	projDB, _ := e.db.GetProjectDatabase(ctx, project.ID)
 	if projDB != nil {
 		if project.EnvVars == nil {
 			project.EnvVars = make(map[string]string)
 		}
-		project.EnvVars["DATABASE_URL"] = projDB.ConnectionURL()
+		if e.projectRunsRemotely(ctx, project) {
+			project.EnvVars["DATABASE_URL"] = projDB.ExternalConnectionURL(e.ServiceHost)
+		} else {
+			project.EnvVars["DATABASE_URL"] = projDB.ConnectionURL()
+		}
 	}
 
 	// Build env var flags (skip comments, strip quotes)
@@ -587,7 +603,12 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		e.logMsg(ctx, project.ID, fmt.Sprintf("CPU clamped to plan ceiling: %.2f vCPU (requested %.2f)", planCPUMax, cpus), "build")
 		cpus = planCPUMax
 	}
-	args = append(args, "--restart", "unless-stopped",
+	// on-failure:5 instead of unless-stopped: an app that fails 5 consecutive
+	// starts will never succeed on the 5,000th. Infinite restart loops from
+	// broken deploys once drove a 1-core host to load 24 and starved every
+	// build on the box (2026-07-20). The crash sweeper marks these projects
+	// 'crashed' so the dashboard shows what happened.
+	args = append(args, "--restart", "on-failure:5",
 		"--memory", fmt.Sprintf("%dm", memMB),
 		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64),
 		// Container hardening — prevents privilege escalation and raw-socket
@@ -682,7 +703,8 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		go e.fireWebhooks(project, "deploy.succeeded", "running")
 	} else {
 		crashOut, _ := runner.Run(ctx, "docker", "logs", "--tail", "20", newContainerName)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(string(crashOut), 2000)), "error")
+		crashLogs := string(crashOut)
+		e.logMsg(ctx, project.ID, fmt.Sprintf("New container unhealthy — old version still serving:\n%s", trimLogs(crashLogs, 2000)), "error")
 
 		// Clean up the failed new container. Old container was never stopped, so it
 		// keeps serving traffic automatically — no restart needed.
@@ -691,6 +713,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
+		go e.sendDeployFailedEmail(project, crashLogs)
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -743,6 +766,20 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 // server. Projects on the local platform row (is_local=true) use LocalRunner
 // — SSH-to-self would hang on credential lookup since the local row has no
 // SSH password.
+// projectRunsRemotely reports whether the project is assigned to a non-local
+// worker — i.e. its container cannot reach services on the platform host via
+// the Docker bridge IP and must use public addresses instead.
+func (e *Engine) projectRunsRemotely(ctx context.Context, project *db.Project) bool {
+	if project.WorkerServerID == "" {
+		return false
+	}
+	server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+	if server == nil {
+		return false
+	}
+	return !(server.IsLocal || server.Host == "localhost" || server.Host == "127.0.0.1" || server.Host == "")
+}
+
 func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	if project.WorkerServerID != "" {
 		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
@@ -759,6 +796,38 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	return NewLocalRunner()
 }
 
+// SweepCrashedContainers finds projects marked 'running' whose containers
+// have given up (exited after exhausting their on-failure restart budget, or
+// dead) and flips their status to 'crashed' so the dashboard tells the truth
+// and the owner can see logs + redeploy. Called periodically from main.
+func (e *Engine) SweepCrashedContainers(ctx context.Context) {
+	projects, err := e.db.ListRunningProjects(ctx)
+	if err != nil {
+		e.log.Warn().Err(err).Msg("crash sweep: list running projects failed")
+		return
+	}
+	for i := range projects {
+		p := &projects[i]
+		containerName := fmt.Sprintf("sm-%s", p.ID[:8])
+		runner := e.getRunner(ctx, p)
+		out, err := runner.RunShell(ctx,
+			fmt.Sprintf("docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing", containerName))
+		if err != nil {
+			continue // host unreachable — worker health monitor handles that
+		}
+		state := strings.TrimSpace(string(out))
+		if state == "exited" || state == "dead" {
+			logs := ""
+			if lout, lerr := runner.RunShell(ctx, "docker logs --tail 5 "+containerName+" 2>&1"); lerr == nil {
+				logs = strings.TrimSpace(string(lout))
+			}
+			e.db.UpdateProjectStatus(ctx, p.ID, "crashed", p.ContainerID, p.ContainerPort)
+			e.logMsg(ctx, p.ID, "Container crashed and exhausted its restart budget (5 failed starts). Marked as crashed — check logs and redeploy after fixing. Last output:\n"+logs, "deploy")
+			e.log.Warn().Str("project", p.Name).Str("container", containerName).Msg("crash sweep: marked project crashed")
+		}
+	}
+}
+
 // LogStreamCmd returns an *exec.Cmd (not yet started) that streams live
 // docker logs for project from wherever its container actually lives —
 // locally for platform projects, over SSH for BYOC.
@@ -769,28 +838,33 @@ func (e *Engine) LogStreamCmd(ctx context.Context, project *db.Project) *exec.Cm
 
 // GetProjectPort returns the container port for a deployed project by subdomain.
 func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
-	port, _, ok := e.GetProjectRouting(subdomain)
+	_, port, _, ok := e.GetProjectRouting(subdomain)
 	return port, ok
 }
 
-// GetProjectRouting returns port + project ID in one query — used by the proxy
-// so it can both forward the request AND emit an analytics event tagged with
-// the right project without a second DB round trip.
-func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
+// GetProjectRouting returns (serverHost, port, projectID, ok).
+// serverHost is "" for platform-local projects; for BYOC projects it's the
+// remote VPS IP so the proxy can forward directly instead of trying localhost.
+func (e *Engine) GetProjectRouting(subdomain string) (string, int, string, bool) {
 	ctx := context.Background()
 	rows, err := e.db.Pool.Query(ctx,
-		`SELECT container_port, id FROM projects WHERE subdomain = $1 AND status IN ('running', 'building') AND container_port > 0`,
+		`SELECT p.container_port, p.id,
+		        CASE WHEN ws.is_local OR ws.host IN ('localhost', '127.0.0.1', '') THEN ''
+		             ELSE COALESCE(ws.host, '') END AS server_host
+		 FROM projects p
+		 LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
+		 WHERE p.subdomain = $1 AND p.status IN ('running', 'building') AND p.container_port > 0`,
 		subdomain,
 	)
 	if err != nil {
-		return 0, "", false
+		return "", 0, "", false
 	}
 	defer rows.Close()
 	if rows.Next() {
 		var port int
-		var id string
-		rows.Scan(&port, &id)
-		return port, id, port > 0
+		var id, serverHost string
+		rows.Scan(&port, &id, &serverHost)
+		return serverHost, port, id, port > 0
 	}
 	rows.Close()
 
@@ -798,25 +872,28 @@ func (e *Engine) GetProjectRouting(subdomain string) (int, string, bool) {
 	// live in service_routes and point at the host port the service was last
 	// published on; only resolvable while the parent project is up.
 	srRows, err := e.db.Pool.Query(ctx,
-		`SELECT sr.host_port, sr.project_id
+		`SELECT sr.host_port, sr.project_id,
+		        CASE WHEN ws.is_local OR ws.host IN ('localhost', '127.0.0.1', '') THEN ''
+		             ELSE COALESCE(ws.host, '') END AS server_host
 		   FROM service_routes sr
 		   JOIN projects p ON p.id = sr.project_id
+		   LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
 		  WHERE sr.subdomain = $1
 		    AND p.status IN ('running', 'building')
 		    AND sr.host_port > 0`,
 		subdomain,
 	)
 	if err != nil {
-		return 0, "", false
+		return "", 0, "", false
 	}
 	defer srRows.Close()
 	if srRows.Next() {
 		var port int
-		var id string
-		srRows.Scan(&port, &id)
-		return port, id, port > 0
+		var id, serverHost string
+		srRows.Scan(&port, &id, &serverHost)
+		return serverHost, port, id, port > 0
 	}
-	return 0, "", false
+	return "", 0, "", false
 }
 
 func (e *Engine) registerRoute(subdomain string, port int) {
@@ -850,6 +927,27 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 	for _, wh := range hooks {
 		code := notify.DeliverWebhook(wh.URL, wh.Secret, payload)
 		e.db.RecordWebhookDelivery(ctx, wh.ID, code)
+	}
+}
+
+// sendDeployFailedEmail emails the project owner when a new container fails to
+// pass the health check. Best-effort; must be called in a goroutine.
+func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
+	if e.emailSvc == nil {
+		return
+	}
+	ctx := context.Background()
+	user, err := e.db.GetUserByID(ctx, project.UserID)
+	if err != nil || user == nil {
+		e.log.Warn().Str("project", project.ID).Msg("deploy-failed email: could not load user")
+		return
+	}
+	projectURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s", project.ID)
+	logsURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s/logs", project.ID)
+	body := notify.DeployFailedEmail(project.Name, projectURL, logsURL, crashLogs)
+	subject := fmt.Sprintf("Deploy failed — %s", project.Name)
+	if err := e.emailSvc.SendOne(user.Email, subject, body); err != nil {
+		e.log.Warn().Err(err).Str("to", user.Email).Str("project", project.ID).Msg("deploy-failed email send failed")
 	}
 }
 

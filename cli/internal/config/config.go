@@ -66,7 +66,7 @@ func Load(path string) (*Config, error) {
 // WriteExample writes an example config file to the given path.
 func WriteExample(path string) error {
 	example := Config{
-		Server:    "deployzy.com:8443",
+		Server:    "ctrl.deployzy.com:8443",
 		AuthToken: "your-auth-token-here",
 		LogLevel:  "info",
 		Inspector: "127.0.0.1:4040",

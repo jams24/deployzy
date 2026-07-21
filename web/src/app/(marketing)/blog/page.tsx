@@ -75,7 +75,7 @@ export default async function BlogIndexPage() {
       "@type": "Organization",
       name: "Deployzy",
       url: "https://deployzy.com",
-      logo: { "@type": "ImageObject", url: "https://deployzy.com/logo-icon.svg" },
+      logo: { "@type": "ImageObject", url: "https://deployzy.com/logo-mark.png" },
     },
     blogPost: posts.map((p) => ({
       "@type": "BlogPosting",

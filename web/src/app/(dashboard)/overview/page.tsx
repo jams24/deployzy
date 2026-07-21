@@ -2,28 +2,59 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Rocket, Globe, Waypoints, Plus, ArrowRight, Activity,
-  Database, Clock,
+  Database, ExternalLink, GitBranch, Circle, Clock, Server,
+  ChevronRight, Zap, Link2,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 interface Project {
-  id: string; name: string; subdomain: string; framework: string; status: string;
+  id: string; name: string; subdomain: string; framework: string;
+  status: string; last_deploy_at: string | null; branch: string; repo_url: string;
 }
-interface Tunnel {
-  url: string; protocol: string; name: string; type?: string;
+interface Tunnel { url: string; protocol: string; name: string; type?: string; }
+interface Domain { id: string; domain: string; }
+interface Service { id: string; kind: string; label: string; status: string; }
+interface Me { name: string; email: string; plan: string; }
+
+const STATUS = {
+  running:  { dot: "bg-emerald-500", ring: "bg-emerald-400", label: "running",  cls: "text-emerald-600 dark:text-emerald-400" },
+  building: { dot: "bg-sky-500",     ring: "bg-sky-400",     label: "building", cls: "text-sky-600 dark:text-sky-400" },
+  stopped:  { dot: "bg-zinc-400",    ring: "bg-zinc-300",    label: "stopped",  cls: "text-muted-foreground" },
+  failed:   { dot: "bg-red-500",     ring: "bg-red-400",     label: "failed",   cls: "text-red-600 dark:text-red-400" },
+  created:  { dot: "bg-amber-400",   ring: "bg-amber-300",   label: "created",  cls: "text-amber-600 dark:text-amber-400" },
+} as const;
+
+function timeAgo(ts: string | null) {
+  if (!ts) return null;
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function StatusDot({ status }: { status: string }) {
+  const s = STATUS[status as keyof typeof STATUS] ?? STATUS.stopped;
+  const pulse = status === "running" || status === "building";
+  return (
+    <span className="relative flex h-2 w-2 shrink-0">
+      {pulse && <span className={`absolute inline-flex h-full w-full rounded-full ${s.ring} opacity-60 animate-ping`} />}
+      <span className={`relative inline-flex h-2 w-2 rounded-full ${s.dot}`} />
+    </span>
+  );
 }
 
 export default function OverviewPage() {
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
-  const [domains, setDomains] = useState<{ id: string }[]>([]);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
   const headers = () => {
@@ -37,11 +68,13 @@ export default function OverviewPage() {
       fetch(`${API}/api/v1/projects`, { headers: headers() }).then(r => r.ok ? r.json() : []),
       fetch(`${API}/api/v1/tunnels`, { headers: headers() }).then(r => r.ok ? r.json() : []),
       fetch(`${API}/api/v1/domains`, { headers: headers() }).then(r => r.ok ? r.json() : []),
-    ]).then(([u, p, t, d]) => {
+      fetch(`${API}/api/v1/services`, { headers: headers() }).then(r => r.ok ? r.json() : []),
+    ]).then(([u, p, t, d, sv]) => {
       setUser(u);
       setProjects(Array.isArray(p) ? p : []);
       setTunnels(Array.isArray(t) ? t : []);
       setDomains(Array.isArray(d) ? d : []);
+      setServices(Array.isArray(sv) ? sv : []);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -52,164 +85,282 @@ export default function OverviewPage() {
     return "Good evening";
   };
 
-  const runningProjects = projects.filter(p => p.status === "running");
+  const running  = projects.filter(p => p.status === "running");
+  const building = projects.filter(p => p.status === "building");
+  const stopped  = projects.filter(p => p.status === "stopped" || p.status === "failed");
   const activeTunnels = tunnels.filter(t => t.type === "tunnel");
 
-  const stats = [
-    { label: "Projects", value: projects.length, icon: Rocket, color: "text-violet-400 bg-violet-500/20" },
-    { label: "Active Tunnels", value: activeTunnels.length, icon: Waypoints, color: "text-blue-400 bg-blue-500/20" },
-    { label: "Domains", value: domains.length, icon: Globe, color: "text-emerald-400 bg-emerald-500/20" },
-    { label: "Uptime", value: "99.9%", icon: Activity, color: "text-amber-400 bg-amber-500/20" },
-  ];
+  const firstName = user?.name?.split(" ")[0] || "there";
 
-  if (loading) return <div className="py-12 text-center text-sm text-muted-foreground">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 bg-muted rounded animate-pulse" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      {/* Greeting */}
-      <div className="flex items-start justify-between gap-3 mb-8">
+    <div className="space-y-8">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {greeting()}, {user?.name?.split(" ")[0] || "there"}
+          <h1 className="text-2xl font-bold tracking-tight">
+            {greeting()}, {firstName}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">What are you shipping today?</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {running.length > 0
+              ? `${running.length} service${running.length !== 1 ? "s" : ""} running`
+              : "No services running yet"}
+            {building.length > 0 && ` · ${building.length} building`}
+          </p>
         </div>
-        <Button className="gap-2 shrink-0 h-8 sm:h-9 px-3 sm:px-4 text-sm" nativeButton={false} render={<Link href="/new" />}>
-          <Plus className="h-4 w-4" /><span className="hidden sm:inline"> New Resource</span>
-        </Button>
+        <Link
+          href="/new"
+          className="flex items-center gap-2 rounded-lg bg-foreground text-background px-4 py-2 text-sm font-semibold hover:opacity-85 transition-opacity shrink-0"
+        >
+          <Plus className="h-4 w-4" /> New Project
+        </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {stats.map((s) => (
-          <Card key={s.label} className="hover:border-foreground/10 transition-colors">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${s.color} shrink-0`}>
-                <s.icon className="h-5 w-5" />
+      {/* ── Stat strip ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Projects",   value: projects.length,     icon: Rocket,   href: "/projects" },
+          { label: "Running",          value: running.length,      icon: Activity, href: "/projects" },
+          { label: "Databases",        value: services.length,     icon: Database, href: "/services" },
+          { label: "Custom Domains",   value: domains.length,      icon: Globe,    href: "/domains"  },
+        ].map(s => (
+          <Link key={s.label} href={s.href}>
+            <div className="group rounded-xl border border-border bg-card px-4 py-4 hover:border-foreground/20 transition-colors cursor-pointer">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+                <s.icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-xl font-bold tracking-tight">{s.value}</p>
-              </div>
-            </CardContent>
-          </Card>
+              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
+            </div>
+          </Link>
         ))}
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid gap-3 sm:grid-cols-3 mb-8">
-        <Link href="/projects?action=import">
-          <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/20 text-violet-400 shrink-0 transition-transform group-hover:scale-110">
-                <Rocket className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Deploy Project</p>
-                <p className="text-[11px] text-muted-foreground">From GitHub repo</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/services">
-          <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0 transition-transform group-hover:scale-110">
-                <Database className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Add Database</p>
-                <p className="text-[11px] text-muted-foreground">PostgreSQL instance</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/domains">
-          <Card className="hover:border-foreground/20 transition-all hover:shadow-lg hover:shadow-black/5 cursor-pointer group h-full">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/20 text-pink-400 shrink-0 transition-transform group-hover:scale-110">
-                <Globe className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Add Domain</p>
-                <p className="text-[11px] text-muted-foreground">Custom domain + TLS</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
+      {/* ── Body: projects list + sidebar ──────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
 
-      {/* Running Services */}
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Running Services</h2>
-        <Link href="/projects" className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-          View all <ArrowRight className="h-3 w-3" />
-        </Link>
-      </div>
+        {/* Projects list */}
+        <div className="space-y-4">
 
-      {runningProjects.length === 0 && activeTunnels.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center py-12">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-              <Rocket className="h-7 w-7 text-muted-foreground/40" />
+          {/* Running */}
+          {running.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span>
+                  Running
+                  <span className="text-muted-foreground font-normal">({running.length})</span>
+                </h2>
+                <Link href="/projects" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+                  View all <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                {running.slice(0, 8).map(p => (
+                  <ProjectRow key={p.id} p={p} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Building */}
+          {building.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                Building
+                <span className="text-muted-foreground font-normal">({building.length})</span>
+              </h2>
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                {building.map(p => <ProjectRow key={p.id} p={p} />)}
+              </div>
+            </section>
+          )}
+
+          {/* Stopped / failed */}
+          {stopped.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold mb-2 text-muted-foreground flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-zinc-400" />
+                Stopped / Failed
+                <span className="font-normal">({stopped.length})</span>
+              </h2>
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border opacity-70">
+                {stopped.slice(0, 4).map(p => <ProjectRow key={p.id} p={p} />)}
+              </div>
+            </section>
+          )}
+
+          {/* Empty state */}
+          {projects.length === 0 && (
+            <div className="rounded-xl border border-dashed border-border py-16 flex flex-col items-center gap-3 text-center">
+              <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
+                <Rocket className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">No projects yet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Deploy your first app from a GitHub repo.</p>
+              </div>
+              <Link href="/new" className="mt-1 flex items-center gap-1.5 text-sm font-medium hover:text-muted-foreground transition-colors">
+                Get started <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
-            <h3 className="font-semibold">Ready to deploy?</h3>
-            <p className="mt-1 text-sm text-muted-foreground text-center max-w-sm">Ship your first project to the cloud in minutes.</p>
-            <Button className="mt-5 gap-2" nativeButton={false} render={<Link href="/new" />}>
-              Get started <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {runningProjects.map((p) => (
-            <Link key={p.id} href="/projects" className="min-w-0">
-              <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
-                <CardContent className="p-4 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/20 text-primary shrink-0">
-                      <Rocket className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium truncate">{p.name}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">running</Badge>
-                        <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.com</p>
-                    </div>
+          )}
+        </div>
+
+        {/* ── Sidebar ──────────────────────────────────────────── */}
+        <div className="space-y-4">
+
+          {/* Quick actions */}
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-border">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Quick Deploy</p>
+            </div>
+            <div className="divide-y divide-border">
+              {[
+                { icon: Rocket,   label: "Deploy from GitHub",  sub: "Import a repo",          href: "/new" },
+                { icon: Database, label: "Add Database",         sub: "PostgreSQL, Redis, Mongo", href: "/services" },
+                { icon: Globe,    label: "Add Custom Domain",    sub: "TLS auto-provisioned",   href: "/domains" },
+                { icon: Waypoints,label: "Open a Tunnel",        sub: "Expose local port",      href: "/tunnels" },
+              ].map(a => (
+                <Link key={a.label} href={a.href} className="flex items-center gap-3 px-3 py-2.5 hover:bg-accent transition-colors group">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0 group-hover:bg-accent-foreground/5 transition-colors">
+                    <a.icon className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium leading-tight">{a.label}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{a.sub}</p>
                   </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-          {activeTunnels.map((t, i) => (
-            <Link key={i} href="/tunnels" className="min-w-0">
-              <Card className="hover:border-foreground/10 transition-colors cursor-pointer h-full">
-                <CardContent className="p-4 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 shrink-0">
-                      <Waypoints className="h-4 w-4" />
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Plan & usage */}
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-border flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Plan</p>
+              {user?.plan && (
+                <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
+                  user.plan === "pro"  ? "bg-blue-500/15 text-blue-600 dark:text-blue-400" :
+                  user.plan === "team" ? "bg-violet-500/15 text-violet-600 dark:text-violet-400" :
+                                        "bg-muted text-muted-foreground"
+                }`}>{user.plan}</span>
+              )}
+            </div>
+            <div className="p-3 space-y-3">
+              <UsageStat label="Projects" used={projects.length} limit={user?.plan === "free" ? 5 : null} />
+              <UsageStat label="Tunnels"  used={activeTunnels.length} limit={null} />
+              <UsageStat label="Domains"  used={domains.length} limit={null} />
+              {user?.plan === "free" && (
+                <Link href="/billing" className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-border py-2 text-[12px] font-medium hover:bg-accent transition-colors mt-2">
+                  <Zap className="h-3 w-3" /> Upgrade to Pro
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Active tunnels */}
+          {activeTunnels.length > 0 && (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-border">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Active Tunnels</p>
+              </div>
+              <div className="divide-y divide-border">
+                {activeTunnels.slice(0, 3).map((t, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2">
+                    <span className="relative flex h-1.5 w-1.5 shrink-0"><span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75 animate-ping" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500" /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-medium truncate">{t.name || t.url}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate">{t.protocol}</p>
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium truncate">{t.name || t.url}</span>
-                        <Badge variant="outline" className="text-[9px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">active</Badge>
-                        <Badge variant="outline" className="text-[9px] shrink-0 hidden sm:inline-flex">{t.protocol}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground font-mono truncate">{t.url}</p>
-                    </div>
+                    <a href={t.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" /></span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectRow({ p }: { p: Project }) {
+  const s = STATUS[p.status as keyof typeof STATUS] ?? STATUS.stopped;
+  const ago = timeAgo(p.last_deploy_at);
+  const repo = p.repo_url?.replace("https://github.com/", "") || "";
+
+  return (
+    <Link href={`/projects?id=${p.id}`} className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-accent/50 transition-colors group">
+      {/* Status dot */}
+      <StatusDot status={p.status} />
+
+      {/* Name + subdomain */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[13px] font-medium truncate">{p.name}</span>
+          <span className={`text-[10px] font-medium shrink-0 ${s.cls}`}>{s.label}</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.com</p>
+      </div>
+
+      {/* Framework + branch */}
+      <div className="hidden sm:flex items-center gap-2 shrink-0">
+        {p.framework && (
+          <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-mono">
+            {p.framework}
+          </span>
+        )}
+        {repo && (
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1 hidden lg:flex">
+            <GitBranch className="h-3 w-3" />{repo.split("/")[1] || repo}
+          </span>
+        )}
+      </div>
+
+      {/* Last deploy */}
+      {ago && (
+        <span className="text-[10px] text-muted-foreground shrink-0 hidden md:block flex items-center gap-1">
+          <Clock className="h-3 w-3 inline mr-0.5" />{ago}
+        </span>
+      )}
+
+      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+    </Link>
+  );
+}
+
+function UsageStat({ label, used, limit }: { label: string; used: number; limit: number | null }) {
+  const pct = limit ? Math.min((used / limit) * 100, 100) : 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[12px] text-muted-foreground">{label}</span>
+        <span className="text-[12px] font-medium tabular-nums">
+          {used}{limit ? <span className="text-muted-foreground">/{limit}</span> : ""}
+        </span>
+      </div>
+      {limit && (
+        <div className="h-1 w-full rounded-full bg-border overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-foreground"}`}
+            style={{ width: `${pct}%` }}
+          />
         </div>
       )}
     </div>

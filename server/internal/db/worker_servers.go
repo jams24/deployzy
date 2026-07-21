@@ -33,6 +33,14 @@ type WorkerServer struct {
 	DockerInstallError  *string  `json:"docker_install_error"`
 	Priority            int      `json:"priority"`
 	IsLocal             bool     `json:"is_local"`
+	// UsedMemoryMB / LoadAvg are measured on the host by the heartbeat
+	// monitor (every ~2 min). Unlike Allocated*, these reflect reality.
+	UsedMemoryMB        int      `json:"used_memory_mb"`
+	LoadAvg             float64  `json:"load_avg"`
+	// ServiceHost is the DNS hostname (or IP) for raw TCP services (Postgres, Redis).
+	// For platform servers it's a DNS-only CF subdomain; for BYOC it's the server IP.
+	// Never use Host for connection strings — Host may be localhost on the main VPS.
+	ServiceHost         string   `json:"service_host"`
 }
 
 // CreateWorkerServer adds a new worker server.
@@ -41,9 +49,9 @@ func (d *DB) CreateWorkerServer(ctx context.Context, ws *WorkerServer) (*WorkerS
 	err := d.Pool.QueryRow(ctx,
 		`INSERT INTO worker_servers (user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, max_projects, status)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		 RETURNING id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false)`,
+		 RETURNING id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)`,
 		ws.UserID, ws.Label, ws.Host, ws.Port, ws.SSHUser, ws.SSHPassword, ws.SSHKey, ws.Region, ws.TotalCPU, ws.TotalMemoryMB, ws.MaxProjects, ws.Status,
-	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal)
+	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
 	return &s, err
 }
 
@@ -52,11 +60,12 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 	var query string
 	var args []interface{}
 	if userID == nil {
-		// Admin: list all platform servers
-		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false) FROM worker_servers WHERE user_id IS NULL ORDER BY created_at DESC`
+		// Admin: every server — platform AND user BYOC — so the operations
+		// console sees the whole fleet. Platform (is_local first), then BYOC.
+		query = `SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers ORDER BY COALESCE(is_local, false) DESC, created_at DESC`
 	} else {
 		// User: list their BYOC servers
-		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false) FROM worker_servers WHERE user_id = $1 ORDER BY created_at DESC`
+		query = `SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE user_id = $1 ORDER BY created_at DESC`
 		args = append(args, *userID)
 	}
 
@@ -69,7 +78,7 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 	var servers []WorkerServer
 	for rows.Next() {
 		var s WorkerServer
-		rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal)
+		rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
 		servers = append(servers, s)
 	}
 	return servers, nil
@@ -79,9 +88,9 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 func (d *DB) GetWorkerServer(ctx context.Context, id string) (*WorkerServer, error) {
 	var s WorkerServer
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false) FROM worker_servers WHERE id = $1`,
+		`SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(ssh_password, ''), COALESCE(ssh_key, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE id = $1`,
 		id,
-	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal)
+	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -148,6 +157,10 @@ func (d *DB) UpdateWorkerServerDockerInstalled(ctx context.Context, id string, i
 // so the number never drifts. Unset (0) project values fall back to the
 // engine defaults (0.5 CPU / 512 MB) so we don't under-count.
 func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) error {
+	// Projects on the local platform server historically have a NULL
+	// worker_server_id (they predate the worker_servers table), so the
+	// is_local row must also count NULL assignments — otherwise the local
+	// server shows 0 projects / 0 allocation no matter what's running on it.
 	_, err := d.Pool.Exec(ctx, `
 		WITH agg AS (
 		  SELECT
@@ -155,13 +168,47 @@ func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) err
 		    COALESCE(SUM(CASE WHEN memory_mb > 0 THEN memory_mb ELSE 512 END), 0)::int    AS mem_sum,
 		    COUNT(*)::int AS proj_count
 		  FROM projects
-		  WHERE worker_server_id = $1 AND status IN ('running', 'building')
+		  WHERE status IN ('running', 'building')
+		    AND (worker_server_id = $1
+		         OR (worker_server_id IS NULL
+		             AND (SELECT is_local FROM worker_servers WHERE id = $1)))
 		)
 		UPDATE worker_servers
 		SET allocated_cpu       = agg.cpu_sum,
 		    allocated_memory_mb = agg.mem_sum,
 		    current_projects    = agg.proj_count
 		FROM agg WHERE worker_servers.id = $1`, serverID)
+	return err
+}
+
+// ReconcileAllServerAllocations refreshes allocation counters for every
+// worker (platform + BYOC). Called periodically so moves, crashes, and
+// deletes can't leave stale numbers on the Servers page.
+func (d *DB) ReconcileAllServerAllocations(ctx context.Context) {
+	rows, err := d.Pool.Query(ctx, `SELECT id FROM worker_servers`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return
+		}
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		d.ReconcileServerAllocation(ctx, id)
+	}
+}
+
+// UpdateWorkerServerLiveMetrics stores measured RAM usage and load average
+// from the heartbeat probe.
+func (d *DB) UpdateWorkerServerLiveMetrics(ctx context.Context, id string, usedMemoryMB int, loadAvg float64) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE worker_servers SET used_memory_mb = $2, load_avg = $3 WHERE id = $1`,
+		id, usedMemoryMB, loadAvg)
 	return err
 }
 
@@ -194,14 +241,21 @@ func (d *DB) UpdateWorkerHeartbeat(ctx context.Context, id string) error {
 	return err
 }
 
-// ListAllActiveWorkers returns every worker_server row currently marked active,
-// across both platform (user_id IS NULL) and BYOC. Used by background jobs
-// like the heartbeat monitor and remote build-dir cleanup — they need to
-// operate on every worker regardless of ownership.
+// ListAllActiveWorkers returns every worker_server row marked active OR
+// offline, across both platform (user_id IS NULL) and BYOC. Offline rows are
+// included so the heartbeat monitor can re-probe and self-heal workers that
+// were flagged during a transient outage; callers that only ever act on
+// healthy workers should check Status themselves.
 func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
+	// COALESCE the nullable text columns: the local platform row has NULL
+	// ssh_password/ssh_key/ssh_user, and scanning NULL into a plain string
+	// errors. The old silent `continue` on scan error made that row invisible
+	// to the heartbeat monitor forever — its metrics never updated and its
+	// heartbeat stayed NULL (bitten 2026-07-21; see also the pgx scan-error
+	// rule in CLAUDE.md).
 	rows, err := d.Pool.Query(ctx,
-		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false)
-		 FROM worker_servers WHERE status = 'active'`,
+		`SELECT id, user_id, label, host, port, COALESCE(ssh_user, ''), COALESCE(ssh_password, ''), COALESCE(ssh_key, ''), COALESCE(region, ''), total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		 FROM worker_servers WHERE status IN ('active', 'offline')`,
 	)
 	if err != nil {
 		return nil, err
@@ -210,8 +264,8 @@ func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
 	var out []WorkerServer
 	for rows.Next() {
 		var s WorkerServer
-		if err := rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal); err != nil {
-			continue
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg); err != nil {
+			return nil, fmt.Errorf("scan worker row: %w", err)
 		}
 		out = append(out, s)
 	}
@@ -226,7 +280,7 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 
 	if userID != nil {
 		// Try user's BYOC servers first
-		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false)
+		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 			FROM worker_servers
 			WHERE user_id = $1 AND status = 'active' AND current_projects < max_projects
 			ORDER BY (total_memory_mb - allocated_memory_mb) DESC LIMIT 1`
@@ -235,7 +289,7 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 		// Platform servers — priority ASC (lower = primary, fills first), then
 		// most-free-RAM as tiebreaker. Also exclude servers already at >85%
 		// memory so we genuinely overflow instead of squeezing the host.
-		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false)
+		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 			FROM worker_servers
 			WHERE user_id IS NULL
 			  AND status = 'active'
@@ -246,7 +300,7 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 	}
 
 	var s WorkerServer
-	err := d.Pool.QueryRow(ctx, query, args...).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal)
+	err := d.Pool.QueryRow(ctx, query, args...).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -269,4 +323,32 @@ func (d *DB) ReleaseServerResources(ctx context.Context, serverID string, cpuUse
 		serverID, cpuUsed, memoryUsed,
 	)
 	return err
+}
+
+// SetWorkerServerServiceHost stores the public TCP hostname for this server's
+// database/Redis services (e.g. "database-miso.deployzy.com" or a raw IP).
+func (d *DB) SetWorkerServerServiceHost(ctx context.Context, serverID, serviceHost string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE worker_servers SET service_host = $2 WHERE id = $1`,
+		serverID, serviceHost,
+	)
+	return err
+}
+
+// PickPlatformServerForService returns the platform server (user_id IS NULL)
+// with the most capacity headroom (max_projects - current_projects). Used when
+// provisioning a managed database or Redis container on the platform fleet.
+func (d *DB) PickPlatformServerForService(ctx context.Context) (*WorkerServer, error) {
+	var s WorkerServer
+	err := d.Pool.QueryRow(ctx,
+		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		 FROM worker_servers
+		 WHERE user_id IS NULL AND status = 'active'
+		 ORDER BY COALESCE(priority, 100) ASC, (max_projects - current_projects) DESC
+		 LIMIT 1`,
+	).Scan(&s.ID, &s.UserID, &s.Label, &s.Host, &s.Port, &s.SSHUser, &s.SSHPassword, &s.SSHKey, &s.Region, &s.TotalCPU, &s.TotalMemoryMB, &s.AllocatedCPU, &s.AllocatedMemoryMB, &s.MaxProjects, &s.CurrentProjects, &s.Status, &s.LastHeartbeat, &s.DockerInstalled, &s.CreatedAt, &s.DockerInstallStatus, &s.DockerInstallError, &s.Priority, &s.IsLocal, &s.ServiceHost, &s.UsedMemoryMB, &s.LoadAvg)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &s, err
 }

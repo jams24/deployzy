@@ -114,3 +114,29 @@ func (d *DB) PruneOldSiteEvents(ctx context.Context, cutoff time.Time) error {
 	)
 	return err
 }
+
+// PruneSiteEventsPerPlan deletes analytics events older than each project
+// owner's plan retention (plan_limits.analytics_retention_days). -1 keeps
+// forever; admins are never pruned; orphaned rows fall back to the free tier.
+func (d *DB) PruneSiteEventsPerPlan(ctx context.Context) error {
+	if _, err := d.Pool.Exec(ctx, `
+		DELETE FROM site_events se
+		USING projects p, users u, plan_limits pl
+		WHERE se.project_id = p.id
+		  AND u.id = p.user_id
+		  AND pl.plan = u.plan
+		  AND u.is_admin = false
+		  AND pl.analytics_retention_days >= 0
+		  AND se.ts < now() - make_interval(days => pl.analytics_retention_days)`); err != nil {
+		return err
+	}
+	_, err := d.Pool.Exec(ctx, `
+		DELETE FROM site_events se
+		WHERE se.ts < now() - make_interval(days =>
+		        (SELECT analytics_retention_days FROM plan_limits WHERE plan = 'free'))
+		  AND NOT EXISTS (
+		        SELECT 1 FROM projects p JOIN users u ON u.id = p.user_id
+		        JOIN plan_limits pl ON pl.plan = u.plan
+		        WHERE p.id = se.project_id)`)
+	return err
+}

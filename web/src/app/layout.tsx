@@ -61,10 +61,9 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-snippet": -1, "max-image-preview": "large" },
   },
-  icons: {
-    icon: "/logo-icon.svg",
-    apple: "/logo-icon.svg",
-  },
+  // Favicon / app icons are supplied by the file conventions in app/:
+  // favicon.ico, icon.png, apple-icon.png — all rendered from the Deployzy
+  // rocket mark. See also app/manifest.ts for the PWA icon set.
 };
 
 export default function RootLayout({

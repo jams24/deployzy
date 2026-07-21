@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatedCounter } from "@/components/marketing/animated-counter";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
+import { PlanCta } from "@/components/marketing/plan-cta";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
@@ -14,118 +15,112 @@ export default function HomePage() {
   return (
     <>
       {/* ── Hero ──────────────────────────────────── */}
-      <section className="relative border-b border-border/40">
-        <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 py-20 sm:py-28 lg:py-36">
+      <section className="relative border-b border-border/40 overflow-hidden">
+        {/* Subtle radial glow */}
+        <div className="pointer-events-none absolute inset-0 -top-40 flex justify-center" aria-hidden>
+          <div className="h-[600px] w-[900px] rounded-full bg-indigo-50/60 blur-3xl dark:bg-indigo-950/20" />
+        </div>
+        <div className="relative mx-auto max-w-6xl px-5 sm:px-6">
+          <div className="grid lg:grid-cols-[1fr_1.1fr] gap-12 lg:gap-16 py-20 sm:py-28 lg:py-36">
+
+            {/* Left */}
             <FadeIn className="flex flex-col justify-center">
-              <FadeIn delay={0.1}>
-                <div className="inline-flex items-center gap-2 self-start rounded-full border border-border/60 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
-                  <span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span>
+              <FadeIn delay={0.08}>
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-border bg-background px-3 py-1 text-[12px] text-muted-foreground shadow-sm">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </span>
                   Deploy · Databases · Tunnels · BYOC
                 </div>
               </FadeIn>
-              <FadeIn delay={0.2}>
-                <h1 className="mt-6 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15]">
-                  Your entire backend,<br />one platform
+
+              <FadeIn delay={0.18}>
+                <h1 className="mt-6 text-[2.4rem] sm:text-5xl lg:text-[3.25rem] font-bold tracking-[-0.03em] leading-[1.08] text-foreground">
+                  Deploy apps.<br />
+                  <span className="text-foreground/50">Ship faster.</span>
                 </h1>
               </FadeIn>
-              <FadeIn delay={0.35}>
-                <p className="mt-5 text-base text-muted-foreground leading-relaxed max-w-md">
-                  Deploy apps from GitHub, attach managed Postgres, tunnel your
-                  laptop to the internet, and bring your own VPS for unlimited
-                  scale — Railway + ngrok + Supabase, in one open-source platform
-                  you can self-host.
+
+              <FadeIn delay={0.3}>
+                <p className="mt-5 text-[15px] text-muted-foreground leading-relaxed max-w-[420px]">
+                  Connect a GitHub repo and go live in under 30 seconds.
+                  Managed Postgres, secure tunnels, and bring your own VPS —
+                  one platform instead of five tools.
                 </p>
               </FadeIn>
-              <FadeIn delay={0.5}>
-                <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                  <HoverScale><Button className="h-10 px-5 text-sm gap-2" nativeButton={false} render={<Link href="/sign-up" />}>Start free <ArrowRight className="h-3.5 w-3.5" /></Button></HoverScale>
-                  <HoverScale><Button variant="outline" className="h-10 px-5 text-sm" nativeButton={false} render={<Link href="/docs" />}>Read docs</Button></HoverScale>
+
+              <FadeIn delay={0.42}>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Link
+                    href="/sign-up"
+                    className="inline-flex items-center gap-2 rounded-full bg-foreground text-background text-[13px] font-semibold px-5 py-2.5 hover:opacity-85 transition-opacity shadow-sm"
+                  >
+                    Start deploying <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                  <Link
+                    href="/docs"
+                    className="inline-flex items-center gap-2 rounded-full border border-border bg-background text-foreground text-[13px] font-medium px-5 py-2.5 hover:bg-accent transition-colors"
+                  >
+                    Read docs
+                  </Link>
                 </div>
               </FadeIn>
-              <FadeIn delay={0.6}>
-                <div className="mt-8 flex items-center gap-5 text-xs text-muted-foreground flex-wrap">
+
+              <FadeIn delay={0.52}>
+                <div className="mt-7 flex items-center gap-5 text-[12px] text-muted-foreground flex-wrap">
                   {["Free tier", "No credit card", "Self-hostable", "MIT license"].map((t) => (
-                    <span key={t} className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" />{t}</span>
+                    <span key={t} className="flex items-center gap-1.5">
+                      <Check className="h-3 w-3 text-emerald-500 shrink-0" />{t}
+                    </span>
                   ))}
                 </div>
               </FadeIn>
             </FadeIn>
 
-            {/* Hero right side: terminal showing deploy flow */}
-            <SlideIn delay={0.3} className="flex items-center">
-              <div className="relative w-full">
-
-                {/* ── Light-mode artwork frame ───────────────────────────
-                  * Dot pad + concentric arcs + corner bracket framing the
-                  * terminal card. Hidden in dark mode. pointer-events:none
-                  * so it never intercepts clicks.
-                  * ──────────────────────────────────────────────────── */}
-                <div className="pointer-events-none absolute -inset-6 rounded-2xl overflow-hidden dark:hidden" aria-hidden>
-                  {/* dot grid pad */}
-                  <div className="absolute inset-0 [background-image:radial-gradient(circle,rgba(0,0,0,0.09)_1px,transparent_1px)] [background-size:18px_18px]" />
-                  {/* bottom-right concentric arcs */}
-                  <svg className="absolute -bottom-3 -right-3 w-40 h-40 opacity-[0.18]" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="160" cy="160" r="44" stroke="black" strokeWidth="1"/>
-                    <circle cx="160" cy="160" r="72" stroke="black" strokeWidth="1"/>
-                    <circle cx="160" cy="160" r="100" stroke="black" strokeWidth="1"/>
-                    <circle cx="160" cy="160" r="130" stroke="black" strokeWidth="1"/>
-                    <line x1="156" y1="116" x2="164" y2="116" stroke="black" strokeWidth="1"/>
-                    <line x1="156" y1="88" x2="164" y2="88" stroke="black" strokeWidth="1"/>
-                    <line x1="156" y1="60" x2="164" y2="60" stroke="black" strokeWidth="1"/>
-                    <line x1="116" y1="156" x2="116" y2="164" stroke="black" strokeWidth="1"/>
-                    <line x1="88" y1="156" x2="88" y2="164" stroke="black" strokeWidth="1"/>
-                    <line x1="60" y1="156" x2="60" y2="164" stroke="black" strokeWidth="1"/>
-                  </svg>
-                  {/* top-right corner bracket */}
-                  <svg className="absolute top-2 right-2 w-10 h-10 opacity-25" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M 14 4 L 36 4 L 36 14" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="36" cy="4" r="2" fill="black"/>
-                  </svg>
-                  {/* bottom-left corner bracket */}
-                  <svg className="absolute bottom-2 left-2 w-10 h-10 opacity-20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M 14 36 L 4 36 L 4 26" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="4" cy="36" r="2" fill="black"/>
-                  </svg>
+            {/* Right — terminal */}
+            <SlideIn delay={0.25} className="flex items-center">
+              <div className="w-full rounded-xl border border-border bg-[#09090b] overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/30">
+                {/* Window chrome */}
+                <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-3 bg-[#111111]">
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
+                  <span className="ml-3 text-[11px] text-zinc-500 font-mono">~/my-saas — deployzy deploy</span>
                 </div>
-
-              <div className="relative w-full rounded-lg border border-border/60 bg-[#09090b] overflow-hidden sm-terminal">
-                <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-2.5">
-                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-white/10" />
-                  <span className="ml-2 text-[10px] text-zinc-600 font-mono">~/my-saas</span>
-                </div>
-                <div className="p-4 sm:p-5 font-mono text-[12px] sm:text-[13px] leading-[1.85] overflow-x-auto">
-                  <div className="text-zinc-600">$ git push origin main</div>
-                  <div className="mt-1 text-zinc-700">  <span className="text-amber-500">◷</span> Deployzy: webhook received</div>
-                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Building Docker image...</div>
-                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Postgres attached <span className="text-zinc-700">·</span> DATABASE_URL injected</div>
-                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Running migrations</div>
-                  <div className="text-zinc-500">  <span className="text-emerald-500">✓</span> Health check /health 200 OK</div>
-                  <div className="mt-1 text-zinc-500">  Deployed <span className="text-emerald-400 font-medium">https://my-saas.deployzy.com</span></div>
-                  <div className="mt-3 text-zinc-700">$ deployzy http 3000</div>
-                  <div className="mt-1 text-zinc-500">  Tunnel  <span className="text-blue-400 font-medium">https://dev.deployzy.com</span> <span className="text-zinc-700">→</span> <span className="text-zinc-400">localhost:3000</span></div>
-                  <div className="mt-3 text-zinc-700">$ deployzy servers add my-vps --host 5.9.x.x</div>
-                  <div className="mt-1 text-zinc-500">  <span className="text-emerald-500">✓</span> Probed: 8 vCPU · 32 GB · Docker installed</div>
-                  <div className="text-zinc-500">  Next deploy → <span className="text-violet-400 font-medium">my-vps</span> <span className="text-zinc-700">·</span> uncapped resources</div>
+                <div className="p-5 font-mono text-[12.5px] leading-[1.9] overflow-x-auto">
+                  <div className="text-zinc-500">$ git push origin main</div>
+                  <div className="mt-0.5 text-zinc-600">  <span className="text-amber-400">◷</span> Deployzy: webhook received</div>
+                  <div className="text-zinc-600">  <span className="text-emerald-400">✓</span> Building Docker image...</div>
+                  <div className="text-zinc-600">  <span className="text-emerald-400">✓</span> Postgres attached <span className="text-zinc-700">·</span> DATABASE_URL injected</div>
+                  <div className="text-zinc-600">  <span className="text-emerald-400">✓</span> Running migrations</div>
+                  <div className="text-zinc-600">  <span className="text-emerald-400">✓</span> Health check /health 200 OK</div>
+                  <div className="mt-0.5 text-zinc-500">  <span className="text-emerald-300 font-medium">→ https://my-saas.deployzy.com</span></div>
+                  <div className="mt-3 text-zinc-500">$ deployzy http 3000</div>
+                  <div className="mt-0.5 text-zinc-600">  Tunnel <span className="text-blue-300 font-medium">https://dev.deployzy.com</span> <span className="text-zinc-700">→</span> localhost:3000</div>
+                  <div className="mt-3 text-zinc-500">$ deployzy servers add my-vps --host 5.9.x.x</div>
+                  <div className="mt-0.5 text-zinc-600">  <span className="text-emerald-400">✓</span> Probed: 8 vCPU · 32 GB · Docker installed</div>
+                  <div className="text-zinc-600">  Next deploy → <span className="text-violet-300 font-medium">my-vps</span> · uncapped resources</div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-zinc-600 text-[11px]">Ready in 28s</span>
+                  </div>
                 </div>
               </div>
-              </div>{/* /relative w-full artwork wrapper */}
             </SlideIn>
           </div>
         </div>
       </section>
 
-      {/* ── Install ──────────────────────────────────── */}
-      <section className="border-b border-border/40">
-        <div className="mx-auto max-w-6xl px-5 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-center gap-3 sm:gap-6 text-xs text-muted-foreground font-mono">
-            <span>npm i -g deployzy</span>
-            <span className="hidden sm:block text-border/60">·</span>
-            <span>brew install jams24/deployzy/deployzy</span>
-            <span className="hidden sm:block text-border/60">·</span>
-            <span>curl -fsSL get.deployzy.com | sh</span>
+      {/* ── Install bar ──────────────────────────────── */}
+      <section className="border-b border-border/40 bg-muted/40">
+        <div className="mx-auto max-w-6xl px-5 sm:px-6 py-3.5">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-[12px] text-muted-foreground font-mono">
+            <span className="flex items-center gap-2"><span className="text-muted-foreground/40">$</span> npm i -g deployzy</span>
+            <span className="hidden sm:block text-border">·</span>
+            <span className="flex items-center gap-2"><span className="text-muted-foreground/40">$</span> brew install deployzy</span>
+            <span className="hidden sm:block text-border">·</span>
+            <span className="flex items-center gap-2"><span className="text-muted-foreground/40">$</span> curl -fsSL get.deployzy.com | sh</span>
           </div>
         </div>
       </section>
@@ -294,7 +289,7 @@ export default function HomePage() {
               desc="Tunneling, deploys, databases, custom domains, analytics — all in one. Upgrade only when you outgrow the limits."
             />
           </ScrollReveal>
-          <div className="mt-12 grid gap-4 max-w-5xl mx-auto lg:grid-cols-3 items-stretch">
+          <div className="mt-12 grid gap-4 max-w-6xl mx-auto sm:grid-cols-2 lg:grid-cols-4 items-stretch">
             {plans.map((plan, i) => (
               <ScrollReveal key={plan.name} delay={i * 150} className="h-full">
                 <div className={`flex h-full flex-col rounded-lg border p-6 sm:p-8 transition-all hover:border-foreground/20 ${plan.popular ? "border-foreground/20" : "border-border/40"}`}>
@@ -314,7 +309,7 @@ export default function HomePage() {
                       </li>
                     ))}
                   </ul>
-                  <Button className="mt-6 w-full h-9 text-xs" variant={plan.popular ? "default" : "outline"} nativeButton={false} render={<Link href="/sign-up" />}>{plan.cta}</Button>
+                  <PlanCta planId={plan.name.toLowerCase()} cta={plan.cta} popular={plan.popular} />
                 </div>
               </ScrollReveal>
             ))}
@@ -420,44 +415,60 @@ const extras = [
 const plans = [
   {
     name: "Free", price: "$0", period: null, popular: false,
-    desc: "Try Deployzy with a real side project.",
+    desc: "For hobby projects and learning.",
     cta: "Get started",
     features: [
+      "3 projects, 2 databases, 1 service",
       "5 subdomains, 5 active tunnels",
-      "3 projects, 2 databases",
-      "1 custom domain, 1 BYOC server",
-      "256 MB RAM / 0.25 vCPU per project",
-      "50 GB bandwidth, 60 build min/mo",
+      "1 BYOC server, 1 custom domain",
+      "512 MB RAM / 0.25 vCPU per project",
+      "50 GB bandwidth, 120 build min/mo",
       "Cookieless website analytics (7d)",
+      "3-day deploy log retention",
+    ],
+  },
+  {
+    name: "Hobby", price: "$5", period: "mo", popular: false,
+    desc: "Perfect for indie hackers and side projects.",
+    cta: "Start with Hobby",
+    features: [
+      "All Free features, plus:",
+      "5 projects, 3 databases, 3 services",
+      "8 subdomains, 8 tunnels, 2 BYOC servers",
+      "2 custom domains, 2 PR previews, 2 cron jobs",
+      "1 GB RAM / 0.5 vCPU per project",
+      "150 GB bandwidth, 300 build min/mo",
+      "TCP/TLS tunnels, private repos, live logs",
+      "Health checks, release commands, Telegram alerts",
+      "30-day analytics, 7-day deploy logs",
     ],
   },
   {
     name: "Pro", price: "$12", period: "mo", popular: true,
-    desc: "For freelancers + indie hackers.",
+    desc: "Built for production-ready applications.",
     cta: "Upgrade to Pro",
     features: [
-      "10 subdomains, 15 tunnels, 10 projects",
-      "10 databases, 5 services, 5 BYOC servers",
-      "5 custom domains, 5 PR previews",
+      "All Hobby features, plus:",
+      "10 projects, 5 databases, 10 services",
+      "10 subdomains, 15 tunnels, 5 BYOC servers",
+      "5 custom domains, 5 PR previews, 5 cron jobs",
       "1 GB RAM / 1 vCPU (configurable)",
       "500 GB bandwidth, 600 build min/mo",
-      "Live logs, release commands, health checks",
-      "Private repos, TCP/TLS tunnels, Telegram alerts",
-      "90-day analytics retention",
+      "7-day backups, 90-day analytics, 14-day deploy logs",
     ],
   },
   {
     name: "Team", price: "$35", period: "mo per seat", popular: false,
     desc: "For small teams shipping in production.",
-    cta: "Contact us",
+    cta: "Upgrade to Team",
     features: [
-      "Everything in Pro, plus:",
-      "50 subdomains / projects / databases",
+      "All Pro features, plus:",
+      "50 subdomains / projects, 20 databases",
       "15 BYOC servers, 25 custom domains",
       "25 scheduled jobs, 25 active PR previews",
       "Up to 8 GB RAM / 4 vCPU per project",
       "1 TB bandwidth, 1800 build min/mo",
-      "30-day backups, 1-year analytics",
+      "30-day backups, 1-year analytics, 30-day deploy logs",
       "Multi-user collaboration, priority support",
     ],
   },
