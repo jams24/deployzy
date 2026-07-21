@@ -60,8 +60,9 @@ func (d *DB) ListWorkerServers(ctx context.Context, userID *string) ([]WorkerSer
 	var query string
 	var args []interface{}
 	if userID == nil {
-		// Admin: list all platform servers
-		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE user_id IS NULL ORDER BY created_at DESC`
+		// Admin: every server — platform AND user BYOC — so the operations
+		// console sees the whole fleet. Platform (is_local first), then BYOC.
+		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers ORDER BY COALESCE(is_local, false) DESC, created_at DESC`
 	} else {
 		// User: list their BYOC servers
 		query = `SELECT id, user_id, label, host, port, ssh_user, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0) FROM worker_servers WHERE user_id = $1 ORDER BY created_at DESC`

@@ -48,6 +48,7 @@ interface WorkerServer {
   total_cpu: number; total_memory_mb: number; allocated_cpu: number;
   allocated_memory_mb: number; max_projects: number; current_projects: number;
   used_memory_mb: number; load_avg: number;
+  user_id: string | null;
   status: string; docker_installed: boolean; priority?: number; is_local?: boolean;
 }
 
@@ -673,6 +674,7 @@ export default function AdminPage() {
                             : "bg-red-500/20 text-red-500"
                           }`}>{s.status}</Badge>
                           {s.is_local && <Badge variant="outline" className="text-[9px]">primary</Badge>}
+                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-400 border-violet-500/30">BYOC</Badge>}
                         </div>
                         <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
                       </div>
@@ -1087,6 +1089,7 @@ export default function AdminPage() {
                                 : "bg-red-500/20 text-red-500"
                               }`}>{s.status}</Badge>
                               {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-400 border-blue-500/30">primary · local</Badge>}
+                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-400 border-violet-500/30">BYOC</Badge>}
                               {s.docker_installed && <Badge variant="outline" className="text-[9px]">Docker</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.host}</p>

@@ -565,19 +565,24 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 				// (used RAM, load) rather than allocation sums, and totals
 				// track reality instead of the add-time snapshot.
 				probeCtx, pcancel := context.WithTimeout(ctx, 15*time.Second)
+				// SMPROBE marker: SSH sessions can prepend noise (locale
+				// warnings, MOTD) to combined output — parse only our line.
 				out, perr := runner.RunShell(probeCtx,
-					`echo "$(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) $(cut -d' ' -f1 /proc/loadavg)"`)
+					`echo "SMPROBE $(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) $(cut -d' ' -f1 /proc/loadavg)"`)
 				pcancel()
 				if perr == nil {
-					parts := strings.Fields(strings.TrimSpace(string(out)))
-					if len(parts) == 4 {
-						cpu, _ := strconv.ParseFloat(parts[0], 64)
-						memTotal, _ := strconv.Atoi(parts[1])
-						memAvail, _ := strconv.Atoi(parts[2])
-						load, _ := strconv.ParseFloat(parts[3], 64)
-						if cpu > 0 && memTotal > 0 {
-							database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, memTotal)
-							database.UpdateWorkerServerLiveMetrics(ctx, w.ID, memTotal-memAvail, load)
+					for _, line := range strings.Split(string(out), "\n") {
+						parts := strings.Fields(strings.TrimSpace(line))
+						if len(parts) == 5 && parts[0] == "SMPROBE" {
+							cpu, _ := strconv.ParseFloat(parts[1], 64)
+							memTotal, _ := strconv.Atoi(parts[2])
+							memAvail, _ := strconv.Atoi(parts[3])
+							load, _ := strconv.ParseFloat(parts[4], 64)
+							if cpu > 0 && memTotal > 0 {
+								database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, memTotal)
+								database.UpdateWorkerServerLiveMetrics(ctx, w.ID, memTotal-memAvail, load)
+							}
+							break
 						}
 					}
 				}
