@@ -134,13 +134,14 @@ func main() {
 		run := func() {
 			ctx := context.Background()
 			now := time.Now()
-			// Site analytics: 90-day retention (privacy + usefulness window).
-			if err := database.PruneOldSiteEvents(ctx, now.AddDate(0, 0, -90)); err != nil {
+			// Site analytics + deploy logs: retention comes from each
+			// owner's plan (plan_limits.analytics_retention_days /
+			// deploy_log_retention_days), so paid tiers actually get the
+			// longer windows the pricing page sells. Admins are exempt.
+			if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune site_events failed")
 			}
-			// Deploy logs: 14-day retention per project — most useful during a
-			// recent build; older rows are just noise.
-			if n, err := database.PruneOldDeployLogs(ctx, now.AddDate(0, 0, -14)); err != nil {
+			if n, err := database.PruneDeployLogsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune deploy_logs failed")
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned deploy_logs")

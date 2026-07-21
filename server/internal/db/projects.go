@@ -485,6 +485,39 @@ func (d *DB) PruneOldDeployLogs(ctx context.Context, cutoff time.Time) (int64, e
 	return tag.RowsAffected(), nil
 }
 
+// PruneDeployLogsPerPlan deletes deploy logs older than each project owner's
+// plan retention (plan_limits.deploy_log_retention_days). -1 = unlimited;
+// admins are never pruned. Rows whose owner can't be resolved fall back to
+// the free tier's window rather than living forever.
+func (d *DB) PruneDeployLogsPerPlan(ctx context.Context) (int64, error) {
+	tag, err := d.Pool.Exec(ctx, `
+		DELETE FROM deploy_logs dl
+		USING projects p, users u, plan_limits pl
+		WHERE dl.project_id = p.id
+		  AND u.id = p.user_id
+		  AND pl.plan = u.plan
+		  AND u.is_admin = false
+		  AND pl.deploy_log_retention_days >= 0
+		  AND dl.created_at < now() - make_interval(days => pl.deploy_log_retention_days)`)
+	if err != nil {
+		return 0, err
+	}
+	n := tag.RowsAffected()
+	// Orphans / unknown plans: free-tier window as the safety net.
+	tag2, err := d.Pool.Exec(ctx, `
+		DELETE FROM deploy_logs dl
+		WHERE dl.created_at < now() - make_interval(days =>
+		        (SELECT deploy_log_retention_days FROM plan_limits WHERE plan = 'free'))
+		  AND NOT EXISTS (
+		        SELECT 1 FROM projects p JOIN users u ON u.id = p.user_id
+		        JOIN plan_limits pl ON pl.plan = u.plan
+		        WHERE p.id = dl.project_id)`)
+	if err != nil {
+		return n, err
+	}
+	return n + tag2.RowsAffected(), nil
+}
+
 // PruneOldCapturedRequests drops old inspector rows. Captured request bodies
 // can be 10KB each; a popular tunnel accumulates fast.
 func (d *DB) PruneOldCapturedRequests(ctx context.Context, cutoff time.Time) (int64, error) {

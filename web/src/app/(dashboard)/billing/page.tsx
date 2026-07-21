@@ -137,7 +137,7 @@ export default function BillingPage() {
         "1 BYOC server, 1 custom domain",
         "512 MB RAM / 0.25 vCPU per project",
         "50 GB bandwidth, 120 build min / mo",
-        "7-day analytics retention",
+        "7-day analytics, 3-day deploy logs",
       ],
     },
     {
@@ -155,7 +155,7 @@ export default function BillingPage() {
         "150 GB bandwidth, 300 build min / mo",
         "TCP/TLS tunnels, private repos, live logs",
         "Health checks, release cmds, Telegram alerts",
-        "30-day analytics retention",
+        "30-day analytics, 7-day deploy logs",
       ],
     },
     {
@@ -173,7 +173,7 @@ export default function BillingPage() {
         "500 GB bandwidth, 600 build min / mo",
         "Live container logs, release commands, health checks",
         "Private GitHub repos, TCP tunnels, Telegram alerts",
-        "90-day analytics retention",
+        "90-day analytics, 7-day backups, 14-day deploy logs",
       ],
     },
     {
@@ -189,7 +189,7 @@ export default function BillingPage() {
         "25 scheduled jobs, 25 active PR previews",
         "Up to 8 GB RAM / 4 vCPU per project",
         "1 TB bandwidth, 1800 build min / mo",
-        "30-day backup retention, 1-year analytics",
+        "30-day backups, 1-year analytics, 30-day deploy logs",
         "Multi-user collaboration (min 2 seats)",
         "Priority support",
       ],

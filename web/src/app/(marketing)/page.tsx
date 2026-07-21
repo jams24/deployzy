@@ -424,6 +424,7 @@ const plans = [
       "512 MB RAM / 0.25 vCPU per project",
       "50 GB bandwidth, 120 build min/mo",
       "Cookieless website analytics (7d)",
+      "3-day deploy log retention",
     ],
   },
   {
@@ -439,7 +440,7 @@ const plans = [
       "150 GB bandwidth, 300 build min/mo",
       "TCP/TLS tunnels, private repos, live logs",
       "Health checks, release commands, Telegram alerts",
-      "30-day analytics retention",
+      "30-day analytics, 7-day deploy logs",
     ],
   },
   {
@@ -453,7 +454,7 @@ const plans = [
       "5 custom domains, 5 PR previews, 5 cron jobs",
       "1 GB RAM / 1 vCPU (configurable)",
       "500 GB bandwidth, 600 build min/mo",
-      "7-day backups, 90-day analytics",
+      "7-day backups, 90-day analytics, 14-day deploy logs",
     ],
   },
   {
@@ -467,7 +468,7 @@ const plans = [
       "25 scheduled jobs, 25 active PR previews",
       "Up to 8 GB RAM / 4 vCPU per project",
       "1 TB bandwidth, 1800 build min/mo",
-      "30-day backups, 1-year analytics",
+      "30-day backups, 1-year analytics, 30-day deploy logs",
       "Multi-user collaboration, priority support",
     ],
   },
