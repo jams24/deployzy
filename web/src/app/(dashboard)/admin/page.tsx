@@ -47,6 +47,7 @@ interface WorkerServer {
   id: string; label: string; host: string; region: string;
   total_cpu: number; total_memory_mb: number; allocated_cpu: number;
   allocated_memory_mb: number; max_projects: number; current_projects: number;
+  used_memory_mb: number; load_avg: number;
   status: string; docker_installed: boolean; priority?: number; is_local?: boolean;
 }
 
@@ -658,8 +659,8 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {servers.map(s => {
-                  const memPct = s.total_memory_mb > 0 ? (s.allocated_memory_mb / s.total_memory_mb) * 100 : 0;
-                  const cpuPct = s.total_cpu > 0 ? (s.allocated_cpu / s.total_cpu) * 100 : 0;
+                  const memPct = s.total_memory_mb > 0 ? (s.used_memory_mb / s.total_memory_mb) * 100 : 0;
+                  const cpuPct = s.total_cpu > 0 ? (s.load_avg / s.total_cpu) * 100 : 0;
                   const projPct = s.max_projects > 0 ? (s.current_projects / s.max_projects) * 100 : 0;
                   return (
                     <div key={s.id} className="rounded-lg border border-border/50 p-3">
@@ -676,8 +677,8 @@ export default function AdminPage() {
                         <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <UtilBar label="RAM" used={s.allocated_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" />
-                        <UtilBar label="CPU" used={s.allocated_cpu} total={s.total_cpu} pct={cpuPct} unit="cores" />
+                        <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" />
+                        <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" />
                         <UtilBar label="Projects" used={s.current_projects} total={s.max_projects} pct={projPct} unit="" />
                       </div>
                     </div>
@@ -1066,8 +1067,8 @@ export default function AdminPage() {
           ) : (
             <div className="space-y-3">
               {servers.map(s => {
-                const memPct = s.total_memory_mb > 0 ? (s.allocated_memory_mb / s.total_memory_mb) * 100 : 0;
-                const cpuPct = s.total_cpu > 0 ? (s.allocated_cpu / s.total_cpu) * 100 : 0;
+                const memPct = s.total_memory_mb > 0 ? (s.used_memory_mb / s.total_memory_mb) * 100 : 0;
+                const cpuPct = s.total_cpu > 0 ? (s.load_avg / s.total_cpu) * 100 : 0;
                 const projPct = s.max_projects > 0 ? (s.current_projects / s.max_projects) * 100 : 0;
                 return (
                   <Card key={s.id}>
@@ -1110,10 +1111,13 @@ export default function AdminPage() {
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-3">
-                        <UtilBar label="RAM" used={s.allocated_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
-                        <UtilBar label="CPU" used={parseFloat(s.allocated_cpu.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />
+                        <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
+                        <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />
                         <UtilBar label="Projects" used={s.current_projects} total={s.max_projects} pct={projPct} unit="" large />
                       </div>
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Measured live (refreshed every 2 min). Allocated limits: {s.allocated_memory_mb} MB RAM · {s.allocated_cpu.toFixed(1)} vCPU across {s.current_projects} projects — limits are caps, not reservations, so they may exceed the hardware.
+                      </p>
                     </CardContent>
                   </Card>
                 );

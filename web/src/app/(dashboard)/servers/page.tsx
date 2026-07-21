@@ -14,6 +14,7 @@ interface WorkerServer {
   id: string; label: string; host: string; port: number; ssh_user: string;
   region: string; total_cpu: number; total_memory_mb: number;
   allocated_cpu: number; allocated_memory_mb: number;
+  used_memory_mb: number; load_avg: number;
   max_projects: number; current_projects: number;
   status: string; docker_installed: boolean; last_heartbeat: string | null; created_at: string;
   docker_install_status?: string; docker_install_error?: string | null;
@@ -199,17 +200,17 @@ export default function ServersPage() {
                     <div className="text-right text-xs text-muted-foreground space-y-0.5 min-w-[140px]">
                       <div><span className="text-foreground font-mono">{s.current_projects}</span>/{s.max_projects} projects</div>
                       <div>
-                        <span className="text-foreground font-mono">{s.allocated_memory_mb}</span>
-                        <span>/{s.total_memory_mb >= 1024 ? `${(s.total_memory_mb / 1024).toFixed(1)} GB` : `${s.total_memory_mb} MB`} RAM</span>
+                        <span className="text-foreground font-mono">{s.used_memory_mb}</span>
+                        <span>/{s.total_memory_mb >= 1024 ? `${(s.total_memory_mb / 1024).toFixed(1)} GB` : `${s.total_memory_mb} MB`} RAM used</span>
                       </div>
                       <div>
-                        <span className="text-foreground font-mono">{s.allocated_cpu.toFixed(2)}</span>/<span className="font-mono">{s.total_cpu.toFixed(0)}</span> vCPU
+                        load <span className="text-foreground font-mono">{(s.load_avg ?? 0).toFixed(1)}</span>/<span className="font-mono">{s.total_cpu.toFixed(0)}</span> cores
                       </div>
                       {s.total_memory_mb > 0 && (
                         <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
                           <div
-                            className={`h-full ${s.allocated_memory_mb / s.total_memory_mb > 0.85 ? "bg-amber-500" : "bg-emerald-500"}`}
-                            style={{ width: `${Math.min(100, (s.allocated_memory_mb / s.total_memory_mb) * 100)}%` }}
+                            className={`h-full ${s.used_memory_mb / s.total_memory_mb > 0.85 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.min(100, (s.used_memory_mb / s.total_memory_mb) * 100)}%` }}
                           />
                         </div>
                       )}

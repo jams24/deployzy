@@ -560,19 +560,24 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 					log.Info().Str("worker", w.Label).Str("host", w.Host).Msg("worker responding again — marking active")
 					database.UpdateWorkerServerStatus(ctx, w.ID, "active")
 				}
-				// Refresh real hardware capacity on each heartbeat so the
-				// Servers page shows measured values, not the snapshot from
-				// when the server was first added.
+				// Refresh real hardware capacity + live usage on each
+				// heartbeat so the Servers/Admin pages show measured values
+				// (used RAM, load) rather than allocation sums, and totals
+				// track reality instead of the add-time snapshot.
 				probeCtx, pcancel := context.WithTimeout(ctx, 15*time.Second)
-				out, perr := runner.RunShell(probeCtx, `echo "$(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"`)
+				out, perr := runner.RunShell(probeCtx,
+					`echo "$(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) $(cut -d' ' -f1 /proc/loadavg)"`)
 				pcancel()
 				if perr == nil {
 					parts := strings.Fields(strings.TrimSpace(string(out)))
-					if len(parts) == 2 {
+					if len(parts) == 4 {
 						cpu, _ := strconv.ParseFloat(parts[0], 64)
-						mem, _ := strconv.Atoi(parts[1])
-						if cpu > 0 && mem > 0 {
-							database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, mem)
+						memTotal, _ := strconv.Atoi(parts[1])
+						memAvail, _ := strconv.Atoi(parts[2])
+						load, _ := strconv.ParseFloat(parts[3], 64)
+						if cpu > 0 && memTotal > 0 {
+							database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, memTotal)
+							database.UpdateWorkerServerLiveMetrics(ctx, w.ID, memTotal-memAvail, load)
 						}
 					}
 				}
