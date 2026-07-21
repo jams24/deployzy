@@ -551,6 +551,14 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 			} else {
 				database.UpdateWorkerHeartbeat(ctx, w.ID)
 				delete(fails, w.ID)
+				// Self-heal: a worker previously marked offline that answers
+				// again comes back automatically. Offline used to be a
+				// one-way door — a transient SSH timeout (e.g. control host
+				// under load) stranded healthy workers offline forever.
+				if w.Status == "offline" {
+					log.Info().Str("worker", w.Label).Str("host", w.Host).Msg("worker responding again — marking active")
+					database.UpdateWorkerServerStatus(ctx, w.ID, "active")
+				}
 			}
 		}
 	}

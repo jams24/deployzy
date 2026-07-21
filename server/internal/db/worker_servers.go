@@ -198,14 +198,15 @@ func (d *DB) UpdateWorkerHeartbeat(ctx context.Context, id string) error {
 	return err
 }
 
-// ListAllActiveWorkers returns every worker_server row currently marked active,
-// across both platform (user_id IS NULL) and BYOC. Used by background jobs
-// like the heartbeat monitor and remote build-dir cleanup — they need to
-// operate on every worker regardless of ownership.
+// ListAllActiveWorkers returns every worker_server row marked active OR
+// offline, across both platform (user_id IS NULL) and BYOC. Offline rows are
+// included so the heartbeat monitor can re-probe and self-heal workers that
+// were flagged during a transient outage; callers that only ever act on
+// healthy workers should check Status themselves.
 func (d *DB) ListAllActiveWorkers(ctx context.Context) ([]WorkerServer, error) {
 	rows, err := d.Pool.Query(ctx,
 		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, '')
-		 FROM worker_servers WHERE status = 'active'`,
+		 FROM worker_servers WHERE status IN ('active', 'offline')`,
 	)
 	if err != nil {
 		return nil, err
