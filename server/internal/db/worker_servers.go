@@ -152,6 +152,10 @@ func (d *DB) UpdateWorkerServerDockerInstalled(ctx context.Context, id string, i
 // so the number never drifts. Unset (0) project values fall back to the
 // engine defaults (0.5 CPU / 512 MB) so we don't under-count.
 func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) error {
+	// Projects on the local platform server historically have a NULL
+	// worker_server_id (they predate the worker_servers table), so the
+	// is_local row must also count NULL assignments — otherwise the local
+	// server shows 0 projects / 0 allocation no matter what's running on it.
 	_, err := d.Pool.Exec(ctx, `
 		WITH agg AS (
 		  SELECT
@@ -159,7 +163,10 @@ func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) err
 		    COALESCE(SUM(CASE WHEN memory_mb > 0 THEN memory_mb ELSE 512 END), 0)::int    AS mem_sum,
 		    COUNT(*)::int AS proj_count
 		  FROM projects
-		  WHERE worker_server_id = $1 AND status IN ('running', 'building')
+		  WHERE status IN ('running', 'building')
+		    AND (worker_server_id = $1
+		         OR (worker_server_id IS NULL
+		             AND (SELECT is_local FROM worker_servers WHERE id = $1)))
 		)
 		UPDATE worker_servers
 		SET allocated_cpu       = agg.cpu_sum,
@@ -167,6 +174,28 @@ func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) err
 		    current_projects    = agg.proj_count
 		FROM agg WHERE worker_servers.id = $1`, serverID)
 	return err
+}
+
+// ReconcileAllServerAllocations refreshes allocation counters for every
+// worker (platform + BYOC). Called periodically so moves, crashes, and
+// deletes can't leave stale numbers on the Servers page.
+func (d *DB) ReconcileAllServerAllocations(ctx context.Context) {
+	rows, err := d.Pool.Query(ctx, `SELECT id FROM worker_servers`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return
+		}
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		d.ReconcileServerAllocation(ctx, id)
+	}
 }
 
 // UpdateWorkerServerCapacity refreshes total_cpu and total_memory_mb from a

@@ -490,13 +490,22 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		hostPort = 10100 + rand.Intn(900)
 	}
 
-	// Auto-inject DATABASE_URL if project has a managed database
+	// Auto-inject DATABASE_URL if project has a managed database.
+	// The internal URL (172.17.0.1 = Docker bridge = "this host") only works
+	// when the app runs on the same box as its Postgres. A project on a BYOC
+	// worker must dial back to the platform DB via the public service host —
+	// otherwise Prisma just times out (took frenchpathai's login down after
+	// a move to a worker, 2026-07-21).
 	projDB, _ := e.db.GetProjectDatabase(ctx, project.ID)
 	if projDB != nil {
 		if project.EnvVars == nil {
 			project.EnvVars = make(map[string]string)
 		}
-		project.EnvVars["DATABASE_URL"] = projDB.ConnectionURL()
+		if e.projectRunsRemotely(ctx, project) {
+			project.EnvVars["DATABASE_URL"] = projDB.ExternalConnectionURL(e.ServiceHost)
+		} else {
+			project.EnvVars["DATABASE_URL"] = projDB.ConnectionURL()
+		}
 	}
 
 	// Build env var flags (skip comments, strip quotes)
@@ -757,6 +766,20 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 // server. Projects on the local platform row (is_local=true) use LocalRunner
 // — SSH-to-self would hang on credential lookup since the local row has no
 // SSH password.
+// projectRunsRemotely reports whether the project is assigned to a non-local
+// worker — i.e. its container cannot reach services on the platform host via
+// the Docker bridge IP and must use public addresses instead.
+func (e *Engine) projectRunsRemotely(ctx context.Context, project *db.Project) bool {
+	if project.WorkerServerID == "" {
+		return false
+	}
+	server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)
+	if server == nil {
+		return false
+	}
+	return !(server.IsLocal || server.Host == "localhost" || server.Host == "127.0.0.1" || server.Host == "")
+}
+
 func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	if project.WorkerServerID != "" {
 		server, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID)

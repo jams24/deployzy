@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -559,8 +560,28 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 					log.Info().Str("worker", w.Label).Str("host", w.Host).Msg("worker responding again — marking active")
 					database.UpdateWorkerServerStatus(ctx, w.ID, "active")
 				}
+				// Refresh real hardware capacity on each heartbeat so the
+				// Servers page shows measured values, not the snapshot from
+				// when the server was first added.
+				probeCtx, pcancel := context.WithTimeout(ctx, 15*time.Second)
+				out, perr := runner.RunShell(probeCtx, `echo "$(nproc) $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"`)
+				pcancel()
+				if perr == nil {
+					parts := strings.Fields(strings.TrimSpace(string(out)))
+					if len(parts) == 2 {
+						cpu, _ := strconv.ParseFloat(parts[0], 64)
+						mem, _ := strconv.Atoi(parts[1])
+						if cpu > 0 && mem > 0 {
+							database.UpdateWorkerServerCapacity(ctx, w.ID, cpu, mem)
+						}
+					}
+				}
 			}
 		}
+		// Recount projects/allocations on every server each cycle so moves,
+		// crashes, and deletions can't leave the Servers page showing stale
+		// project counts or allocation bars.
+		database.ReconcileAllServerAllocations(ctx)
 	}
 	check()
 	t := time.NewTicker(2 * time.Minute)
