@@ -92,6 +92,10 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userId")
 
+	// Same teardown as self-service deletion: stop their containers before
+	// the rows vanish, otherwise the workloads are orphaned on the hosts.
+	s.purgeUserResources(r.Context(), userID)
+
 	if err := s.db.AdminDeleteUser(r.Context(), userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete user")
 		return

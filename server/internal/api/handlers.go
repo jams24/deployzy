@@ -315,6 +315,10 @@ func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
+	// Tear down running containers/volumes first — deleting the row only
+	// cascades DB records and would leave their apps running forever.
+	s.purgeUserResources(r.Context(), u.ID)
+
 	if err := s.db.DeleteUser(r.Context(), u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete account")
 		return
