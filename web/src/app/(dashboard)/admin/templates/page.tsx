@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Template, EnvVarSchema } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logos";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -518,14 +519,14 @@ export default function AdminTemplatesPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-xl border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="border-b border-border bg-muted/30">
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Template</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Category</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">Source</th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Stats</th>
+              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden lg:table-cell">Stats</th>
               <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
               <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Actions</th>
             </tr>
@@ -553,10 +554,10 @@ export default function AdminTemplatesPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-base shrink-0"
-                      style={{ background: t.color + "20", border: `1px solid ${t.color}30` }}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: t.color + "14", border: `1px solid ${t.color}33` }}
                     >
-                      {t.icon}
+                      <BrandLogo logoSlug={t.logo_slug} slug={t.slug} name={t.name} color={t.color} className="h-4 w-4" />
                     </div>
                     <div>
                       <div className="font-medium text-foreground flex items-center gap-1.5">
@@ -592,7 +593,7 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Stats */}
-                <td className="px-4 py-3 text-center">
+                <td className="px-4 py-3 text-center hidden lg:table-cell">
                   <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Download className="h-3 w-3" />{t.deploy_count}
