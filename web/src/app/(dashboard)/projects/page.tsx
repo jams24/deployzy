@@ -1031,7 +1031,7 @@ function ProjectsContent() {
 
       {/* GitHub status */}
       {ghConnected && (
-        <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/30 px-4 py-2.5">
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-border bg-card/30 px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm min-w-0">
             <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
@@ -1166,7 +1166,7 @@ function ProjectsContent() {
             </div>
 
             {/* Multiple Services */}
-            <div className="rounded-lg border border-border/40 overflow-hidden">
+            <div className="rounded-lg border border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-start gap-2">
                   <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -1204,7 +1204,7 @@ function ProjectsContent() {
             </div>
 
             {/* Advanced Build & Runtime Settings */}
-            <div className="rounded-lg border border-border/40 overflow-hidden">
+            <div className="rounded-lg border border-border overflow-hidden">
               <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4 text-muted-foreground" />
@@ -1330,7 +1330,7 @@ function ProjectsContent() {
           })()}
           <div className={viewMode === "grid"
             ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
-            : "rounded-xl border border-border/40 divide-y divide-border/40 overflow-hidden bg-card/20"}>
+            : "rounded-xl border border-border divide-y divide-border overflow-hidden bg-card/20"}>
             {/* table header (list view only) */}
             {viewMode === "list" && (
               <div className="hidden md:flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-white/[0.02]">
@@ -1344,7 +1344,7 @@ function ProjectsContent() {
             const isSel = selectedProject === p.id;
             return (
             <div key={p.id} id={`project-row-${p.id}`} className={isGrid
-              ? `rounded-xl border bg-card/20 overflow-hidden transition-all ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20 hover:bg-card/40"}`
+              ? `rounded-xl border bg-card overflow-hidden transition-all ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/30 shadow-sm" : "border-border hover:border-foreground/25 hover:shadow-sm"}`
               : `transition-colors ${isSel ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
               <div className={isGrid ? "p-5" : "px-4 py-2.5"}>
                 <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
@@ -1392,7 +1392,7 @@ function ProjectsContent() {
                     </div>
                   </div>
                   <div className={isGrid && !isSel
-                    ? "flex items-center gap-1.5 flex-wrap pt-3 border-t border-border/40"
+                    ? "flex items-center gap-1.5 flex-wrap pt-3 border-t border-border/70"
                     : "flex items-center gap-1 flex-wrap shrink-0"}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
@@ -1484,7 +1484,7 @@ function ProjectsContent() {
 
                 {/* Auto-Deploy Toggle */}
                 {selectedProject === p.id && p.github_repo && (
-                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border/40 bg-card/30 px-4 py-3">
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card/30 px-4 py-3">
                     <div className="flex items-center gap-3">
                       <RefreshCw className="h-4 w-4 text-muted-foreground" />
                       <div>
@@ -1514,7 +1514,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-4">
                     {editingLabels === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="rounded-lg border border-border p-3 space-y-2">
                         <label className="text-[10px] text-muted-foreground">Labels <span className="text-muted-foreground">(comma-separated, max 10)</span></label>
                         <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                         <div className="flex gap-2">
@@ -1533,7 +1533,7 @@ function ProjectsContent() {
 
                 {/* Custom Domains (inline) */}
                 {selectedProject === p.id && (
-                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs font-medium">Custom Domains</span>
@@ -1574,7 +1574,7 @@ function ProjectsContent() {
 
                 {/* Preview Deployments (inline) — only for projects linked to GitHub */}
                 {selectedProject === p.id && p.github_repo && (
-                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1626,7 +1626,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-4">
                     {editingEnv === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                      <div className="rounded-lg border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium">Environment Variables</span>
                           <div className="flex items-center gap-3">
@@ -1668,7 +1668,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-3">
                     {editingBuild === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                      <div className="rounded-lg border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Build &amp; Runtime Settings</span>
                           <span className="text-[10px] text-muted-foreground">Leave blank to use defaults</span>
@@ -1743,7 +1743,7 @@ function ProjectsContent() {
                         </div>
 
                         {/* Multiple Services */}
-                        <div className="rounded-lg border border-border/40 overflow-hidden">
+                        <div className="rounded-lg border border-border overflow-hidden">
                           <div className="flex items-center justify-between px-3 py-2.5">
                             <div className="flex items-start gap-2">
                               <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -1818,7 +1818,7 @@ function ProjectsContent() {
 
                     {/* Commits dropdown (rollback / pinned deploy) */}
                     {selectedProject === p.id && commits[p.id] && commits[p.id].length > 0 && editingBuild !== p.id && (
-                      <div className="mt-2 rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="mt-2 rounded-lg border border-border p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium">Recent commits on {p.github_branch || p.branch || "main"}</span>
                           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; })}>Close</Button>
@@ -1887,7 +1887,7 @@ function ProjectsContent() {
                   const netOutArr = samples.map((s) => s.net_tx_bytes);
                   const fmtBytes = (n: number) => n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} kB` : `${n} B`;
                   return (
-                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                    <div className="mt-4 rounded-lg border border-border p-3 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Activity className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1960,7 +1960,7 @@ function ProjectsContent() {
                   const vArr = tsPoints.map((t) => t.visitors);
                   const fmtNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
                   return (
-                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                    <div className="mt-4 rounded-lg border border-border p-3 space-y-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                           <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -2071,7 +2071,7 @@ function ProjectsContent() {
                   };
                   const barColor = bw.exceeded ? "bg-red-500" : bw.pct >= 80 ? "bg-yellow-500" : "bg-emerald-500";
                   return (
-                    <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                    <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>
@@ -2118,7 +2118,7 @@ function ProjectsContent() {
                   </div>
                 )}
                 {selectedProject === p.id && showCrons[p.id] && (
-                  <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-4 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Clock className="h-3.5 w-3.5 text-muted-foreground" />

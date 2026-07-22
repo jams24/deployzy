@@ -305,7 +305,7 @@ export default function ServicesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-xl border border-border/40 divide-y divide-border/40 overflow-hidden bg-card/20">
+        <div className="rounded-xl border border-border divide-y divide-border/40 overflow-hidden bg-card/20">
           {/* table header */}
           <div className="hidden md:flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-white/[0.02]">
             <span className="flex-1">Database</span>

@@ -472,7 +472,7 @@ function startDocker() {
           </div>
 
           {/* Advanced Build & Runtime Settings */}
-          <div className="rounded-lg border border-border/40 overflow-hidden">
+          <div className="rounded-lg border border-border overflow-hidden">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
