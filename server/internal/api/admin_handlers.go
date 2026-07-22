@@ -338,3 +338,55 @@ func (s *Server) handleAdminKillTunnel(w http.ResponseWriter, r *http.Request) {
 	s.registry.RemoveByURL(string(tunnelURL))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
+
+// handleAdminProjectDiagnostics returns a live container snapshot plus recent
+// deploy logs for ANY user's project, so an operator can answer "why is this
+// crashing?" from the console instead of SSHing into the host.
+func (s *Server) handleAdminProjectDiagnostics(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+
+	project, err := s.db.GetProject(r.Context(), projectID)
+	if err != nil || project == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine unavailable")
+		return
+	}
+
+	// Bound the whole probe: an unreachable BYOC host must not hang the console.
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	diag := s.deployer.Diagnose(ctx, project, 200)
+	deployLogs, _ := s.db.GetDeployLogs(r.Context(), projectID, 100)
+	if deployLogs == nil {
+		deployLogs = []db.DeployLog{}
+	}
+
+	var ownerEmail string
+	if owner, _ := s.db.GetUserByID(r.Context(), project.UserID); owner != nil {
+		ownerEmail = owner.Email
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"project": map[string]interface{}{
+			"id":             project.ID,
+			"name":           project.Name,
+			"subdomain":      project.Subdomain,
+			"status":         project.Status,
+			"framework":      project.Framework,
+			"repo_url":       project.RepoURL,
+			"branch":         project.Branch,
+			"memory_mb":      project.MemoryMB,
+			"cpus":           project.CPUs,
+			"container_port": project.ContainerPort,
+			"last_deploy_at": project.LastDeployAt,
+			"owner_email":    ownerEmail,
+			"owner_id":       project.UserID,
+		},
+		"container":   diag,
+		"deploy_logs": deployLogs,
+	})
+}

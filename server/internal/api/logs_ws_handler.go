@@ -38,8 +38,12 @@ func (s *Server) handleProjectLogsWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Admins can stream any project's logs — that's the whole point of the
+	// operations console. Everyone else is limited to their own projects.
+	isAdmin, _ := s.db.IsUserAdmin(r.Context(), claims.UserID)
+
 	project, _ := s.db.GetProject(r.Context(), projectID)
-	if project == nil || project.UserID != claims.UserID {
+	if project == nil || (project.UserID != claims.UserID && !isAdmin) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
@@ -47,8 +51,8 @@ func (s *Server) handleProjectLogsWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no container running", http.StatusConflict)
 		return
 	}
-	// Plan-gated: free tier doesn't get live log streaming.
-	if !s.isFeatureAllowedForUser(r.Context(), claims.UserID, "live_logs") {
+	// Plan-gated: free tier doesn't get live log streaming (admins exempt).
+	if !isAdmin && !s.isFeatureAllowedForUser(r.Context(), claims.UserID, "live_logs") {
 		http.Error(w, "live log streaming requires a paid plan", http.StatusPaymentRequired)
 		return
 	}

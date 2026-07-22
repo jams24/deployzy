@@ -33,10 +33,42 @@ func (d *DB) CreateSubscription(ctx context.Context, userID, plan, paymentID str
 	return &s, err
 }
 
+// ActivationResult describes what an activation actually did, so callers can
+// send the right email (new / upgrade / renewal) instead of guessing.
+type ActivationResult struct {
+	Activated    bool      // false when the webhook was a replay
+	UserID       string
+	Plan         string    // plan now active
+	PreviousPlan string    // plan the user was on before
+	Kind         string    // "new" | "upgrade" | "downgrade" | "renewal"
+	PeriodEnd    time.Time
+}
+
+// planRank orders tiers so an activation can be classified as an upgrade,
+// downgrade, or renewal. Unknown plans rank 0.
+func planRank(plan string) int {
+	switch plan {
+	case "hobby":
+		return 1
+	case "pro", "premium":
+		return 2
+	case "team":
+		return 3
+	}
+	return 0
+}
+
 // ActivateSubscription marks a subscription as active and upgrades the user
 // to the plan stored on the subscription row. The plan name must match a row
-// in plan_limits ('pro' or 'team') — 'premium' no longer exists there.
+// in plan_limits ('hobby'/'pro'/'team') — 'premium' no longer exists there.
 func (d *DB) ActivateSubscription(ctx context.Context, paymentID string) error {
+	_, err := d.ActivateSubscriptionDetailed(ctx, paymentID)
+	return err
+}
+
+// ActivateSubscriptionDetailed is ActivateSubscription plus a description of
+// what changed. Idempotent: a replayed webhook returns Activated=false.
+func (d *DB) ActivateSubscriptionDetailed(ctx context.Context, paymentID string) (*ActivationResult, error) {
 	now := time.Now()
 	end := now.AddDate(0, 1, 0) // 1 month
 
@@ -49,10 +81,10 @@ func (d *DB) ActivateSubscription(ctx context.Context, paymentID string) error {
 		paymentID, now, end,
 	).Scan(&userID, &plan)
 	if err == pgx.ErrNoRows {
-		return nil // Already activated or not found
+		return &ActivationResult{Activated: false}, nil // replay or unknown payment
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Legacy safety net: old pending rows may still say 'premium', which has
@@ -61,16 +93,42 @@ func (d *DB) ActivateSubscription(ctx context.Context, paymentID string) error {
 		plan = "pro"
 	}
 
+	// Capture the plan being replaced so the caller can tell a first-time
+	// purchase from an upgrade or a renewal.
+	var previousPlan string
+	d.Pool.QueryRow(ctx, `SELECT COALESCE(plan, 'free') FROM users WHERE id = $1`, userID).Scan(&previousPlan)
+
 	// Upgrade user plan
 	_, err = d.Pool.Exec(ctx,
 		`UPDATE users SET plan = $2, updated_at = now() WHERE id = $1`,
 		userID, plan,
 	)
-	if err == nil {
-		// This user just became paid — credit whoever referred them.
-		d.MaybeGrantReferrerReward(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
-	return err
+	// This user just became paid — credit whoever referred them.
+	d.MaybeGrantReferrerReward(ctx, userID)
+
+	kind := "new"
+	switch {
+	case previousPlan == plan:
+		kind = "renewal"
+	case planRank(previousPlan) == 0:
+		kind = "new"
+	case planRank(plan) > planRank(previousPlan):
+		kind = "upgrade"
+	case planRank(plan) < planRank(previousPlan):
+		kind = "downgrade"
+	}
+
+	return &ActivationResult{
+		Activated:    true,
+		UserID:       userID,
+		Plan:         plan,
+		PreviousPlan: previousPlan,
+		Kind:         kind,
+		PeriodEnd:    end,
+	}, nil
 }
 
 // SweepExpiredSubscriptions marks lapsed subscriptions as expired and

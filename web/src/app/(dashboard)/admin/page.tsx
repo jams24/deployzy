@@ -43,6 +43,23 @@ interface AdminProject {
   status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
 }
 
+interface ProjectDiagnostics {
+  project: {
+    id: string; name: string; subdomain: string; status: string; framework: string;
+    repo_url: string; branch: string; memory_mb: number; cpus: number;
+    container_port: number; last_deploy_at: string | null;
+    owner_email: string; owner_id: string;
+  };
+  container: {
+    container_name: string; host: string; state: string; health: string;
+    exit_code: number; oom_killed: boolean; restart_count: number;
+    started_at: string; finished_at: string;
+    memory_usage_mb: number; memory_limit_mb: number; cpu_percent: string;
+    logs: string; error: string;
+  };
+  deploy_logs: { id?: string; message: string; stage?: string; created_at: string }[];
+}
+
 interface WorkerServer {
   id: string; label: string; host: string; region: string;
   total_cpu: number; total_memory_mb: number; allocated_cpu: number;
@@ -116,6 +133,10 @@ export default function AdminPage() {
   const [projectStatus, setProjectStatus] = useState("all");
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [diagOpen, setDiagOpen] = useState<string | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
 
   // Sessions state
@@ -205,18 +226,20 @@ export default function AdminPage() {
   }, [usersHasMore, usersLoading, usersOffset, userSearch, userPlanFilter, fetchUsers]);
 
   const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean }) => {
-    await fetch(`${API}/api/v1/admin/users/${userId}`, {
-      method: "PUT", headers: headers(), body: JSON.stringify(updates),
-    });
-    resetUsers(userSearch, userPlanFilter);
-    loadStats();
+    if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, {
+      method: "PUT", body: JSON.stringify(updates),
+    }, "Updating user")) {
+      resetUsers(userSearch, userPlanFilter);
+      loadStats();
+    }
   };
 
   const deleteUser = async (userId: string, email: string) => {
     if (!confirm(`Delete ${email}? This cannot be undone.`)) return;
-    await fetch(`${API}/api/v1/admin/users/${userId}`, { method: "DELETE", headers: headers() });
-    resetUsers(userSearch, userPlanFilter);
-    loadStats();
+    if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, { method: "DELETE" }, "Deleting user")) {
+      resetUsers(userSearch, userPlanFilter);
+      loadStats();
+    }
   };
 
   // ── Projects ───────────────────────────────────────────────────────────────
@@ -259,21 +282,66 @@ export default function AdminPage() {
     obs.observe(el); return () => obs.disconnect();
   }, [projectsHasMore, projectsLoading, projectsOffset, projectSearch, projectStatus, fetchProjects]);
 
+  // Every admin mutation goes through this so a failing request surfaces
+  // instead of looking like a dead button (the old code ignored res.ok).
+  const adminFetch = async (url: string, init: RequestInit, action: string): Promise<boolean> => {
+    setActionError("");
+    try {
+      const res = await fetch(url, { ...init, headers: headers() });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`${action} failed: ${msg}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      setActionError(`${action} failed: ${e instanceof Error ? e.message : "network error"}`);
+      return false;
+    }
+  };
+
+  // ── Project diagnostics ────────────────────────────────────────────────────
+  // Answers "why did this user's project die?" without SSHing into the host.
+  const loadDiagnostics = async (projectId: string) => {
+    if (diagOpen === projectId) { setDiagOpen(null); return; }
+    setDiagOpen(projectId);
+    setDiag(null);
+    setDiagLoading(true);
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/projects/${projectId}/diagnostics`, { headers: headers() });
+      if (res.ok) setDiag(await res.json());
+      else {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Diagnostics failed: ${msg}`);
+        setDiagOpen(null);
+      }
+    } catch (e) {
+      setActionError(`Diagnostics failed: ${e instanceof Error ? e.message : "network error"}`);
+      setDiagOpen(null);
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
   const stopProject = async (id: string, name: string) => {
     if (!confirm(`Stop "${name}"?`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST", headers: headers() });
-    resetProjects(projectSearch, projectStatus);
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST" }, `Stopping ${name}`))
+      resetProjects(projectSearch, projectStatus);
   };
   const redeployProject = async (id: string, name: string) => {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST", headers: headers() });
-    setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST" }, `Redeploying ${name}`))
+      setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
   };
   const deleteProject = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
-    resetProjects(projectSearch, projectStatus);
-    loadStats();
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE" }, `Deleting ${name}`)) {
+      resetProjects(projectSearch, projectStatus);
+      loadStats();
+    }
   };
   const redeployAll = async (statusFilter?: string) => {
     const msg = statusFilter
@@ -302,14 +370,14 @@ export default function AdminPage() {
 
   const killSession = async (clientId: string) => {
     if (!confirm("Force-disconnect this client?")) return;
-    await fetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE", headers: headers() });
-    loadSessions();
+    if (await adminFetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE" }, "Disconnect"))
+      loadSessions();
   };
   const killTunnel = async (url: string) => {
     if (!confirm(`Remove tunnel ${url}?`)) return;
     const enc = btoa(url).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-    await fetch(`${API}/api/v1/admin/tunnels/${enc}`, { method: "DELETE", headers: headers() });
-    loadSessions();
+    if (await adminFetch(`${API}/api/v1/admin/tunnels/${enc}`, { method: "DELETE" }, "Remove tunnel"))
+      loadSessions();
   };
 
   // ── Infrastructure ─────────────────────────────────────────────────────────
@@ -335,16 +403,16 @@ export default function AdminPage() {
   };
 
   const setServerStatus = async (id: string, status: string) => {
-    await fetch(`${API}/api/v1/admin/servers/${id}/status`, {
-      method: "PUT", headers: headers(), body: JSON.stringify({ status }),
-    });
-    loadServers();
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/status`, {
+      method: "PUT", body: JSON.stringify({ status }),
+    }, `Setting server ${status}`))
+      loadServers();
   };
 
   const removeServer = async (id: string) => {
     if (!confirm("Remove this server?")) return;
-    await fetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE", headers: headers() });
-    loadServers();
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE" }, "Removing server"))
+      loadServers();
   };
 
   // ── Backups ────────────────────────────────────────────────────────────────
@@ -498,6 +566,17 @@ export default function AdminPage() {
           </Link>
         </div>
       </div>
+
+      {/* Action errors — mutations used to fail silently, which read as
+          "the button does nothing". */}
+      {actionError && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          <span className="flex-1">{actionError}</span>
+          <button onClick={() => setActionError("")} className="text-xs text-muted-foreground hover:text-foreground">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex gap-1 mb-6 overflow-x-auto pb-1 border-b border-border/50">
@@ -736,6 +815,7 @@ export default function AdminPage() {
             >
               <option value="all">All plans</option>
               <option value="free">Free</option>
+              <option value="hobby">Hobby</option>
               <option value="pro">Pro</option>
               <option value="team">Team</option>
             </select>
@@ -779,6 +859,7 @@ export default function AdminPage() {
                         className="h-7 rounded border border-input bg-background px-2 text-[11px]"
                       >
                         <option value="free">Free</option>
+                        <option value="hobby">Hobby</option>
                         <option value="pro">Pro</option>
                         <option value="team">Team</option>
                       </select>
@@ -864,7 +945,8 @@ export default function AdminPage() {
             <>
               <div className="space-y-1.5">
                 {projects.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 rounded-lg border border-border/50 px-3 py-2.5">
+                  <div key={p.id} className="rounded-lg border border-border/50">
+                  <div className="flex items-center gap-3 px-3 py-2.5">
                     <div className="flex-1 min-w-0 space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{p.name}</span>
@@ -893,6 +975,11 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 shrink-0">
+                      <Button variant="ghost" size="sm"
+                        className={`h-7 px-2 ${diagOpen === p.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => loadDiagnostics(p.id)} title="Logs & diagnostics">
+                        <Activity className="h-3.5 w-3.5" />
+                      </Button>
                       {p.status === "running" && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-500 hover:text-amber-500"
                           onClick={() => stopProject(p.id, p.name)} title="Stop">
@@ -908,6 +995,92 @@ export default function AdminPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Diagnostics panel */}
+                  {diagOpen === p.id && (
+                    <div className="border-t border-border/50 bg-muted/20 px-3 py-3 space-y-3">
+                      {diagLoading && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground py-4 justify-center">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Probing container on host…
+                        </div>
+                      )}
+                      {!diagLoading && diag && diag.project.id === p.id && (
+                        <>
+                          {/* Container state */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <DiagStat label="Container" value={diag.container.state}
+                              tone={diag.container.state === "running" ? "good"
+                                : diag.container.state === "missing" ? "bad"
+                                : diag.container.state === "restarting" ? "warn" : "bad"} />
+                            <DiagStat label="Host" value={diag.container.host} />
+                            <DiagStat label="Restarts" value={String(diag.container.restart_count)}
+                              tone={diag.container.restart_count > 5 ? "warn" : undefined} />
+                            <DiagStat label="Exit code"
+                              value={diag.container.state === "running" ? "—" : String(diag.container.exit_code)}
+                              tone={diag.container.exit_code !== 0 && diag.container.state !== "running" ? "bad" : undefined} />
+                          </div>
+
+                          {/* Why it died — only shown when there's something to say */}
+                          {(diag.container.oom_killed || diag.container.error ||
+                            (diag.container.state !== "running" && diag.container.state !== "missing")) && (
+                            <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                              {diag.container.oom_killed
+                                ? `Killed by the kernel for exceeding its memory limit (${diag.container.memory_limit_mb} MB). The app needs more RAM than its plan allows.`
+                                : diag.container.error
+                                  ? diag.container.error
+                                  : `Container ${diag.container.state} with exit code ${diag.container.exit_code}${
+                                      diag.container.finished_at ? ` at ${new Date(diag.container.finished_at).toLocaleString()}` : ""
+                                    }.`}
+                            </div>
+                          )}
+
+                          {diag.container.state === "running" && (
+                            <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                              {diag.container.health && <span>health: <span className="text-foreground">{diag.container.health}</span></span>}
+                              {diag.container.cpu_percent && <span>cpu: <span className="text-foreground">{diag.container.cpu_percent}</span></span>}
+                              {diag.container.memory_limit_mb > 0 && (
+                                <span>mem: <span className="text-foreground">
+                                  {diag.container.memory_usage_mb}/{diag.container.memory_limit_mb} MB
+                                </span></span>
+                              )}
+                              {diag.container.started_at && (
+                                <span>up since <span className="text-foreground">{new Date(diag.container.started_at).toLocaleString()}</span></span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Container output */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Container logs</span>
+                              <button onClick={() => { setDiagOpen(null); loadDiagnostics(p.id); }}
+                                className="text-[10px] text-muted-foreground hover:text-foreground">refresh</button>
+                            </div>
+                            <pre className="max-h-64 overflow-auto rounded-md bg-[#0d1117] p-3 text-[11px] leading-relaxed text-[#e6edf3] font-mono whitespace-pre-wrap break-all">
+                              {diag.container.logs || "(no output)"}
+                            </pre>
+                          </div>
+
+                          {/* Deploy history */}
+                          {diag.deploy_logs.length > 0 && (
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Recent deploy log</span>
+                              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[#0d1117] p-3 text-[11px] leading-relaxed text-[#e6edf3] font-mono whitespace-pre-wrap break-all">
+                                {diag.deploy_logs.map(l =>
+                                  `${new Date(l.created_at).toLocaleTimeString()}  ${l.message}`).join("\n")}
+                              </pre>
+                            </div>
+                          )}
+
+                          <div className="text-[10px] text-muted-foreground">
+                            owner: <span className="text-foreground">{diag.project.owner_email}</span>
+                            {" · "}limits: {diag.project.memory_mb || 512} MB / {diag.project.cpus || 0.5} vCPU
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   </div>
                 ))}
               </div>
@@ -1216,14 +1389,14 @@ export default function AdminPage() {
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audience</label>
             <div className="flex gap-2">
-              {(["all", "free", "pro"] as const).map(a => (
+              {(["all", "free", "hobby", "pro", "team"] as const).map(a => (
                 <button key={a} onClick={() => { setBcAudience(a); loadBroadcastPreview(a); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors capitalize ${
                     bcAudience === a
                       ? "bg-primary text-primary-foreground border-primary"
                       : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                   }`}>
-                  {a === "all" ? "All users" : a === "free" ? "Free plan" : "Pro plan"}
+                  {a === "all" ? "All users" : `${a} plan`}
                 </button>
               ))}
               {bcPreviewCount !== null && (
@@ -1305,6 +1478,19 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
         {sub && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function DiagStat({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" | "bad" }) {
+  const color = tone === "good" ? "text-emerald-500"
+    : tone === "warn" ? "text-amber-500"
+    : tone === "bad" ? "text-red-500"
+    : "text-foreground";
+  return (
+    <div className="rounded-md bg-background/60 border border-border/50 px-2.5 py-1.5">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={`text-xs font-medium font-mono ${color}`}>{value}</div>
+    </div>
   );
 }
 

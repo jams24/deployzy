@@ -796,6 +796,124 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	return NewLocalRunner()
 }
 
+// ContainerDiagnostics is a live snapshot of a project's container, read from
+// whichever host actually runs it. Everything is best-effort: a field stays
+// zero when the host or container can't be reached.
+type ContainerDiagnostics struct {
+	ContainerName string `json:"container_name"`
+	Host          string `json:"host"`           // "platform" or the worker label
+	State         string `json:"state"`          // running | exited | restarting | dead | missing
+	Health        string `json:"health"`         // healthy | unhealthy | starting | ""
+	ExitCode      int    `json:"exit_code"`
+	OOMKilled     bool   `json:"oom_killed"`
+	RestartCount  int    `json:"restart_count"`
+	StartedAt     string `json:"started_at"`
+	FinishedAt    string `json:"finished_at"`
+	MemoryUsageMB int    `json:"memory_usage_mb"`
+	MemoryLimitMB int    `json:"memory_limit_mb"`
+	CPUPercent    string `json:"cpu_percent"`
+	Logs          string `json:"logs"` // tail of container output
+	Error         string `json:"error"`
+}
+
+// Diagnose gathers container state + recent output for a project. Used by the
+// admin console to answer "why did this user's project die?" without SSHing
+// into the box by hand.
+func (e *Engine) Diagnose(ctx context.Context, project *db.Project, logLines int) *ContainerDiagnostics {
+	if logLines <= 0 || logLines > 500 {
+		logLines = 200
+	}
+	name := fmt.Sprintf("sm-%s", project.ID[:8])
+	d := &ContainerDiagnostics{ContainerName: name, Host: "platform", State: "missing"}
+
+	if project.WorkerServerID != "" {
+		if srv, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID); srv != nil {
+			d.Host = srv.Label
+		}
+	}
+
+	runner := e.getRunner(ctx, project)
+
+	// One inspect call, tab-separated, so a flaky link costs a single round trip.
+	format := `{{.State.Status}}	{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}	{{.State.ExitCode}}	{{.State.OOMKilled}}	{{.RestartCount}}	{{.State.StartedAt}}	{{.State.FinishedAt}}	{{.HostConfig.Memory}}`
+	// docker inspect exits non-zero for a missing container, so inspect the
+	// output before treating the error as a connectivity failure — otherwise
+	// "container was never created" is misreported as "host unreachable".
+	out, err := runner.RunShell(ctx, fmt.Sprintf("docker inspect --format '%s' %s 2>&1", format, name))
+	line := strings.TrimSpace(string(out))
+	lower := strings.ToLower(line)
+	switch {
+	case strings.Contains(lower, "no such object"), strings.Contains(lower, "no such container"):
+		d.State = "missing"
+		d.Error = "container does not exist on " + d.Host + " — it was never started, or has been removed"
+		return d
+	case err != nil && line == "":
+		d.Error = "host unreachable: " + err.Error()
+		return d
+	}
+	if parts := strings.Split(line, "\t"); len(parts) >= 8 {
+		d.State = strings.TrimSpace(parts[0])
+		if h := strings.TrimSpace(parts[1]); h != "-" {
+			d.Health = h
+		}
+		d.ExitCode, _ = strconv.Atoi(strings.TrimSpace(parts[2]))
+		d.OOMKilled = strings.TrimSpace(parts[3]) == "true"
+		d.RestartCount, _ = strconv.Atoi(strings.TrimSpace(parts[4]))
+		d.StartedAt = strings.TrimSpace(parts[5])
+		d.FinishedAt = strings.TrimSpace(parts[6])
+		if limit, err := strconv.ParseInt(strings.TrimSpace(parts[7]), 10, 64); err == nil && limit > 0 {
+			d.MemoryLimitMB = int(limit / 1024 / 1024)
+		}
+	} else {
+		d.Error = "unexpected inspect output: " + truncateStr(line, 200)
+	}
+
+	// Live resource usage only exists while the container is up.
+	if d.State == "running" {
+		if statOut, err := runner.RunShell(ctx,
+			fmt.Sprintf(`docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}' %s 2>/dev/null`, name)); err == nil {
+			if sp := strings.Split(strings.TrimSpace(string(statOut)), "\t"); len(sp) >= 2 {
+				d.CPUPercent = strings.TrimSpace(sp[0])
+				// "123.4MiB / 512MiB" → used MB
+				if used := strings.TrimSpace(strings.Split(sp[1], "/")[0]); used != "" {
+					d.MemoryUsageMB = parseDockerSizeMB(used)
+				}
+			}
+		}
+	}
+
+	if logOut, err := runner.RunShell(ctx,
+		fmt.Sprintf("docker logs --tail %d --timestamps %s 2>&1", logLines, name)); err == nil {
+		d.Logs = strings.TrimSpace(string(logOut))
+	}
+	return d
+}
+
+// parseDockerSizeMB converts docker's human sizes ("123.4MiB", "1.2GiB") to MB.
+func parseDockerSizeMB(s string) int {
+	s = strings.TrimSpace(s)
+	mult := 1.0
+	switch {
+	case strings.HasSuffix(s, "GiB"), strings.HasSuffix(s, "GB"):
+		mult = 1024
+	case strings.HasSuffix(s, "KiB"), strings.HasSuffix(s, "kB"):
+		mult = 1.0 / 1024
+	}
+	num := strings.TrimRight(s, "aAbBGgiIkKmMtT")
+	v, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0
+	}
+	return int(v * mult)
+}
+
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // SweepCrashedContainers finds projects marked 'running' whose containers
 // have given up (exited after exhausting their on-failure restart budget, or
 // dead) and flips their status to 'crashed' so the dashboard tells the truth

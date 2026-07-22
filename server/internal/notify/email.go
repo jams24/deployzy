@@ -517,3 +517,74 @@ func VerifyCodeEmail(name, code string) string {
             </p>`
 	return brandShell(card, "You're receiving this because someone signed up for Deployzy with this address.")
 }
+
+// SubscriptionEmail renders the billing confirmation for a new purchase,
+// upgrade, downgrade, or renewal. kind is "new" | "upgrade" | "downgrade" |
+// "renewal"; anything else is treated as a new subscription.
+func SubscriptionEmail(name, plan, kind string, amount float64, currency, renewsOn string) string {
+	displayName := name
+	if displayName == "" {
+		displayName = "there"
+	}
+	planTitle := strings.ToUpper(plan[:1]) + plan[1:]
+
+	headline, blurb := "You're on "+planTitle+" 🎉", "Your subscription is active. Thanks for backing Deployzy!"
+	switch kind {
+	case "upgrade":
+		headline = "Upgraded to " + planTitle + " 🚀"
+		blurb = "Your new limits are live right now — no redeploy needed."
+	case "downgrade":
+		headline = "Switched to " + planTitle
+		blurb = "Your plan has been changed. The new limits apply immediately."
+	case "renewal":
+		headline = planTitle + " renewed ✅"
+		blurb = "Thanks for sticking with Deployzy — your subscription rolls on for another month."
+	}
+
+	card := `
+            <p style="margin:0 0 8px;font-size:24px;font-weight:700;color:#ffffff;line-height:1.3;">
+              ` + headline + `
+            </p>
+            <p style="margin:0 0 28px;font-size:15px;color:#888888;line-height:1.6;">
+              Hi ` + displayName + `, ` + blurb + `
+            </p>
+
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;border:1px solid #1f1f1f;border-radius:12px;">
+              <tr>
+                <td style="padding:16px 20px;border-bottom:1px solid #1f1f1f;">
+                  <span style="font-size:13px;color:#666666;">Plan</span>
+                  <span style="float:right;font-size:13px;color:#ffffff;font-weight:600;">` + planTitle + `</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:16px 20px;border-bottom:1px solid #1f1f1f;">
+                  <span style="font-size:13px;color:#666666;">Amount</span>
+                  <span style="float:right;font-size:13px;color:#ffffff;font-weight:600;">` + fmt.Sprintf("%.2f %s", amount, currency) + `</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:16px 20px;">
+                  <span style="font-size:13px;color:#666666;">Renews on</span>
+                  <span style="float:right;font-size:13px;color:#ffffff;font-weight:600;">` + renewsOn + `</span>
+                </td>
+              </tr>
+            </table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
+              <tr>
+                <td align="center">
+                  <a href="https://deployzy.com/billing"
+                     style="display:inline-block;background:#ffffff;color:#0a0a0a;text-decoration:none;
+                            font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;">
+                    View billing
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:24px 0 0;font-size:12px;color:#666666;line-height:1.6;">
+              Questions about your subscription? Just reply to this email or reach us at
+              <a href="mailto:support@deployzy.com" style="color:#888888;">support@deployzy.com</a>.
+            </p>`
+	return brandShell(card, "You're receiving this because you have a Deployzy subscription.")
+}

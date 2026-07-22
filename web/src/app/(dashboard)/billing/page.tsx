@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, CreditCard, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
+import { Check, CreditCard, Crown, ExternalLink, Loader2, PartyPopper, Zap } from "lucide-react";
+import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -48,6 +49,12 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
+  // Post-checkout celebration. The provider redirects here immediately, but
+  // the plan only flips once the webhook lands — so we poll rather than
+  // claiming success we haven't confirmed.
+  const [celebrate, setCelebrate] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmedPlan, setConfirmedPlan] = useState<string | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -107,6 +114,41 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadStatus();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("status") !== "success") return;
+
+    setCelebrate(true);
+    setConfirming(true);
+    // Clean the URL so a refresh doesn't replay the celebration.
+    window.history.replaceState({}, "", "/billing");
+
+    let cancelled = false;
+    (async () => {
+      // Webhooks usually land in a second or two; keep checking for ~90s
+      // before falling back to "we'll email you when it clears".
+      for (let i = 0; i < 30 && !cancelled; i++) {
+        try {
+          const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+          if (res.ok) {
+            const d: BillingStatus = await res.json();
+            if (d.active_subscription?.status === "active") {
+              if (cancelled) return;
+              setConfirmedPlan(d.active_subscription.plan);
+              setConfirming(false);
+              loadStatus();
+              return;
+            }
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      if (!cancelled) setConfirming(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeSub = status?.active_subscription;
@@ -196,6 +238,88 @@ export default function BillingPage() {
     },
   ];
   const currentPlan = usage?.plan || (isPremium ? "pro" : "free");
+
+  // Post-checkout celebration takes over the page until dismissed.
+  if (celebrate) {
+    const planName = confirmedPlan ? confirmedPlan[0].toUpperCase() + confirmedPlan.slice(1) : null;
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="w-full max-w-md text-center">
+          <div className="flex justify-center mb-6">
+            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${
+              confirming ? "bg-muted" : "bg-emerald-500/15"
+            }`}>
+              {confirming
+                ? <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                : <PartyPopper className="h-8 w-8 text-emerald-500" />}
+            </div>
+          </div>
+
+          {confirming ? (
+            <>
+              <h1 className="text-2xl font-bold">Confirming your payment…</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This usually takes a few seconds. You can leave this page — we&apos;ll email
+                you the moment it clears.
+              </p>
+            </>
+          ) : planName ? (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Welcome to {planName}! 🎉
+              </h1>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Your subscription is active and the new limits apply right now —
+                nothing to redeploy. A receipt is on its way to your inbox.
+              </p>
+
+              {usage && (
+                <div className="mt-6 grid grid-cols-3 gap-2 text-left">
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Projects</div>
+                    <div className="text-sm font-mono">{usage.limits.max_projects < 0 ? "∞" : usage.limits.max_projects}</div>
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Memory</div>
+                    <div className="text-sm font-mono">{usage.limits.max_memory_mb} MB</div>
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Bandwidth</div>
+                    <div className="text-sm font-mono">{usage.limits.max_bandwidth_gb} GB</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-7 flex flex-col gap-2">
+                <Button className="w-full gap-2" nativeButton={false} render={<Link href="/new" />}>
+                  <Zap className="h-4 w-4" /> Deploy something
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => { setCelebrate(false); loadStatus(); }}>
+                  View billing details
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold">Payment received</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We haven&apos;t seen the confirmation yet — crypto payments can take a few
+                minutes to settle. Your plan upgrades automatically once it lands, and
+                we&apos;ll email you. Nothing else to do.
+              </p>
+              <Button variant="outline" className="mt-6 w-full" onClick={() => { setCelebrate(false); loadStatus(); }}>
+                Back to billing
+              </Button>
+            </>
+          )}
+
+          <p className="mt-6 text-xs text-muted-foreground">
+            Questions? <a href="mailto:support@deployzy.com" className="hover:underline">support@deployzy.com</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
