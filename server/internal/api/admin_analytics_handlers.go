@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"github.com/serverme/serverme/server/internal/analytics"
 )
 
 // periodWindow maps a UI period to (since, bucket). Bucket sizes keep every
@@ -76,6 +78,24 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	tops["devices"] = top("device", false, 6)
 	tops["browsers"] = top("browser", false, 6)
 
+	crawlers, err := s.db.GetPlatformCrawlers(r.Context(), since, 12)
+	if err != nil {
+		s.log.Error().Err(err).Msg("admin analytics: crawlers")
+		writeError(w, http.StatusInternalServerError, "failed to load analytics")
+		return
+	}
+	// Category is derived in Go so the taxonomy lives next to the signature
+	// list rather than being duplicated in SQL.
+	crawlerRows := make([]map[string]interface{}, 0, len(crawlers))
+	for _, c := range crawlers {
+		crawlerRows = append(crawlerRows, map[string]interface{}{
+			"name":     c.Name,
+			"category": analytics.BotCategory(c.Name),
+			"hits":     c.Hits,
+			"sites":    c.Sites,
+		})
+	}
+
 	projects, err := s.db.GetPlatformTopProjects(r.Context(), since, 15)
 	if err != nil {
 		s.log.Error().Err(err).Msg("admin analytics: top projects")
@@ -89,6 +109,7 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 		"overview":   overview,
 		"timeseries": series,
 		"top":        tops,
+		"crawlers":   crawlerRows,
 		"projects":   projects,
 		// Surfaced in the UI so nobody reads long windows as complete: free-tier
 		// events are pruned after 7 days.

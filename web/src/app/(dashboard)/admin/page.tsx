@@ -51,6 +51,7 @@ interface PlatformAnalytics {
   };
   timeseries: { ts: string; pageviews: number; visitors: number; bot_hits: number }[];
   top: Record<string, { key: string; count: number }[]>;
+  crawlers: { name: string; category: string; hits: number; sites: number }[];
   projects: {
     project_id: string; name: string; subdomain: string; owner_email: string;
     pageviews: number; visitors: number; bot_hits: number; bytes: number; error_hits: number;
@@ -1497,6 +1498,60 @@ export default function AdminPage() {
                         })}
                       </div>
                     )}
+                  </CardContent>
+                </Card>
+
+                {/* Crawler identity — who is actually hitting these sites */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center justify-between">
+                      <span>Crawlers &amp; bots</span>
+                      <span className="text-[10px] font-normal text-muted-foreground">
+                        {fmtNum(o.bot_hits)} bot hits · {botPct.toFixed(1)}% of all traffic
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(analytics.crawlers || []).length === 0 ? (
+                      <p className="py-6 text-center text-xs text-muted-foreground">No bot traffic in this period.</p>
+                    ) : (() => {
+                      const rows = analytics.crawlers;
+                      const max = Math.max(1, ...rows.map(c => c.hits));
+                      const tone: Record<string, string> = {
+                        ai: "bg-violet-500/20 text-violet-400 border-violet-500/40",
+                        search: "bg-emerald-500/20 text-emerald-500 border-emerald-500/40",
+                        social: "bg-sky-500/20 text-sky-400 border-sky-500/40",
+                        seo: "bg-amber-500/20 text-amber-500 border-amber-500/40",
+                        monitoring: "bg-zinc-500/20 text-muted-foreground border-zinc-500/40",
+                      };
+                      return (
+                        <div className="space-y-1.5">
+                          {rows.map(c => (
+                            <div key={c.name} className="relative">
+                              <div className="absolute inset-y-0 left-0 rounded bg-amber-500/10"
+                                style={{ width: `${(c.hits / max) * 100}%` }} />
+                              <div className="relative flex items-center gap-2 px-2 py-1.5 text-[11px]">
+                                <span className="font-medium truncate">{c.name}</span>
+                                <Badge variant="outline"
+                                  className={`text-[9px] shrink-0 ${tone[c.category] || "text-muted-foreground"}`}>
+                                  {c.category}
+                                </Badge>
+                                <span className="ml-auto shrink-0 text-muted-foreground">
+                                  {c.sites} site{c.sites !== 1 ? "s" : ""}
+                                </span>
+                                <span className="shrink-0 font-mono w-16 text-right">{c.hits.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          ))}
+                          {rows.some(c => c.name === "Unclassified") && (
+                            <p className="pt-1 text-[10px] text-muted-foreground">
+                              &ldquo;Unclassified&rdquo; is traffic recorded before crawler identification shipped —
+                              user agents aren&apos;t stored, so it can&apos;t be labelled retroactively.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 

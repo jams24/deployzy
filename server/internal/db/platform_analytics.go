@@ -162,3 +162,43 @@ func (d *DB) GetPlatformTopProjects(ctx context.Context, since time.Time, limit 
 	}
 	return out, nil
 }
+
+// CrawlerRow is one line of the bot breakdown.
+type CrawlerRow struct {
+	Name     string `json:"name"`
+	Category string `json:"category"` // ai | search | social | seo | monitoring | other
+	Hits     int64  `json:"hits"`
+	Sites    int64  `json:"sites"` // how many projects it crawled
+}
+
+// GetPlatformCrawlers breaks bot traffic down by crawler identity. Rows
+// predating the bot_name column have an empty name (the raw user agent is
+// never stored, so they can't be backfilled) and are reported as
+// "Unclassified" rather than silently dropped — otherwise the breakdown
+// wouldn't sum to the bot total shown in the headline tile.
+func (d *DB) GetPlatformCrawlers(ctx context.Context, since time.Time, limit int) ([]CrawlerRow, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT CASE WHEN bot_name = '' THEN 'Unclassified' ELSE bot_name END AS name,
+		        COUNT(*) AS hits,
+		        COUNT(DISTINCT project_id) AS sites
+		 FROM site_events
+		 WHERE ts >= $1 AND is_bot = true
+		 GROUP BY name
+		 ORDER BY hits DESC
+		 LIMIT $2`,
+		since, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CrawlerRow{}
+	for rows.Next() {
+		var c CrawlerRow
+		if err := rows.Scan(&c.Name, &c.Hits, &c.Sites); err != nil {
+			return nil, fmt.Errorf("scan crawlers: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}

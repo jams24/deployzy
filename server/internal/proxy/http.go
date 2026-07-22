@@ -469,6 +469,14 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 	ip := clientIP(r)
 	ua := r.UserAgent()
 	device, browser, os, isBot := analytics.ParseUA(ua)
+	// Identify WHICH crawler; unrecognised bots are grouped so the
+	// breakdown always sums to the bot total.
+	botName := ""
+	if isBot {
+		if botName = analytics.ClassifyBot(ua); botName == "" {
+			botName = "Other bot"
+		}
+	}
 	country := r.Header.Get("CF-IPCountry")
 	if country == "" {
 		country = r.Header.Get("X-Country")
@@ -498,6 +506,7 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		OS:          os,
 		VisitorHash: p.analytics.HashVisitor(ip, ua),
 		IsBot:       isBot,
+		BotName:     botName,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -617,6 +626,12 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 		ip := clientIP(r)
 		ua := r.UserAgent()
 		device, browser, os, isBot := analytics.ParseUA(ua)
+		botName := ""
+		if isBot {
+			if botName = analytics.ClassifyBot(ua); botName == "" {
+				botName = "Other bot"
+			}
+		}
 		country := r.Header.Get("CF-IPCountry")
 		if country == "" {
 			country = r.Header.Get("X-Country")
@@ -636,6 +651,7 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 			OS:          os,
 			VisitorHash: p.analytics.HashVisitor(ip, ua),
 			IsBot:       isBot,
+			BotName:     botName,
 		})
 	}
 }
