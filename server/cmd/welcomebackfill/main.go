@@ -15,11 +15,22 @@ import (
 )
 
 var recipients = []struct{ Email, Name string }{
-	{"genhuntbot@gmail.com", "Gen Hunt"},
-	{"clawtunnel@gmail.com", "Jams Akino"},
-	{"cmosesmaina@gmail.com", "Moses Maina"},
-	{"johnsonaliyu47@gmail.com", "Aliu Johnson Temitope"},
-	{"kiprutovictor@gmail.com", "Victor"},
+	// Round 2: pre-2026-07-12 signups, from before the welcome email existed.
+	// Deliberately excludes addresses that would hard-bounce and damage sender
+	// reputation (example.com/test.com are RFC-reserved; the idor./csrf./hacker.
+	// accounts are fabricated pentest addresses), plus the operator's own
+	// accounts. See the 21 Jul round in git history for the first batch.
+	{"korrakrain@gmail.com", "Korra Krain"},
+	{"krainium884@gmail.com", "Ulquiorra Krain"},
+	{"opoxmeloid@gmail.com", "Kirill Chuprov"},
+	{"cersho2304@gmail.com", "Mohammed"},
+	{"alaminjafar056@gmail.com", "JAFAR AL-AMIN"},
+	{"davidthecool12324@outlook.com", "bendover111222333444"},
+	{"gerald.gr.iffin.b.l.59@gmail.com", "gerald"},
+	{"caicongsatden.2.9287@gmail.com", "caicongsatden"},
+	{"za.k.a.gid2.7.6@gmail.com", "GJXVxavkryYlRQkHdSyruf"},
+	{"q.im.oxabeh.o.p.66@gmail.com", "KKEyRwJuhHDUIISrAh"},
+	{"lorett.epatricko.a5434@gmail.com", "lorett"},
 }
 
 func main() {
