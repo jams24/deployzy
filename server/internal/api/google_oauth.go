@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 type statePayload struct {
@@ -104,6 +105,16 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 		// Google already proved the user owns this mailbox — no code needed.
 		s.db.MarkEmailVerified(r.Context(), user.ID)
+		// Welcome email: the password-signup path has always sent this, but
+		// OAuth signups silently skipped it — every Google user since launch
+		// got nothing (backfilled manually for 2026-07-21).
+		if s.emailSvc != nil {
+			go func(email, name string) {
+				if err := s.emailSvc.SendOne(email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(name)); err != nil {
+					s.log.Warn().Err(err).Str("email", email).Msg("failed to send welcome email")
+				}
+			}(user.Email, user.Name)
+		}
 		s.log.Info().Str("email", userInfo.Email).Msg("new user created via Google OAuth")
 	} else if !user.EmailVerified {
 		// Signed up with a password and never confirmed, but has now proved
