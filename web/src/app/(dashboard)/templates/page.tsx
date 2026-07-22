@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { api, Template, EnvVarSchema, WorkerServer } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logos";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,15 +23,15 @@ import {
 } from "lucide-react";
 
 // ─── Category metadata ────────────────────────────────────────────────────────
-const CATEGORY_META: Record<string, { label: string; emoji: string }> = {
-  all:        { label: "All Templates", emoji: "🗂️" },
-  bots:       { label: "Bots",          emoji: "🤖" },
-  automation: { label: "Automation",    emoji: "⚙️" },
-  monitoring: { label: "Monitoring",    emoji: "📊" },
-  cms:        { label: "CMS & Blogs",   emoji: "📝" },
-  analytics:  { label: "Analytics",     emoji: "📈" },
-  security:   { label: "Security",      emoji: "🔒" },
-  other:      { label: "Other",         emoji: "📦" },
+const CATEGORY_META: Record<string, { label: string }> = {
+  all:        { label: "All" },
+  bots:       { label: "Bots" },
+  automation: { label: "Automation" },
+  monitoring: { label: "Monitoring" },
+  cms:        { label: "CMS & Blogs" },
+  analytics:  { label: "Analytics" },
+  security:   { label: "Security" },
+  other:      { label: "Other" },
 };
 
 const SORT_OPTIONS = [
@@ -192,7 +193,12 @@ function DeployModal({
     <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2.5">
-          <span className="text-xl">{template.icon}</span>
+          <span
+            className="flex h-8 w-8 items-center justify-center rounded-lg border"
+            style={{ borderColor: `${template.color}33`, background: `${template.color}0f` }}
+          >
+            <BrandLogo slug={template.slug} name={template.name} color={template.color} className="h-4 w-4" />
+          </span>
           Deploy {template.name}
         </DialogTitle>
       </DialogHeader>
@@ -337,85 +343,97 @@ function TemplateCard({
   onStar: (t: Template) => void;
 }) {
   return (
-    <div className="group flex flex-col rounded-xl border border-border bg-card transition-shadow hover:shadow-md">
-      {/* Header row: icon + name + badges */}
-      <div className="flex items-start gap-3 p-4 pb-3">
-        {/* Flat icon box — no gradient, just low-opacity solid color */}
-        <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl"
-          style={{ background: template.color + "18", border: `1.5px solid ${template.color}30` }}
-        >
-          {template.icon}
-        </div>
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-foreground/20 hover:shadow-lg hover:shadow-black/5">
+      {/* Brand wash — the template's own colour, barely there, so cards are
+          distinguishable at a glance without shouting. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-24 opacity-[0.07] transition-opacity group-hover:opacity-[0.12]"
+        style={{ background: `radial-gradient(120% 100% at 0% 0%, ${template.color}, transparent 70%)` }}
+      />
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <h3 className="font-semibold text-sm text-foreground leading-snug truncate">
-              {template.name}
-            </h3>
+      <div className="relative flex flex-1 flex-col p-5">
+        {/* Logo + status */}
+        <div className="flex items-start justify-between gap-3">
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-background/80 backdrop-blur"
+            style={{ borderColor: `${template.color}33` }}
+          >
+            <BrandLogo slug={template.slug} name={template.name} color={template.color} className="h-6 w-6" />
+          </div>
+
+          <div className="flex items-center gap-1.5">
             {template.is_featured && (
-              <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                 Featured
               </span>
             )}
-            {template.is_official && !template.is_featured && (
-              <span className="shrink-0 rounded-full bg-muted border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+            {template.is_official && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                title="Maintained by Deployzy"
+              >
+                <CheckCircle className="h-2.5 w-2.5" />
                 Official
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
-            {template.tagline}
+        </div>
+
+        {/* Name + tagline */}
+        <h3 className="mt-3.5 text-[15px] font-semibold leading-tight tracking-tight">
+          {template.name}
+        </h3>
+        <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+          {template.tagline}
+        </p>
+
+        {/* Tags */}
+        {template.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {template.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {template.tags.length > 3 && (
+              <span className="px-1 py-0.5 text-[10px] text-muted-foreground/70">
+                +{template.tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Actions. Deploy count is only shown once it means something — a row
+            of "Be the first" across every card was noise, not information. */}
+        <div className="mt-5 flex items-center gap-2">
+          <Button size="sm" className="flex-1 gap-1.5 h-8" onClick={() => onDeploy(template)}>
+            <Rocket className="h-3.5 w-3.5" />
+            Deploy
+          </Button>
+          <button
+            onClick={() => onStar(template)}
+            aria-label={template.is_starred ? "Unstar template" : "Star template"}
+            className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+              template.is_starred
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+            }`}
+          >
+            <Star className={`h-3.5 w-3.5 ${template.is_starred ? "fill-current" : ""}`} />
+            {template.star_count > 0 && template.star_count}
+          </button>
+        </div>
+
+        {template.deploy_count > 0 && (
+          <p className="mt-2.5 text-[11px] text-muted-foreground">
+            {template.deploy_count.toLocaleString()} deploy{template.deploy_count !== 1 ? "s" : ""}
           </p>
-        </div>
-      </div>
-
-      {/* Tags */}
-      {template.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-4 pb-3">
-          {template.tags.slice(0, 4).map((tag) => (
-            <span
-              key={tag}
-              className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Footer */}
-      <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
-        {/* Star button */}
-        <button
-          onClick={() => onStar(template)}
-          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-            template.is_starred
-              ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-        >
-          <Star className={`h-3 w-3 ${template.is_starred ? "fill-amber-500 text-amber-500" : ""}`} />
-          {template.star_count}
-        </button>
-
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground flex-1">
-          <Download className="h-3 w-3" />
-          {template.deploy_count > 0
-            ? `${template.deploy_count.toLocaleString()} deploys`
-            : "Be the first"}
-        </div>
-
-        <button
-          onClick={() => onDeploy(template)}
-          className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background transition-opacity hover:opacity-80"
-        >
-          <Rocket className="h-3 w-3" />
-          Deploy
-        </button>
+        )}
       </div>
     </div>
   );
@@ -482,14 +500,9 @@ export default function TemplatesPage() {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center justify-between gap-4 mb-1">
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Templates</h1>
-          <span className="text-xs text-muted-foreground bg-muted rounded-full px-3 py-1">
-            {total} available
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Deploy popular open-source tools and starter projects with one click
+        <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Production-ready open-source tools, deployed to your account in one click.
         </p>
       </div>
 
@@ -515,31 +528,32 @@ export default function TemplatesPage() {
         </select>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex gap-1.5 flex-wrap mb-6 border-b border-border pb-4">
+      {/* Category filter — plain segmented control. The emoji-per-category row
+          read as decoration rather than navigation. */}
+      <div className="mb-6 flex flex-wrap items-center gap-1 border-b border-border pb-3">
         {categoryPills.map(({ category, count }) => {
-          const meta = CATEGORY_META[category] ?? { label: category, emoji: "📦" };
+          const meta = CATEGORY_META[category] ?? { label: category };
           const active = activeCategory === category;
           return (
             <button
               key={category}
               onClick={() => setCategory(category)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+              className={`relative rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
                 active
-                  ? "bg-foreground text-background shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <span className="text-base leading-none">{meta.emoji}</span>
-              <span>{meta.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
-                active ? "bg-background/20 text-background/70" : "bg-muted text-muted-foreground"
-              }`}>
+              {meta.label}
+              <span className={`ml-1.5 text-[11px] tabular-nums ${active ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
                 {count}
               </span>
             </button>
           );
         })}
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          {total} template{total !== 1 ? "s" : ""}
+        </span>
       </div>
 
       {/* Grid */}
@@ -547,13 +561,12 @@ export default function TemplatesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-border overflow-hidden animate-pulse">
-              <div className="p-4 pb-3 flex gap-3">
-                <div className="h-10 w-10 rounded-lg bg-muted/60 shrink-0" />
-                <div className="flex-1 space-y-1.5 pt-0.5">
-                  <div className="h-3.5 w-28 rounded bg-muted/60" />
-                  <div className="h-3 w-full rounded bg-muted/40" />
-                  <div className="h-3 w-3/4 rounded bg-muted/40" />
-                </div>
+              <div className="p-5 space-y-3">
+                <div className="h-11 w-11 rounded-xl bg-muted/60" />
+                <div className="h-4 w-32 rounded bg-muted/60" />
+                <div className="h-3 w-full rounded bg-muted/40" />
+                <div className="h-3 w-2/3 rounded bg-muted/40" />
+                <div className="h-8 w-full rounded-md bg-muted/40 !mt-5" />
               </div>
               <div className="flex gap-1 px-4 pb-3">
                 {[40, 52, 36].map((w) => (
