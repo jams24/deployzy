@@ -51,14 +51,14 @@ function EnvVarRow({
     onChange(idx, { ...ev, [field]: val });
 
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+    <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2.5">
       <div className="flex items-center gap-2">
         <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
         <div className="flex-1 grid grid-cols-2 gap-2">
           <div>
             <Label className="text-[10px] text-muted-foreground mb-1 block">KEY</Label>
             <Input
-              className="h-7 font-mono text-xs"
+              className="h-8 font-mono text-xs"
               value={ev.key}
               onChange={(e) => set("key", e.target.value.toUpperCase())}
               placeholder="MY_ENV_VAR"
@@ -67,7 +67,7 @@ function EnvVarRow({
           <div>
             <Label className="text-[10px] text-muted-foreground mb-1 block">LABEL</Label>
             <Input
-              className="h-7 text-xs"
+              className="h-8 text-xs"
               value={ev.label}
               onChange={(e) => set("label", e.target.value)}
               placeholder="Human label"
@@ -82,18 +82,21 @@ function EnvVarRow({
         </button>
       </div>
 
-      <Input
-        className="h-7 text-xs"
-        value={ev.description}
-        onChange={(e) => set("description", e.target.value)}
-        placeholder="Description shown to user"
-      />
+      <div>
+        <Label className="text-[10px] text-muted-foreground mb-1 block">DESCRIPTION</Label>
+        <Input
+          className="h-8 text-xs"
+          value={ev.description}
+          onChange={(e) => set("description", e.target.value)}
+          placeholder="Shown to the user under the field"
+        />
+      </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">TYPE</Label>
           <select
-            className="w-full h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
             value={ev.type}
             onChange={(e) => set("type", e.target.value)}
           >
@@ -103,7 +106,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">DEFAULT</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={ev.default}
             onChange={(e) => set("default", e.target.value)}
             placeholder="(optional)"
@@ -112,7 +115,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">PLACEHOLDER</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={ev.placeholder}
             onChange={(e) => set("placeholder", e.target.value)}
             placeholder="e.g. 1234:abc…"
@@ -124,7 +127,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">OPTIONS (comma-separated)</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={(ev.options ?? []).join(",")}
             onChange={(e) => set("options", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
             placeholder="option1,option2,option3"
@@ -380,7 +383,7 @@ function TemplateFormModal({
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Post-deploy instructions</p>
           <textarea
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-            rows={4}
+            rows={8}
             value={form.post_deploy ?? ""}
             onChange={(e) => set("post_deploy", e.target.value)}
             placeholder={"1. Set your webhook URL in Telegram BotFather\n2. Add the bot to a group…"}
@@ -390,24 +393,37 @@ function TemplateFormModal({
         {/* Flags */}
         <section className="space-y-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Flags</p>
-          <div className="flex flex-wrap gap-4">
+          <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
             {(
               [
-                { field: "is_active", label: "Active (visible to users)" },
-                { field: "is_official", label: "Official" },
-                { field: "is_featured", label: "Featured" },
+                { field: "is_active", label: "Active", hint: "Visible to users in the template gallery" },
+                { field: "is_official", label: "Official", hint: "Maintained by Deployzy — shows the verified badge" },
+                { field: "is_featured", label: "Featured", hint: "Pinned to the top of the gallery" },
               ] as const
-            ).map(({ field, label }) => (
-              <label key={field} className="flex items-center gap-2 cursor-pointer">
-                <button
-                  type="button"
-                  onClick={() => set(field, !form[field])}
-                  className={`w-9 h-5 rounded-full transition-colors relative ${form[field] ? "bg-primary" : "bg-muted-foreground/30"}`}
+            ).map(({ field, label, hint }) => (
+              <button
+                key={field}
+                type="button"
+                onClick={() => set(field, !form[field])}
+                aria-pressed={!!form[field]}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{hint}</span>
+                </span>
+                <span
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    form[field] ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
                 >
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${form[field] ? "translate-x-4" : "translate-x-0.5"}`} />
-                </button>
-                <span className="text-sm text-foreground">{label}</span>
-              </label>
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                      form[field] ? "translate-x-[18px]" : "translate-x-0.5"
+                    }`}
+                  />
+                </span>
+              </button>
             ))}
           </div>
         </section>
@@ -418,7 +434,7 @@ function TemplateFormModal({
           </div>
         )}
 
-        <div className="flex gap-3 pt-2">
+        <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-3 border-t border-border bg-background/95 px-6 py-4 backdrop-blur">
           <Button className="flex-1" onClick={handleSave} disabled={saving || !form.name || !form.slug}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Create template"}
           </Button>
