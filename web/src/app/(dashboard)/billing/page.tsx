@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +55,13 @@ export default function BillingPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmedPlan, setConfirmedPlan] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [pendingTimedOut, setPendingTimedOut] = useState(false);
+  const [pending, setPending] = useState<{
+    plan: string; method: string; url: string;
+    amount?: number; currency?: string; blocked: boolean;
+  } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -73,24 +80,75 @@ export default function BillingPage() {
     setLoading(false);
   }
 
+  // Open the provider's hosted page in a NEW TAB and keep this page waiting on
+  // the webhook. Redirecting away meant the user lost their place, and for
+  // crypto (InventPay can't redirect back) they never returned at all — the
+  // upgrade appeared to do nothing until they refreshed manually.
   async function checkout(plan: "hobby" | "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
     setCheckoutLoading(true);
+    setCheckoutError("");
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({ plan, method }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        // Redirect to the hosted payment page (InventPay invoice or Polar checkout)
-        window.location.href = data.invoice_url;
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to create checkout");
+      const data = await res.json();
+      if (!res.ok) {
+        setCheckoutError(data.error || "Failed to create checkout");
+        return;
       }
-    } catch {}
-    setCheckoutLoading(false);
+
+      // Popup blockers only allow this because it's inside the click handler's
+      // async chain from a user gesture; if it's still blocked the modal shows
+      // the link so the user can open it manually.
+      const win = window.open(data.invoice_url, "_blank", "noopener,noreferrer");
+      setPending({
+        plan,
+        method,
+        url: data.invoice_url,
+        amount: data.amount,
+        currency: data.currency,
+        blocked: !win,
+      });
+      watchForActivation(plan);
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : "Network error creating checkout");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  // Poll billing status until the provider's webhook flips the subscription
+  // active. Card usually lands in seconds; crypto waits for confirmations, so
+  // this runs long and the modal stays honest about what's happening.
+  function watchForActivation(plan: string) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const started = Date.now();
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+        if (res.ok) {
+          const d: BillingStatus = await res.json();
+          if (d.active_subscription?.status === "active") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+            setPending(null);
+            setConfirmedPlan(d.active_subscription.plan || plan);
+            setCelebrate(true);
+            loadStatus();
+            return;
+          }
+        }
+      } catch {}
+      // Stop nagging the API after 30 minutes; the email confirmation is the
+      // backstop and the modal says so.
+      if (Date.now() - started > 30 * 60 * 1000 && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        setPendingTimedOut(true);
+      }
+    }, 4000);
   }
 
   async function pollPayment(paymentId: string) {
@@ -114,6 +172,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadStatus();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   useEffect(() => {
@@ -323,10 +382,105 @@ export default function BillingPage() {
 
   return (
     <div>
+      {/* Payment-in-progress modal. The provider's page is open in another tab;
+          this stays put and waits for the webhook rather than navigating away. */}
+      {pending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+                </div>
+              </div>
+
+              <h2 className="text-lg font-semibold">
+                {pendingTimedOut ? "Still waiting on your payment" : "Complete your payment"}
+              </h2>
+
+              {pendingTimedOut ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  We haven&apos;t seen the confirmation yet. Your plan upgrades automatically
+                  the moment it lands and we&apos;ll email you — you can safely close this.
+                </p>
+              ) : pending.blocked ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Your browser blocked the payment window. Use the link below to open it.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  We opened the {pending.method === "card" ? "card checkout" : "crypto invoice"} in a
+                  new tab. Finish there and this page updates on its own — no need to refresh.
+                </p>
+              )}
+
+              <div className="mt-4 rounded-lg border border-border/60 px-3 py-2 text-left text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Plan</span>
+                  <span className="font-medium capitalize">{pending.plan}</span>
+                </div>
+                {pending.amount !== undefined && (
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-medium">{pending.amount} {pending.currency}</span>
+                  </div>
+                )}
+                <div className="mt-1 flex justify-between">
+                  <span className="text-muted-foreground">Method</span>
+                  <span className="font-medium">{pending.method === "card" ? "Card" : "Crypto"}</span>
+                </div>
+              </div>
+
+              {pending.method === "crypto" && !pendingTimedOut && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                  Crypto payments confirm on-chain — this can take a few minutes.
+                </p>
+              )}
+
+              <div className="mt-5 flex flex-col gap-2">
+                <Button
+                  variant={pending.blocked ? "default" : "outline"}
+                  className="w-full gap-2"
+                  nativeButton={false}
+                  render={<a href={pending.url} target="_blank" rel="noopener noreferrer" />}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {pending.blocked ? "Open payment page" : "Reopen payment page"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full text-muted-foreground"
+                  onClick={() => {
+                    if (pollRef.current) clearInterval(pollRef.current);
+                    pollRef.current = null;
+                    setPending(null);
+                    setPendingTimedOut(false);
+                    loadStatus();
+                  }}
+                >
+                  {pendingTimedOut ? "Close" : "Cancel"}
+                </Button>
+              </div>
+
+              <p className="mt-4 text-[10px] text-muted-foreground">
+                Closing this won&apos;t cancel the payment — your plan still upgrades once it clears.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <h1 className="text-xl sm:text-2xl font-bold">Billing</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Manage your subscription and payment history.
       </p>
+
+      {checkoutError && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          <span className="flex-1">{checkoutError}</span>
+          <button onClick={() => setCheckoutError("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+        </div>
+      )}
 
       {/* Usage vs caps */}
       {usage && (() => {
