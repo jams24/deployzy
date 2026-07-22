@@ -250,6 +250,18 @@ function TemplateFormModal({
               <Label className="text-xs mb-1.5 block">Icon (emoji)</Label>
               <Input className="text-2xl text-center" value={form.icon ?? "📦"} onChange={(e) => set("icon", e.target.value)} maxLength={8} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Brand logo</Label>
+              <Input
+                placeholder="e.g. ghost, n8n, discord"
+                value={form.logo_slug ?? ""}
+                onChange={(e) => set("logo_slug", e.target.value.trim().toLowerCase())}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Simple Icons slug (simpleicons.org). Renders the real brand mark
+                instead of the emoji. Leave empty to show a lettermark.
+              </p>
+            </div>
             <div>
               <Label className="text-xs mb-1.5 block">Brand color</Label>
               <div className="flex gap-2 items-center">

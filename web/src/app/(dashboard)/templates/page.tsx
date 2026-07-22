@@ -197,7 +197,7 @@ function DeployModal({
             className="flex h-8 w-8 items-center justify-center rounded-lg border"
             style={{ borderColor: `${template.color}33`, background: `${template.color}0f` }}
           >
-            <BrandLogo slug={template.slug} name={template.name} color={template.color} className="h-4 w-4" />
+            <BrandLogo logoSlug={template.logo_slug} slug={template.slug} name={template.name} color={template.color} className="h-4 w-4" />
           </span>
           Deploy {template.name}
         </DialogTitle>
@@ -358,7 +358,7 @@ function TemplateCard({
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-background/80 backdrop-blur"
             style={{ borderColor: `${template.color}33` }}
           >
-            <BrandLogo slug={template.slug} name={template.name} color={template.color} className="h-6 w-6" />
+            <BrandLogo logoSlug={template.logo_slug} slug={template.slug} name={template.name} color={template.color} className="h-6 w-6" />
           </div>
 
           <div className="flex items-center gap-1.5">

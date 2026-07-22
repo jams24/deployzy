@@ -19,6 +19,9 @@ type Template struct {
 	Category    string         `json:"category"`
 	Tags        []string       `json:"tags"`
 	Icon        string         `json:"icon"`
+	// LogoSlug is a Simple Icons slug for the brand mark. Set from the admin
+	// UI so adding a template with a real logo needs no code change.
+	LogoSlug    string         `json:"logo_slug"`
 	Color       string         `json:"color"`
 	SourceRepo  *string        `json:"source_repo,omitempty"`
 	DockerImage *string        `json:"docker_image,omitempty"`
@@ -125,7 +128,7 @@ func (d *DB) ListTemplates(ctx context.Context, f TemplateFilter, userID string)
 
 	query := fmt.Sprintf(`
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
-		       t.icon, t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
+		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
 		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
@@ -152,7 +155,7 @@ func (d *DB) ListTemplates(ctx context.Context, f TemplateFilter, userID string)
 		var envVarsRaw []byte
 		if err := rows.Scan(
 			&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
-			&t.Icon, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
+			&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
 			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
 			&t.DeployCount, &t.CreatedAt,
 			&t.StarCount, &t.IsStarred,
@@ -180,7 +183,7 @@ func (d *DB) GetTemplate(ctx context.Context, slug, userID string) (*Template, e
 	var envVarsRaw []byte
 	err := d.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
-		       t.icon, t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
+		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
 		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
@@ -193,7 +196,7 @@ func (d *DB) GetTemplate(ctx context.Context, slug, userID string) (*Template, e
 		args...,
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
-		&t.Icon, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
+		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
 		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
 		&t.DeployCount, &t.CreatedAt,
 		&t.StarCount, &t.IsStarred,
@@ -258,6 +261,9 @@ type TemplateUpsert struct {
 	Category    string         `json:"category"`
 	Tags        []string       `json:"tags"`
 	Icon        string         `json:"icon"`
+	// LogoSlug is a Simple Icons slug for the brand mark. Set from the admin
+	// UI so adding a template with a real logo needs no code change.
+	LogoSlug    string         `json:"logo_slug"`
 	Color       string         `json:"color"`
 	SourceRepo  *string        `json:"source_repo"`
 	DockerImage *string        `json:"docker_image"`
@@ -273,7 +279,7 @@ type TemplateUpsert struct {
 func (d *DB) AdminListTemplates(ctx context.Context) ([]Template, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
-		       t.icon, t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
+		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
 		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
@@ -292,7 +298,7 @@ func (d *DB) AdminListTemplates(ctx context.Context) ([]Template, error) {
 		var envVarsRaw []byte
 		if err := rows.Scan(
 			&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
-			&t.Icon, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
+			&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
 			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
 			&t.DeployCount, &t.CreatedAt, &t.StarCount, &t.IsStarred,
 		); err != nil {
@@ -321,20 +327,20 @@ func (d *DB) AdminCreateTemplate(ctx context.Context, u TemplateUpsert) (*Templa
 	var envVarsRaw []byte
 	err := d.Pool.QueryRow(ctx, `
 		INSERT INTO templates
-		  (slug, name, tagline, description, category, tags, icon, color,
+		  (slug, name, tagline, description, category, tags, icon, logo_slug, color,
 		   source_repo, docker_image, env_vars, ports, min_memory_mb,
 		   post_deploy, is_official, is_featured, is_active)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		RETURNING id, slug, name, tagline, description, category, tags,
-		          icon, color, source_repo, docker_image, env_vars, ports,
+		          icon, COALESCE(logo_slug, ''), color, source_repo, docker_image, env_vars, ports,
 		          min_memory_mb, post_deploy, is_official, is_featured, is_active,
 		          deploy_count, created_at`,
-		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.Color,
+		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.LogoSlug, u.Color,
 		u.SourceRepo, u.DockerImage, envJSON, u.Ports, u.MinMemoryMB,
 		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive,
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
-		&t.Icon, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
+		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
 		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
 		&t.DeployCount, &t.CreatedAt,
 	)
@@ -359,21 +365,21 @@ func (d *DB) AdminUpdateTemplate(ctx context.Context, id string, u TemplateUpser
 	err := d.Pool.QueryRow(ctx, `
 		UPDATE templates SET
 		  slug=$2, name=$3, tagline=$4, description=$5, category=$6, tags=$7,
-		  icon=$8, color=$9, source_repo=$10, docker_image=$11, env_vars=$12,
-		  ports=$13, min_memory_mb=$14, post_deploy=$15, is_official=$16,
-		  is_featured=$17, is_active=$18, updated_at=NOW()
+		  icon=$8, logo_slug=$9, color=$10, source_repo=$11, docker_image=$12, env_vars=$13,
+		  ports=$14, min_memory_mb=$15, post_deploy=$16, is_official=$17,
+		  is_featured=$18, is_active=$19, updated_at=NOW()
 		WHERE id=$1
 		RETURNING id, slug, name, tagline, description, category, tags,
-		          icon, color, source_repo, docker_image, env_vars, ports,
+		          icon, COALESCE(logo_slug, ''), color, source_repo, docker_image, env_vars, ports,
 		          min_memory_mb, post_deploy, is_official, is_featured, is_active,
 		          deploy_count, created_at`,
 		id,
-		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.Color,
+		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.LogoSlug, u.Color,
 		u.SourceRepo, u.DockerImage, envJSON, u.Ports, u.MinMemoryMB,
 		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive,
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
-		&t.Icon, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
+		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
 		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
 		&t.DeployCount, &t.CreatedAt,
 	)

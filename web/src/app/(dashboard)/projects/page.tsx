@@ -105,6 +105,30 @@ interface GitHubRepo {
   html_url: string; updated_at: string;
 }
 
+// Solid dot per status — a coloured dot next to the name reads faster than a
+// pill badge, and frees the header row for the project name.
+const statusDot: Record<string, string> = {
+  running: "bg-emerald-500",
+  building: "bg-amber-500 animate-pulse",
+  stopped: "bg-zinc-500",
+  failed: "bg-red-500",
+  crashed: "bg-red-500",
+  created: "bg-blue-500",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never deployed";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 const statusColor: Record<string, string> = {
   running: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
   building: "bg-amber-500/20 text-amber-500 border-amber-500/50",
@@ -1320,36 +1344,56 @@ function ProjectsContent() {
             const isSel = selectedProject === p.id;
             return (
             <div key={p.id} id={`project-row-${p.id}`} className={isGrid
-              ? `rounded-xl border bg-card/20 overflow-hidden transition-colors ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20"}`
+              ? `rounded-xl border bg-card/20 overflow-hidden transition-all ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20 hover:bg-card/40"}`
               : `transition-colors ${isSel ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
-              <div className={isGrid ? "p-4" : "px-4 py-2.5"}>
+              <div className={isGrid ? "p-5" : "px-4 py-2.5"}>
                 <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
                   <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/20 text-primary shrink-0">
                       <Rocket className="h-4 w-4" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{p.name}</span>
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
-                        <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot[p.status] || "bg-zinc-500"}`}
+                          title={p.status} />
+                        <span className="text-[15px] font-medium truncate">{p.name}</span>
+                        {isGrid && (
+                          <span className="text-[11px] text-muted-foreground shrink-0 capitalize">{p.status}</span>
+                        )}
+                        {!isGrid && (
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
+                        )}
                         {(p.labels || []).map((l) => (
                           <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
                         ))}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
+
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono min-w-0">
                         <Globe className="h-3 w-3 shrink-0" />
                         <span className="truncate">{p.subdomain}.deployzy.com</span>
+                      </div>
+
+                      {/* Metadata line — stack, repo and last deploy. None of
+                          this was visible before, so every card looked alike. */}
+                      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground min-w-0 flex-wrap">
+                        <span className="capitalize">{p.framework || "custom"}</span>
                         {p.github_repo && (
                           <>
-                            <GitBranch className="h-3 w-3 ml-1 shrink-0 hidden sm:inline" />
-                            <span className="truncate hidden sm:inline">{p.github_repo}</span>
+                            <span className="text-border">·</span>
+                            <span className="inline-flex items-center gap-1 min-w-0">
+                              <GitBranch className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{p.github_repo}</span>
+                            </span>
                           </>
                         )}
+                        <span className="text-border">·</span>
+                        <span className="whitespace-nowrap">{timeAgo(p.last_deploy_at)}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-wrap shrink-0">
+                  <div className={isGrid && !isSel
+                    ? "flex items-center gap-1.5 flex-wrap pt-3 border-t border-border/40"
+                    : "flex items-center gap-1 flex-wrap shrink-0"}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                         {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -1358,8 +1402,8 @@ function ProjectsContent() {
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
-                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline"> Visit</span>
+                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
+                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                           {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -1372,6 +1416,9 @@ function ProjectsContent() {
                           const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
                           const showPlatform = !!p.worker_server_id;
                           if (!showPlatform && otherServers.length === 0) return null;
+                          // Hidden on collapsed grid cards — it was the widest
+                          // control on the row for an action taken rarely.
+                          if (isGrid && !isSel) return null;
                           return (
                             <select
                               className="h-8 max-w-[110px] sm:max-w-none rounded-md border border-input bg-background px-2 text-xs"
@@ -1391,7 +1438,7 @@ function ProjectsContent() {
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" title="Delete project" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
+                    <Button variant="ghost" size="sm" className={`h-8 px-2 text-destructive hover:text-destructive ${isGrid && !isSel ? "ml-auto" : ""}`} title="Delete project" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>

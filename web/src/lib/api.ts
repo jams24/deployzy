@@ -404,6 +404,7 @@ export interface Template {
   category: string;
   tags: string[];
   icon: string;
+  logo_slug: string;
   color: string;
   source_repo?: string;
   docker_image?: string;
