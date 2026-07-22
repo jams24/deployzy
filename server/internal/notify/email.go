@@ -3,6 +3,7 @@ package notify
 import (
 	"crypto/tls"
 	"fmt"
+	"html"
 	"net"
 	"net/smtp"
 	"strings"
@@ -194,6 +195,7 @@ func BroadcastEmail(subject, bodyHTML string) string {
 
 // DeployFailedEmail returns the HTML body for a deploy-failure notification.
 func DeployFailedEmail(projectName, projectURL, logsURL, crashLogs string) string {
+	projectName, crashLogs = html.EscapeString(projectName), html.EscapeString(crashLogs)
 	truncated := crashLogs
 	if len(truncated) > 1800 {
 		truncated = "…" + truncated[len(truncated)-1800:]
@@ -260,6 +262,7 @@ func htmlEscape(s string) string {
 
 // TeamInviteEmail returns the HTML body for a team invitation email.
 func TeamInviteEmail(inviterName, teamName, inviteURL string) string {
+	inviterName, teamName = html.EscapeString(inviterName), html.EscapeString(teamName)
 	card := `
 
             <!-- Icon -->
@@ -316,7 +319,7 @@ func TeamInviteEmail(inviterName, teamName, inviteURL string) string {
 
 // WelcomeEmail returns the HTML body for a welcome email.
 func WelcomeEmail(name string) string {
-	displayName := name
+	displayName := html.EscapeString(name)
 	if displayName == "" {
 		displayName = "there"
 	}
@@ -393,10 +396,11 @@ func WelcomeEmail(name string) string {
 // VerifyCodeEmail renders the 6-digit signup confirmation code. Uses the brand
 // shell so it matches every other transactional email.
 func VerifyCodeEmail(name, code string) string {
-	displayName := name
+	displayName := html.EscapeString(name)
 	if displayName == "" {
 		displayName = "there"
 	}
+	code = html.EscapeString(code)
 	card := `
             <p style="margin:0 0 8px;font-size:24px;font-weight:700;color:#ffffff;line-height:1.3;">
               Confirm your email
@@ -426,10 +430,11 @@ func VerifyCodeEmail(name, code string) string {
 // upgrade, downgrade, or renewal. kind is "new" | "upgrade" | "downgrade" |
 // "renewal"; anything else is treated as a new subscription.
 func SubscriptionEmail(name, plan, kind string, amount float64, currency, renewsOn string) string {
-	displayName := name
+	displayName := html.EscapeString(name)
 	if displayName == "" {
 		displayName = "there"
 	}
+	currency, renewsOn = html.EscapeString(currency), html.EscapeString(renewsOn)
 	planTitle := strings.ToUpper(plan[:1]) + plan[1:]
 
 	headline, blurb := "You're on "+planTitle+" 🎉", "Your subscription is active. Thanks for backing Deployzy!"
