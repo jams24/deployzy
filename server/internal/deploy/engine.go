@@ -441,7 +441,25 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	if runner.IsRemote() {
 		buildHost = "BYOC server " + runner.Host()
 	}
+
+	// Build-minute quota. Checked here rather than at request time so it also
+	// covers auto-deploys from GitHub pushes, not just manual clicks.
+	if usage, err := e.db.GetBuildUsage(ctx, project.UserID); err == nil && usage.Exceeded {
+		e.logMsg(ctx, project.ID, fmt.Sprintf(
+			"Build blocked — you've used %d of %d build minutes this month. The allowance resets on the 1st; upgrade for more.",
+			usage.MinutesUsed, usage.MinutesLimit), "error")
+		restoreOldState()
+		return fmt.Errorf("build minutes exhausted: %d/%d used this month",
+			usage.MinutesUsed, usage.MinutesLimit)
+	}
+	// Start from the plan's build-memory ceiling (0 = unlimited/admin), then
+	// clamp to what the host can actually spare. The plan is a ceiling, never
+	// a reservation: promising a Team user 4 GB on a host with 1 GB free would
+	// just OOM their build and everything co-located with it.
 	buildMemMB := 2048
+	if planCap := e.planBuildMemoryMB(ctx, project.UserID); planCap > 0 {
+		buildMemMB = planCap
+	}
 	if availMB := availableMemoryMB(ctx, runner); availMB > 0 {
 		if availMB-512 < buildMemMB { // leave a 512 MB host reserve
 			buildMemMB = availMB - 512
@@ -467,7 +485,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		shellQuote(imageName),
 		shellQuote(buildCtx),
 	)
+	buildStart := time.Now()
 	output, err := runner.RunShell(buildCtx2, buildShellCmd)
+	// Recorded on success AND failure: a broken Dockerfile burns the same CPU
+	// as a working one, so not counting failures would leave a free way to
+	// hammer the build host. context.Background() because ctx may already be
+	// cancelled if the build timed out.
+	if project.UserID != "" {
+		if rerr := e.db.RecordBuildTime(context.Background(), project.UserID, time.Since(buildStart)); rerr != nil {
+			e.log.Warn().Err(rerr).Str("project", project.Name).Msg("failed to record build time")
+		}
+	}
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
@@ -1740,4 +1768,25 @@ func (e *Engine) writeBuildFile(ctx context.Context, runner *Runner, dir, name, 
 	} else {
 		os.WriteFile(dir+"/"+name, []byte(content), 0644)
 	}
+}
+
+// planBuildMemoryMB returns the plan's build-memory ceiling in MB, or 0 for
+// "no plan limit" (admin, unlimited, or a lookup failure — fail open rather
+// than blocking a deploy on a bad read).
+func (e *Engine) planBuildMemoryMB(ctx context.Context, userID string) int {
+	if userID == "" {
+		return 0
+	}
+	if isAdmin, _ := e.db.IsUserAdmin(ctx, userID); isAdmin {
+		return 0
+	}
+	user, err := e.db.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return 0
+	}
+	limits, err := e.db.GetPlanLimits(ctx, user.Plan)
+	if err != nil || limits == nil || db.Unlimited(limits.MaxBuildMemoryMB) {
+		return 0
+	}
+	return limits.MaxBuildMemoryMB
 }

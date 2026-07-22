@@ -25,6 +25,7 @@ type PlanLimit struct {
 	MaxCPUs                 float64 `json:"max_cpus"`
 	MaxBandwidthGB          int     `json:"max_bandwidth_gb"`
 	MaxBuildMinutesMonthly  int     `json:"max_build_minutes_monthly"`
+	MaxBuildMemoryMB        int     `json:"max_build_memory_mb"`
 	AnalyticsRetentionDays  int     `json:"analytics_retention_days"`
 	MetricsRetentionDays    int     `json:"metrics_retention_days"`
 	DeployLogRetentionDays  int     `json:"deploy_log_retention_days"`
@@ -83,7 +84,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		`SELECT plan, max_subdomains, max_tunnels, max_rate,
 		        max_projects, max_custom_domains, max_databases, max_services, max_crons,
 		        max_byoc_servers, max_preview_deploys, max_memory_mb, max_cpus,
-		        max_bandwidth_gb, max_build_minutes_monthly,
+		        max_bandwidth_gb, max_build_minutes_monthly, COALESCE(max_build_memory_mb, 2048),
 		        analytics_retention_days, metrics_retention_days, deploy_log_retention_days, backup_retention_days,
 		        allow_previews, allow_release_cmd, allow_health_checks, allow_private_repos,
 		        allow_tcp_tunnels, allow_custom_events, allow_live_logs, allow_telegram
@@ -93,7 +94,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		&pl.Plan, &pl.MaxSubdomains, &pl.MaxTunnels, &pl.MaxRate,
 		&pl.MaxProjects, &pl.MaxCustomDomains, &pl.MaxDatabases, &pl.MaxServices, &pl.MaxCrons,
 		&pl.MaxBYOCServers, &pl.MaxPreviewDeploys, &pl.MaxMemoryMB, &pl.MaxCPUs,
-		&pl.MaxBandwidthGB, &pl.MaxBuildMinutesMonthly,
+		&pl.MaxBandwidthGB, &pl.MaxBuildMinutesMonthly, &pl.MaxBuildMemoryMB,
 		&pl.AnalyticsRetentionDays, &pl.MetricsRetentionDays, &pl.DeployLogRetentionDays, &pl.BackupRetentionDays,
 		&pl.AllowPreviews, &pl.AllowReleaseCmd, &pl.AllowHealthChecks, &pl.AllowPrivateRepos,
 		&pl.AllowTCPTunnels, &pl.AllowCustomEvents, &pl.AllowLiveLogs, &pl.AllowTelegram,
@@ -105,6 +106,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 			Plan: "free", MaxSubdomains: 5, MaxTunnels: 5, MaxRate: 100,
 			MaxProjects: 3, MaxCustomDomains: 1, MaxDatabases: 2, MaxBYOCServers: 1,
 			MaxMemoryMB: 256, MaxCPUs: 0.25, MaxBandwidthGB: 50, MaxBuildMinutesMonthly: 60,
+			MaxBuildMemoryMB: 2048,
 			AnalyticsRetentionDays: 7, MetricsRetentionDays: 1, DeployLogRetentionDays: 3,
 		}, nil
 	}
@@ -231,4 +233,66 @@ func (d *DB) CountUserSubdomains(ctx context.Context, userID string) (int, error
 		userID,
 	).Scan(&count)
 	return count, err
+}
+
+// ListPlanLimits returns every plan row, cheapest tier first, for the admin
+// plan editor.
+func (d *DB) ListPlanLimits(ctx context.Context) ([]PlanLimit, error) {
+	rows, err := d.Pool.Query(ctx, `SELECT plan FROM plan_limits ORDER BY max_memory_mb`)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	rows.Close()
+
+	out := make([]PlanLimit, 0, len(names))
+	for _, n := range names {
+		pl, err := d.GetPlanLimits(ctx, n)
+		if err != nil || pl == nil {
+			continue
+		}
+		out = append(out, *pl)
+	}
+	return out, nil
+}
+
+// UpdatePlanLimits writes an edited plan row. -1 means unlimited on any
+// numeric field, matching what the limit checker already understands.
+func (d *DB) UpdatePlanLimits(ctx context.Context, pl *PlanLimit) error {
+	_, err := d.Pool.Exec(ctx, `
+		UPDATE plan_limits SET
+		  max_subdomains = $2, max_tunnels = $3, max_rate = $4,
+		  max_projects = $5, max_custom_domains = $6, max_databases = $7,
+		  max_services = $8, max_crons = $9, max_byoc_servers = $10,
+		  max_preview_deploys = $11, max_memory_mb = $12, max_cpus = $13,
+		  max_bandwidth_gb = $14, max_build_minutes_monthly = $15,
+		  max_build_memory_mb = $16,
+		  analytics_retention_days = $17, metrics_retention_days = $18,
+		  deploy_log_retention_days = $19, backup_retention_days = $20,
+		  allow_previews = $21, allow_release_cmd = $22, allow_health_checks = $23,
+		  allow_private_repos = $24, allow_tcp_tunnels = $25, allow_custom_events = $26,
+		  allow_live_logs = $27, allow_telegram = $28
+		WHERE plan = $1`,
+		pl.Plan,
+		pl.MaxSubdomains, pl.MaxTunnels, pl.MaxRate,
+		pl.MaxProjects, pl.MaxCustomDomains, pl.MaxDatabases,
+		pl.MaxServices, pl.MaxCrons, pl.MaxBYOCServers,
+		pl.MaxPreviewDeploys, pl.MaxMemoryMB, pl.MaxCPUs,
+		pl.MaxBandwidthGB, pl.MaxBuildMinutesMonthly,
+		pl.MaxBuildMemoryMB,
+		pl.AnalyticsRetentionDays, pl.MetricsRetentionDays,
+		pl.DeployLogRetentionDays, pl.BackupRetentionDays,
+		pl.AllowPreviews, pl.AllowReleaseCmd, pl.AllowHealthChecks,
+		pl.AllowPrivateRepos, pl.AllowTCPTunnels, pl.AllowCustomEvents,
+		pl.AllowLiveLogs, pl.AllowTelegram,
+	)
+	return err
 }

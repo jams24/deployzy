@@ -17,7 +17,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -41,6 +41,21 @@ interface AdminProject {
   id: string; user_id: string; user_email: string; name: string;
   subdomain: string; repo_url: string; branch: string; framework: string;
   status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
+}
+
+interface PlanLimitRow {
+  plan: string;
+  max_subdomains: number; max_tunnels: number; max_rate: number;
+  max_projects: number; max_custom_domains: number; max_databases: number;
+  max_services: number; max_crons: number; max_byoc_servers: number;
+  max_preview_deploys: number; max_memory_mb: number; max_cpus: number;
+  max_bandwidth_gb: number; max_build_minutes_monthly: number;
+  max_build_memory_mb: number;
+  analytics_retention_days: number; metrics_retention_days: number;
+  deploy_log_retention_days: number; backup_retention_days: number;
+  allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
+  allow_private_repos: boolean; allow_tcp_tunnels: boolean; allow_custom_events: boolean;
+  allow_live_logs: boolean; allow_telegram: boolean;
 }
 
 interface PlatformAnalytics {
@@ -155,6 +170,10 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<PlatformAnalytics | null>(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState("week");
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [plans, setPlans] = useState<PlanLimitRow[]>([]);
+  const [planDraft, setPlanDraft] = useState<Record<string, PlanLimitRow>>({});
+  const [planSaving, setPlanSaving] = useState<string | null>(null);
+  const [planSaved, setPlanSaved] = useState<string | null>(null);
   const [diagOpen, setDiagOpen] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
@@ -319,6 +338,47 @@ export default function AdminPage() {
     } catch (e) {
       setActionError(`${action} failed: ${e instanceof Error ? e.message : "network error"}`);
       return false;
+    }
+  };
+
+  // ── Plan limits ────────────────────────────────────────────────────────────
+  const loadPlans = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/plans`, { headers: headers() });
+      if (res.ok) {
+        const rows: PlanLimitRow[] = await res.json();
+        setPlans(rows);
+        setPlanDraft(Object.fromEntries(rows.map(r => [r.plan, { ...r }])));
+      } else setActionError(`Loading plans failed: HTTP ${res.status}`);
+    } catch (e) {
+      setActionError(`Loading plans failed: ${e instanceof Error ? e.message : "network error"}`);
+    }
+  }, [headers]);
+
+  useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
+
+  const savePlan = async (plan: string) => {
+    const draft = planDraft[plan];
+    if (!draft) return;
+    setPlanSaving(plan);
+    setPlanSaved(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/plans/${plan}`, {
+        method: "PUT", headers: headers(), body: JSON.stringify(draft),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Saving ${plan} failed: ${msg}`);
+        return;
+      }
+      setPlanSaved(plan);
+      setTimeout(() => setPlanSaved(null), 2500);
+      loadPlans();
+    } catch (e) {
+      setActionError(`Saving ${plan} failed: ${e instanceof Error ? e.message : "network error"}`);
+    } finally {
+      setPlanSaving(null);
     }
   };
 
@@ -568,6 +628,7 @@ export default function AdminPage() {
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
     { id: "analytics", label: "Analytics" },
+    { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
@@ -1414,6 +1475,146 @@ export default function AdminPage() {
         </div>
       )}
       {/* ── BROADCAST TAB ───────────────────────────────────────────────────── */}
+      {/* ── PLANS TAB ─────────────────────────────────────────────────────── */}
+      {tab === "plans" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Edit what each plan allows. Changes apply on the next check — no restart or
+            redeploy needed. Use <span className="font-mono text-foreground">-1</span> for unlimited.
+          </p>
+
+          {plans.length === 0 && (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
+            </div>
+          )}
+
+          {plans.map((p) => {
+            const d = planDraft[p.plan];
+            if (!d) return null;
+            const isAdminPlan = p.plan === "admin";
+            const setField = (k: keyof PlanLimitRow, v: number | boolean) =>
+              setPlanDraft(prev => ({ ...prev, [p.plan]: { ...prev[p.plan], [k]: v } }));
+            const dirty = JSON.stringify(d) !== JSON.stringify(p);
+
+            const numField = (label: string, key: keyof PlanLimitRow, hint?: string, step = 1) => (
+              <div key={key}>
+                <label className="block text-[11px] text-muted-foreground mb-1">{label}</label>
+                <input
+                  type="number" step={step}
+                  disabled={isAdminPlan}
+                  value={d[key] as number}
+                  onChange={(e) => setField(key, parseFloat(e.target.value))}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs font-mono disabled:opacity-50"
+                />
+                {hint && <p className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</p>}
+              </div>
+            );
+
+            return (
+              <Card key={p.plan}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <span className="capitalize">{p.plan}</span>
+                      {isAdminPlan && (
+                        <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                          unlimited by design — read only
+                        </Badge>
+                      )}
+                    </span>
+                    {!isAdminPlan && (
+                      <span className="flex items-center gap-2">
+                        {planSaved === p.plan && (
+                          <span className="text-[11px] text-emerald-500">Saved</span>
+                        )}
+                        <Button size="sm" className="h-7 text-xs" disabled={!dirty || planSaving === p.plan}
+                          onClick={() => savePlan(p.plan)}>
+                          {planSaving === p.plan ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                        </Button>
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Build + runtime resources — the levers that actually cost money */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Build &amp; runtime
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Runtime RAM (MB)", "max_memory_mb")}
+                      {numField("Runtime vCPU", "max_cpus", undefined, 0.25)}
+                      {numField("Build memory (MB)", "max_build_memory_mb", "Ceiling — still clamped to free host RAM")}
+                      {numField("Build minutes / mo", "max_build_minutes_monthly", "Counts failed builds too")}
+                    </div>
+                  </div>
+
+                  {/* Quotas */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Quotas</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Projects", "max_projects")}
+                      {numField("Databases", "max_databases")}
+                      {numField("Services", "max_services")}
+                      {numField("BYOC servers", "max_byoc_servers")}
+                      {numField("Subdomains", "max_subdomains")}
+                      {numField("Tunnels", "max_tunnels")}
+                      {numField("Custom domains", "max_custom_domains")}
+                      {numField("Cron jobs", "max_crons")}
+                      {numField("PR previews", "max_preview_deploys")}
+                      {numField("Bandwidth (GB)", "max_bandwidth_gb")}
+                      {numField("Rate limit (req/s)", "max_rate")}
+                    </div>
+                  </div>
+
+                  {/* Retention */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Retention (days)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Analytics", "analytics_retention_days")}
+                      {numField("Deploy logs", "deploy_log_retention_days")}
+                      {numField("Metrics", "metrics_retention_days")}
+                      {numField("Backups", "backup_retention_days")}
+                    </div>
+                  </div>
+
+                  {/* Feature flags */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Features</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {([
+                        ["allow_previews", "PR previews"],
+                        ["allow_release_cmd", "Release cmds"],
+                        ["allow_health_checks", "Health checks"],
+                        ["allow_private_repos", "Private repos"],
+                        ["allow_tcp_tunnels", "TCP tunnels"],
+                        ["allow_live_logs", "Live logs"],
+                        ["allow_custom_events", "Custom events"],
+                        ["allow_telegram", "Telegram"],
+                      ] as [keyof PlanLimitRow, string][]).map(([key, label]) => (
+                        <button
+                          key={key}
+                          disabled={isAdminPlan}
+                          onClick={() => setField(key, !d[key])}
+                          className={`rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                            d[key]
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
+                              : "border-border text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {d[key] ? "✓" : "✕"} {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
       {tab === "analytics" && (
         <div className="space-y-4">
