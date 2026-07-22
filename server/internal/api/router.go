@@ -292,6 +292,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 				// Project management across all users
 				r.Get("/projects", s.handleAdminListProjects)
+				r.Get("/analytics", s.handleAdminAnalytics)
 				r.Get("/projects/{projectId}/diagnostics", s.handleAdminProjectDiagnostics)
 				r.Post("/projects/{projectId}/stop", s.handleAdminStopProject)
 				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)

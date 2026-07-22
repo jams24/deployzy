@@ -17,7 +17,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -41,6 +41,21 @@ interface AdminProject {
   id: string; user_id: string; user_email: string; name: string;
   subdomain: string; repo_url: string; branch: string; framework: string;
   status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
+}
+
+interface PlatformAnalytics {
+  period: string;
+  overview: {
+    pageviews: number; visitors: number; bot_hits: number;
+    bytes_served: number; error_hits: number; active_sites: number;
+  };
+  timeseries: { ts: string; pageviews: number; visitors: number; bot_hits: number }[];
+  top: Record<string, { key: string; count: number }[]>;
+  projects: {
+    project_id: string; name: string; subdomain: string; owner_email: string;
+    pageviews: number; visitors: number; bot_hits: number; bytes: number; error_hits: number;
+  }[];
+  retention_note: string;
 }
 
 interface ProjectDiagnostics {
@@ -134,6 +149,9 @@ export default function AdminPage() {
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [analytics, setAnalytics] = useState<PlatformAnalytics | null>(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("week");
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [diagOpen, setDiagOpen] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
@@ -300,6 +318,25 @@ export default function AdminPage() {
       return false;
     }
   };
+
+  // ── Platform analytics ─────────────────────────────────────────────────────
+  const loadAnalytics = useCallback(async (period: string) => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/analytics?period=${period}`, { headers: headers() });
+      if (res.ok) setAnalytics(await res.json());
+      else setActionError(`Analytics failed: HTTP ${res.status}`);
+    } catch (e) {
+      setActionError(`Analytics failed: ${e instanceof Error ? e.message : "network error"}`);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "analytics") loadAnalytics(analyticsPeriod);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, analyticsPeriod]);
 
   // ── Project diagnostics ────────────────────────────────────────────────────
   // Answers "why did this user's project die?" without SSHing into the host.
@@ -527,6 +564,7 @@ export default function AdminPage() {
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
+    { id: "analytics", label: "Analytics" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
@@ -1373,6 +1411,153 @@ export default function AdminPage() {
         </div>
       )}
       {/* ── BROADCAST TAB ───────────────────────────────────────────────────── */}
+      {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
+      {tab === "analytics" && (
+        <div className="space-y-4">
+          {/* Period selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">Period</span>
+            <div className="flex rounded-md border border-border overflow-hidden">
+              {["day", "week", "month", "year", "all"].map(pd => (
+                <button key={pd} onClick={() => setAnalyticsPeriod(pd)}
+                  className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                    analyticsPeriod === pd ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}>{pd === "all" ? "All time" : pd}</button>
+              ))}
+            </div>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs ml-auto"
+              onClick={() => loadAnalytics(analyticsPeriod)} disabled={analyticsLoading}>
+              <RefreshCw className={`h-3.5 w-3.5 ${analyticsLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+
+          {analyticsLoading && !analytics && (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Aggregating traffic…
+            </div>
+          )}
+
+          {analytics && (() => {
+            const o = analytics.overview;
+            const totalHits = o.pageviews + o.bot_hits;
+            const botPct = totalHits > 0 ? (o.bot_hits / totalHits) * 100 : 0;
+            const fmtBytes = (b: number) =>
+              b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e3).toFixed(0)} KB`;
+            const fmtNum = (n: number) =>
+              n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
+            const peak = Math.max(1, ...analytics.timeseries.map(t => t.pageviews + t.bot_hits));
+
+            return (
+              <>
+                {/* Headline tiles */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <StatTile label="Pageviews" value={fmtNum(o.pageviews)} sub={`${fmtNum(o.visitors)} unique visitors`} />
+                  <StatTile label="Bot traffic" value={`${botPct.toFixed(1)}%`} sub={`${fmtNum(o.bot_hits)} crawler hits`}
+                    tone={botPct > 60 ? "warn" : undefined} />
+                  <StatTile label="Bandwidth served" value={fmtBytes(o.bytes_served)} sub={`${o.active_sites} sites with traffic`} />
+                  <StatTile label="Errors" value={fmtNum(o.error_hits)}
+                    sub={totalHits > 0 ? `${((o.error_hits / totalHits) * 100).toFixed(1)}% of requests` : "—"}
+                    tone={o.error_hits > 0 && totalHits > 0 && (o.error_hits / totalHits) > 0.05 ? "bad" : undefined} />
+                </div>
+
+                {/* Traffic chart — human vs bot, stacked bars (no chart lib, matches
+                    the hand-rolled SVG style used elsewhere) */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center justify-between">
+                      <span>Traffic over time</span>
+                      <span className="flex items-center gap-3 text-[10px] font-normal text-muted-foreground">
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500" />humans</span>
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-500/70" />bots</span>
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analytics.timeseries.length === 0 ? (
+                      <p className="py-10 text-center text-xs text-muted-foreground">No traffic in this period.</p>
+                    ) : (
+                      <div className="flex items-end gap-[2px] h-40">
+                        {analytics.timeseries.map((pt, i) => {
+                          const total = pt.pageviews + pt.bot_hits;
+                          const h = (total / peak) * 100;
+                          const botShare = total > 0 ? (pt.bot_hits / total) * 100 : 0;
+                          return (
+                            <div key={i} className="flex-1 flex flex-col justify-end group relative" style={{ height: "100%" }}>
+                              <div className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end" style={{ height: `${h}%` }}>
+                                <div className="w-full bg-amber-500/70" style={{ height: `${botShare}%` }} />
+                                <div className="w-full bg-emerald-500" style={{ height: `${100 - botShare}%` }} />
+                              </div>
+                              <div className="pointer-events-none absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 whitespace-nowrap rounded bg-popover border border-border px-2 py-1 text-[10px] shadow">
+                                <div className="font-medium">{new Date(pt.ts).toLocaleString()}</div>
+                                <div className="text-emerald-500">{pt.pageviews} views · {pt.visitors} visitors</div>
+                                <div className="text-amber-500">{pt.bot_hits} bot hits</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Breakdowns */}
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  <TopList title="Traffic sources" rows={analytics.top.referrers} empty="No referrers — traffic is direct." />
+                  <TopList title="Top pages" rows={analytics.top.paths} />
+                  <TopList title="Countries" rows={analytics.top.countries} />
+                  <TopList title="Devices" rows={analytics.top.devices} />
+                  <TopList title="Browsers" rows={analytics.top.browsers} />
+                </div>
+
+                {/* Busiest projects */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Busiest projects</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analytics.projects.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-muted-foreground">No traffic recorded in this period.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-muted-foreground border-b border-border/50">
+                              <th className="text-left font-medium py-1.5">Project</th>
+                              <th className="text-right font-medium">Views</th>
+                              <th className="text-right font-medium">Visitors</th>
+                              <th className="text-right font-medium">Bots</th>
+                              <th className="text-right font-medium">Bandwidth</th>
+                              <th className="text-right font-medium">Errors</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analytics.projects.map(pr => (
+                              <tr key={pr.project_id} className="border-b border-border/30 last:border-0">
+                                <td className="py-1.5">
+                                  <div className="font-medium">{pr.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{pr.owner_email || "—"}</div>
+                                </td>
+                                <td className="text-right font-mono">{fmtNum(pr.pageviews)}</td>
+                                <td className="text-right font-mono">{fmtNum(pr.visitors)}</td>
+                                <td className="text-right font-mono text-amber-500">{fmtNum(pr.bot_hits)}</td>
+                                <td className="text-right font-mono">{fmtBytes(pr.bytes)}</td>
+                                <td className={`text-right font-mono ${pr.error_hits > 0 ? "text-red-500" : ""}`}>{fmtNum(pr.error_hits)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <p className="text-[10px] text-muted-foreground">{analytics.retention_note}</p>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {tab === "broadcast" && (
         <div className="max-w-2xl space-y-6">
           <div>
@@ -1488,6 +1673,44 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
         <p className="text-xl font-bold tracking-tight">{typeof value === "number" ? value.toLocaleString() : value}</p>
         <p className="text-[11px] font-medium text-muted-foreground mt-0.5">{label}</p>
         {sub && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{sub}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "bad" }) {
+  const color = tone === "warn" ? "text-amber-500" : tone === "bad" ? "text-red-500" : "text-foreground";
+  return (
+    <div className="rounded-lg border border-border/60 p-3">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 text-2xl font-semibold tracking-tight ${color}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[10px] text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function TopList({ title, rows, empty }: { title: string; rows?: { key: string; count: number }[]; empty?: string }) {
+  const data = rows || [];
+  const max = Math.max(1, ...data.map(r => r.count));
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">{title}</CardTitle></CardHeader>
+      <CardContent>
+        {data.length === 0 ? (
+          <p className="py-4 text-center text-[11px] text-muted-foreground">{empty || "No data yet."}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {data.map(r => (
+              <div key={r.key} className="relative">
+                <div className="absolute inset-y-0 left-0 rounded bg-primary/10" style={{ width: `${(r.count / max) * 100}%` }} />
+                <div className="relative flex justify-between px-2 py-1 text-[11px]">
+                  <span className="truncate pr-2" title={r.key}>{r.key}</span>
+                  <span className="font-mono text-muted-foreground shrink-0">{r.count.toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
