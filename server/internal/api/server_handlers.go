@@ -130,11 +130,25 @@ func (s *Server) handleAdminAddServer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminDeleteServer(w http.ResponseWriter, r *http.Request) {
 	serverID := chi.URLParam(r, "serverId")
+
+	// The admin path previously deleted the row with no host cleanup at all,
+	// orphaning every container on that machine. Mirror the user path.
+	server, _ := s.db.GetWorkerServer(r.Context(), serverID)
+	var purgeErr error
+	if server != nil {
+		purgeErr = s.purgeServerResources(r.Context(), server)
+	}
+
 	if err := s.db.DeleteWorkerServer(r.Context(), serverID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete server")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	resp := map[string]string{"status": "deleted"}
+	if purgeErr != nil && server != nil {
+		resp["warning"] = leftoverWarning(server, server.CurrentProjects)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminUpdateServerStatus(w http.ResponseWriter, r *http.Request) {
@@ -296,27 +310,22 @@ func (s *Server) handleDeleteUserServer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Best-effort remote cleanup: kill every sm-* container and its data
-	// volume on the user's VPS BEFORE we drop the DB row. If the server is
-	// already unreachable we still want to finish the DB delete, hence the
-	// ignored error. Runs in a goroutine with a short timeout so a slow or
-	// dead VPS doesn't hang the UI — the DB cleanup is what the user sees
-	// and that's synchronous below.
-	go func(srv *db.WorkerServer) {
-		// `sm-*` covers both project containers (sm-<8-char-id>) and BYOC
-		// service containers (sm-svc-<random>). Separate steps so partial
-		// failures still progress.
-		runRemoteSSH(srv,
-			`docker ps -aq --filter "name=^sm-" | xargs -r docker rm -f; `+
-				`docker volume ls -q --filter "name=^sm-svc-" | xargs -r docker volume rm`,
-			1*time.Minute)
-	}(server)
+	// Clean the host BEFORE dropping the row, and report the outcome. This
+	// used to be fire-and-forget, so an unreachable VPS silently kept running
+	// containers while the UI said "deleted" — leaving the owner with no
+	// record of what to clean up on a machine we no longer track.
+	purgeErr := s.purgeServerResources(r.Context(), server)
 
 	if err := s.db.DeleteWorkerServer(r.Context(), serverID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete server: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	resp := map[string]string{"status": "deleted"}
+	if purgeErr != nil {
+		resp["warning"] = leftoverWarning(server, server.CurrentProjects)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Helpers ---

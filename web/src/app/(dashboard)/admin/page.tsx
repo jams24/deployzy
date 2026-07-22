@@ -411,8 +411,20 @@ export default function AdminPage() {
 
   const removeServer = async (id: string) => {
     if (!confirm("Remove this server?")) return;
-    if (await adminFetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE" }, "Removing server"))
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE", headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(`Removing server failed: ${data.error || `HTTP ${res.status}`}`);
+        return;
+      }
+      // Host was unreachable — say so rather than implying a clean teardown.
+      if (data.warning) setActionError(data.warning);
       loadServers();
+    } catch (e) {
+      setActionError(`Removing server failed: ${e instanceof Error ? e.message : "network error"}`);
+    }
   };
 
   // ── Backups ────────────────────────────────────────────────────────────────

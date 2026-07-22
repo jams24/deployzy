@@ -22,6 +22,7 @@ interface WorkerServer {
 
 export default function ServersPage() {
   const [servers, setServers] = useState<WorkerServer[]>([]);
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -88,15 +89,34 @@ export default function ServersPage() {
   }, [servers]);
 
   async function removeServer(id: string) {
-    if (!confirm("Remove this server? Projects deployed on it will become inaccessible.")) return;
-    await fetch(`${API}/api/v1/servers/${id}`, { method: "DELETE", headers: headers() });
-    load();
+    if (!confirm("Remove this server? Projects deployed on it will be stopped and become inaccessible.")) return;
+    setNotice("");
+    try {
+      const res = await fetch(`${API}/api/v1/servers/${id}`, { method: "DELETE", headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice(data.error || `Failed to remove server (HTTP ${res.status})`);
+        return;
+      }
+      // If the host was unreachable we could not stop its containers — tell
+      // the owner exactly what is still running and how to clean it up.
+      if (data.warning) setNotice(data.warning);
+      load();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Network error removing server");
+    }
   }
 
   useEffect(() => { load(); }, []);
 
   return (
     <div>
+      {notice && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-500">
+          <span className="flex-1">{notice}</span>
+          <button onClick={() => setNotice("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">My Servers</h1>

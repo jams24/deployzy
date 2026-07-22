@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/serverme/serverme/server/internal/db"
 )
 
 // purgeUserResources tears down everything a user actually runs before their
@@ -77,4 +78,43 @@ func (s *Server) purgeUserResources(ctx context.Context, userID string) (project
 	s.log.Info().Str("user", userID).Int("projects", projects).Int("services", services).
 		Msg("purged user resources")
 	return projects, services
+}
+
+// purgeServerResources removes every Deployzy-managed container and service
+// volume from a worker host before its row is deleted.
+//
+// Synchronous and error-reporting on purpose. The previous fire-and-forget
+// goroutine meant that when a host was unreachable the cleanup silently failed
+// and the operator was told "deleted" while the containers kept running — the
+// user then had no record of what was left behind, on a machine we no longer
+// track. Deletion still proceeds on failure (never trap someone with a dead
+// VPS they can't remove), but the caller gets a warning to surface.
+func (s *Server) purgeServerResources(ctx context.Context, srv *db.WorkerServer) error {
+	if srv == nil || srv.IsLocal || srv.Host == "" || srv.Host == "localhost" || srv.Host == "127.0.0.1" {
+		return nil // never wipe the platform host itself
+	}
+	// sm-* covers project containers (sm-<8-char-id>) and BYOC service
+	// containers (sm-svc-<id>); volumes are removed after the containers
+	// release them.
+	_, err := runRemoteSSH(srv,
+		`docker ps -aq --filter "name=^sm-" | xargs -r docker rm -f; `+
+			`docker volume ls -q --filter "name=^sm-svc-" | xargs -r docker volume rm`,
+		45*time.Second)
+	if err != nil {
+		s.log.Warn().Err(err).Str("server", srv.Label).Str("host", srv.Host).
+			Msg("server purge: host unreachable, containers may still be running")
+		return fmt.Errorf("could not reach %s: %w", srv.Host, err)
+	}
+	s.log.Info().Str("server", srv.Label).Str("host", srv.Host).Msg("purged server resources")
+	return nil
+}
+
+// leftoverWarning builds the message shown when a host could not be cleaned,
+// including the exact command the owner can run themselves.
+func leftoverWarning(srv *db.WorkerServer, projectCount int) string {
+	return fmt.Sprintf(
+		"Server removed from Deployzy, but %s was unreachable so we could not stop "+
+			"%d container(s) still running on it. If the machine is alive, clean up with: "+
+			"docker rm -f $(docker ps -aq --filter name=^sm-)",
+		srv.Host, projectCount)
 }
