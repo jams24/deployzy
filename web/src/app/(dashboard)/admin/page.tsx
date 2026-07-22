@@ -52,6 +52,8 @@ interface PlatformAnalytics {
   timeseries: { ts: string; pageviews: number; visitors: number; bot_hits: number }[];
   top: Record<string, { key: string; count: number }[]>;
   crawlers: { name: string; category: string; hits: number; sites: number }[];
+  source: string;
+  visitors_exact: boolean;
   projects: {
     project_id: string; name: string; subdomain: string; owner_email: string;
     pageviews: number; visitors: number; bot_hits: number; bytes: number; error_hits: number;
@@ -1452,7 +1454,10 @@ export default function AdminPage() {
               <>
                 {/* Headline tiles */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <StatTile label="Pageviews" value={fmtNum(o.pageviews)} sub={`${fmtNum(o.visitors)} unique visitors`} />
+                  <StatTile label="Pageviews" value={fmtNum(o.pageviews)}
+                    sub={analytics.visitors_exact
+                      ? `${fmtNum(o.visitors)} unique visitors`
+                      : `${fmtNum(o.visitors)} visits (daily uniques summed)`} />
                   <StatTile label="Bot traffic" value={`${botPct.toFixed(1)}%`} sub={`${fmtNum(o.bot_hits)} crawler hits`}
                     tone={botPct > 60 ? "warn" : undefined} />
                   <StatTile label="Bandwidth served" value={fmtBytes(o.bytes_served)} sub={`${o.active_sites} sites with traffic`} />
@@ -1606,7 +1611,10 @@ export default function AdminPage() {
                   </CardContent>
                 </Card>
 
-                <p className="text-[10px] text-muted-foreground">{analytics.retention_note}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {analytics.retention_note}
+                  {analytics.source === "rollup" && " Breakdown lists below the chart cover the last 30 days only."}
+                </p>
               </>
             );
           })()}

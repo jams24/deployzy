@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/serverme/serverme/server/internal/analytics"
+	"github.com/serverme/serverme/server/internal/db"
 )
 
 // periodWindow maps a UI period to (since, bucket). Bucket sizes keep every
@@ -42,26 +43,45 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
 	since, bucket, resolved := periodWindow(period)
 
-	overview, err := s.db.GetPlatformOverview(r.Context(), since)
+	// Long windows read daily rollups: fast, and complete even where raw
+	// events have already been pruned for free-tier projects.
+	useRollups := db.UseRollups(since)
+
+	var overview db.PlatformOverview
+	var err error
+	if useRollups {
+		overview, err = s.db.GetPlatformOverviewRollup(r.Context(), since)
+	} else {
+		overview, err = s.db.GetPlatformOverview(r.Context(), since)
+	}
 	if err != nil {
 		s.log.Error().Err(err).Msg("admin analytics: overview")
 		writeError(w, http.StatusInternalServerError, "failed to load analytics")
 		return
 	}
 
-	series, err := s.db.GetPlatformTimeseries(r.Context(), since, bucket)
+	var series []db.PlatformTimeseriesPoint
+	if useRollups {
+		series, err = s.db.GetPlatformTimeseriesRollup(r.Context(), since)
+	} else {
+		series, err = s.db.GetPlatformTimeseries(r.Context(), since, bucket)
+	}
 	if err != nil {
 		s.log.Error().Err(err).Msg("admin analytics: timeseries")
 		writeError(w, http.StatusInternalServerError, "failed to load analytics")
 		return
 	}
 
+	topSince := since
+	if cutoff := time.Now().AddDate(0, 0, -30); topSince.Before(cutoff) {
+		topSince = cutoff
+	}
 	tops := map[string][]interface{}{}
 	top := func(col string, includeBots bool, limit int) []interface{} {
 		if !topColumns[col] {
 			return nil
 		}
-		rows, err := s.db.GetPlatformTop(r.Context(), col, since, limit, includeBots)
+		rows, err := s.db.GetPlatformTop(r.Context(), col, topSince, limit, includeBots)
 		if err != nil {
 			s.log.Warn().Err(err).Str("col", col).Msg("admin analytics: top query failed")
 			return []interface{}{}
@@ -72,13 +92,23 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 		return out
 	}
+	// Breakdown lists always read raw events — the rollups intentionally don't
+	// store path/referrer/country dimensions (that would multiply row count by
+	// cardinality). Cap their lookback at 30 days: scanning the full table five
+	// times is what made long windows slow, and a year-old referrer list is far
+	// less useful than a recent one anyway.
 	tops["referrers"] = top("referrer", false, 10)
 	tops["paths"] = top("path", false, 10)
 	tops["countries"] = top("country", false, 10)
 	tops["devices"] = top("device", false, 6)
 	tops["browsers"] = top("browser", false, 6)
 
-	crawlers, err := s.db.GetPlatformCrawlers(r.Context(), since, 12)
+	var crawlers []db.CrawlerRow
+	if useRollups {
+		crawlers, err = s.db.GetPlatformCrawlersRollup(r.Context(), since, 12)
+	} else {
+		crawlers, err = s.db.GetPlatformCrawlers(r.Context(), since, 12)
+	}
 	if err != nil {
 		s.log.Error().Err(err).Msg("admin analytics: crawlers")
 		writeError(w, http.StatusInternalServerError, "failed to load analytics")
@@ -96,7 +126,12 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	projects, err := s.db.GetPlatformTopProjects(r.Context(), since, 15)
+	var projects []db.PlatformProjectRow
+	if useRollups {
+		projects, err = s.db.GetPlatformTopProjectsRollup(r.Context(), since, 15)
+	} else {
+		projects, err = s.db.GetPlatformTopProjects(r.Context(), since, 15)
+	}
 	if err != nil {
 		s.log.Error().Err(err).Msg("admin analytics: top projects")
 		writeError(w, http.StatusInternalServerError, "failed to load analytics")
@@ -104,15 +139,22 @@ func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"period":     resolved,
-		"since":      since,
-		"overview":   overview,
-		"timeseries": series,
-		"top":        tops,
-		"crawlers":   crawlerRows,
-		"projects":   projects,
+		"period":       resolved,
+		"since":        since,
+		"overview":     overview,
+		"timeseries":   series,
+		"top":          tops,
+		"top_from_raw": true,
+		"top_since":    topSince,
+		"crawlers":     crawlerRows,
+		"projects":     projects,
 		// Surfaced in the UI so nobody reads long windows as complete: free-tier
 		// events are pruned after 7 days.
-		"retention_note": "Free-tier project events are pruned after 7 days, so windows longer than a week under-represent free projects.",
+		"source":         map[bool]string{true: "rollup", false: "raw"}[useRollups],
+		"visitors_exact": !useRollups,
+		"retention_note": map[bool]string{
+			true:  "Long windows are served from daily rollups, so history survives retention pruning. Visitors is the sum of daily uniques — someone returning on three days counts three times.",
+			false: "Served from raw events: visitor counts are exact unique people for this window.",
+		}[useRollups],
 	})
 }

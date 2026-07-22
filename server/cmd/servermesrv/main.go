@@ -17,14 +17,14 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/proto"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/api"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/db"
-	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/deploy"
-	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/notify"
 	"github.com/serverme/serverme/server/internal/policy"
@@ -134,12 +134,20 @@ func main() {
 		run := func() {
 			ctx := context.Background()
 			now := time.Now()
-			// Site analytics + deploy logs: retention comes from each
-			// owner's plan (plan_limits.analytics_retention_days /
-			// deploy_log_retention_days), so paid tiers actually get the
-			// longer windows the pricing page sells. Admins are exempt.
-			if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
-				log.Warn().Err(err).Msg("prune site_events failed")
+			// Roll up analytics BEFORE pruning. Raw events are deleted per
+			// the owner's plan (free = 7 days); once they're gone the history
+			// is unrecoverable, so aggregates must be written first. 3 days of
+			// overlap so a missed cycle self-heals.
+			if err := database.RollupSiteEvents(ctx, 3); err != nil {
+				log.Warn().Err(err).Msg("analytics rollup failed — skipping prune to avoid losing history")
+			} else {
+				// Site analytics + deploy logs: retention comes from each
+				// owner's plan (plan_limits.analytics_retention_days /
+				// deploy_log_retention_days), so paid tiers actually get the
+				// longer windows the pricing page sells. Admins are exempt.
+				if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
+					log.Warn().Err(err).Msg("prune site_events failed")
+				}
 			}
 			if n, err := database.PruneDeployLogsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune deploy_logs failed")
@@ -288,10 +296,10 @@ func main() {
 				}
 			}
 			svcHost := *serviceHost
-		if svcHost == "" {
-			svcHost = *domain
-		}
-		deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
+			if svcHost == "" {
+				svcHost = *domain
+			}
+			deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
 			// Reset any projects stuck in "building" from a previous process that was
 			// killed mid-deploy — otherwise they'd show as building forever.
 			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
