@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -229,8 +230,11 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Bump deploy counter asynchronously
-	go s.db.IncrementTemplateDeployCount(r.Context(), t.ID)
+	// Bump deploy counter asynchronously. Must NOT use r.Context(): that is
+	// cancelled the moment this handler returns, so the goroutine raced the
+	// response and the UPDATE was usually killed mid-flight — which is why
+	// every template still showed 0 deploys.
+	go s.db.IncrementTemplateDeployCount(context.Background(), t.ID)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"project":     project,

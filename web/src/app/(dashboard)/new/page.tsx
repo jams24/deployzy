@@ -5,6 +5,7 @@ import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,10 +32,10 @@ const langColor: Record<string, string> = {
 };
 
 const options = [
-  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, color: "text-violet-400 bg-violet-500/20", category: "deploy" },
+  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-400 bg-violet-500/20", category: "deploy" },
   { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-400 bg-emerald-500/20", category: "infra" },
   { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-400 bg-amber-500/20", category: "deploy" },
-  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, color: "text-blue-400 bg-blue-500/20", category: "deploy" },
+  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-400 bg-blue-500/20", category: "deploy" },
   { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-400 bg-pink-500/10", category: "infra" },
   { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/20", category: "infra" },
 ];
@@ -632,10 +633,11 @@ function startDocker() {
 
         <div className="flex items-center gap-3 mb-5">
           <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xl"
-            style={{ background: selectedTemplate.color + "18", border: `1.5px solid ${selectedTemplate.color}30` }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+            style={{ background: selectedTemplate.color + "14", border: `1px solid ${selectedTemplate.color}33` }}
           >
-            {selectedTemplate.icon}
+            <BrandLogo logoSlug={selectedTemplate.logo_slug} slug={selectedTemplate.slug}
+              name={selectedTemplate.name} color={selectedTemplate.color} className="h-5 w-5" />
           </div>
           <div>
             <h1 className="text-lg font-bold">{selectedTemplate.name}</h1>
@@ -771,10 +773,10 @@ function startDocker() {
                 >
                   {/* Icon */}
                   <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg"
-                    style={{ background: t.color + "18", border: `1.5px solid ${t.color}30` }}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: t.color + "14", border: `1px solid ${t.color}33` }}
                   >
-                    {t.icon}
+                    <BrandLogo logoSlug={t.logo_slug} slug={t.slug} name={t.name} color={t.color} className="h-4.5 w-4.5" />
                   </div>
 
                   {/* Text */}
@@ -831,7 +833,9 @@ function startDocker() {
                 <button key={opt.id} onClick={() => handleSelect(opt.id)} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-accent/50 transition-colors group">
                   <div className="flex items-center gap-3">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${opt.color} shrink-0 transition-transform group-hover:scale-110`}>
-                      <opt.icon className="h-4 w-4" />
+                      {"brand" in opt && opt.brand
+                        ? <BrandLogo logoSlug={opt.brand as string} name={opt.title} className="h-4 w-4" />
+                        : <opt.icon className="h-4 w-4" />}
                     </div>
                     <div>
                       <p className="text-sm font-medium">{opt.title}</p>
@@ -852,7 +856,9 @@ function startDocker() {
                 <button key={opt.id} onClick={() => handleSelect(opt.id)} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-accent/50 transition-colors group">
                   <div className="flex items-center gap-3">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${opt.color} shrink-0 transition-transform group-hover:scale-110`}>
-                      <opt.icon className="h-4 w-4" />
+                      {"brand" in opt && opt.brand
+                        ? <BrandLogo logoSlug={opt.brand as string} name={opt.title} className="h-4 w-4" />
+                        : <opt.icon className="h-4 w-4" />}
                     </div>
                     <div>
                       <p className="text-sm font-medium">{opt.title}</p>

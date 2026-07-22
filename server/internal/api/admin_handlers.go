@@ -253,7 +253,14 @@ func (s *Server) handleAdminRedeployProject(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
-	go s.deployer.Deploy(r.Context(), p)
+	// context.Background(), not r.Context(): the request context dies with the
+	// response, which would abort the build seconds after it started. A deploy
+	// outlives the HTTP call by minutes.
+	go func(proj *db.Project) {
+		if err := s.deployer.Deploy(context.Background(), proj); err != nil {
+			s.log.Error().Err(err).Str("project", proj.Name).Msg("admin redeploy failed")
+		}
+	}(p)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "deploying"})
 }
 
