@@ -43,6 +43,34 @@ else
     log "no /opt/deployzy/project-data — skipping"
 fi
 
+# ── 2a. Standalone service volumes (Redis / MongoDB / MySQL) ──────────────
+# pg_dumpall above covers every Postgres database, but Redis/Mongo/MySQL keep
+# their data in Docker volumes named sm-svc-<id>-data — not under project-data,
+# so they were previously never backed up. Bundle all of them into one
+# svc-<TS>.tar.gz per run (single file keeps the admin backup listing clean and
+# the run's files grouped by timestamp). No helper image: the local volume
+# driver stores data on disk, so we tar the mountpoint directly.
+log "backing up standalone service volumes"
+SVC_STAGE=$(mktemp -d)
+SVC_COUNT=0
+for VOL in $(docker volume ls --format '{{.Name}}' | grep '^sm-svc-' || true); do
+    MP=$(docker volume inspect -f '{{.Mountpoint}}' "$VOL" 2>/dev/null || true)
+    { [ -z "$MP" ] || [ ! -d "$MP" ]; } && continue
+    # tar exits 1 when a file changes mid-read (a live DB always writes), so we
+    # can't trust its exit code — a valid archive is still produced. Count by
+    # whether a non-empty file landed instead. `|| true` keeps set -e happy.
+    tar czf "$SVC_STAGE/$VOL.tar.gz" -C "$MP" . 2>/dev/null || true
+    [ -s "$SVC_STAGE/$VOL.tar.gz" ] && SVC_COUNT=$((SVC_COUNT + 1))
+done
+if [ "$SVC_COUNT" -gt 0 ]; then
+    SVC_FILE="svc-${TS}.tar.gz"
+    tar czf "$SVC_FILE.tmp" -C "$SVC_STAGE" . 2>/dev/null && mv "$SVC_FILE.tmp" "$SVC_FILE"
+    log "local service volumes backed up: $SVC_COUNT volume(s) → $SVC_FILE"
+else
+    log "no standalone service volumes on this host"
+fi
+rm -rf "$SVC_STAGE"
+
 # ── 2b. Platform-pool overflow servers ───────────────────────────────────
 # When the admin adds extra platform servers (priority>=2) for overflow,
 # customer projects deployed there have data volumes on the REMOTE host,
@@ -93,6 +121,27 @@ for row in "${POOL_ROWS[@]}"; do
         rm -f "$REMOTE_FILE.tmp"
         log "remote $LABEL FAILED or empty (continuing)"
     fi
+
+    # Standalone service volumes on this platform server. The remote script
+    # tars each sm-svc volume from its mountpoint into a staging dir, then
+    # streams that dir back as one tar-of-tars: svc-<label>-<ts>.tar.
+    SVC_REMOTE_FILE="svc-${SAFE_LABEL}-${TS}.tar"
+    REMOTE_SVC_CMD='STAGE=$(mktemp -d); for V in $(docker volume ls --format "{{.Name}}" | grep "^sm-svc-"); do MP=$(docker volume inspect -f "{{.Mountpoint}}" "$V" 2>/dev/null); [ -d "$MP" ] && tar czf "$STAGE/$V.tar.gz" -C "$MP" . 2>/dev/null; done; tar cf - -C "$STAGE" . 2>/dev/null; rm -rf "$STAGE"'
+    if [ -n "$SSH_PW" ]; then
+        sshpass -p "$SSH_PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "$SSH_USER@$HOST" -p "$PORT" "$REMOTE_SVC_CMD" > "$SVC_REMOTE_FILE.tmp" 2>/dev/null
+    elif [ -n "$SSH_KEY" ]; then
+        KEYFILE=$(mktemp); echo "$SSH_KEY" > "$KEYFILE"; chmod 600 "$KEYFILE"
+        ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+            "$SSH_USER@$HOST" -p "$PORT" "$REMOTE_SVC_CMD" > "$SVC_REMOTE_FILE.tmp" 2>/dev/null
+        rm -f "$KEYFILE"
+    fi
+    if [ -s "$SVC_REMOTE_FILE.tmp" ]; then
+        mv "$SVC_REMOTE_FILE.tmp" "$SVC_REMOTE_FILE"
+        log "remote $LABEL service volumes: $(stat -c%s "$SVC_REMOTE_FILE") bytes"
+    else
+        rm -f "$SVC_REMOTE_FILE.tmp"
+    fi
 done
 
 # ── 3. Critical config ───────────────────────────────────────────────────
@@ -124,10 +173,14 @@ log "config done: $CONFIG_FILE"
 # ── 5. Local retention sweep ─────────────────────────────────────────────
 log "pruning local backups older than $RETENTION_DAYS days"
 find "$BACKUP_DIR" -maxdepth 1 -type f -mtime +"$RETENTION_DAYS" -name '*.gz' -delete
+# Remote service-volume bundles are plain .tar (a tar-of-tars); prune those too
+# or they'd accumulate forever.
+find "$BACKUP_DIR" -maxdepth 1 -type f -mtime +"$RETENTION_DAYS" -name 'svc-*.tar' -delete
 find "$BACKUP_DIR" -maxdepth 1 -type f -mtime +"$RETENTION_DAYS" -name 'manifest-*.txt' -delete
 
 # ── 6. Off-site sync (only if credentials are present) ───────────────────
 REMOTE_ENV=/etc/deployzy/backup-remote.env
+# Note: backup-remote.env contains REMOTE=r2:serverme-backups (bucket name unchanged — R2 can't rename)
 if [ -f "$REMOTE_ENV" ] && command -v rclone >/dev/null 2>&1; then
     # shellcheck disable=SC1090
     source "$REMOTE_ENV"

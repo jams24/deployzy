@@ -27,9 +27,9 @@ func platformBackupDir() string {
 }
 
 type platformBackupRun struct {
-	Timestamp  string              `json:"timestamp"`
+	Timestamp  string               `json:"timestamp"`
 	Files      []platformBackupFile `json:"files"`
-	TotalBytes int64               `json:"total_bytes"`
+	TotalBytes int64                `json:"total_bytes"`
 }
 
 type platformBackupFile struct {
@@ -174,6 +174,8 @@ func classifyPlatformBackup(name string) string {
 		return "config"
 	case strings.HasPrefix(name, "manifest-"):
 		return "manifest"
+	case strings.HasPrefix(name, "svc-"):
+		return "services"
 	}
 	return "other"
 }
