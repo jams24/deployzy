@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/serverme/serverme/server/internal/deploy"
 )
 
 // Admin visibility + control over standalone databases/services across all
@@ -78,4 +80,46 @@ func (s *Server) handleAdminDeleteService(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleAdminScanOrphans sweeps every reachable host for sm-* containers that
+// no longer have an owning DB row. Report-only.
+func (s *Server) handleAdminScanOrphans(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	scan, err := s.deployer.FindOrphans(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "orphan scan failed: "+err.Error())
+		return
+	}
+	if scan.Orphans == nil {
+		scan.Orphans = []deploy.OrphanContainer{}
+	}
+	if scan.UnreachableHosts == nil {
+		scan.UnreachableHosts = []string{}
+	}
+	writeJSON(w, http.StatusOK, scan)
+}
+
+// handleAdminReapOrphan force-removes one orphan container on a host.
+func (s *Server) handleAdminReapOrphan(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	var req struct {
+		ServerID string `json:"server_id"`
+		Name     string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if err := s.deployer.ReapOrphan(r.Context(), req.ServerID, req.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reaped"})
 }

@@ -19,7 +19,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "databases" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -55,6 +55,17 @@ interface AdminDatabase {
   server_label: string | null;
   connection_url: string;
   external_connection_url: string;
+}
+
+interface OrphanContainer {
+  server_id: string; server_label: string; host: string; is_local: boolean;
+  name: string; state: string; status: string; created_at: string;
+}
+interface OrphanScan {
+  orphans: OrphanContainer[];
+  unreachable_hosts: string[];
+  hosts_scanned: number;
+  scanned_at: string;
 }
 
 interface PlanLimitRow {
@@ -184,6 +195,9 @@ export default function AdminPage() {
   const [dbSearch, setDbSearch] = useState("");
   const [dbType, setDbType] = useState("all");
   const [dbReveal, setDbReveal] = useState<string | null>(null);
+  const [orphanScan, setOrphanScan] = useState<OrphanScan | null>(null);
+  const [orphanLoading, setOrphanLoading] = useState(false);
+  const [reaping, setReaping] = useState<string | null>(null);
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -365,6 +379,22 @@ export default function AdminPage() {
     return () => clearTimeout(t);
   }, [tab, dbSearch, dbType, loadDatabases]);
 
+  // ── Orphan containers ──────────────────────────────────────────────────────
+  const scanOrphans = useCallback(async () => {
+    setOrphanLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/orphans`, { headers: headers() });
+      if (res.ok) setOrphanScan(await res.json());
+    } catch {}
+    setOrphanLoading(false);
+  }, [headers]);
+
+  // Auto-scan on first open of the tab (the scan SSHes to every host, so we
+  // don't re-run it on every re-render — only when there's no result yet).
+  useEffect(() => {
+    if (tab === "orphans" && !orphanScan && !orphanLoading) scanOrphans();
+  }, [tab, orphanScan, orphanLoading, scanOrphans]);
+
   // Every admin mutation goes through this so a failing request surfaces
   // instead of looking like a dead button (the old code ignored res.ok).
   const adminFetch = async (url: string, init: RequestInit, action: string): Promise<boolean> => {
@@ -505,6 +535,15 @@ export default function AdminPage() {
       loadDatabases(dbSearch, dbType);
       loadStats();
     }
+  };
+  const reapOrphan = async (o: OrphanContainer) => {
+    if (!confirm(`Force-remove orphan container "${o.name}" on ${o.server_label}?\n\nThis runs docker rm -f. Only do this if you're sure it has no owner.`)) return;
+    setReaping(o.name);
+    const ok = await adminFetch(`${API}/api/v1/admin/orphans/reap`,
+      { method: "POST", body: JSON.stringify({ server_id: o.server_id, name: o.name }) },
+      `Reaping ${o.name}`);
+    setReaping(null);
+    if (ok) { scanOrphans(); loadStats(); }
   };
   const redeployAll = async (statusFilter?: string) => {
     const msg = statusFilter
@@ -715,6 +754,7 @@ export default function AdminPage() {
     { id: "users", label: "Users", badge: usersTotal },
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "databases", label: "Databases" },
+    { id: "orphans", label: "Orphans", badge: orphanScan?.orphans.length || undefined },
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
@@ -1386,6 +1426,74 @@ export default function AdminPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ORPHANS TAB ──────────────────────────────────────────────────── */}
+      {tab === "orphans" && (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              Containers named <code className="font-mono">sm-*</code> that exist on a host but have no owning
+              project or database in the database — usually left behind when something was deleted while its
+              server was unreachable. They quietly consume resources until removed here.
+            </p>
+            <Button size="sm" variant="outline" className="h-9 text-xs gap-1 shrink-0"
+              onClick={scanOrphans} disabled={orphanLoading}>
+              {orphanLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Rescan hosts
+            </Button>
+          </div>
+
+          {orphanScan && (
+            <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
+              <span>{orphanScan.hosts_scanned} host{orphanScan.hosts_scanned === 1 ? "" : "s"} scanned</span>
+              {orphanScan.scanned_at && <span>· {new Date(orphanScan.scanned_at).toLocaleTimeString()}</span>}
+              {orphanScan.unreachable_hosts.length > 0 && (
+                <span className="flex items-center gap-1 text-amber-500">
+                  <AlertCircle className="h-3 w-3" />
+                  Unreachable: {orphanScan.unreachable_hosts.join(", ")} (scan may be incomplete)
+                </span>
+              )}
+            </div>
+          )}
+
+          {orphanLoading && !orphanScan ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" /> Scanning every host for orphan containers…
+            </div>
+          ) : !orphanScan || orphanScan.orphans.length === 0 ? (
+            <div className="flex flex-col items-center py-12">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500/50 mb-2" />
+              <p className="text-sm text-muted-foreground">No orphan containers found. Every running container has an owner.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {orphanScan.orphans.map(o => (
+                <div key={`${o.server_id}-${o.name}`} className="rounded-lg border border-amber-500/30 bg-amber-500/[0.04]">
+                  <div className="flex items-center gap-3 px-3 py-2.5">
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <code className="text-sm font-mono font-medium">{o.name}</code>
+                        <Badge variant="outline" className={`text-[9px] shrink-0 ${o.state === "running" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" : "bg-muted text-muted-foreground"}`}>
+                          {o.state || "unknown"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
+                        <span className="flex items-center gap-1"><Server className="h-2.5 w-2.5" />{o.server_label}</span>
+                        {o.status && <span>{o.status}</span>}
+                        {o.created_at && <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{o.created_at}</span>}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive shrink-0"
+                      onClick={() => reapOrphan(o)} disabled={reaping === o.name} title="Force remove">
+                      {reaping === o.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -276,6 +276,46 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 	return projects, total, rows.Err()
 }
 
+// AllProjectIDs returns every project id (including preview deploys). Used by
+// the orphan reaper to compute the set of container names the platform expects
+// to exist, so containers with no owning row can be flagged.
+func (d *DB) AllProjectIDs(ctx context.Context) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `SELECT id FROM projects`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// AllServiceContainerNames returns the container_name of every service that has
+// one (Redis/Mongo/MySQL + BYOC Postgres). Platform-Postgres services live in
+// the shared cluster and have no container, so they're excluded.
+func (d *DB) AllServiceContainerNames(ctx context.Context) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `SELECT container_name FROM services WHERE container_name IS NOT NULL AND container_name <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
+}
+
 // AdminService is a standalone database/service row enriched with owner email
 // and (for BYOC/overflow) the host server's label.
 type AdminService struct {
