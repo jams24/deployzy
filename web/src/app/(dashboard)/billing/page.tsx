@@ -234,7 +234,7 @@ export default function BillingPage() {
       tagline: "For hobby projects and learning",
       features: [
         "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 2 databases, 1 standalone service",
+        "3 projects, 1 PostgreSQL database",
         "1 BYOC server, 1 custom domain",
         "512 MB RAM / 0.25 vCPU per project",
         "50 GB bandwidth, 120 build min / mo",
@@ -249,7 +249,7 @@ export default function BillingPage() {
       tagline: "Perfect for indie hackers and side projects",
       features: [
         "All Free features, plus:",
-        "5 projects, 3 databases, 3 standalone services",
+        "5 projects, 3 databases (Postgres, Redis, Mongo, MySQL)",
         "8 subdomains, 8 tunnels, 2 BYOC servers",
         "2 custom domains, 2 PR previews, 2 cron jobs",
         "1 GB RAM / 0.5 vCPU per project",

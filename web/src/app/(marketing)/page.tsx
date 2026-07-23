@@ -418,7 +418,7 @@ const plans = [
     desc: "For hobby projects and learning.",
     cta: "Get started",
     features: [
-      "3 projects, 2 databases, 1 service",
+      "3 projects, 1 PostgreSQL database",
       "5 subdomains, 5 active tunnels",
       "1 BYOC server, 1 custom domain",
       "512 MB RAM / 0.25 vCPU per project",
@@ -433,7 +433,7 @@ const plans = [
     cta: "Start with Hobby",
     features: [
       "All Free features, plus:",
-      "5 projects, 3 databases, 3 services",
+      "5 projects, 3 databases · Redis, Mongo & MySQL",
       "8 subdomains, 8 tunnels, 2 BYOC servers",
       "2 custom domains, 2 PR previews, 2 cron jobs",
       "1 GB RAM / 0.5 vCPU per project",

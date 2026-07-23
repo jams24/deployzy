@@ -47,6 +47,13 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Free plan gets Postgres only. Redis / MongoDB / MySQL need a paid plan.
+	if req.Type != "postgres" && !billing.IsFeatureAllowed(r.Context(), s.db, u, "advanced_databases") {
+		writeError(w, http.StatusPaymentRequired,
+			"Redis, MongoDB and MySQL require a paid plan — upgrade to add more database engines.")
+		return
+	}
+
 	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimService); err != nil {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return

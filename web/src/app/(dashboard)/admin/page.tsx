@@ -56,7 +56,7 @@ interface PlanLimitRow {
   deploy_log_retention_days: number; backup_retention_days: number;
   allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
   allow_private_repos: boolean; allow_tcp_tunnels: boolean; allow_custom_events: boolean;
-  allow_live_logs: boolean; allow_telegram: boolean;
+  allow_live_logs: boolean; allow_telegram: boolean; allow_advanced_databases: boolean;
 }
 
 interface PlatformAnalytics {
@@ -1669,6 +1669,7 @@ export default function AdminPage() {
                         ["allow_live_logs", "Live logs"],
                         ["allow_custom_events", "Custom events"],
                         ["allow_telegram", "Telegram"],
+                        ["allow_advanced_databases", "Redis/Mongo/MySQL"],
                       ] as [keyof PlanLimitRow, string][]).map(([key, label]) => (
                         <button
                           key={key}

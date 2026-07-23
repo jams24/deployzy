@@ -38,6 +38,7 @@ type PlanLimit struct {
 	AllowCustomEvents       bool    `json:"allow_custom_events"`
 	AllowLiveLogs           bool    `json:"allow_live_logs"`
 	AllowTelegram           bool    `json:"allow_telegram"`
+	AllowAdvancedDatabases  bool    `json:"allow_advanced_databases"`
 }
 
 // Unlimited reports whether a numeric limit field is set to "unlimited" (-1).
@@ -87,7 +88,8 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		        max_bandwidth_gb, max_build_minutes_monthly, COALESCE(max_build_memory_mb, 2048),
 		        analytics_retention_days, metrics_retention_days, deploy_log_retention_days, backup_retention_days,
 		        allow_previews, allow_release_cmd, allow_health_checks, allow_private_repos,
-		        allow_tcp_tunnels, allow_custom_events, allow_live_logs, allow_telegram
+		        allow_tcp_tunnels, allow_custom_events, allow_live_logs, allow_telegram,
+		        COALESCE(allow_advanced_databases, true)
 		 FROM plan_limits WHERE plan = $1`,
 		plan,
 	).Scan(
@@ -98,6 +100,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		&pl.AnalyticsRetentionDays, &pl.MetricsRetentionDays, &pl.DeployLogRetentionDays, &pl.BackupRetentionDays,
 		&pl.AllowPreviews, &pl.AllowReleaseCmd, &pl.AllowHealthChecks, &pl.AllowPrivateRepos,
 		&pl.AllowTCPTunnels, &pl.AllowCustomEvents, &pl.AllowLiveLogs, &pl.AllowTelegram,
+		&pl.AllowAdvancedDatabases,
 	)
 	if err == pgx.ErrNoRows {
 		// Unknown plan → conservative free defaults so the user still
@@ -279,7 +282,7 @@ func (d *DB) UpdatePlanLimits(ctx context.Context, pl *PlanLimit) error {
 		  deploy_log_retention_days = $19, backup_retention_days = $20,
 		  allow_previews = $21, allow_release_cmd = $22, allow_health_checks = $23,
 		  allow_private_repos = $24, allow_tcp_tunnels = $25, allow_custom_events = $26,
-		  allow_live_logs = $27, allow_telegram = $28
+		  allow_live_logs = $27, allow_telegram = $28, allow_advanced_databases = $29
 		WHERE plan = $1`,
 		pl.Plan,
 		pl.MaxSubdomains, pl.MaxTunnels, pl.MaxRate,
@@ -292,7 +295,7 @@ func (d *DB) UpdatePlanLimits(ctx context.Context, pl *PlanLimit) error {
 		pl.DeployLogRetentionDays, pl.BackupRetentionDays,
 		pl.AllowPreviews, pl.AllowReleaseCmd, pl.AllowHealthChecks,
 		pl.AllowPrivateRepos, pl.AllowTCPTunnels, pl.AllowCustomEvents,
-		pl.AllowLiveLogs, pl.AllowTelegram,
+		pl.AllowLiveLogs, pl.AllowTelegram, pl.AllowAdvancedDatabases,
 	)
 	return err
 }

@@ -118,6 +118,8 @@ func IsFeatureAllowed(ctx context.Context, database *db.DB, user *auth.Authentic
 		return limits.AllowLiveLogs
 	case "telegram":
 		return limits.AllowTelegram
+	case "advanced_databases":
+		return limits.AllowAdvancedDatabases
 	}
 	return false
 }

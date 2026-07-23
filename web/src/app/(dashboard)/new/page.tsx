@@ -111,7 +111,8 @@ export default function NewResourcePage() {
   const [selectedServer, setSelectedServer] = useState("");
 
   // Plan limits (used to show real resource caps in the advanced form)
-  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number } | null>(null);
+  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -132,7 +133,7 @@ export default function NewResourcePage() {
     // Load plan limits so the advanced form can show real caps
     fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.limits) setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus }); })
+      .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases }); setIsAdmin(!!data.is_admin); } })
       .catch(() => {});
   }, []);
 
@@ -558,36 +559,61 @@ function startDocker() {
             <Input placeholder="my-database" value={dbName} onChange={(e) => setDbName(e.target.value)} className="h-10" />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-medium">Database Type</label>
-            <select value={dbType} onChange={(e) => setDbType(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="postgres">PostgreSQL 16</option>
-              <option value="redis">Redis 7</option>
-              <option value="mongodb">MongoDB 7</option>
-              <option value="mysql">MySQL 8</option>
-            </select>
-          </div>
-
           {(() => {
-            const dbMeta: Record<string, { label: string; desc: string; border: string; bg: string; text: string }> = {
-              postgres: { label: "PostgreSQL 16", desc: "Relational SQL — managed instance; plan size cap applies on platform.", border: "border-emerald-500/50", bg: "bg-emerald-500/20", text: "text-emerald-400" },
-              redis:    { label: "Redis 7",        desc: "In-memory key-value store for caching, sessions, and pub/sub.", border: "border-red-500/40", bg: "bg-red-500/20", text: "text-red-400" },
-              mongodb:  { label: "MongoDB 7",      desc: "Flexible document database — schema-free JSON collections.", border: "border-green-500/20", bg: "bg-green-500/10", text: "text-green-400" },
-              mysql:    { label: "MySQL 8",         desc: "Popular relational database with broad ecosystem support.", border: "border-orange-500/50", bg: "bg-orange-500/20", text: "text-orange-400" },
-            };
-            const m = dbMeta[dbType] || dbMeta.postgres;
+            const advancedAllowed = isAdmin || planLimits?.allow_advanced_databases !== false;
+            const engines = [
+              { id: "postgres", label: "PostgreSQL 16", desc: "Relational SQL — managed instance.", bg: "bg-emerald-500/15", text: "text-emerald-500", locked: false },
+              { id: "redis",    label: "Redis 7",       desc: "In-memory key-value store for caching & pub/sub.", bg: "bg-red-500/15", text: "text-red-500", locked: !advancedAllowed },
+              { id: "mongodb",  label: "MongoDB 7",     desc: "Schema-free JSON document database.", bg: "bg-green-500/15", text: "text-green-500", locked: !advancedAllowed },
+              { id: "mysql",    label: "MySQL 8",       desc: "Popular relational database, broad ecosystem.", bg: "bg-orange-500/15", text: "text-orange-500", locked: !advancedAllowed },
+            ];
             return (
-              <Card className={`${m.border}`}>
-                <CardContent className="p-4 flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${m.bg} ${m.text} shrink-0`}>
-                    <Database className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{m.label}</p>
-                    <p className="text-[11px] text-muted-foreground">{m.desc}</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="space-y-2">
+                <label className="text-xs font-medium">Database Type</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {engines.map((e) => {
+                    const selected = dbType === e.id;
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        disabled={e.locked}
+                        onClick={() => !e.locked && setDbType(e.id)}
+                        className={`relative flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                          e.locked
+                            ? "cursor-not-allowed border-border/60 opacity-70"
+                            : selected
+                              ? "border-primary bg-primary/5 ring-1 ring-primary"
+                              : "border-border hover:border-foreground/30"
+                        }`}
+                      >
+                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${e.bg} ${e.text}`}>
+                          <Database className="h-4.5 w-4.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{e.label}</p>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2">{e.desc}</p>
+                          {e.locked && (
+                            <a
+                              href="/billing"
+                              onClick={(ev) => ev.stopPropagation()}
+                              className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
+                            >
+                              Upgrade to access →
+                            </a>
+                          )}
+                        </div>
+                        {selected && !e.locked && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!advancedAllowed && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Your plan includes one PostgreSQL database. Redis, MongoDB and MySQL are available on paid plans.
+                  </p>
+                )}
+              </div>
             );
           })()}
 
