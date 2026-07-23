@@ -518,3 +518,24 @@ func (s *Server) handleAdminSetServerSelectable(w http.ResponseWriter, r *http.R
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"user_selectable": req.Selectable})
 }
+
+
+// handleAdminUpdateServer renames a server and sets its region slug. The region
+// drives the flag + friendly name shown in the user region picker.
+func (s *Server) handleAdminUpdateServer(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Label  string `json:"label"`
+		Region string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.UpdateWorkerServerMeta(r.Context(), serverID, req.Label, req.Region); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server: "+err.Error())
+		return
+	}
+	updated, _ := s.db.GetWorkerServer(r.Context(), serverID)
+	writeJSON(w, http.StatusOK, updated)
+}

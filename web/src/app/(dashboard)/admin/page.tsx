@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { REGION_PRESETS } from "@/lib/regions";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -500,6 +501,19 @@ export default function AdminPage() {
     });
     if (res.ok) { setShowAddServer(false); loadServers(); }
     else { const e = await res.json().catch(() => ({})); alert(e.error || "Failed"); }
+  };
+
+  const [editingServer, setEditingServer] = useState<string | null>(null);
+  const [srvLabel, setSrvLabel] = useState("");
+  const [srvRegion, setSrvRegion] = useState("");
+
+  const saveServerMeta = async (id: string) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}`, {
+      method: "PUT", body: JSON.stringify({ label: srvLabel, region: srvRegion }),
+    }, "Renaming server")) {
+      setEditingServer(null);
+      loadServers();
+    }
   };
 
   const setSelectable = async (id: string, selectable: boolean) => {
@@ -1402,6 +1416,19 @@ export default function AdminPage() {
                           )}
                           {!s.user_id && (
                             <Button
+                              variant="outline" size="sm" className="h-7 text-xs"
+                              title="Rename & set region"
+                              onClick={() => {
+                                setEditingServer(editingServer === s.id ? null : s.id);
+                                setSrvLabel(s.label || "");
+                                setSrvRegion(s.region || "");
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {!s.user_id && (
+                            <Button
                               variant="outline"
                               size="sm"
                               className={`h-7 text-xs ${s.user_selectable ? "text-emerald-500 border-emerald-500/40" : "text-muted-foreground"}`}
@@ -1418,6 +1445,38 @@ export default function AdminPage() {
                           )}
                         </div>
                       </div>
+                      {editingServer === s.id && (
+                        <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="mb-1 block text-[11px] text-muted-foreground">Display name</label>
+                              <input
+                                value={srvLabel}
+                                onChange={(e) => setSrvLabel(e.target.value)}
+                                placeholder="e.g. Deployzy Cloud"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] text-muted-foreground">Region (flag shown to users)</label>
+                              <select
+                                value={srvRegion}
+                                onChange={(e) => setSrvRegion(e.target.value)}
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                              >
+                                <option value="">— none —</option>
+                                {REGION_PRESETS.map((rp) => (
+                                  <option key={rp.slug} value={rp.slug}>{rp.flag} {rp.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-7 text-xs" onClick={() => saveServerMeta(s.id)}>Save</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingServer(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-3">
                         <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
                         <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />

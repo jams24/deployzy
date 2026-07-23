@@ -416,3 +416,13 @@ func (d *DB) SetServerUserSelectable(ctx context.Context, id string, selectable 
 		`UPDATE worker_servers SET user_selectable = $2 WHERE id = $1`, id, selectable)
 	return err
 }
+
+// UpdateWorkerServerMeta renames a server and sets its region. Region is a
+// slug ("us-east", "eu-central", ...) the UI maps to a flag + friendly name;
+// stored free-form so a custom region still works.
+func (d *DB) UpdateWorkerServerMeta(ctx context.Context, id, label, region string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE worker_servers SET label = COALESCE(NULLIF($2, ''), label), region = $3 WHERE id = $1`,
+		id, label, region)
+	return err
+}

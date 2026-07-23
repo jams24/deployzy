@@ -289,6 +289,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
 				r.Put("/servers/{serverId}/selectable", s.handleAdminSetServerSelectable)
+				r.Put("/servers/{serverId}", s.handleAdminUpdateServer)
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Globe, Server, Loader2, Check, ChevronDown } from "lucide-react";
+import { Server, Loader2, Check, ChevronDown } from "lucide-react";
+import { regionFlag, regionName } from "@/lib/regions";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -19,24 +20,9 @@ export interface SelectableServer {
   max_projects: number;
 }
 
-// A small country-flag emoji for common regions, purely decorative. Falls back
-// to a globe when a region isn't recognised, so an unknown label still renders.
-function regionFlag(region: string): string {
-  const r = region.toLowerCase();
-  if (r.includes("us") || r.includes("america")) return "🇺🇸";
-  if (r.includes("eu") || r.includes("germany") || r.includes("frankfurt")) return "🇪🇺";
-  if (r.includes("uk") || r.includes("london")) return "🇬🇧";
-  if (r.includes("asia") || r.includes("singapore") || r.includes("sg")) return "🇸🇬";
-  if (r.includes("india") || r.includes("mumbai")) return "🇮🇳";
-  if (r.includes("japan") || r.includes("tokyo")) return "🇯🇵";
-  if (r.includes("africa") || r.includes("lagos") || r.includes("ng")) return "🇳🇬";
-  return "";
-}
-
 function serverLabel(s: SelectableServer): string {
   if (s.is_byoc) return `${s.label} (your server)`;
-  if (s.region && s.region !== "default") return `${s.region}`;
-  return s.label || "Deployzy Cloud";
+  return regionName(s.region, s.label);
 }
 
 /**
@@ -117,9 +103,6 @@ export function RegionPicker({
           ) : (
             <span className="text-base leading-none">{regionFlag(selected?.region || "")}</span>
           )}
-          {!selected?.is_byoc && !regionFlag(selected?.region || "") && (
-            <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-          )}
           <span className="truncate">{selected ? serverLabel(selected) : "Select a region"}</span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
@@ -149,10 +132,8 @@ export function RegionPicker({
                 >
                   {s.is_byoc ? (
                     <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : regionFlag(s.region) ? (
-                    <span className="text-base leading-none">{regionFlag(s.region)}</span>
                   ) : (
-                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="text-base leading-none">{regionFlag(s.region)}</span>
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{serverLabel(s)}</span>
