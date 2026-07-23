@@ -618,16 +618,8 @@ function startDocker() {
           })()}
 
           <div className="space-y-2">
-            <label className="text-xs font-medium">Deploy to</label>
-            <select value={dbTargetServer} onChange={(e) => setDbTargetServer(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">Deployzy platform</option>
-              {userServers.filter((s) => s.status === "active").map((s) => (
-                <option key={s.id} value={s.id}>My server — {s.label} ({s.host})</option>
-              ))}
-            </select>
-            {userServers.length > 0 && !dbTargetServer && (
-              <p className="text-[11px] text-muted-foreground">Tip: deploy on your own VPS to use its full disk and skip plan DB-size caps.</p>
-            )}
+            <RegionPicker value={dbTargetServer} onChange={setDbTargetServer} label="Region" />
+            <p className="text-[11px] text-muted-foreground">Deploy on your own VPS to use its full disk and skip plan DB-size caps.</p>
           </div>
 
           <Button className="w-full gap-2" onClick={createDatabase} disabled={creating || !dbName}>
