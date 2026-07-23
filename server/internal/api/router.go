@@ -313,6 +313,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/orphans", s.handleAdminScanOrphans)
 				r.Post("/orphans/reap", s.handleAdminReapOrphan)
 
+				// SEO & LLM insight for deployzy.com (crawler + referral tracking)
+				r.Get("/seo", s.handleAdminSEO)
+
 				// Platform backups (admin only)
 				r.Get("/backups", s.handleListPlatformBackups)
 				r.Post("/backups/run", s.handleRunPlatformBackup)

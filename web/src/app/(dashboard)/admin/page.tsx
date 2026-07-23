@@ -19,7 +19,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -55,6 +55,20 @@ interface AdminDatabase {
   server_label: string | null;
   connection_url: string;
   external_connection_url: string;
+}
+
+interface SEONameCount { name: string; channel: string; hits: number; recent: number; }
+interface SEOInsight {
+  days: number;
+  has_data: boolean;
+  crawlers: SEONameCount[];
+  referrals: SEONameCount[];
+  totals: {
+    crawler_hits: number; referral_hits: number;
+    ai_crawler_hits: number; search_crawler_hits: number;
+    llm_referral_hits: number; search_referral_hits: number;
+  };
+  tips: { tone: string; text: string }[];
 }
 
 interface OrphanContainer {
@@ -198,6 +212,8 @@ export default function AdminPage() {
   const [orphanScan, setOrphanScan] = useState<OrphanScan | null>(null);
   const [orphanLoading, setOrphanLoading] = useState(false);
   const [reaping, setReaping] = useState<string | null>(null);
+  const [seo, setSeo] = useState<SEOInsight | null>(null);
+  const [seoLoading, setSeoLoading] = useState(false);
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -394,6 +410,20 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "orphans" && !orphanScan && !orphanLoading) scanOrphans();
   }, [tab, orphanScan, orphanLoading, scanOrphans]);
+
+  // ── SEO & LLM insight ──────────────────────────────────────────────────────
+  const loadSEO = useCallback(async () => {
+    setSeoLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/seo?days=30`, { headers: headers() });
+      if (res.ok) setSeo(await res.json());
+    } catch {}
+    setSeoLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "seo" && !seo && !seoLoading) loadSEO();
+  }, [tab, seo, seoLoading, loadSEO]);
 
   // Every admin mutation goes through this so a failing request surfaces
   // instead of looking like a dead button (the old code ignored res.ok).
@@ -750,6 +780,7 @@ export default function AdminPage() {
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
     { id: "analytics", label: "Analytics" },
+    { id: "seo", label: "SEO & LLM" },
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "projects", label: "Projects", badge: projectsTotal },
@@ -1325,6 +1356,105 @@ export default function AdminPage() {
               <div ref={projectSentinelRef} className="py-2 flex justify-center">
                 {projectsLoading && projects.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 {!projectsHasMore && projects.length > 0 && <p className="text-[11px] text-muted-foreground">All {projectsTotal} projects loaded</p>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── SEO & LLM TAB ────────────────────────────────────────────────── */}
+      {tab === "seo" && (
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              How <span className="font-medium text-foreground">deployzy.com</span> is doing on search engines and with AI
+              assistants — which crawlers fetch us (Google, GPTBot, ClaudeBot…) and where our human visitors come from
+              (Google, ChatGPT, Perplexity…). Collected live from the web server access log. Last 30 days.
+            </p>
+            <Button size="sm" variant="outline" className="h-9 text-xs gap-1 shrink-0"
+              onClick={loadSEO} disabled={seoLoading}>
+              {seoLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Refresh
+            </Button>
+          </div>
+
+          {seoLoading && !seo ? (
+            <p className="text-sm text-muted-foreground py-10 text-center">Loading…</p>
+          ) : !seo ? null : !seo.has_data ? (
+            <div className="flex flex-col items-center py-12 text-center">
+              <Globe className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground max-w-md">No data yet. Tracking just started — crawler hits and
+                referrals will appear here as traffic comes in (usually within a day).</p>
+            </div>
+          ) : (
+            <>
+              {/* Headline cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { label: "AI crawler hits", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-500 bg-violet-500/15" },
+                  { label: "Search crawler hits", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-500 bg-sky-500/15" },
+                  { label: "LLM referrals", value: seo.totals.llm_referral_hits, hint: "clicks from AI answers", color: "text-emerald-500 bg-emerald-500/15" },
+                  { label: "Search referrals", value: seo.totals.search_referral_hits, hint: "organic search clicks", color: "text-amber-500 bg-amber-500/15" },
+                ].map(c => (
+                  <div key={c.label} className="rounded-xl border border-border/60 p-4">
+                    <div className={`inline-flex h-7 w-7 items-center justify-center rounded-lg mb-2 ${c.color}`}>
+                      <TrendingUp className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="text-2xl font-bold">{c.value.toLocaleString()}</div>
+                    <div className="text-xs font-medium mt-0.5">{c.label}</div>
+                    <div className="text-[10px] text-muted-foreground">{c.hint}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tips */}
+              {seo.tips.length > 0 && (
+                <div className="space-y-1.5">
+                  {seo.tips.map((t, i) => {
+                    const tone = t.tone === "good" ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300"
+                      : t.tone === "warn" ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-700 dark:text-amber-300"
+                      : "border-border/60 bg-muted/30 text-muted-foreground";
+                    const Icon = t.tone === "good" ? CheckCircle2 : t.tone === "warn" ? AlertCircle : Zap;
+                    return (
+                      <div key={i} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${tone}`}>
+                        <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>{t.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Two columns: crawlers + referrals */}
+              <div className="grid md:grid-cols-2 gap-4">
+                {[
+                  { title: "Crawlers fetching us", rows: seo.crawlers, empty: "No crawlers recorded yet." },
+                  { title: "Traffic sources (humans)", rows: seo.referrals, empty: "No referral traffic recorded yet." },
+                ].map(col => (
+                  <div key={col.title} className="rounded-xl border border-border/60 overflow-hidden">
+                    <div className="px-3 py-2.5 border-b border-border/60 text-xs font-semibold">{col.title}</div>
+                    {col.rows.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-xs text-muted-foreground">{col.empty}</p>
+                    ) : (
+                      <div className="divide-y divide-border/40">
+                        {col.rows.map(row => (
+                          <div key={row.name} className="flex items-center gap-2 px-3 py-2">
+                            <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                              row.channel === "ai" || row.channel === "llm" ? "bg-violet-500/15 text-violet-500"
+                              : row.channel === "search" ? "bg-sky-500/15 text-sky-500"
+                              : row.channel === "social" ? "bg-emerald-500/15 text-emerald-500"
+                              : "bg-muted text-muted-foreground"}`}>
+                              {row.channel === "llm" ? "AI" : row.channel}
+                            </span>
+                            <span className="text-sm flex-1 min-w-0 truncate">{row.name}</span>
+                            {row.recent > 0 && <span className="text-[10px] text-emerald-500" title="last 7 days">+{row.recent.toLocaleString()} · 7d</span>}
+                            <span className="text-sm font-medium tabular-nums">{row.hits.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </>
           )}

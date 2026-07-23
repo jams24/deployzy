@@ -333,6 +333,12 @@ func main() {
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)
 			go dbQuotaSweeper.Start(context.Background())
 
+			// SEO/LLM ingester — parses the Caddy access log for deployzy.com
+			// and records which crawlers (GPTBot/Googlebot/…) fetch us and which
+			// sources (ChatGPT/Google/…) send us human traffic.
+			seoIngester := deploy.NewSEOIngester(database, log)
+			go seoIngester.Start(context.Background())
+
 			// Worker-health monitor: pings every active worker periodically
 			// and marks dead ones offline so SelectServerForProject can't
 			// schedule new deploys onto them. Also updates last_heartbeat
