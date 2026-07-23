@@ -5,6 +5,7 @@ import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { RegionPicker } from "@/components/region-picker";
 import { BrandLogo } from "@/components/brand-logos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -96,7 +97,7 @@ export default function NewResourcePage() {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [templateEnvVars, setTemplateEnvVars]   = useState<Record<string, string>>({});
   const [templateName, setTemplateName]         = useState("");
-  const [templateServer, setTemplateServer]     = useState("platform");
+  const [templateServer, setTemplateServer]     = useState("");
   const [templateDeploying, setTemplateDeploying] = useState(false);
   const [templateError, setTemplateError]       = useState("");
 
@@ -266,7 +267,7 @@ function startDocker() {
         name: templateName,
         env_vars: templateEnvVars,
       };
-      if (templateServer && templateServer !== "platform") {
+      if (templateServer) {
         payload.worker_server_id = templateServer;
       }
       await api.deployFromTemplate(selectedTemplate.slug, payload);
@@ -434,18 +435,8 @@ function startDocker() {
             </div>
           </div>
 
-          {/* Server selector */}
-          {userServers.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Deploy to</label>
-              <select className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedServer} onChange={(e) => setSelectedServer(e.target.value)}>
-                <option value="">Deployzy Cloud (default)</option>
-                {userServers.filter(s => s.status === "active").map((s) => (
-                  <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Region / server — user picks explicitly; no silent auto-assign */}
+          <RegionPicker value={selectedServer} onChange={setSelectedServer} />
 
           {/* Env vars */}
           <div className="space-y-2">
@@ -684,21 +675,7 @@ function startDocker() {
             </div>
           )}
 
-          {userServers.filter((s) => s.status === "active").length > 0 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Deploy to</label>
-              <select
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                value={templateServer}
-                onChange={(e) => setTemplateServer(e.target.value)}
-              >
-                <option value="platform">Deployzy platform (managed)</option>
-                {userServers.filter((s) => s.status === "active").map((s) => (
-                  <option key={s.id} value={s.id}>{s.label} — {s.host}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <RegionPicker value={templateServer} onChange={setTemplateServer} />
 
           {templateError && (
             <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">

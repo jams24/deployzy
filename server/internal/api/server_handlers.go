@@ -485,3 +485,36 @@ func sanitizeLabel(label string) string {
 	}
 	return s
 }
+
+// handleListSelectableServers returns the platform regions (and the user's own
+// BYOC servers) a user may deploy to. Powers the region picker in the project
+// create flow — no more silent auto-assignment.
+func (s *Server) handleListSelectableServers(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	servers, err := s.db.ListSelectableServers(r.Context(), u.ID)
+	if err != nil {
+		s.log.Error().Err(err).Msg("list selectable servers")
+		writeError(w, http.StatusInternalServerError, "failed to list servers")
+		return
+	}
+	writeJSON(w, http.StatusOK, servers)
+}
+
+// handleAdminSetServerSelectable toggles whether a platform server is offered
+// in the user region picker — independent of active/draining status, so an
+// admin can hide a server from self-serve without taking it out of rotation.
+func (s *Server) handleAdminSetServerSelectable(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Selectable bool `json:"selectable"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.SetServerUserSelectable(r.Context(), serverID, req.Selectable); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"user_selectable": req.Selectable})
+}

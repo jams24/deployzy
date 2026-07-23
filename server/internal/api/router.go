@@ -265,6 +265,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
 			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
 
+			// Servers a user may deploy to (platform regions + own BYOC)
+			r.Get("/servers/selectable", s.handleListSelectableServers)
+
 			// User BYOC Servers (account-level infra → full)
 			r.Get("/servers", s.handleListUserServers)
 			r.With(fullScope).Post("/servers", s.handleAddUserServer)
@@ -285,6 +288,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/servers", s.handleAdminAddServer)
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
+				r.Put("/servers/{serverId}/selectable", s.handleAdminSetServerSelectable)
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)

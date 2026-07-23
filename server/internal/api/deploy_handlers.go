@@ -147,6 +147,20 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "you don't own that worker server")
 			return
 		}
+		// Platform target: must be one the user is actually allowed to pick.
+		// Admins bypass so they can place a project anywhere for support.
+		if ws.UserID == nil {
+			if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+				if ws.Status != "active" || !ws.UserSelectable {
+					writeError(w, http.StatusBadRequest, "that region isn't available for new projects")
+					return
+				}
+				if ws.MaxProjects > 0 && ws.CurrentProjects >= ws.MaxProjects {
+					writeError(w, http.StatusConflict, "that region is at capacity — pick another")
+					return
+				}
+			}
+		}
 		s.db.AssignProjectServer(r.Context(), project.ID, req.WorkerServerID)
 		project.WorkerServerID = req.WorkerServerID
 	}

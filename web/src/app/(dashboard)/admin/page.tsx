@@ -99,7 +99,7 @@ interface WorkerServer {
   allocated_memory_mb: number; max_projects: number; current_projects: number;
   used_memory_mb: number; load_avg: number;
   user_id: string | null;
-  status: string; docker_installed: boolean; priority?: number; is_local?: boolean;
+  status: string; docker_installed: boolean; priority?: number; is_local?: boolean; user_selectable?: boolean;
 }
 
 interface SessionTunnel { url: string; protocol: string; local_addr: string; name: string; inspect: boolean; }
@@ -500,6 +500,13 @@ export default function AdminPage() {
     });
     if (res.ok) { setShowAddServer(false); loadServers(); }
     else { const e = await res.json().catch(() => ({})); alert(e.error || "Failed"); }
+  };
+
+  const setSelectable = async (id: string, selectable: boolean) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/selectable`, {
+      method: "PUT", body: JSON.stringify({ selectable }),
+    }, "Updating server visibility"))
+      loadServers();
   };
 
   const setServerStatus = async (id: string, status: string) => {
@@ -1391,6 +1398,17 @@ export default function AdminPage() {
                           {(s.status === "draining" || s.status === "offline") && (
                             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setServerStatus(s.id, "active")}>
                               Activate
+                            </Button>
+                          )}
+                          {!s.user_id && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={`h-7 text-xs ${s.user_selectable ? "text-emerald-500 border-emerald-500/40" : "text-muted-foreground"}`}
+                              title={s.user_selectable ? "Shown in the user region picker — click to hide" : "Hidden from the user region picker — click to offer"}
+                              onClick={() => setSelectable(s.id, !s.user_selectable)}
+                            >
+                              {s.user_selectable ? "Offered" : "Hidden"}
                             </Button>
                           )}
                           {!s.is_local && (
