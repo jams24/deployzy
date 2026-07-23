@@ -231,15 +231,23 @@ func (s *Server) handleAdminDeleteProject(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
+	// Teardown failure (unreachable BYOC host) shouldn't block the delete — the
+	// row still comes out — but we surface it so the admin knows a container may
+	// be orphaned on that server.
+	var teardownWarning string
 	if err := s.deployer.Delete(r.Context(), p); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		s.log.Warn().Err(err).Str("project", projectID).Msg("admin delete: container teardown could not be confirmed")
+		teardownWarning = "Project removed, but the server was unreachable — the container may still be running there."
 	}
 	if err := s.db.DeleteProject(r.Context(), projectID, p.UserID); err != nil {
 		writeError(w, http.StatusInternalServerError, "container removed but DB delete failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	resp := map[string]string{"status": "deleted"}
+	if teardownWarning != "" {
+		resp["warning"] = teardownWarning
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminRedeployProject(w http.ResponseWriter, r *http.Request) {

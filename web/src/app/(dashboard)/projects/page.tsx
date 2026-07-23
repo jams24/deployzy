@@ -594,10 +594,17 @@ function ProjectsContent() {
   }
 
   async function remove(id: string) {
-    await fetch(`${API}/api/v1/projects/${id}`, { method: "DELETE", headers: headers() });
+    const res = await fetch(`${API}/api/v1/projects/${id}`, { method: "DELETE", headers: headers() });
     setSelectedProject(null);
     setConfirmDelete(null);
     setDeleteText("");
+    // The delete succeeds even if the container teardown couldn't be confirmed
+    // (e.g. a BYOC server was unreachable) — surface that so the user knows to
+    // check for an orphaned container rather than assuming it's fully gone.
+    try {
+      const data = await res.json();
+      if (data?.warning) alert(data.warning);
+    } catch {}
     load();
   }
 

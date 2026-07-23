@@ -481,9 +481,22 @@ export default function AdminPage() {
   };
   const deleteProject = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
-    if (await adminFetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE" }, `Deleting ${name}`)) {
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Deleting ${name} failed: ${msg}`);
+        return;
+      }
+      // Delete still succeeded, but the container teardown may be unconfirmed
+      // (unreachable BYOC host) — surface that so the admin can check.
+      try { const d = await res.json(); if (d?.warning) alert(d.warning); } catch {}
       resetProjects(projectSearch, projectStatus);
       loadStats();
+    } catch (e) {
+      setActionError(`Deleting ${name} failed: ${e instanceof Error ? e.message : "network error"}`);
     }
   };
   const deleteDatabase = async (id: string, name: string, email: string) => {

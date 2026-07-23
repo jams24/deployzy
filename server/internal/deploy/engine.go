@@ -774,12 +774,40 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 	// Drop sibling-subdomain routes — the container (and all its services) is gone.
 	e.db.DeleteServiceRoutes(ctx, project.ID)
 	e.logMsg(ctx, project.ID, "Project stopped", "deploy")
+
+	// For remote (BYOC) hosts the teardown above is fire-and-forget: if the box
+	// was unreachable, the container may still be running as an orphan while the
+	// caller thinks it's gone. Verify it's actually removed and surface an error
+	// if we can't confirm, so callers (delete) can warn the user instead of
+	// silently reporting success.
+	if runner.IsRemote() {
+		if err := verifyContainerGone(ctx, runner, containerName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyContainerGone confirms a container no longer exists on the runner's
+// host. Returns an error if the host is unreachable OR the container is still
+// present. Uses `docker ps -aq` (exit 0 + empty output when the name is
+// absent), so a benign "no such container" never produces a false alarm.
+func verifyContainerGone(ctx context.Context, runner *Runner, containerName string) error {
+	out, err := runner.Run(ctx, "docker", "ps", "-aq", "--filter", "name=^/"+containerName+"$")
+	if err != nil {
+		return fmt.Errorf("could not reach %s to confirm container teardown: %w", runner.Host(), err)
+	}
+	if len(strings.TrimSpace(string(out))) > 0 {
+		return fmt.Errorf("container %s still present on %s after removal", containerName, runner.Host())
+	}
 	return nil
 }
 
 // Delete stops and removes a project completely.
 func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
-	e.Stop(ctx, project)
+	// Capture the stop result: on a remote (BYOC) host this tells us whether the
+	// container was actually torn down or may be orphaned (host unreachable).
+	stopErr := e.Stop(ctx, project)
 	runner := e.getRunner(ctx, project)
 	// Force-remove the named image; ignore error (image may not exist)
 	runner.Exec(ctx, "docker", "rmi", "-f", fmt.Sprintf("sm-project-%s", project.ID[:8]))
@@ -787,7 +815,7 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	runner.RunShell(ctx, "docker image prune -f")
 	// Remove any leftover exited containers from failed builds
 	runner.RunShell(ctx, "docker container prune -f")
-	return nil
+	return stopErr
 }
 
 // getRunner returns a local or remote runner based on the project's worker

@@ -846,9 +846,15 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	subdomain := project.Subdomain
 
-	// Stop and remove container
+	// Stop and remove container. On a remote (BYOC) host this can fail if the
+	// server is unreachable — the DB row is still removed, but the container may
+	// linger as an orphan, so we surface a warning rather than a clean success.
+	var teardownWarning string
 	if s.deployer != nil {
-		s.deployer.Delete(r.Context(), project)
+		if err := s.deployer.Delete(r.Context(), project); err != nil {
+			s.log.Warn().Err(err).Str("project", projectID).Msg("project container teardown could not be confirmed on delete")
+			teardownWarning = "Project removed, but we couldn't reach the server to confirm the container was stopped. It may still be running — verify on your server."
+		}
 	}
 
 	serverID := project.WorkerServerID
@@ -871,7 +877,11 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		s.db.ReconcileServerAllocation(r.Context(), serverID)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	resp := map[string]string{"status": "deleted"}
+	if teardownWarning != "" {
+		resp["warning"] = teardownWarning
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetDeployLogs(w http.ResponseWriter, r *http.Request) {
