@@ -14,11 +14,12 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
+  Eye, EyeOff, Copy,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "plans" | "users" | "projects" | "databases" | "sessions" | "infra" | "backups" | "broadcast";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -42,6 +43,18 @@ interface AdminProject {
   id: string; user_id: string; user_email: string; name: string;
   subdomain: string; repo_url: string; branch: string; framework: string;
   status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
+}
+
+interface AdminDatabase {
+  service: {
+    id: string; user_id: string; name: string; type: string; status: string;
+    size_mb: number; over_quota: boolean; worker_server_id: string | null;
+    public_host: string | null; public_port: number | null; created_at: string;
+  };
+  user_email: string;
+  server_label: string | null;
+  connection_url: string;
+  external_connection_url: string;
 }
 
 interface PlanLimitRow {
@@ -165,6 +178,12 @@ export default function AdminPage() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectStatus, setProjectStatus] = useState("all");
+  const [databases, setDatabases] = useState<AdminDatabase[]>([]);
+  const [databasesTotal, setDatabasesTotal] = useState(0);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
+  const [dbSearch, setDbSearch] = useState("");
+  const [dbType, setDbType] = useState("all");
+  const [dbReveal, setDbReveal] = useState<string | null>(null);
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -323,6 +342,29 @@ export default function AdminPage() {
     obs.observe(el); return () => obs.disconnect();
   }, [projectsHasMore, projectsLoading, projectsOffset, projectSearch, projectStatus, fetchProjects]);
 
+  // ── Databases (standalone services) ────────────────────────────────────────
+  const loadDatabases = useCallback(async (search: string, typ: string) => {
+    setDatabasesLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: "200" });
+      if (search) q.set("search", search);
+      if (typ && typ !== "all") q.set("type", typ);
+      const res = await fetch(`${API}/api/v1/admin/databases?${q}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setDatabases(data.databases || []);
+        setDatabasesTotal(data.total || 0);
+      }
+    } catch {}
+    setDatabasesLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab !== "databases") return;
+    const t = setTimeout(() => loadDatabases(dbSearch, dbType), 300);
+    return () => clearTimeout(t);
+  }, [tab, dbSearch, dbType, loadDatabases]);
+
   // Every admin mutation goes through this so a failing request surfaces
   // instead of looking like a dead button (the old code ignored res.ok).
   const adminFetch = async (url: string, init: RequestInit, action: string): Promise<boolean> => {
@@ -441,6 +483,13 @@ export default function AdminPage() {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE" }, `Deleting ${name}`)) {
       resetProjects(projectSearch, projectStatus);
+      loadStats();
+    }
+  };
+  const deleteDatabase = async (id: string, name: string, email: string) => {
+    if (!confirm(`Delete database "${name}" owned by ${email || "unknown"}?\n\nThis drops the database and its data permanently. Cannot be undone.`)) return;
+    if (await adminFetch(`${API}/api/v1/admin/databases/${id}`, { method: "DELETE" }, `Deleting ${name}`)) {
+      loadDatabases(dbSearch, dbType);
       loadStats();
     }
   };
@@ -652,6 +701,7 @@ export default function AdminPage() {
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "projects", label: "Projects", badge: projectsTotal },
+    { id: "databases", label: "Databases" },
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
@@ -1224,6 +1274,106 @@ export default function AdminPage() {
                 {!projectsHasMore && projects.length > 0 && <p className="text-[11px] text-muted-foreground">All {projectsTotal} projects loaded</p>}
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── DATABASES TAB ────────────────────────────────────────────────── */}
+      {tab === "databases" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, type, owner email..."
+                className="pl-9 h-9 text-sm"
+                value={dbSearch}
+                onChange={e => setDbSearch(e.target.value)}
+              />
+            </div>
+            <select
+              value={dbType}
+              onChange={e => setDbType(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="all">All engines</option>
+              <option value="postgres">PostgreSQL</option>
+              <option value="redis">Redis</option>
+              <option value="mongodb">MongoDB</option>
+              <option value="mysql">MySQL</option>
+            </select>
+          </div>
+
+          <div className="text-xs text-muted-foreground">{databasesTotal} databases total</div>
+
+          {databasesLoading && databases.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>
+          ) : databases.length === 0 ? (
+            <div className="flex flex-col items-center py-12">
+              <Database className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">No databases found.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {databases.map(d => {
+                const svc = d.service;
+                const location = d.server_label
+                  ? d.server_label
+                  : svc.worker_server_id ? "BYOC server" : "Deployzy platform";
+                const revealed = dbReveal === svc.id;
+                return (
+                  <div key={svc.id} className="rounded-lg border border-border/50">
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{svc.name}</span>
+                          <Badge variant="outline" className="text-[9px] shrink-0 uppercase">{svc.type}</Badge>
+                          <Badge variant="outline" className={`text-[9px] shrink-0 ${STATUS_COLORS[svc.status] || "bg-muted text-muted-foreground"}`}>
+                            {svc.status}
+                          </Badge>
+                          {svc.over_quota && <Badge variant="outline" className="text-[9px] shrink-0 bg-red-500/15 text-red-500 border-red-500/30">over quota</Badge>}
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
+                          <span className="text-muted-foreground/80">{d.user_email || svc.user_id.slice(0, 8)}</span>
+                          <span className="flex items-center gap-1"><Server className="h-2.5 w-2.5" />{location}</span>
+                          <span className="flex items-center gap-1"><HardDrive className="h-2.5 w-2.5" />{svc.size_mb} MB</span>
+                          <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{new Date(svc.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Button variant="ghost" size="sm"
+                          className={`h-7 px-2 ${revealed ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                          onClick={() => setDbReveal(revealed ? null : svc.id)}
+                          title={revealed ? "Hide connection string" : "Reveal connection string"}>
+                          {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
+                          onClick={() => deleteDatabase(svc.id, svc.name, d.user_email)} title="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {revealed && (
+                      <div className="border-t border-border/50 bg-muted/20 px-3 py-2.5 space-y-1.5">
+                        {[["Internal", d.connection_url], ["External", d.external_connection_url]].map(([label, url]) => (
+                          <div key={label} className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground w-14 shrink-0">{label}</span>
+                            <code className="flex-1 min-w-0 truncate text-[11px] font-mono bg-background rounded px-2 py-1 border border-border/50">{url || "—"}</code>
+                            {url && (
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-muted-foreground hover:text-foreground"
+                                onClick={() => navigator.clipboard.writeText(url)} title="Copy">
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

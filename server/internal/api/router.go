@@ -305,6 +305,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)
 				r.Delete("/projects/{projectId}", s.handleAdminDeleteProject)
 
+				// Standalone databases/services across all users
+				r.Get("/databases", s.handleAdminListServices)
+				r.Delete("/databases/{serviceId}", s.handleAdminDeleteService)
+
 				// Platform backups (admin only)
 				r.Get("/backups", s.handleListPlatformBackups)
 				r.Post("/backups/run", s.handleRunPlatformBackup)

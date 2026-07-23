@@ -276,6 +276,90 @@ func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit
 	return projects, total, rows.Err()
 }
 
+// AdminService is a standalone database/service row enriched with owner email
+// and (for BYOC/overflow) the host server's label.
+type AdminService struct {
+	Service
+	UserEmail   string  `json:"user_email"`
+	ServerLabel *string `json:"server_label"`
+}
+
+// AdminListServices returns every standalone database/service across all users,
+// newest first. search filters on name, type, or owner email; typ filters on
+// the engine (postgres/redis/mongodb/mysql).
+func (d *DB) AdminListServices(ctx context.Context, search, typ string, limit, offset int) ([]AdminService, int64, error) {
+	where := `1=1`
+	args := []interface{}{}
+	i := 1
+	if search != "" {
+		where += ` AND (s.name ILIKE $` + itoa(i) + ` OR s.type ILIKE $` + itoa(i) + ` OR u.email ILIKE $` + itoa(i) + `)`
+		args = append(args, "%"+search+"%")
+		i++
+	}
+	if typ != "" && typ != "all" {
+		where += ` AND s.type = $` + itoa(i)
+		args = append(args, typ)
+		i++
+	}
+
+	var total int64
+	countArgs := make([]interface{}, len(args))
+	copy(countArgs, args)
+	d.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM services s LEFT JOIN users u ON u.id = s.user_id WHERE `+where,
+		countArgs...,
+	).Scan(&total)
+
+	args = append(args, limit, offset)
+	rows, err := d.Pool.Query(ctx,
+		`SELECT s.id, s.user_id, s.name, s.type, s.status, s.db_name, s.db_user, s.db_password,
+		        s.host, s.port, s.container_id, s.created_at, COALESCE(s.size_mb, 0),
+		        COALESCE(s.over_quota, false), s.worker_server_id, s.container_name,
+		        s.public_host, s.public_port, COALESCE(u.email, ''), ws.label
+		 FROM services s
+		 LEFT JOIN users u ON u.id = s.user_id
+		 LEFT JOIN worker_servers ws ON ws.id = s.worker_server_id
+		 WHERE `+where+`
+		 ORDER BY s.created_at DESC
+		 LIMIT $`+itoa(i)+` OFFSET $`+itoa(i+1),
+		args...,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []AdminService
+	for rows.Next() {
+		var a AdminService
+		s := &a.Service
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Name, &s.Type, &s.Status, &s.DBName, &s.DBUser,
+			&s.DBPassword, &s.Host, &s.Port, &s.ContainerID, &s.CreatedAt, &s.SizeMB, &s.OverQuota,
+			&s.WorkerServerID, &s.ContainerName, &s.PublicHost, &s.PublicPort, &a.UserEmail, &a.ServerLabel); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, a)
+	}
+	return out, total, rows.Err()
+}
+
+// AdminDeleteService removes a service record and its platform Postgres state
+// regardless of owner (admin action). Container teardown for BYOC/container
+// services is the handler's responsibility (it needs SSH/docker access).
+func (d *DB) AdminDeleteService(ctx context.Context, id string) error {
+	svc, err := d.GetService(ctx, id)
+	if err != nil || svc == nil {
+		return fmt.Errorf("service not found")
+	}
+	if svc.Type == "postgres" && svc.WorkerServerID == nil && svc.ContainerName == nil && svc.DBName != nil && svc.DBUser != nil {
+		d.Pool.Exec(ctx, fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", *svc.DBName))
+		d.Pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", *svc.DBName))
+		d.Pool.Exec(ctx, fmt.Sprintf("DROP ROLE IF EXISTS %s", *svc.DBUser))
+	}
+	_, err = d.Pool.Exec(ctx, "DELETE FROM services WHERE id = $1", id)
+	return err
+}
+
 // EmailRecipient holds the minimal info needed to send an email to a user.
 type EmailRecipient struct {
 	Email string
