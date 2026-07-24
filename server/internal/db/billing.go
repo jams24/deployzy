@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -131,39 +132,159 @@ func (d *DB) ActivateSubscriptionDetailed(ctx context.Context, paymentID string)
 	}, nil
 }
 
-// SweepExpiredSubscriptions marks lapsed subscriptions as expired and
-// downgrades users whose paid period has ended back to the free plan.
+// DunningNotice is one email the sweep wants sent. Kind is "reminder" (renews
+// soon), "grace" (lapsed, features still on during the grace window), or
+// "expired" (grace exhausted, downgraded to free).
+type DunningNotice struct {
+	Kind      string
+	Email     string
+	Name      string
+	Plan      string
+	Amount    float64
+	Currency  string
+	Date      string // relevant date: renews-on / access-ends-on
+	GraceDays int
+}
+
+// DunningResult groups the notices produced by one sweep so the caller (which
+// owns the mailer) can send them. Downgraded is also the count for logging.
+type DunningResult struct {
+	Notices    []DunningNotice
+	Downgraded int
+}
+
+// SweepExpiredSubscriptions runs the full dunning state machine and returns the
+// emails to send. graceDays keeps paid features live for that many days past
+// period_end before the user is downgraded to free.
 //
-// Downgrade is deliberately narrow: it only touches non-admin users whose
-// plan came from a subscription (EXISTS check) and who no longer have ANY
-// active, unexpired subscription. Users upgraded manually by an admin (no
-// subscription rows) and referral-reward users (pro_until is applied at
-// read time by effectivePlan, independent of users.plan) are untouched.
-func (d *DB) SweepExpiredSubscriptions(ctx context.Context) (int64, error) {
-	// 1. Flag subscriptions whose period has ended.
-	if _, err := d.Pool.Exec(ctx,
-		`UPDATE subscriptions SET status = 'expired'
-		 WHERE status = 'active' AND period_end IS NOT NULL AND period_end <= now()`,
-	); err != nil {
-		return 0, err
+//	active ──(period_end passes)──▶ grace ──(+graceDays passes)──▶ expired + downgrade
+//
+// Reminders fire once each (tracked by *_notified_at columns) so the hourly
+// sweep never resends. Downgrade stays narrow: only non-admin users whose plan
+// came from a subscription and who have no active OR in-grace subscription.
+// Admin grants (no sub rows) and referral rewards (pro_until) are untouched.
+func (d *DB) SweepExpiredSubscriptions(ctx context.Context, graceDays int) (*DunningResult, error) {
+	if graceDays < 0 {
+		graceDays = 0
+	}
+	res := &DunningResult{}
+	const dateFmt = "Jan 2, 2006"
+
+	// ── 1. Pre-expiry reminders: still active, renews within 3 days, not yet
+	//        reminded. Collect, then mark so we don't resend.
+	rows, err := d.Pool.Query(ctx,
+		`SELECT s.id, u.email, COALESCE(u.name,''), s.plan, s.amount, s.currency, s.period_end
+		 FROM subscriptions s JOIN users u ON u.id = s.user_id
+		 WHERE s.status = 'active' AND s.period_end IS NOT NULL
+		   AND s.period_end > now() AND s.period_end <= now() + interval '3 days'
+		   AND s.pre_expiry_notified_at IS NULL AND u.is_admin = false`)
+	if err != nil {
+		return nil, err
+	}
+	var remindIDs []string
+	for rows.Next() {
+		var id string
+		var n DunningNotice
+		var end *time.Time
+		if err := rows.Scan(&id, &n.Email, &n.Name, &n.Plan, &n.Amount, &n.Currency, &end); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		n.Kind = "reminder"
+		if end != nil {
+			n.Date = end.Format(dateFmt)
+		}
+		res.Notices = append(res.Notices, n)
+		remindIDs = append(remindIDs, id)
+	}
+	rows.Close()
+	if len(remindIDs) > 0 {
+		d.Pool.Exec(ctx, `UPDATE subscriptions SET pre_expiry_notified_at = now() WHERE id = ANY($1)`, remindIDs)
 	}
 
-	// 2. Downgrade users left without an active subscription.
+	// ── 2. Enter grace: active subs whose period just ended. Keep the plan, flip
+	//        status to 'grace', and send the "you lapsed, grace left" email once.
+	rows, err = d.Pool.Query(ctx,
+		`SELECT s.id, u.email, COALESCE(u.name,''), s.plan, s.amount, s.currency, s.period_end
+		 FROM subscriptions s JOIN users u ON u.id = s.user_id
+		 WHERE s.status = 'active' AND s.period_end IS NOT NULL AND s.period_end <= now()
+		   AND u.is_admin = false`)
+	if err != nil {
+		return nil, err
+	}
+	var graceIDs []string
+	for rows.Next() {
+		var id string
+		var n DunningNotice
+		var end *time.Time
+		if err := rows.Scan(&id, &n.Email, &n.Name, &n.Plan, &n.Amount, &n.Currency, &end); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		n.Kind, n.GraceDays = "grace", graceDays
+		if end != nil {
+			n.Date = end.AddDate(0, 0, graceDays).Format(dateFmt)
+		}
+		res.Notices = append(res.Notices, n)
+		graceIDs = append(graceIDs, id)
+	}
+	rows.Close()
+	if len(graceIDs) > 0 {
+		d.Pool.Exec(ctx,
+			`UPDATE subscriptions SET status = 'grace', expiry_notified_at = now() WHERE id = ANY($1)`, graceIDs)
+	}
+
+	// ── 3. Exhaust grace: grace subs past period_end + graceDays → expired.
+	if _, err := d.Pool.Exec(ctx,
+		`UPDATE subscriptions SET status = 'expired'
+		 WHERE status = 'grace' AND period_end IS NOT NULL
+		   AND period_end + ($1 || ' days')::interval <= now()`,
+		fmt.Sprintf("%d", graceDays)); err != nil {
+		return nil, err
+	}
+
+	// ── 4. Downgrade users no longer protected by an active OR in-grace sub.
+	//        Collect them first (for the downgrade email), then flip to free.
+	rows, err = d.Pool.Query(ctx,
+		`SELECT u.email, COALESCE(u.name,''), u.plan
+		 FROM users u
+		 WHERE u.is_admin = false
+		   AND u.plan IN ('hobby', 'pro', 'team', 'premium')
+		   AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)
+		   AND NOT EXISTS (
+		         SELECT 1 FROM subscriptions s
+		         WHERE s.user_id = u.id
+		           AND ((s.status = 'active' AND s.period_end IS NOT NULL AND s.period_end > now())
+		                OR s.status = 'grace'))`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var n DunningNotice
+		if err := rows.Scan(&n.Email, &n.Name, &n.Plan); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		n.Kind = "expired"
+		res.Notices = append(res.Notices, n)
+	}
+	rows.Close()
+
 	tag, err := d.Pool.Exec(ctx,
 		`UPDATE users u SET plan = 'free', updated_at = now()
 		 WHERE u.is_admin = false
 		   AND u.plan IN ('hobby', 'pro', 'team', 'premium')
-		   AND EXISTS (
-		         SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)
+		   AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)
 		   AND NOT EXISTS (
 		         SELECT 1 FROM subscriptions s
-		         WHERE s.user_id = u.id AND s.status = 'active'
-		           AND s.period_end IS NOT NULL AND s.period_end > now())`,
-	)
+		         WHERE s.user_id = u.id
+		           AND ((s.status = 'active' AND s.period_end IS NOT NULL AND s.period_end > now())
+		                OR s.status = 'grace'))`)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return tag.RowsAffected(), nil
+	res.Downgraded = int(tag.RowsAffected())
+	return res, nil
 }
 
 // GetSubscriptionByPaymentID returns the subscription tied to a payment.

@@ -438,6 +438,7 @@ func SubscriptionEmail(name, plan, kind string, amount float64, currency, renews
 	planTitle := strings.ToUpper(plan[:1]) + plan[1:]
 
 	headline, blurb := "You're on "+planTitle+" 🎉", "Your subscription is active. Thanks for backing Deployzy!"
+	dateLabel, cta := "Renews on", "View billing"
 	switch kind {
 	case "upgrade":
 		headline = "Upgraded to " + planTitle + " 🚀"
@@ -448,6 +449,19 @@ func SubscriptionEmail(name, plan, kind string, amount float64, currency, renews
 	case "renewal":
 		headline = planTitle + " renewed ✅"
 		blurb = "Thanks for sticking with Deployzy — your subscription rolls on for another month."
+	case "reminder":
+		headline = "Your " + planTitle + " plan renews soon"
+		blurb = "Heads up — your subscription is about to renew. If your payment method is up to date there's nothing to do. To keep " + planTitle + " uninterrupted, make sure it's ready to go."
+		dateLabel, cta = "Renews on", "Manage billing"
+	case "grace":
+		headline = "Your " + planTitle + " plan has expired"
+		blurb = "Your subscription lapsed, but don't worry — your " + planTitle + " features are still active during a short grace period. Renew before the date below to avoid being moved to the Free plan. Your projects keep running either way."
+		dateLabel, cta = "Access ends", "Renew now"
+	case "expired":
+		headline = "Moved to the Free plan"
+		blurb = "Your grace period ended, so your account is now on Free. Your existing projects keep running — you just can't add new ones beyond the Free limits or use paid features until you resubscribe. Come back anytime."
+		dateLabel, cta = "Status", "Resubscribe"
+		renewsOn = "Downgraded to Free"
 	}
 
 	card := `
@@ -473,7 +487,7 @@ func SubscriptionEmail(name, plan, kind string, amount float64, currency, renews
               </tr>
               <tr>
                 <td style="padding:16px 20px;">
-                  <span style="font-size:13px;color:#666666;">Renews on</span>
+                  <span style="font-size:13px;color:#666666;">` + dateLabel + `</span>
                   <span style="float:right;font-size:13px;color:#ffffff;font-weight:600;">` + renewsOn + `</span>
                 </td>
               </tr>
@@ -485,7 +499,7 @@ func SubscriptionEmail(name, plan, kind string, amount float64, currency, renews
                   <a href="https://deployzy.com/billing"
                      style="display:inline-block;background:#ffffff;color:#0a0a0a;text-decoration:none;
                             font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;">
-                    View billing
+                    ` + cta + `
                   </a>
                 </td>
               </tr>

@@ -43,6 +43,7 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "TLS private key file")
 	authToken := flag.String("auth-token", "dev-token", "Required auth token for clients (legacy, use DB auth in production)")
 	jwtSecret := flag.String("jwt-secret", "serverme-dev-secret-change-me", "JWT signing secret")
+	subscriptionGraceDays := flag.Int("subscription-grace-days", 3, "Days a lapsed paid plan keeps its features before downgrade to free")
 	databaseURL := flag.String("database-url", "", "PostgreSQL connection URL (optional, enables user auth)")
 	googleClientID := flag.String("google-client-id", "", "Google OAuth Client ID")
 	googleClientSecret := flag.String("google-client-secret", "", "Google OAuth Client Secret")
@@ -168,15 +169,8 @@ func main() {
 			} else if n > 0 {
 				log.Info().Int64("users", n).Msg("removed abandoned unverified signups")
 			}
-			// Lapsed subscriptions: mark expired and downgrade users whose
-			// paid period ended back to free. Only touches users whose plan
-			// came from a subscription — admin grants and referral rewards
-			// are untouched.
-			if n, err := database.SweepExpiredSubscriptions(ctx); err != nil {
-				log.Warn().Err(err).Msg("subscription expiry sweep failed")
-			} else if n > 0 {
-				log.Info().Int64("users", n).Msg("downgraded users with expired subscriptions")
-			}
+			// (Subscription dunning runs in its own goroutine below — it needs
+			// the mailer, which is initialised after this loop starts.)
 			// Abandoned build dirs — cleaned on successful deploy, but a
 			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
 			// behind. Remove anything older than 24h on the control plane
@@ -258,6 +252,47 @@ func main() {
 			)
 			log.Info().Msg("Brevo email service enabled")
 		}
+
+		// Subscription dunning: grace period + reminder/lapse/downgrade emails.
+		// Runs hourly (needs emailSvc, hence started here rather than in the
+		// early retention loop). graceDays keeps paid features live past
+		// period_end before the user is downgraded to free.
+		go func() {
+			graceDays := *subscriptionGraceDays
+			runDunning := func() {
+				res, err := database.SweepExpiredSubscriptions(context.Background(), graceDays)
+				if err != nil {
+					log.Warn().Err(err).Msg("subscription dunning sweep failed")
+					return
+				}
+				if res.Downgraded > 0 {
+					log.Info().Int("users", res.Downgraded).Msg("downgraded users past grace period")
+				}
+				for _, n := range res.Notices {
+					if emailSvc == nil || n.Email == "" {
+						continue
+					}
+					subj := map[string]string{
+						"reminder": "Your Deployzy plan renews soon",
+						"grace":    "Your Deployzy plan has expired — renew to keep your features",
+						"expired":  "You've been moved to the Deployzy Free plan",
+					}[n.Kind]
+					if subj == "" {
+						subj = "Your Deployzy subscription"
+					}
+					body := notify.SubscriptionEmail(n.Name, n.Plan, n.Kind, n.Amount, n.Currency, n.Date)
+					if err := emailSvc.SendOne(n.Email, subj, body); err != nil {
+						log.Warn().Err(err).Str("to", n.Email).Str("kind", n.Kind).Msg("dunning email failed")
+					}
+				}
+			}
+			runDunning()
+			t := time.NewTicker(1 * time.Hour)
+			defer t.Stop()
+			for range t.C {
+				runDunning()
+			}
+		}()
 
 		// Billing
 		var billingClient *billing.InventPay
