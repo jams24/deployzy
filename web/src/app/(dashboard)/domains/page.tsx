@@ -63,7 +63,10 @@ export default function DomainsPage() {
       if (result.verified) {
         load();
       } else {
-        alert("DNS verification failed. Make sure your CNAME record is set and propagated.");
+        // The backend returns a specific hint — e.g. the very common case where
+        // the CNAME is proxied through Cloudflare (orange cloud) and must be set
+        // to DNS only. Show it instead of a generic message.
+        alert(result.hint || "DNS verification failed. Make sure your CNAME record is set to DNS only (not proxied) and has propagated.");
       }
     } catch {}
   }
@@ -132,6 +135,10 @@ export default function DomainsPage() {
                 <span className="text-muted-foreground">Type:</span> CNAME<br />
                 <span className="text-muted-foreground">Name:</span> www<br />
                 <span className="text-muted-foreground">Target:</span> {instructions.target}
+              </div>
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-400">
+                <p className="font-medium">Using Cloudflare? Set the record to <span className="font-semibold">DNS only</span> (grey cloud), not Proxied (orange cloud).</p>
+                <p className="mt-1 opacity-90">A proxied record hides the CNAME behind Cloudflare&apos;s IPs, so verification can&apos;t see it and TLS won&apos;t issue. Click the orange cloud to turn it grey.</p>
               </div>
               <p className="text-xs text-muted-foreground">
                 After adding the records, click Verify on your domain below. Then bind it to a tunnel or project. Visitors using www. will be automatically redirected.

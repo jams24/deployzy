@@ -111,16 +111,41 @@ func (s *Server) handleCreateCheckout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBillingStatus returns the user's subscription status.
+// subscriptionGraceDays mirrors the --subscription-grace-days flag so the
+// billing status can compute when grace-period access ends. Set from main.
+var subscriptionGraceDays = 3
+
+// SetSubscriptionGraceDays wires the configured grace window into the billing
+// status handler (avoids threading it through NewRouter's long signature).
+func SetSubscriptionGraceDays(n int) {
+	if n >= 0 {
+		subscriptionGraceDays = n
+	}
+}
+
 func (s *Server) handleBillingStatus(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	sub, _ := s.db.GetActiveSubscription(r.Context(), u.ID)
 	subs, _ := s.db.ListSubscriptions(r.Context(), u.ID)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"active_subscription": sub,
 		"history":             subs,
-	})
+	}
+
+	// If there's no active sub but the user is in the grace window, surface it
+	// so the billing page can show "grace period — renew by X" instead of
+	// looking like they have nothing (they still keep their paid features).
+	if sub == nil {
+		if grace, _ := s.db.GetGraceSubscription(r.Context(), u.ID); grace != nil && grace.PeriodEnd != nil {
+			resp["grace"] = map[string]interface{}{
+				"plan":        grace.Plan,
+				"access_ends": grace.PeriodEnd.AddDate(0, 0, subscriptionGraceDays),
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleBillingWebhook processes InventPay payment webhooks.

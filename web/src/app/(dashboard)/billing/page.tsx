@@ -23,6 +23,7 @@ interface Subscription {
 interface BillingStatus {
   active_subscription: Subscription | null;
   history: Subscription[];
+  grace?: { plan: string; access_ends: string } | null;
 }
 
 interface PlanLimits {
@@ -474,6 +475,17 @@ export default function BillingPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Manage your subscription and payment history.
       </p>
+
+      {/* Grace-period banner: subscription lapsed but paid features are still on
+          until access_ends. Renewing before then avoids the drop to Free. */}
+      {status?.grace && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+          <span className="flex-1">
+            Your <span className="font-semibold capitalize">{status.grace.plan}</span> subscription has expired, but your features stay active during a grace period.
+            Renew before <span className="font-semibold">{new Date(status.grace.access_ends).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span> to avoid being moved to the Free plan. Your projects keep running either way.
+          </span>
+        </div>
+      )}
 
       {checkoutError && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">

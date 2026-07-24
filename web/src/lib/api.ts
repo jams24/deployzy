@@ -170,7 +170,7 @@ class ApiClient {
   }
 
   verifyDomain(id: string) {
-    return this.request<{ verified: boolean; cname?: string }>(
+    return this.request<{ verified: boolean; cname?: string; hint?: string; found?: string; expected?: string }>(
       `/api/v1/domains/${id}/verify`,
       { method: "POST" }
     );

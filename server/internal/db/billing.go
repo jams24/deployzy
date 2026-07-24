@@ -316,6 +316,22 @@ func (d *DB) GetActiveSubscription(ctx context.Context, userID string) (*Subscri
 	return &s, err
 }
 
+// GetGraceSubscription returns the user's most recent in-grace subscription
+// (lapsed but still granting features during the grace window), or nil.
+func (d *DB) GetGraceSubscription(ctx context.Context, userID string) (*Subscription, error) {
+	var s Subscription
+	err := d.Pool.QueryRow(ctx,
+		`SELECT id, user_id, plan, status, payment_id, amount, currency, period_start, period_end, created_at
+		 FROM subscriptions WHERE user_id = $1 AND status = 'grace'
+		 ORDER BY period_end DESC LIMIT 1`,
+		userID,
+	).Scan(&s.ID, &s.UserID, &s.Plan, &s.Status, &s.PaymentID, &s.Amount, &s.Currency, &s.PeriodStart, &s.PeriodEnd, &s.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &s, err
+}
+
 // ListSubscriptions returns all subscriptions for a user.
 func (d *DB) ListSubscriptions(ctx context.Context, userID string) ([]Subscription, error) {
 	rows, err := d.Pool.Query(ctx,

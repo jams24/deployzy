@@ -69,6 +69,7 @@ func main() {
 	cfToken := flag.String("cloudflare-token", "", "Cloudflare API token (DNS edit permission) for auto-creating DNS records when servers are added")
 	cfZoneID := flag.String("cloudflare-zone-id", "", "Cloudflare Zone ID for the base domain")
 	flag.Parse()
+	api.SetSubscriptionGraceDays(*subscriptionGraceDays)
 
 	// Logger
 	level, _ := zerolog.ParseLevel(*logLevel)

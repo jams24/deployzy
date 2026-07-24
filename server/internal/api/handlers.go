@@ -582,13 +582,60 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 			"method":   method,
 		})
 	} else {
+		// Most common failure: the CNAME is proxied through Cloudflare (orange
+		// cloud), so the domain resolves to Cloudflare's IPs and the real
+		// target (cname.deployzy.com → our origin) is hidden. Detect that and
+		// tell the user exactly what to change, since the generic "check your
+		// record" message sends them looking in the wrong place.
+		hint := "Set your CNAME to cname.deployzy.com and wait for it to propagate (can take a few minutes)."
+		if domainIsCloudflareProxied(targetDomain.Domain) {
+			hint = "Your CNAME is proxied through Cloudflare (orange cloud), which hides it from verification. In Cloudflare, click the orange cloud next to this record to switch it to grey (DNS only), wait ~1 minute, then verify again."
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"verified": false,
 			"found":    cnames,
-			"expected": "cname.deployzy.com",
-			"hint":     "Set your CNAME to point to cname.deployzy.com (not deployzy.com) to bypass Cloudflare's proxy",
+			"expected": expected,
+			"hint":     hint,
 		})
 	}
+}
+
+// cloudflareCIDRs are Cloudflare's published IPv4 ranges. A custom domain that
+// resolves into one of these is proxied (orange cloud) — its real CNAME target
+// is masked, so DNS verification can't see cname.deployzy.com behind it.
+var cloudflareCIDRs = func() []*net.IPNet {
+	raw := []string{
+		"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+		"141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+		"197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+		"104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+	}
+	nets := make([]*net.IPNet, 0, len(raw))
+	for _, c := range raw {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
+}()
+
+func domainIsCloudflareProxied(domain string) bool {
+	ips, err := net.LookupHost(domain)
+	if err != nil {
+		return false
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		for _, n := range cloudflareCIDRs {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
