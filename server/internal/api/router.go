@@ -101,6 +101,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		// Health
 		r.Get("/health", s.handleHealth)
 
+		// Public pricing — the enforced plan_limits so the dashboard billing page
+		// and the landing page render live numbers (admin edits reflect instantly).
+		r.Get("/plans", s.handlePublicPlans)
+
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(auth.SmartAuthMiddleware(jwtMgr, database))

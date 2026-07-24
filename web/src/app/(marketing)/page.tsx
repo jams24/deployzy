@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AnimatedCounter } from "@/components/marketing/animated-counter";
+import { fetchPlanCards } from "@/lib/plans";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { PlanCta } from "@/components/marketing/plan-cta";
@@ -11,7 +12,13 @@ import {
   GitPullRequest, Clock, HardDrive, Rocket,
 } from "lucide-react";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Live pricing from plan_limits (ISR-cached 60s so admin edits appear within a
+  // minute without a redeploy). Falls back to the static list if unreachable.
+  const liveCards = await fetchPlanCards(60);
+  const plans = liveCards
+    ? liveCards.map((c) => ({ name: c.name, price: c.price, period: c.period, popular: c.popular, desc: c.tagline, cta: c.cta, features: c.features }))
+    : FALLBACK_PLANS;
   return (
     <>
       {/* ── Hero ──────────────────────────────────── */}
@@ -412,7 +419,7 @@ const extras = [
   { icon: Code,        title: "Self-hostable",      desc: "One-command install on any Ubuntu VPS. MIT license. Run your own stack." },
 ];
 
-const plans = [
+const FALLBACK_PLANS = [
   {
     name: "Free", price: "$0", period: null, popular: false,
     desc: "For hobby projects and learning.",

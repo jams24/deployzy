@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Check, CreditCard, Crown, ExternalLink, Loader2, PartyPopper, Zap } from "lucide-react";
 import Link from "next/link";
+import { fetchPlanCards } from "@/lib/plans";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -46,6 +47,8 @@ interface UsageResponse {
 
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  // Live plan cards from plan_limits; null until fetched (falls back to static).
+  const [livePlanCards, setLivePlanCards] = useState<{ id: string; name: string; price: string; accent: string; tagline: string; features: string[] }[] | null>(null);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -173,6 +176,10 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadStatus();
+    // Live plan cards from plan_limits (reflect admin edits without redeploy).
+    fetchPlanCards().then((cards) => {
+      if (cards) setLivePlanCards(cards.map((c) => ({ id: c.id, name: c.name, price: c.price, accent: c.accent, tagline: c.tagline, features: c.features })));
+    });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -217,7 +224,9 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
     : 0;
 
-  // Plan catalog — mirrors plan_limits table; update both together when changing limits.
+  // Plan catalog. The numbers render LIVE from plan_limits (fetched below), so
+  // admin edits reflect here without a redeploy. The static array is only a
+  // fallback for the first paint / if the API is briefly unreachable.
   type PlanCard = {
     id: string;
     name: string;
@@ -226,7 +235,7 @@ export default function BillingPage() {
     tagline: string;
     features: string[];
   };
-  const planCards: PlanCard[] = [
+  const fallbackPlanCards: PlanCard[] = [
     {
       id: "free",
       name: "Free",
@@ -300,6 +309,7 @@ export default function BillingPage() {
       ],
     },
   ];
+  const planCards: PlanCard[] = livePlanCards ?? fallbackPlanCards;
   const currentPlan = usage?.plan || (isPremium ? "pro" : "free");
 
   // Post-checkout celebration takes over the page until dismissed.

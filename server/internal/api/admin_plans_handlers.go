@@ -9,6 +9,25 @@ import (
 )
 
 // handleAdminListPlans returns every plan_limits row for the plan editor.
+// handlePublicPlans returns the display plan tiers (everything except the admin
+// row) so the pricing UI can render live from plan_limits. No auth — pricing is
+// public. Only limits/flags are exposed; nothing sensitive lives on this table.
+func (s *Server) handlePublicPlans(w http.ResponseWriter, r *http.Request) {
+	plans, err := s.db.ListPlanLimits(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load plans")
+		return
+	}
+	out := make([]interface{}, 0, len(plans))
+	for _, p := range plans {
+		if p.Plan == "admin" {
+			continue
+		}
+		out = append(out, p)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleAdminListPlans(w http.ResponseWriter, r *http.Request) {
 	plans, err := s.db.ListPlanLimits(r.Context())
 	if err != nil {
