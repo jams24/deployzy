@@ -111,7 +111,7 @@ export default function NewResourcePage() {
   const [selectedServer, setSelectedServer] = useState("");
 
   // Plan limits (used to show real resource caps in the advanced form)
-  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean; allow_db_migration?: boolean } | null>(null);
+  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean; allow_db_migration?: boolean; max_db_size_mb?: number } | null>(null);
   // Migration ("bring your own database") sub-form state.
   const [showMigrate, setShowMigrate] = useState(false);
   const [migType, setMigType] = useState("postgres");
@@ -140,7 +140,7 @@ export default function NewResourcePage() {
     // Load plan limits so the advanced form can show real caps
     fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases, allow_db_migration: data.limits.allow_db_migration }); setIsAdmin(!!data.is_admin); } })
+      .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases, allow_db_migration: data.limits.allow_db_migration, max_db_size_mb: data.limits.max_db_size_mb }); setIsAdmin(!!data.is_admin); } })
       .catch(() => {});
   }, []);
 
@@ -666,6 +666,12 @@ function startDocker() {
             <RegionPicker value={dbTargetServer} onChange={setDbTargetServer} label="Region" />
             <p className="text-[11px] text-muted-foreground">Deploy on your own VPS to use its full disk and skip plan DB-size caps.</p>
           </div>
+
+          {planLimits?.max_db_size_mb !== undefined && planLimits.max_db_size_mb > 0 && (
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Includes {planLimits.max_db_size_mb >= 1024 ? `${(planLimits.max_db_size_mb / 1024).toFixed(planLimits.max_db_size_mb % 1024 === 0 ? 0 : 1)} GB` : `${planLimits.max_db_size_mb} MB`} of storage per database. Writes pause if you exceed it — upgrade for more.
+            </p>
+          )}
 
           <Button className="w-full gap-2" onClick={createDatabase} disabled={creating || !dbName}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}

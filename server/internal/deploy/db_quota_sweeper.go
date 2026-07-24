@@ -59,7 +59,7 @@ type dbRow struct {
 func (s *DBQuotaSweeper) sweep(ctx context.Context) {
 	rows, err := s.db.Pool.Query(ctx, `
 		SELECT svc.id, svc.db_name, svc.db_user, u.plan, svc.over_quota,
-		       COALESCE(pl.max_db_size_mb, 500) AS plan_max_mb
+		       COALESCE(pl.max_db_size_mb, 1024) AS plan_max_mb
 		FROM services svc
 		JOIN users u ON u.id = svc.user_id
 		LEFT JOIN plan_limits pl ON pl.plan = u.plan

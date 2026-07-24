@@ -418,7 +418,7 @@ const plans = [
     desc: "For hobby projects and learning.",
     cta: "Get started",
     features: [
-      "3 projects, 1 PostgreSQL database",
+      "3 projects, 1 PostgreSQL database (1 GB)",
       "5 subdomains, 5 active tunnels",
       "1 BYOC server, 1 custom domain",
       "512 MB RAM / 0.25 vCPU per project",
@@ -434,6 +434,7 @@ const plans = [
     features: [
       "All Free features, plus:",
       "5 projects, 3 databases · Redis, Mongo & MySQL",
+      "5 GB DB storage · migrate existing databases",
       "8 subdomains, 8 tunnels, 2 BYOC servers",
       "2 custom domains, 2 PR previews, 2 cron jobs",
       "1 GB RAM / 0.5 vCPU per project",
@@ -450,6 +451,7 @@ const plans = [
     features: [
       "All Hobby features, plus:",
       "10 projects, 5 databases, 10 services",
+      "10 GB DB storage · migrate existing databases",
       "10 subdomains, 15 tunnels, 5 BYOC servers",
       "5 custom domains, 5 PR previews, 5 cron jobs",
       "1 GB RAM / 1 vCPU (configurable)",
@@ -464,6 +466,7 @@ const plans = [
     features: [
       "All Pro features, plus:",
       "50 subdomains / projects, 20 databases",
+      "50 GB DB storage · migrate existing databases",
       "15 BYOC servers, 25 custom domains",
       "25 scheduled jobs, 25 active PR previews",
       "Up to 8 GB RAM / 4 vCPU per project",

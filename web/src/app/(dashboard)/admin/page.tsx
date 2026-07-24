@@ -90,6 +90,7 @@ interface PlanLimitRow {
   max_preview_deploys: number; max_memory_mb: number; max_cpus: number;
   max_bandwidth_gb: number; max_build_minutes_monthly: number;
   max_build_memory_mb: number;
+  max_db_size_mb: number;
   analytics_retention_days: number; metrics_retention_days: number;
   deploy_log_retention_days: number; backup_retention_days: number;
   allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
@@ -2035,6 +2036,7 @@ export default function AdminPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       {numField("Projects", "max_projects")}
                       {numField("Databases", "max_databases")}
+                      {numField("DB storage (MB)", "max_db_size_mb", "Per-database size cap; -1 = unlimited")}
                       {numField("Services", "max_services")}
                       {numField("BYOC servers", "max_byoc_servers")}
                       {numField("Subdomains", "max_subdomains")}

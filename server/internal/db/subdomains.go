@@ -26,6 +26,7 @@ type PlanLimit struct {
 	MaxBandwidthGB          int     `json:"max_bandwidth_gb"`
 	MaxBuildMinutesMonthly  int     `json:"max_build_minutes_monthly"`
 	MaxBuildMemoryMB        int     `json:"max_build_memory_mb"`
+	MaxDBSizeMB             int     `json:"max_db_size_mb"`
 	AnalyticsRetentionDays  int     `json:"analytics_retention_days"`
 	MetricsRetentionDays    int     `json:"metrics_retention_days"`
 	DeployLogRetentionDays  int     `json:"deploy_log_retention_days"`
@@ -87,6 +88,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		        max_projects, max_custom_domains, max_databases, max_services, max_crons,
 		        max_byoc_servers, max_preview_deploys, max_memory_mb, max_cpus,
 		        max_bandwidth_gb, max_build_minutes_monthly, COALESCE(max_build_memory_mb, 2048),
+		        COALESCE(max_db_size_mb, 1024),
 		        analytics_retention_days, metrics_retention_days, deploy_log_retention_days, backup_retention_days,
 		        allow_previews, allow_release_cmd, allow_health_checks, allow_private_repos,
 		        allow_tcp_tunnels, allow_custom_events, allow_live_logs, allow_telegram,
@@ -98,6 +100,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		&pl.MaxProjects, &pl.MaxCustomDomains, &pl.MaxDatabases, &pl.MaxServices, &pl.MaxCrons,
 		&pl.MaxBYOCServers, &pl.MaxPreviewDeploys, &pl.MaxMemoryMB, &pl.MaxCPUs,
 		&pl.MaxBandwidthGB, &pl.MaxBuildMinutesMonthly, &pl.MaxBuildMemoryMB,
+		&pl.MaxDBSizeMB,
 		&pl.AnalyticsRetentionDays, &pl.MetricsRetentionDays, &pl.DeployLogRetentionDays, &pl.BackupRetentionDays,
 		&pl.AllowPreviews, &pl.AllowReleaseCmd, &pl.AllowHealthChecks, &pl.AllowPrivateRepos,
 		&pl.AllowTCPTunnels, &pl.AllowCustomEvents, &pl.AllowLiveLogs, &pl.AllowTelegram,
@@ -110,7 +113,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 			Plan: "free", MaxSubdomains: 5, MaxTunnels: 5, MaxRate: 100,
 			MaxProjects: 3, MaxCustomDomains: 1, MaxDatabases: 2, MaxBYOCServers: 1,
 			MaxMemoryMB: 256, MaxCPUs: 0.25, MaxBandwidthGB: 50, MaxBuildMinutesMonthly: 60,
-			MaxBuildMemoryMB: 2048,
+			MaxBuildMemoryMB: 2048, MaxDBSizeMB: 1024,
 			AnalyticsRetentionDays: 7, MetricsRetentionDays: 1, DeployLogRetentionDays: 3,
 		}, nil
 	}
@@ -284,7 +287,7 @@ func (d *DB) UpdatePlanLimits(ctx context.Context, pl *PlanLimit) error {
 		  allow_previews = $21, allow_release_cmd = $22, allow_health_checks = $23,
 		  allow_private_repos = $24, allow_tcp_tunnels = $25, allow_custom_events = $26,
 		  allow_live_logs = $27, allow_telegram = $28, allow_advanced_databases = $29,
-		  allow_db_migration = $30
+		  allow_db_migration = $30, max_db_size_mb = $31
 		WHERE plan = $1`,
 		pl.Plan,
 		pl.MaxSubdomains, pl.MaxTunnels, pl.MaxRate,
@@ -298,7 +301,7 @@ func (d *DB) UpdatePlanLimits(ctx context.Context, pl *PlanLimit) error {
 		pl.AllowPreviews, pl.AllowReleaseCmd, pl.AllowHealthChecks,
 		pl.AllowPrivateRepos, pl.AllowTCPTunnels, pl.AllowCustomEvents,
 		pl.AllowLiveLogs, pl.AllowTelegram, pl.AllowAdvancedDatabases,
-		pl.AllowDBMigration,
+		pl.AllowDBMigration, pl.MaxDBSizeMB,
 	)
 	return err
 }

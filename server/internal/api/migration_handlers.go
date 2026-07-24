@@ -59,6 +59,25 @@ func (s *Server) handleCreateMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject up front if the source is bigger than the user's plan storage cap —
+	// otherwise the restore fills the DB and the quota sweeper immediately
+	// revokes writes, which is a worse experience than a clear "too big" error.
+	// Admins are exempt; a failed size probe (0) doesn't block.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		plan := u.Plan
+		if fresh, _ := s.db.GetUserByID(r.Context(), u.ID); fresh != nil && fresh.Plan != "" {
+			plan = fresh.Plan
+		}
+		if limits, _ := s.db.GetPlanLimits(r.Context(), plan); limits != nil && limits.MaxDBSizeMB > 0 {
+			if srcMB, _ := migrate.SourceSizeMB(r.Context(), req.SourceType, req.SourceURL); srcMB > limits.MaxDBSizeMB {
+				writeError(w, http.StatusPaymentRequired, fmt.Sprintf(
+					"Source database is %d MB but your plan allows %d MB of database storage. Upgrade for more, or trim the source first.",
+					srcMB, limits.MaxDBSizeMB))
+				return
+			}
+		}
+	}
+
 	// Create the target (platform-hosted, so it's reachable on localhost by the
 	// migration container running with --network host).
 	var svc *db.Service
@@ -90,7 +109,9 @@ func (s *Server) handleCreateMigration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runMigration(jobID, sourceType, sourceURL, targetURL string, svc *db.Service) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	// Generous ceiling so large imports (up to the 50 GB team cap) can finish;
+	// the job is fully async so a long run never ties up a request.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	defer cancel()
 
 	s.db.SetDBMigrationRunning(ctx, jobID)

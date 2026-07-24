@@ -13,7 +13,9 @@ import (
 	"net"
 	"net/url"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Supported source types.
@@ -70,6 +72,48 @@ func isPublicIP(ip net.IP) bool {
 		return false
 	}
 	return true
+}
+
+// SourceSizeMB returns the on-disk size of the source database in MB, so the
+// caller can reject an import that would blow past the user's plan storage cap.
+// Best-effort: returns (0, nil) if it can't measure (e.g. permissions), so a
+// probe failure never blocks a migration outright.
+func SourceSizeMB(ctx context.Context, sourceType, sourceURL string) (int, error) {
+	var image, script string
+	env := map[string]string{"SRC": sourceURL}
+	switch sourceType {
+	case Postgres:
+		image = "postgres:17-alpine"
+		script = `psql -tAX -d "$SRC" -c "SELECT pg_database_size(current_database())/1024/1024"`
+	case MySQL:
+		p, err := parseMySQL(sourceURL)
+		if err != nil {
+			return 0, err
+		}
+		image = "mysql:8"
+		env = map[string]string{"SHOST": p.host, "SPORT": p.port, "SUSER": p.user, "SPW": p.pass, "SDB": p.db}
+		script = `MYSQL_PWD="$SPW" mysql -N -h"$SHOST" -P"$SPORT" -u"$SUSER" -e "SELECT COALESCE(SUM(data_length+index_length),0) DIV (1024*1024) FROM information_schema.tables WHERE table_schema='$SDB'"`
+	case MongoDB:
+		image = "mongo:7"
+		script = `mongosh "$SRC" --quiet --eval "Math.round(db.stats().dataSize/1048576)"`
+	default:
+		return 0, fmt.Errorf("unsupported source type")
+	}
+
+	args := []string{"run", "--rm", "--network", "host"}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, image, "sh", "-c", script)
+
+	pctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(pctx, "docker", args...).Output()
+	if err != nil {
+		return 0, nil // best-effort — don't block on a failed probe
+	}
+	mb, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return mb, nil
 }
 
 // Run dumps sourceURL and restores it into targetURL. The target is always a
