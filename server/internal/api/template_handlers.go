@@ -236,8 +236,23 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 	// every template still showed 0 deploys.
 	go s.db.IncrementTemplateDeployCount(context.Background(), t.ID)
 
+	// Kick off the actual deploy immediately. Deploying from a template used to
+	// only *create* the project (leaving it "never deployed"), forcing the user
+	// to click Deploy a second time in the Projects list. Trigger it here so a
+	// single click from the template gallery / new-project flow deploys straight
+	// through — same async path the manual Deploy button uses.
+	if s.deployer != nil {
+		toDeploy := *project
+		go func() {
+			if err := s.deployer.Deploy(context.Background(), &toDeploy); err != nil {
+				s.log.Error().Err(err).Str("project", toDeploy.ID).Msg("template deploy failed")
+			}
+		}()
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"project":     project,
 		"post_deploy": t.PostDeploy,
+		"deploying":   s.deployer != nil,
 	})
 }
