@@ -120,6 +120,8 @@ func IsFeatureAllowed(ctx context.Context, database *db.DB, user *auth.Authentic
 		return limits.AllowTelegram
 	case "advanced_databases":
 		return limits.AllowAdvancedDatabases
+	case "db_migration":
+		return limits.AllowDBMigration
 	}
 	return false
 }

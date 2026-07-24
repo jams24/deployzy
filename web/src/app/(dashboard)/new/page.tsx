@@ -111,7 +111,14 @@ export default function NewResourcePage() {
   const [selectedServer, setSelectedServer] = useState("");
 
   // Plan limits (used to show real resource caps in the advanced form)
-  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean } | null>(null);
+  const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean; allow_db_migration?: boolean } | null>(null);
+  // Migration ("bring your own database") sub-form state.
+  const [showMigrate, setShowMigrate] = useState(false);
+  const [migType, setMigType] = useState("postgres");
+  const [migUrl, setMigUrl] = useState("");
+  const [migName, setMigName] = useState("");
+  const [migrating, setMigrating] = useState(false);
+  const [migJob, setMigJob] = useState<{ id: string; status: string; error?: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
   const headers = () => {
@@ -133,7 +140,7 @@ export default function NewResourcePage() {
     // Load plan limits so the advanced form can show real caps
     fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases }); setIsAdmin(!!data.is_admin); } })
+      .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases, allow_db_migration: data.limits.allow_db_migration }); setIsAdmin(!!data.is_admin); } })
       .catch(() => {});
   }, []);
 
@@ -257,6 +264,44 @@ function startDocker() {
       }
     } catch {}
     setCreating(false);
+  }
+
+  async function startMigration() {
+    if (!migUrl.trim()) return;
+    setMigrating(true);
+    setMigJob(null);
+    try {
+      const res = await fetch(`${API}/api/v1/migrations`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ source_type: migType, source_url: migUrl.trim(), target_name: migName.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data.error || "Failed to start migration";
+        if (!showPlanLimit(msg)) alert(msg);
+        setMigrating(false);
+        return;
+      }
+      // Poll the job until it finishes.
+      const jobId = data.migration.id;
+      setMigJob({ id: jobId, status: "running" });
+      const poll = setInterval(async () => {
+        try {
+          const jr = await fetch(`${API}/api/v1/migrations/${jobId}`, { headers: headers() });
+          if (jr.ok) {
+            const job = await jr.json();
+            setMigJob(job);
+            if (job.status === "success" || job.status === "failed") {
+              clearInterval(poll);
+              setMigrating(false);
+              if (job.status === "success") setTimeout(() => router.push("/services"), 1500);
+            }
+          }
+        } catch {}
+      }, 3000);
+    } catch {
+      setMigrating(false);
+    }
   }
 
   async function deployTemplate() {
@@ -626,6 +671,51 @@ function startDocker() {
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Create Database
           </Button>
+
+          {/* Migrate an existing database (premium) */}
+          <div className="pt-4 mt-2 border-t border-border/60">
+            {!showMigrate ? (
+              <button onClick={() => setShowMigrate(true)}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                <ArrowLeft className="h-3 w-3 rotate-180" /> Already have a database? Migrate it to Deployzy
+              </button>
+            ) : (isAdmin || planLimits?.allow_db_migration) ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Migrate an existing database</p>
+                  <p className="text-[11px] text-muted-foreground">We&apos;ll create a fresh managed database and copy your data into it. The source must be publicly reachable.</p>
+                </div>
+                <select value={migType} onChange={(e) => setMigType(e.target.value)}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="postgres">PostgreSQL</option>
+                  <option value="mysql">MySQL</option>
+                  <option value="mongodb">MongoDB</option>
+                </select>
+                <Input placeholder="Source connection string (e.g. postgres://user:pass@host:5432/db)"
+                  value={migUrl} onChange={(e) => setMigUrl(e.target.value)} />
+                <Input placeholder="New database name (optional)" value={migName} onChange={(e) => setMigName(e.target.value)} />
+                {migJob && (
+                  <div className={`rounded-md border px-3 py-2 text-xs ${
+                    migJob.status === "success" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : migJob.status === "failed" ? "border-red-500/40 bg-red-500/10 text-red-500"
+                    : "border-border/60 bg-muted/30 text-muted-foreground"}`}>
+                    {migJob.status === "running" && <span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Copying your data… this can take a few minutes. You can leave this page.</span>}
+                    {migJob.status === "success" && "Migration complete — redirecting to your databases…"}
+                    {migJob.status === "failed" && `Migration failed: ${migJob.error || "unknown error"}`}
+                  </div>
+                )}
+                <Button className="w-full gap-2" onClick={startMigration} disabled={migrating || !migUrl.trim()}>
+                  {migrating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                  Start migration
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-3 text-xs space-y-1">
+                <p className="font-medium">Migrating an existing database is a paid feature.</p>
+                <a href="/billing" className="text-primary hover:underline">Upgrade to access →</a>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

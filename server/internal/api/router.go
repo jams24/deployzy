@@ -261,6 +261,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/services/{serviceId}", s.handleGetService)
 			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
 
+			// Database migration (bring your own DB) — premium-gated in the handler
+			r.With(deployScope).Post("/migrations", s.handleCreateMigration)
+			r.Get("/migrations", s.handleListMigrations)
+			r.Get("/migrations/{id}", s.handleGetMigration)
+
 			// Templates — star and deploy require auth
 			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
 			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)

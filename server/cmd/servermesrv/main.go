@@ -369,6 +369,12 @@ func main() {
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)
 			go dbQuotaSweeper.Start(context.Background())
 
+			// Fail any DB migration jobs left 'running' by a restart so they
+			// don't hang forever (the dump process is gone with the old binary).
+			if err := database.FailStuckDBMigrations(context.Background()); err != nil {
+				log.Warn().Err(err).Msg("failed to clear stuck db migrations")
+			}
+
 			// SEO/LLM ingester — parses the Caddy access log for deployzy.com
 			// and records which crawlers (GPTBot/Googlebot/…) fetch us and which
 			// sources (ChatGPT/Google/…) send us human traffic.
