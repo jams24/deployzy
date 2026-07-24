@@ -116,14 +116,17 @@ func buildJob(sourceType, sourceURL, targetURL string) (script, image string, en
 		// pg_dump 17 can read servers up to 17 (Railway/Supabase/Neon default to
 		// newer majors); a 16 client refuses a 17 server. --no-owner/--no-acl so
 		// the dump restores cleanly into the target's differently-named role.
-		// The target is our platform Postgres 16; a pg_dump from a newer server
-		// (17) emits `SET transaction_timeout` in the preamble, which 16 rejects
-		// and — with ON_ERROR_STOP — aborts the whole restore. Strip that single
-		// newer-GUC line; everything else restores cleanly.
+		// We restore as the target's limited service role into our platform PG16.
+		// Two lines a newer/other-provider dump emits would abort the restore
+		// under ON_ERROR_STOP and must be stripped:
+		//   - `SET transaction_timeout` — a PG17 GUC our PG16 doesn't know.
+		//   - `COMMENT ON SCHEMA public` — requires ownership of the public
+		//     schema, which the service role may not have.
+		// Neither carries data, so dropping them is safe; everything else loads.
 		return `set -e
 pg_dump --no-owner --no-acl -d "$SRC" -f /tmp/dump.sql
 test -s /tmp/dump.sql
-sed -i '/^SET transaction_timeout/d' /tmp/dump.sql
+sed -i -e '/^SET transaction_timeout/d' -e '/^COMMENT ON SCHEMA public/d' /tmp/dump.sql
 psql -v ON_ERROR_STOP=1 -d "$DST" -f /tmp/dump.sql`,
 			"postgres:17-alpine",
 			map[string]string{"SRC": sourceURL, "DST": targetURL},
