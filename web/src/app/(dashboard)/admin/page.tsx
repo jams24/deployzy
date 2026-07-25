@@ -19,7 +19,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn";
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -261,6 +261,13 @@ export default function AdminPage() {
   const [bcResult, setBcResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
   const [bcError, setBcError] = useState("");
 
+  // ── VPN panel (TuTBot reseller) config ────────────────────────────────────
+  interface VpnCfg { base_url: string; api_key_set: boolean; api_key_preview: string; shared_server_id: string; free_days: string; free_max_logins: string; }
+  const [vpnCfg, setVpnCfg] = useState<VpnCfg | null>(null);
+  const [vpnForm, setVpnForm] = useState({ base_url: "", api_key: "", shared_server_id: "", free_days: "", free_max_logins: "" });
+  const [vpnSaving, setVpnSaving] = useState(false);
+  const [vpnTest, setVpnTest] = useState<{ ok: boolean; msg: string } | null>(null);
+
   const headers = useCallback(() => {
     const token = localStorage.getItem("sm_token");
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -426,6 +433,45 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "seo" && !seo && !seoLoading) loadSEO();
   }, [tab, seo, seoLoading, loadSEO]);
+
+  // ── VPN panel config ───────────────────────────────────────────────────────
+  const loadVpn = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/vpn/config`, { headers: headers() });
+      if (res.ok) {
+        const c: VpnCfg = await res.json();
+        setVpnCfg(c);
+        setVpnForm({ base_url: c.base_url || "", api_key: "", shared_server_id: c.shared_server_id || "", free_days: c.free_days || "", free_max_logins: c.free_max_logins || "" });
+      }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "vpn" && !vpnCfg) loadVpn();
+  }, [tab, vpnCfg, loadVpn]);
+
+  const saveVpn = async () => {
+    setVpnSaving(true); setVpnTest(null);
+    try {
+      const body: Record<string, string> = {
+        base_url: vpnForm.base_url, shared_server_id: vpnForm.shared_server_id,
+        free_days: vpnForm.free_days, free_max_logins: vpnForm.free_max_logins,
+      };
+      if (vpnForm.api_key.trim()) body.api_key = vpnForm.api_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/vpn/config`, { method: "PUT", headers: headers(), body: JSON.stringify(body) });
+      if (res.ok) { setVpnCfg(null); await loadVpn(); }
+    } catch {}
+    setVpnSaving(false);
+  };
+
+  const testVpn = async () => {
+    setVpnTest(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/vpn/test`, { method: "POST", headers: headers() });
+      const d = await res.json();
+      setVpnTest(d.ok ? { ok: true, msg: `Connected — upstream user #${d.upstream_user_id}` } : { ok: false, msg: d.error || "Connection failed" });
+    } catch { setVpnTest({ ok: false, msg: "Network error" }); }
+  };
 
   // Every admin mutation goes through this so a failing request surfaces
   // instead of looking like a dead button (the old code ignored res.ok).
@@ -792,6 +838,7 @@ export default function AdminPage() {
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
     { id: "broadcast", label: "Broadcast" },
+    { id: "vpn", label: "VPN Panel" },
   ];
 
   return (
@@ -2392,6 +2439,74 @@ export default function AdminPage() {
               }
             </Button>
             <p className="text-xs text-muted-foreground">This sends immediately to all selected recipients.</p>
+          </div>
+        </div>
+      )}
+
+      {tab === "vpn" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">VPN Panel — TunnelTweak API</h3>
+            <p className="text-xs text-muted-foreground">
+              Deployzy resells the TunnelTweak (TuTBot) installer as a white-label VPN panel. Paste the reseller
+              API key here — it authenticates every VPN install and SSH/V2Ray account created on the site.
+            </p>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border/60 p-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">API Base URL</label>
+              <input value={vpnForm.base_url} onChange={e => setVpnForm(f => ({ ...f, base_url: e.target.value }))}
+                placeholder="https://tunneltweak.deployzy.com"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Reseller API Key {vpnCfg?.api_key_set && <span className="text-emerald-500">· currently set ({vpnCfg.api_key_preview})</span>}
+              </label>
+              <input type="password" value={vpnForm.api_key} onChange={e => setVpnForm(f => ({ ...f, api_key: e.target.value }))}
+                placeholder={vpnCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : "ttk_…"}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Shared server ID</label>
+                <input value={vpnForm.shared_server_id} onChange={e => setVpnForm(f => ({ ...f, shared_server_id: e.target.value }))}
+                  placeholder="e.g. 12" title="TuTBot server_id used for the free public account pool"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Free acct days</label>
+                <input value={vpnForm.free_days} onChange={e => setVpnForm(f => ({ ...f, free_days: e.target.value }))}
+                  placeholder="7"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Free max logins</label>
+                <input value={vpnForm.free_max_logins} onChange={e => setVpnForm(f => ({ ...f, free_max_logins: e.target.value }))}
+                  placeholder="1"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+            </div>
+
+            {vpnTest && (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${vpnTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500" : "border-red-500/40 bg-red-500/10 text-red-400"}`}>
+                {vpnTest.msg}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={saveVpn} disabled={vpnSaving}>
+                {vpnSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={testVpn} disabled={!vpnCfg?.api_key_set && !vpnForm.api_key}>
+                Test connection
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Get the key from the TuTBot Telegram bot with <code className="font-mono">/apikey</code>, or from its admin panel.
+              Save first, then Test — the test uses the stored key.
+            </p>
           </div>
         </div>
       )}
