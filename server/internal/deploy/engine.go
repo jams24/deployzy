@@ -130,6 +130,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
+	// Overlapping deploys (e.g. two GitHub pushes seconds apart) each carry their
+	// own project snapshot and serialize on the deploy lock above. Re-read the
+	// CURRENT serving container/port here, under the lock, so the blue-green
+	// preservation below points at the container that is actually live right now
+	// — not a stale port that an earlier deploy in the chain has already retired
+	// (which left the proxy routing to a dead port and 502'd the site mid-build).
+	if fresh, ferr := e.db.GetProject(ctx, project.ID); ferr == nil && fresh != nil {
+		project.ContainerID = fresh.ContainerID
+		project.ContainerPort = fresh.ContainerPort
+	}
+
 	// Always mark "building" so the UI shows the correct state during a redeploy.
 	// The proxy allows both 'building' and 'running', and we preserve the old
 	// container_port, so traffic keeps flowing to the old container throughout
