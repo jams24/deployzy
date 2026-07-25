@@ -268,6 +268,11 @@ export default function AdminPage() {
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnTest, setVpnTest] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // ── Platform build concurrency ────────────────────────────────────────────
+  const [buildConc, setBuildConc] = useState<number | null>(null);
+  const [buildConcInput, setBuildConcInput] = useState("1");
+  const [buildConcSaving, setBuildConcSaving] = useState(false);
+
   const headers = useCallback(() => {
     const token = localStorage.getItem("sm_token");
     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -508,6 +513,26 @@ export default function AdminPage() {
   }, [headers]);
 
   useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
+
+  const loadBuildConc = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/build-config`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setBuildConc(d.max_concurrent_builds); setBuildConcInput(String(d.max_concurrent_builds)); }
+    } catch {}
+  }, [headers]);
+  useEffect(() => { if (tab === "plans" && buildConc === null) loadBuildConc(); }, [tab, buildConc, loadBuildConc]);
+
+  const saveBuildConc = async () => {
+    setBuildConcSaving(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/build-config`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ max_concurrent_builds: parseInt(buildConcInput) || 1 }),
+      });
+      if (res.ok) { const d = await res.json(); setBuildConc(d.max_concurrent_builds); setBuildConcInput(String(d.max_concurrent_builds)); }
+    } catch {}
+    setBuildConcSaving(false);
+  };
 
   const savePlan = async (plan: string) => {
     const draft = planDraft[plan];
@@ -2010,6 +2035,22 @@ export default function AdminPage() {
             Edit what each plan allows. Changes apply on the next check — no restart or
             redeploy needed. Use <span className="font-mono text-foreground">-1</span> for unlimited.
           </p>
+
+          <div className="rounded-xl border border-border/60 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Concurrent builds (platform-wide)</p>
+              <p className="text-xs text-muted-foreground">How many Docker builds run at once across all users. Keep at <span className="font-mono">1</span> on a single-core VPS so builds don&apos;t starve live apps. Raise it after moving to a bigger server.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <input type="number" min={1} max={16} value={buildConcInput}
+                onChange={e => setBuildConcInput(e.target.value)}
+                className="w-16 h-9 rounded-lg border border-input bg-background px-3 text-sm text-center outline-none focus:border-foreground/30" />
+              <button onClick={saveBuildConc} disabled={buildConcSaving || buildConcInput === String(buildConc)}
+                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+                {buildConcSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
 
           {plans.length === 0 && (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">

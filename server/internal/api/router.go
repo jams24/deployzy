@@ -309,6 +309,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/plans", s.handleAdminListPlans)
 				r.Put("/plans/{plan}", s.handleAdminUpdatePlan)
 
+				// Platform-wide build concurrency (protects the host)
+				r.Get("/build-config", s.handleAdminGetBuildConfig)
+				r.Put("/build-config", s.handleAdminSetBuildConfig)
+
 				// VPN panel (TuTBot reseller) configuration
 				r.Get("/vpn/config", s.handleAdminGetVPNConfig)
 				r.Put("/vpn/config", s.handleAdminSetVPNConfig)

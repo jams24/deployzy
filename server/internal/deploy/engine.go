@@ -27,8 +27,9 @@ type Engine struct {
 	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
 	GitHub      *GitHubApp
 	emailSvc    notify.Mailer
-	log         zerolog.Logger
-	deployLocks sync.Map // per-project mutex to prevent concurrent deploys
+	log          zerolog.Logger
+	deployLocks  sync.Map // per-project mutex to prevent concurrent deploys
+	buildLimiter *buildLimiter // caps platform-wide concurrent docker builds
 }
 
 // NewEngine creates a new deploy engine.
@@ -37,12 +38,13 @@ func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, e
 		serviceHost = domain
 	}
 	return &Engine{
-		db:          database,
-		Domain:      domain,
-		ServiceHost: serviceHost,
-		GitHub:      github,
-		emailSvc:    emailSvc,
-		log:         log.With().Str("component", "deploy").Logger(),
+		db:           database,
+		Domain:       domain,
+		ServiceHost:  serviceHost,
+		GitHub:       github,
+		emailSvc:     emailSvc,
+		log:          log.With().Str("component", "deploy").Logger(),
+		buildLimiter: newBuildLimiter(settingBuildLimit(database)),
 	}
 }
 
@@ -489,6 +491,19 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// silently ignores --memory, letting an unbounded build exhaust the host
 	// and trigger the OOM killer against co-located containers (e.g. the
 	// previously-running version of this very project).
+	// Global build-concurrency gate: only N builds run platform-wide at once
+	// (default 1) so simultaneous from-scratch builds can't wear out the host.
+	// Queues here — the old container keeps serving while this deploy waits.
+	if e.buildLimiter != nil {
+		e.logMsg(ctx, project.ID, "Queued for a build slot...", "build")
+		if !e.buildLimiter.Acquire(buildCtx2) {
+			cancelBuild()
+			restoreOldState()
+			return fmt.Errorf("build cancelled while queued")
+		}
+		defer e.buildLimiter.Release()
+	}
+
 	cpuFlags := buildCPUFlags(hostCPUs(ctx, runner))
 	if cpuFlags != "" {
 		e.logMsg(ctx, project.ID, "Throttling build CPU so the live version stays responsive during the rebuild.", "build")
