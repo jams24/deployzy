@@ -478,8 +478,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// silently ignores --memory, letting an unbounded build exhaust the host
 	// and trigger the OOM killer against co-located containers (e.g. the
 	// previously-running version of this very project).
+	cpuFlags := buildCPUFlags(hostCPUs(ctx, runner))
+	if cpuFlags != "" {
+		e.logMsg(ctx, project.ID, "Throttling build CPU so the live version stays responsive during the rebuild.", "build")
+	}
 	buildShellCmd := fmt.Sprintf(
-		"DOCKER_BUILDKIT=0 docker build --no-cache --memory=%dm -f %s -t %s %s",
+		"DOCKER_BUILDKIT=0 docker build --no-cache %s--memory=%dm -f %s -t %s %s",
+		cpuFlags,
 		buildMemMB,
 		shellQuote(buildCtx+"/"+effectiveDockerfile),
 		shellQuote(imageName),
@@ -1263,6 +1268,33 @@ func availableMemoryMB(ctx context.Context, runner *Runner) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
 	return n
+}
+
+// hostCPUs returns the number of CPU cores on the build host (0 if unknown).
+func hostCPUs(ctx context.Context, runner *Runner) int {
+	out, err := runner.RunShell(ctx, "nproc")
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
+}
+
+// buildCPUFlags returns docker-build CPU-limit flags that leave headroom so a
+// from-scratch build can't pin the host and starve the still-running old
+// container + proxy (which would 502 the live site during a redeploy). On a
+// multi-core host it leaves one full core free; on a 1-core host it shares the
+// core (build ~60%, serving ~40%). --cpu-shares further deprioritises the build
+// under contention. Empty when the core count is unknown.
+func buildCPUFlags(cores int) string {
+	if cores <= 0 {
+		return ""
+	}
+	quota := (cores - 1) * 100000 // leave one whole core for serving
+	if cores <= 1 {
+		quota = 60000 // single-core host: 60% to the build, 40% stays for serving
+	}
+	return fmt.Sprintf("--cpu-period=100000 --cpu-quota=%d --cpu-shares=512 ", quota)
 }
 
 // planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or
