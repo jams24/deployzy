@@ -262,9 +262,9 @@ export default function AdminPage() {
   const [bcError, setBcError] = useState("");
 
   // ── VPN panel (TuTBot reseller) config ────────────────────────────────────
-  interface VpnCfg { base_url: string; api_key_set: boolean; api_key_preview: string; shared_server_id: string; free_days: string; free_max_logins: string; }
+  interface VpnCfg { base_url: string; api_key_set: boolean; api_key_preview: string; master_key_set: boolean; master_key_preview: string; shared_server_id: string; free_days: string; free_max_logins: string; }
   const [vpnCfg, setVpnCfg] = useState<VpnCfg | null>(null);
-  const [vpnForm, setVpnForm] = useState({ base_url: "", api_key: "", shared_server_id: "", free_days: "", free_max_logins: "" });
+  const [vpnForm, setVpnForm] = useState({ base_url: "", api_key: "", master_key: "", shared_server_id: "", free_days: "", free_max_logins: "" });
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnTest, setVpnTest] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -441,7 +441,7 @@ export default function AdminPage() {
       if (res.ok) {
         const c: VpnCfg = await res.json();
         setVpnCfg(c);
-        setVpnForm({ base_url: c.base_url || "", api_key: "", shared_server_id: c.shared_server_id || "", free_days: c.free_days || "", free_max_logins: c.free_max_logins || "" });
+        setVpnForm({ base_url: c.base_url || "", api_key: "", master_key: "", shared_server_id: c.shared_server_id || "", free_days: c.free_days || "", free_max_logins: c.free_max_logins || "" });
       }
     } catch {}
   }, [headers]);
@@ -458,6 +458,7 @@ export default function AdminPage() {
         free_days: vpnForm.free_days, free_max_logins: vpnForm.free_max_logins,
       };
       if (vpnForm.api_key.trim()) body.api_key = vpnForm.api_key.trim();
+      if (vpnForm.master_key.trim()) body.master_key = vpnForm.master_key.trim();
       const res = await fetch(`${API}/api/v1/admin/vpn/config`, { method: "PUT", headers: headers(), body: JSON.stringify(body) });
       if (res.ok) { setVpnCfg(null); await loadVpn(); }
     } catch {}
@@ -2467,6 +2468,15 @@ export default function AdminPage() {
               <input type="password" value={vpnForm.api_key} onChange={e => setVpnForm(f => ({ ...f, api_key: e.target.value }))}
                 placeholder={vpnCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : "ttk_…"}
                 className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Reseller Master Key {vpnCfg?.master_key_set && <span className="text-emerald-500">· currently set ({vpnCfg.master_key_preview})</span>}
+              </label>
+              <input type="password" value={vpnForm.master_key} onChange={e => setVpnForm(f => ({ ...f, master_key: e.target.value }))}
+                placeholder={vpnCfg?.master_key_set ? "•••••••• (leave blank to keep current)" : "dzy_master_…"}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+              <p className="text-[11px] text-muted-foreground">Used to auto-mint a fresh TunnelTweak key for each deployed VPN Panel template. This is the <code className="font-mono">RESELLER_MASTER_KEY</code> set on the TunnelTweak bot.</p>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">

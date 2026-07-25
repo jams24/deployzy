@@ -12,10 +12,29 @@ import (
 const (
 	settingVPNBaseURL        = "vpn_base_url"
 	settingVPNAPIKey         = "vpn_api_key"
+	settingVPNMasterKey      = "vpn_master_key"       // reseller master key — mints per-panel keys
 	settingVPNSharedServerID = "vpn_shared_server_id" // TuTBot server_id for the free public pool
 	settingVPNFreeDays       = "vpn_free_days"        // account lifetime for free users
 	settingVPNFreeMaxLogins  = "vpn_free_max_logins"  // simultaneous logins for free accounts
 )
+
+// mintPanelKey mints a fresh per-panel TunnelTweak key using the stored base URL
+// + master key. Returns ("", nil) when the integration isn't configured so the
+// deploy can fall back to a user-supplied key instead of failing.
+func (s *Server) mintPanelKey(ctx context.Context, label string) (string, error) {
+	cfg, _ := s.db.GetSettings(ctx, settingVPNBaseURL, settingVPNMasterKey)
+	base, master := cfg[settingVPNBaseURL], cfg[settingVPNMasterKey]
+	if base == "" || master == "" {
+		return "", nil
+	}
+	return vpn.New(base, "").MintKey(ctx, master, label)
+}
+
+// vpnBaseURL returns the configured TunnelTweak base URL (may be "").
+func (s *Server) vpnBaseURL(ctx context.Context) string {
+	v, _ := s.db.GetSetting(ctx, settingVPNBaseURL)
+	return v
+}
 
 // vpnClient builds a TuTBot client from stored settings. Returns a client whose
 // Configured() is false when the admin hasn't set it up yet.
@@ -27,28 +46,30 @@ func (s *Server) vpnClient(ctx context.Context) *vpn.Client {
 // GET /api/v1/admin/vpn/config — never echoes the raw key back.
 func (s *Server) handleAdminGetVPNConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.db.GetSettings(r.Context(),
-		settingVPNBaseURL, settingVPNAPIKey, settingVPNSharedServerID,
+		settingVPNBaseURL, settingVPNAPIKey, settingVPNMasterKey, settingVPNSharedServerID,
 		settingVPNFreeDays, settingVPNFreeMaxLogins)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load settings")
 		return
 	}
-	key := cfg[settingVPNAPIKey]
-	masked := ""
-	if key != "" {
-		if len(key) > 12 {
-			masked = key[:12] + "…"
-		} else {
-			masked = "set"
+	mask := func(key string) string {
+		if key == "" {
+			return ""
 		}
+		if len(key) > 12 {
+			return key[:12] + "…"
+		}
+		return "set"
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"base_url":         cfg[settingVPNBaseURL],
-		"api_key_set":      key != "",
-		"api_key_preview":  masked,
-		"shared_server_id": cfg[settingVPNSharedServerID],
-		"free_days":        cfg[settingVPNFreeDays],
-		"free_max_logins":  cfg[settingVPNFreeMaxLogins],
+		"base_url":            cfg[settingVPNBaseURL],
+		"api_key_set":         cfg[settingVPNAPIKey] != "",
+		"api_key_preview":     mask(cfg[settingVPNAPIKey]),
+		"master_key_set":      cfg[settingVPNMasterKey] != "",
+		"master_key_preview":  mask(cfg[settingVPNMasterKey]),
+		"shared_server_id":    cfg[settingVPNSharedServerID],
+		"free_days":           cfg[settingVPNFreeDays],
+		"free_max_logins":     cfg[settingVPNFreeMaxLogins],
 	})
 }
 
@@ -59,6 +80,7 @@ func (s *Server) handleAdminSetVPNConfig(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		BaseURL        *string `json:"base_url"`
 		APIKey         *string `json:"api_key"`
+		MasterKey      *string `json:"master_key"`
 		SharedServerID *string `json:"shared_server_id"`
 		FreeDays       *string `json:"free_days"`
 		FreeMaxLogins  *string `json:"free_max_logins"`
@@ -76,14 +98,20 @@ func (s *Server) handleAdminSetVPNConfig(w http.ResponseWriter, r *http.Request)
 	if body.BaseURL != nil {
 		set(settingVPNBaseURL, body.BaseURL)
 	}
-	if body.APIKey != nil {
-		k := strings.TrimSpace(*body.APIKey)
+	// Secrets: empty value keeps the current one; "__clear__" wipes it.
+	setSecret := func(key string, v *string) {
+		if v == nil {
+			return
+		}
+		k := strings.TrimSpace(*v)
 		if k == "__clear__" {
-			s.db.SetSetting(ctx, settingVPNAPIKey, "")
+			s.db.SetSetting(ctx, key, "")
 		} else if k != "" {
-			s.db.SetSetting(ctx, settingVPNAPIKey, k)
+			s.db.SetSetting(ctx, key, k)
 		}
 	}
+	setSecret(settingVPNAPIKey, body.APIKey)
+	setSecret(settingVPNMasterKey, body.MasterKey)
 	set(settingVPNSharedServerID, body.SharedServerID)
 	set(settingVPNFreeDays, body.FreeDays)
 	set(settingVPNFreeMaxLogins, body.FreeMaxLogins)

@@ -109,6 +109,42 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return nil
 }
 
+// MintKey creates a fresh isolated sub-account + API key on TunnelTweak using
+// the reseller master key (a different secret from the per-panel APIKey). Used
+// by the deploy hook to give each deployed VPN panel its own key. Returns the
+// new plaintext ttk_ key.
+func (c *Client) MintKey(ctx context.Context, masterKey, label string) (string, error) {
+	if c.BaseURL == "" || masterKey == "" {
+		return "", &APIError{Status: 0, Code: "not_configured", Message: "VPN base URL or master key not set"}
+	}
+	body, _ := json.Marshal(map[string]string{"label": label})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/v1/admin/keys", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Master-Key", masterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", &APIError{Status: 502, Code: "upstream_unreachable", Message: err.Error()}
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return "", &APIError{Status: resp.StatusCode, Code: "mint_failed", Message: strings.TrimSpace(string(raw))}
+	}
+	var out struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", err
+	}
+	if out.APIKey == "" {
+		return "", &APIError{Status: 500, Code: "mint_empty", Message: "mint returned no key"}
+	}
+	return out.APIKey, nil
+}
+
 // ── Auth self-check ──────────────────────────────────────────────────────
 
 // Ping hits GET /api/v1 to confirm the key is valid. Returns the caller's

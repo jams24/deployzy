@@ -109,6 +109,17 @@ func (s *Server) handleToggleTemplateStar(w http.ResponseWriter, r *http.Request
 
 var slugifyRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+// templateWantsEnv reports whether a template declares an env var with the given
+// key — the signal that a template needs a Deployzy-side injected value.
+func templateWantsEnv(vars []db.EnvVarSchema, key string) bool {
+	for _, v := range vars {
+		if v.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func templateSubdomain(name string) string {
 	s := strings.ToLower(name)
 	s = strings.ReplaceAll(s, " ", "-")
@@ -199,6 +210,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 			merged[k] = v
 		}
 	}
+
+	// VPN-panel hook: if the template declares a TUNNELTWEAK_API_KEY env var and
+	// the user didn't bring their own, mint a fresh isolated key for this panel
+	// and inject it (plus the base URL) so each deployment gets its own account.
+	if templateWantsEnv(t.EnvVars, "TUNNELTWEAK_API_KEY") && merged["TUNNELTWEAK_API_KEY"] == "" {
+		label := "deployzy-" + subdomain
+		if key, err := s.mintPanelKey(r.Context(), label); err != nil {
+			s.log.Error().Err(err).Str("project", project.ID).Msg("vpn panel key mint failed")
+		} else if key != "" {
+			merged["TUNNELTWEAK_API_KEY"] = key
+			if base := s.vpnBaseURL(r.Context()); base != "" && merged["TUNNELTWEAK_BASE_URL"] == "" {
+				merged["TUNNELTWEAK_BASE_URL"] = base
+			}
+		}
+	}
+
 	if len(merged) > 0 {
 		s.db.UpdateProjectEnvVars(r.Context(), project.ID, merged)
 		project.EnvVars = merged
