@@ -111,7 +111,7 @@ func (d *DB) GetPlanLimits(ctx context.Context, plan string) (*PlanLimit, error)
 		// gets *some* access (and we never panic on a missing row).
 		return &PlanLimit{
 			Plan: "free", MaxSubdomains: 5, MaxTunnels: 5, MaxRate: 100,
-			MaxProjects: 3, MaxCustomDomains: 1, MaxDatabases: 2, MaxBYOCServers: 1,
+			MaxProjects: 3, MaxCustomDomains: 1, MaxDatabases: 2, MaxBYOCServers: 0,
 			MaxMemoryMB: 256, MaxCPUs: 0.25, MaxBandwidthGB: 50, MaxBuildMinutesMonthly: 60,
 			MaxBuildMemoryMB: 2048, MaxDBSizeMB: 1024,
 			AnalyticsRetentionDays: 7, MetricsRetentionDays: 1, DeployLogRetentionDays: 3,
