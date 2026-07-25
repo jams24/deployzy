@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -243,6 +244,20 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 			s.db.UpdateProjectConfig(r.Context(), project.ID, *t.SourceRepo, "main", "", "", merged)
 			project.RepoURL = *t.SourceRepo
 			project.Branch = "main"
+			// Wire GitHub auto-deploy (CI/CD) for repo-backed templates, mirroring
+			// the normal import flow: link github_repo + register a push webhook.
+			// Without this, template-deployed projects never receive push events
+			// and stay pinned to the deploy-time commit (no auto-updates).
+			if repoFull := extractRepoFullName(*t.SourceRepo); repoFull != "" {
+				s.db.UpdateProjectGitHub(r.Context(), project.ID, repoFull, "main", true)
+				project.GitHubRepo = repoFull
+				if s.deployer != nil && s.deployer.GitHub != nil {
+					if token, ok := s.bestUserGitHubToken(r.Context(), u.ID); ok {
+						webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
+						s.deployer.GitHub.EnsureWebhook(token, repoFull, webhookURL)
+					}
+				}
+			}
 		}
 	}
 
