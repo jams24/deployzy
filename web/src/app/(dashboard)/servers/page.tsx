@@ -27,6 +27,8 @@ export default function ServersPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ label: "", host: "", port: "22", ssh_user: "root", ssh_password: "" });
+  // Whether the user's plan allows bring-your-own servers. null = still loading.
+  const [byocAllowed, setByocAllowed] = useState<boolean | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -109,6 +111,24 @@ export default function ServersPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Determine if the plan allows BYOC (free plan has max_byoc_servers = 0). A
+  // plan not present in the public list (e.g. admin) defaults to allowed.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await fetch(`${API}/api/v1/users/me`, { headers: headers() }).then((r) => r.json());
+        const plans = await fetch(`${API}/api/v1/plans`).then((r) => r.json());
+        const pl = Array.isArray(plans) ? plans.find((p: { plan: string; max_byoc_servers: number }) => p.plan === me.plan) : null;
+        setByocAllowed(!pl || pl.max_byoc_servers !== 0);
+      } catch {
+        setByocAllowed(true);
+      }
+    })();
+  }, []);
+
+  const byocUpsell = () =>
+    showPlanLimit("plan limit reached: your own server (BYOC) is not available on the free plan — upgrade to unlock it");
+
   return (
     <div>
       {notice && (
@@ -122,12 +142,26 @@ export default function ServersPage() {
           <h1 className="text-xl sm:text-2xl font-bold">My Servers</h1>
           <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Bring your own compute — deploy projects to your own servers via SSH.</p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1 h-8 shrink-0 px-2.5 sm:px-3">
+        <Button size="sm" onClick={() => (byocAllowed === false ? byocUpsell() : setShowAdd(true))} className="gap-1 h-8 shrink-0 px-2.5 sm:px-3">
           <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Add Server</span>
         </Button>
       </div>
 
-      {showAdd && (
+      {byocAllowed === false && (
+        <Card className="mb-6 border-primary/30 bg-primary/5">
+          <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3 py-5">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Bring-your-own-server is a paid feature</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Connect your own VPS to deploy projects on your own infrastructure. Upgrade to Hobby or higher to unlock it.
+              </p>
+            </div>
+            <Button size="sm" onClick={byocUpsell} className="shrink-0">Upgrade</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {showAdd && byocAllowed !== false && (
         <Card className="mb-6 border-primary/30">
           <CardHeader>
             <CardTitle className="text-base">Add SSH Server</CardTitle>
