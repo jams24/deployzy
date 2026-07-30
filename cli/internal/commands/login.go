@@ -143,6 +143,11 @@ func NewLoginEmailCmd() *cobra.Command {
 
 func deriveAPIBase(server string) string {
 	host := strings.Split(server, ":")[0]
+	// The tunnel control endpoint is ctrl.<domain> (DNS-only, bypasses the CF
+	// proxy), but the REST API lives at api.<domain>. Strip a leading "ctrl."
+	// so we build api.<domain> and not api.ctrl.<domain> (which doesn't exist
+	// and makes `deployzy login` open a dead page + hang on the poll).
+	host = strings.TrimPrefix(host, "ctrl.")
 	return "https://api." + host
 }
 
