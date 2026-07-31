@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -109,6 +110,14 @@ func (s *Server) provisionBYOCService(ctx context.Context, userID, name, service
 	if err != nil || server == nil || server.UserID == nil || *server.UserID != userID {
 		return nil, fmt.Errorf("server not found")
 	}
+	return s.provisionServiceContainerOn(ctx, userID, name, serviceType, server)
+}
+
+// provisionServiceContainerOn runs a database container on an already-validated
+// worker server (platform OR BYOC) and records it. Used by the BYOC create path
+// (after ownership check) and by admin database moves (any active server).
+func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, serviceType string, server *db.WorkerServer) (*db.Service, error) {
+	workerServerID := server.ID
 	if !server.DockerInstalled {
 		return nil, fmt.Errorf("docker not installed on that server — click Install Docker first")
 	}
@@ -378,4 +387,77 @@ func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleMoveService lets a user migrate their own database to a platform region
+// or their own BYOC server. Hobby+ (paid) feature. Non-destructive: it copies
+// the data to a fresh instance and leaves the original intact.
+func (s *Server) handleMoveService(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	svcID := chi.URLParam(r, "serviceId")
+
+	// Plan gate — Hobby and above. Admins bypass.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		user, _ := s.db.GetUserByID(r.Context(), u.ID)
+		if user == nil || user.Plan == "" || user.Plan == "free" {
+			writeError(w, http.StatusForbidden, "Moving a database to another server is a Hobby feature — upgrade to unlock it.")
+			return
+		}
+	}
+
+	var body struct {
+		WorkerServerID string `json:"worker_server_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	target := strings.TrimSpace(body.WorkerServerID)
+	if target == "" || target == "auto" || target == "platform" {
+		writeError(w, http.StatusBadRequest, "pick a target server to migrate to")
+		return
+	}
+
+	svc, err := s.db.GetService(r.Context(), svcID)
+	if err != nil || svc == nil || svc.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if svc.Type == "redis" {
+		writeError(w, http.StatusBadRequest, "Redis migration isn't supported yet — Postgres, MySQL and MongoDB can be moved.")
+		return
+	}
+	if svc.WorkerServerID != nil && *svc.WorkerServerID == target {
+		writeError(w, http.StatusBadRequest, "database is already on that server")
+		return
+	}
+
+	tsrv, err := s.db.GetWorkerServer(r.Context(), target)
+	if err != nil || tsrv == nil {
+		writeError(w, http.StatusBadRequest, "target server not found")
+		return
+	}
+	// Target must be a shared platform server, or the user's own BYOC server.
+	if tsrv.UserID != nil && *tsrv.UserID != u.ID {
+		writeError(w, http.StatusForbidden, "you can only move to a platform region or your own server")
+		return
+	}
+	if tsrv.Status != "active" {
+		writeError(w, http.StatusBadRequest, "target server is not active")
+		return
+	}
+	if !tsrv.DockerInstalled {
+		writeError(w, http.StatusBadRequest, "Docker isn't installed on the target server")
+		return
+	}
+
+	newSvc, targetURL, err := s.startServiceMigration(r.Context(), svc, tsrv)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":         "migrating",
+		"target":         tsrv.Label,
+		"new_database":   newSvc.Name,
+		"new_connection": targetURL,
+		"note":           "Copying data now. Your original database is untouched — repoint your app to the new connection, then delete the source when verified.",
+	})
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/migrate"
 )
@@ -172,7 +173,24 @@ func (s *Server) handleAdminMoveService(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Build the source connection URL.
+	newSvc, targetURL, err := s.startServiceMigration(r.Context(), svc, tsrv)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":         "migrating",
+		"target":         tsrv.Label,
+		"new_database":   newSvc.Name,
+		"new_connection": targetURL,
+		"note":           "Copying data now. Your original database is untouched — verify the copy, repoint your app to the new connection, then delete the source when satisfied.",
+	})
+}
+
+// startServiceMigration provisions a fresh copy of svc on tsrv and kicks off a
+// non-destructive background data copy (dump → restore). Shared by the admin and
+// user database-move handlers. Returns the new service record + connection URL.
+func (s *Server) startServiceMigration(ctx context.Context, svc *db.Service, tsrv *db.WorkerServer) (*db.Service, string, error) {
 	dbName, dbUser, dbPass := "", "", ""
 	if svc.DBName != nil {
 		dbName = *svc.DBName
@@ -194,30 +212,20 @@ func (s *Server) handleAdminMoveService(w http.ResponseWriter, r *http.Request) 
 		sourceURL = svc.ExternalConnectionURL("")
 	}
 
-	// Provision a fresh DB instance on the target (new service record).
-	newSvc, err := s.provisionBYOCService(r.Context(), svc.UserID, svc.Name+"-"+strings.ToLower(tsrv.Label), svc.Type, target)
+	newSvc, err := s.provisionServiceContainerOn(ctx, svc.UserID, svc.Name+"-"+strings.ToLower(tsrv.Label), svc.Type, tsrv)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to provision the database on the target server: "+err.Error())
-		return
+		return nil, "", fmt.Errorf("failed to provision the database on the target server: %w", err)
 	}
 	targetURL := newSvc.ExternalConnectionURL("")
 
-	// Copy the data in the background. Source stays untouched.
 	go func() {
 		if out, err := migrate.Run(context.Background(), svc.Type, sourceURL, targetURL); err != nil {
-			s.log.Error().Err(err).Str("service", svcID).Str("out", trimForLog(out)).Msg("admin database migration failed")
+			s.log.Error().Err(err).Str("service", svc.ID).Str("out", trimForLog(out)).Msg("database migration failed")
 		} else {
-			s.log.Info().Str("service", svc.Name).Str("target", tsrv.Label).Msg("admin database migration complete")
+			s.log.Info().Str("service", svc.Name).Str("target", tsrv.Label).Msg("database migration complete")
 		}
 	}()
-
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":         "migrating",
-		"target":         tsrv.Label,
-		"new_database":   newSvc.Name,
-		"new_connection": targetURL,
-		"note":           "Copying data now. Your original database is untouched — verify the copy, repoint your app to the new connection, then delete the source when satisfied.",
-	})
+	return newSvc, targetURL, nil
 }
 
 func trimForLog(s string) string {

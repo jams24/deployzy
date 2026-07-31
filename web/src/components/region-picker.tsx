@@ -115,7 +115,6 @@ export function RegionPicker({
           <div className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
             {servers.map((s) => {
               const isSel = s.id === value;
-              const memPct = s.total_memory_mb > 0 ? Math.round((s.used_memory_mb / s.total_memory_mb) * 100) : 0;
               return (
                 <button
                   key={s.id}
@@ -142,7 +141,7 @@ export function RegionPicker({
                         ? "Your own server"
                         : s.full
                           ? "At capacity"
-                          : `${memPct}% memory · ${s.current_projects}/${s.max_projects || "∞"} projects`}
+                          : "Available"}
                     </span>
                   </span>
                   {isSel && <Check className="h-4 w-4 shrink-0 text-primary" />}

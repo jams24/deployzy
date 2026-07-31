@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X } from "lucide-react";
+import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X, Server } from "lucide-react";
+import { regionName, regionFlag } from "@/lib/regions";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -142,6 +143,56 @@ export default function ServicesPage() {
         setBackups((prev) => ({ ...prev, [projectId]: Array.isArray(data) ? data : [] }));
       }
     } catch {}
+  }
+
+  // Move a standalone database to another server (Hobby+).
+  const [moveOpen, setMoveOpen] = useState<string | null>(null);
+  const [moveServers, setMoveServers] = useState<{ id: string; label: string; region: string; is_byoc: boolean; full: boolean }[]>([]);
+  const [moving, setMoving] = useState(false);
+  async function openMove(id: string) {
+    if (moveOpen === id) { setMoveOpen(null); return; }
+    setMoveOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/servers/selectable`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  }
+  async function moveDatabase(id: string, name: string, serverId: string, label: string) {
+    if (!confirm(`Migrate "${name}" to ${label}?\n\nThis copies the data to a new instance there. Your original stays untouched — repoint your app to the new connection string, then delete the source once verified.`)) return;
+    setMoving(true);
+    try {
+      const res = await fetch(`${API}/api/v1/services/${id}/move`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ worker_server_id: serverId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) { setMoveOpen(null); alert(`Migrating "${name}" to ${label} — copying data now. Your original is untouched. Once done, the copy appears in this list; repoint your app, then delete the source.`); }
+      else alert(data.error || "Move failed");
+    } catch { alert("Move failed"); }
+    setMoving(false);
+  }
+
+  async function downloadServiceBackup(id: string, name: string) {
+    setBackingUp(id);
+    try {
+      const res = await fetch(`${API}/api/v1/services/${id}/backup`, { headers: headers() });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Backup failed");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}-${new Date().toISOString().slice(0, 10)}.sql.gz`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { alert("Backup failed"); }
+    finally { setBackingUp(null); }
   }
 
   async function createBackup(projectId: string) {
@@ -361,11 +412,36 @@ export default function ServicesPage() {
                           </Button>
                         </Link>
                       )}
+                      {!isProj && (s.type === "postgres" || s.type === "mysql") && (
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" title="Download a backup (dump)" onClick={() => downloadServiceBackup(s.id, s.name)} disabled={backingUp === s.id}>
+                          {backingUp === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        </Button>
+                      )}
+                      {!isProj && s.type !== "redis" && (
+                        <Button variant="ghost" size="sm" className={`h-8 w-8 p-0 ${moveOpen === s.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} title="Move to another server" onClick={() => openMove(s.id)}>
+                          <Server className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-8 w-8 p-0" title="Delete" onClick={() => promptDelete(s)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
+
+                  {moveOpen === s.id && (
+                    <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+                      <p className="text-[11px] text-muted-foreground mb-2">Migrate <span className="font-medium text-foreground">{s.name}</span> to another server. It copies the data to a new instance — your <span className="font-medium">original stays untouched</span> (repoint your app, then delete the source once verified).</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {moveServers.filter(sv => !sv.full).map(sv => (
+                          <button key={sv.id} onClick={() => moveDatabase(s.id, s.name, sv.id, sv.is_byoc ? sv.label : regionName(sv.region, sv.label))} disabled={moving}
+                            className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                            <span>{sv.is_byoc ? "🔧" : regionFlag(sv.region)}</span>{sv.is_byoc ? `${sv.label} (your server)` : regionName(sv.region, sv.label)}
+                          </button>
+                        ))}
+                        {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                      </div>
+                    </div>
+                  )}
 
                   {isOpen && (
                     <>
