@@ -227,6 +227,11 @@ export default function AdminPage() {
   const [planSaving, setPlanSaving] = useState<string | null>(null);
   const [planSaved, setPlanSaved] = useState<string | null>(null);
   const [diagOpen, setDiagOpen] = useState<string | null>(null);
+  // Move-project-to-server
+  interface MoveServer { id: string; label: string; host: string; region: string; status: string; is_local: boolean; user_id?: string | null; current_projects: number; max_projects: number; }
+  const [moveOpen, setMoveOpen] = useState<string | null>(null);
+  const [moveServers, setMoveServers] = useState<MoveServer[]>([]);
+  const [moveBusy, setMoveBusy] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
@@ -612,6 +617,25 @@ export default function AdminPage() {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST" }, `Redeploying ${name}`))
       setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+  };
+  const openMove = async (id: string) => {
+    if (moveOpen === id) { setMoveOpen(null); return; }
+    setMoveOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/admin/servers`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  };
+  const moveProject = async (id: string, name: string, serverId: string, label: string) => {
+    if (!confirm(`Move "${name}" to ${label}? It rebuilds on the new server — expect a brief downtime window while it does.`)) return;
+    setMoveBusy(true);
+    const ok = await adminFetch(`${API}/api/v1/admin/projects/${id}/move`, {
+      method: "POST", body: JSON.stringify({ worker_server_id: serverId }),
+    }, `Moving ${name} to ${label}`);
+    setMoveBusy(false);
+    if (ok) { setMoveOpen(null); setTimeout(() => resetProjects(projectSearch, projectStatus), 1500); }
   };
   const deleteProject = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
@@ -1334,12 +1358,38 @@ export default function AdminPage() {
                         onClick={() => redeployProject(p.id, p.name)} title="Redeploy">
                         <RotateCcw className="h-3.5 w-3.5" />
                       </Button>
+                      <Button variant="ghost" size="sm"
+                        className={`h-7 px-2 ${moveOpen === p.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => openMove(p.id)} title="Move to another server">
+                        <Server className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                         onClick={() => deleteProject(p.id, p.name)} title="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
+
+                  {/* Move-to-server panel */}
+                  {moveOpen === p.id && (
+                    <div className="border-t border-border/50 bg-muted/20 px-3 py-3">
+                      <p className="text-[11px] text-muted-foreground mb-2">Move <span className="font-medium text-foreground">{p.name}</span> to another server. It rebuilds on the target (brief downtime while it does).</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button onClick={() => moveProject(p.id, p.name, "auto", "auto-select")} disabled={moveBusy}
+                          className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50">
+                          Auto-select
+                        </button>
+                        {moveServers.filter(s => s.status === "active").map(s => (
+                          <button key={s.id} onClick={() => moveProject(p.id, p.name, s.id, s.label)} disabled={moveBusy}
+                            className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                            <span>{s.is_local ? "🖥️" : s.user_id ? "🔧" : "☁️"}</span>
+                            {s.label} <span className="text-muted-foreground">({s.current_projects}/{s.max_projects})</span>
+                          </button>
+                        ))}
+                        {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Diagnostics panel */}
                   {diagOpen === p.id && (

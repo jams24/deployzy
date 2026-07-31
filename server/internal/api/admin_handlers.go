@@ -409,3 +409,73 @@ func (s *Server) handleAdminProjectDiagnostics(w http.ResponseWriter, r *http.Re
 		"deploy_logs": deployLogs,
 	})
 }
+
+// handleAdminMoveProject moves ANY project to a chosen platform/BYOC server (or
+// clears the assignment for auto-select). Admin-only. Tears the current
+// container down, reassigns, and redeploys on the target. Note: cross-host
+// moves incur a short rebuild window of downtime (the old container is stopped
+// before the new one is built on the target).
+func (s *Server) handleAdminMoveProject(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	project, _ := s.db.GetProject(r.Context(), projectID)
+	if project == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var body struct {
+		WorkerServerID string `json:"worker_server_id"` // "" / "auto" = auto-select platform
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	target := strings.TrimSpace(body.WorkerServerID)
+	if target == "auto" || target == "platform" {
+		target = ""
+	}
+	if target == project.WorkerServerID {
+		writeError(w, http.StatusBadRequest, "project is already on that server")
+		return
+	}
+
+	// Validate an explicit target exists and is active. Empty = auto-select.
+	var targetLabel = "auto-select"
+	if target != "" {
+		srv, err := s.db.GetWorkerServer(r.Context(), target)
+		if err != nil || srv == nil {
+			writeError(w, http.StatusBadRequest, "target server not found")
+			return
+		}
+		if srv.Status != "active" {
+			writeError(w, http.StatusBadRequest, "target server is not active")
+			return
+		}
+		targetLabel = srv.Label
+	}
+
+	// Tear down the current container wherever it runs, reassign, redeploy.
+	s.deployer.Stop(r.Context(), project)
+	s.db.AssignProjectServer(r.Context(), projectID, target)
+	project.WorkerServerID = target
+
+	// Fresh GitHub token for the rebuild on the new host (use the project owner's).
+	if s.deployer.GitHub != nil && project.RepoURL != "" && !strings.Contains(project.RepoURL, "@github.com") {
+		if repoName := extractRepoFullName(project.RepoURL); repoName != "" {
+			if token, ok := s.bestGitHubToken(r.Context(), project.UserID); ok {
+				project.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoName)
+			}
+		}
+	}
+
+	go func(p *db.Project) {
+		if err := s.deployer.Deploy(context.Background(), p); err != nil {
+			s.log.Error().Err(err).Str("project", p.ID).Msg("admin move redeploy failed")
+		}
+	}(project)
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "moving", "target": targetLabel,
+	})
+}
