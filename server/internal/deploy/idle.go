@@ -3,7 +3,7 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -130,13 +130,18 @@ func (e *Engine) WakeIfSleeping(projectID string, port int) error {
 		return fmt.Errorf("failed to wake container")
 	}
 
-	// Wait for the mapped port to accept a TCP connection.
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	// Wait until the app actually answers HTTP. A bare TCP dial is NOT enough:
+	// Docker's userland port proxy accepts connections on the mapped host port
+	// the instant `docker start` returns — before the app inside has bound — so
+	// forwarding then would 502. Any HTTP response (even 404/500) means the app
+	// is serving; a connection error means it's still booting.
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	probe := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(wakeTimeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		resp, err := probe.Get(url)
 		if err == nil {
-			conn.Close()
+			resp.Body.Close()
 			e.idle.setSleeping(projectID, false)
 			e.NoteRequest(projectID)
 			go func() {
