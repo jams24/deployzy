@@ -11,6 +11,7 @@ export const REGION_PRESETS: RegionPreset[] = [
   { slug: "us-east", name: "US East (Virginia)", flag: "🇺🇸" },
   { slug: "us-west", name: "US West (Oregon)", flag: "🇺🇸" },
   { slug: "eu-central", name: "EU Central (Germany)", flag: "🇩🇪" },
+  { slug: "eu-france", name: "EU West (France)", flag: "🇫🇷" },
   { slug: "eu-west", name: "EU West (Ireland)", flag: "🇮🇪" },
   { slug: "uk", name: "UK (London)", flag: "🇬🇧" },
   { slug: "asia-south", name: "Asia South (Mumbai)", flag: "🇮🇳" },
