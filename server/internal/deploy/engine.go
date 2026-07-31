@@ -123,7 +123,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
+			// Never surface the raw host IP in user-visible logs — show the
+			// friendly server label / region only.
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s", assignedServer.Label), "deploy")
 		}
 	} else {
 		runner = NewLocalRunner()
