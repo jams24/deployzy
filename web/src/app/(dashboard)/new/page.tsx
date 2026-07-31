@@ -68,6 +68,8 @@ export default function NewResourcePage() {
   // Configure project (shared by github, template, docker)
   const [projectName, setProjectName] = useState("");
   const [subdomain, setSubdomain] = useState("");
+  // Live subdomain availability preview (Vercel/Railway style).
+  const [subCheck, setSubCheck] = useState<{ checking: boolean; available: boolean; suggestion: string; reason: string } | null>(null);
   const [envText, setEnvText] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
@@ -143,6 +145,26 @@ export default function NewResourcePage() {
       .then(data => { if (data?.limits) { setPlanLimits({ max_memory_mb: data.limits.max_memory_mb, max_cpus: data.limits.max_cpus, allow_advanced_databases: data.limits.allow_advanced_databases, allow_db_migration: data.limits.allow_db_migration, max_db_size_mb: data.limits.max_db_size_mb }); setIsAdmin(!!data.is_admin); } })
       .catch(() => {});
   }, []);
+
+  // Debounced availability check for the subdomain field. Shows whether the
+  // name is free, or the auto-generated variant the deploy would use instead.
+  useEffect(() => {
+    if (step !== "configure" && step !== "docker") return;
+    const value = subdomain.trim();
+    if (!value) { setSubCheck(null); return; }
+    setSubCheck((c) => ({ checking: true, available: c?.available ?? false, suggestion: c?.suggestion ?? "", reason: c?.reason ?? "" }));
+    const t = setTimeout(() => {
+      fetch(`${API}/api/v1/subdomains/check?subdomain=${encodeURIComponent(value)}`, { headers: headers() })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) { setSubCheck(null); return; }
+          setSubCheck({ checking: false, available: !!d.available, suggestion: d.suggestion || d.slug || value, reason: d.reason || "" });
+        })
+        .catch(() => setSubCheck(null));
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subdomain, step]);
 
   async function loadRepos() {
     setLoadingRepos(true);
@@ -479,6 +501,24 @@ function startDocker() {
               />
               <span className="flex h-9 items-center rounded-r-md border border-l-0 border-input bg-muted px-3 text-xs text-muted-foreground">.deployzy.com</span>
             </div>
+            {subCheck && subdomain.trim() && (
+              subCheck.checking ? (
+                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Checking availability…
+                </p>
+              ) : subCheck.available ? (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-3 w-3" /> <span className="font-mono">{subCheck.suggestion}.deployzy.com</span> is available
+                </p>
+              ) : subCheck.reason === "subdomain already taken" ? (
+                <p className="text-[11px] text-muted-foreground">
+                  <span className="font-mono text-foreground">{subdomain}</span> is taken — deploys as{" "}
+                  <span className="font-mono text-foreground">{subCheck.suggestion}.deployzy.com</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">{subCheck.reason}</p>
+              )
+            )}
           </div>
 
           {/* Region / server — user picks explicitly; no silent auto-assign */}
