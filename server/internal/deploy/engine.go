@@ -669,9 +669,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// broken deploys once drove a 1-core host to load 24 and starved every
 	// build on the box (2026-07-20). The crash sweeper marks these projects
 	// 'crashed' so the dashboard shows what happened.
+	// CPU: weighted shares (priority when busy) + a generous burst ceiling
+	// (use idle cores when quiet). RAM stays a hard cap — never overcommitted.
+	cpuShares, cpuBurst := runtimeCPUPolicy(cpus, project.CPUs > 0)
 	args = append(args, "--restart", "on-failure:5",
 		"--memory", fmt.Sprintf("%dm", memMB),
-		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64),
+		"--cpus", strconv.FormatFloat(cpuBurst, 'f', -1, 64),
+		"--cpu-shares", strconv.Itoa(cpuShares),
 		// Container hardening — prevents privilege escalation and raw-socket
 		// based attacks (ARP spoof, port scanning tricks) while staying
 		// compatible with the overwhelming majority of user apps.
@@ -1323,6 +1327,45 @@ func buildCPUFlags(cores int) string {
 		quota = 60000 // single-core host: 60% to the build, 40% stays for serving
 	}
 	return fmt.Sprintf("--cpu-period=100000 --cpu-quota=%d --cpu-shares=512 ", quota)
+}
+
+// runtimeCPUPolicy converts a steady CPU allocation into a burst-friendly
+// runtime policy for the app container.
+//
+// The old behaviour set a hard `--cpus` quota, which forbade an app from ever
+// touching idle cores — wasteful, since idle apps use ~0 CPU and the cores just
+// sat empty. Instead we return:
+//   - shares: a `--cpu-shares` *priority weight* proportional to the allocation.
+//     It only matters under contention, and it makes higher-tier (more-CPU)
+//     apps win when the box is busy — so paid customers keep their edge.
+//   - burst: a generous `--cpus` *ceiling* an app may reach when cores are idle.
+//     A 0.25-vCPU free app can grab a whole core at quiet times, then yield when
+//     neighbours wake up. Bounded so one app can't monopolise a big host.
+//
+// When the user pinned an explicit CPU size (advanced settings) we honour it as
+// a hard cap — no surprise bursting. RAM is never affected; it stays a hard cap.
+func runtimeCPUPolicy(cpus float64, userPinned bool) (shares int, burst float64) {
+	if cpus <= 0 {
+		cpus = 0.5
+	}
+	shares = int(cpus * 1024) // 1 vCPU == the docker default weight of 1024
+	if shares < 128 {
+		shares = 128
+	}
+	if userPinned {
+		return shares, cpus // explicit size chosen by the user — respect it
+	}
+	burst = cpus * 4 // let apps burst to ~4x their steady share into idle cores
+	if burst < 1.0 {
+		burst = 1.0 // even a 0.25 free app can use a whole core when it's quiet
+	}
+	if burst > 4.0 {
+		burst = 4.0 // but never let a single app swallow a large host
+	}
+	if burst < cpus {
+		burst = cpus
+	}
+	return shares, burst
 }
 
 // planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or

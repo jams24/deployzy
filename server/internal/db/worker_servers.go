@@ -290,14 +290,31 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 		args = append(args, *userID)
 	} else {
 		// Platform servers — priority ASC (lower = primary, fills first), then
-		// most-free-RAM as tiebreaker. Also exclude servers already at >85%
-		// memory so we genuinely overflow instead of squeezing the host.
+		// most-free-RAM as tiebreaker.
+		//
+		// Capacity gate is usage-aware. Most free apps *reserve* 512 MB but
+		// actually use a tiny fraction of it, so a pure reservation gate makes a
+		// box look "full" long before it really is. Instead:
+		//   - if we have a real memory reading (used_memory_mb > 0) and actual
+		//     RAM use is comfortably low (<80%), we allow reservation overcommit
+		//     up to 1.5x total — this is where the extra density comes from;
+		//   - if we have NO usage reading (monitor stale/new box), we fall back to
+		//     the old conservative reservation-only gate (<85%), so we never
+		//     overcommit blind and risk the OOM killer.
+		// RAM is still a hard per-container cap — this only governs *placement*.
 		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(user_selectable, true), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 			FROM worker_servers
 			WHERE user_id IS NULL
 			  AND status = 'active'
 			  AND current_projects < max_projects
-			  AND (total_memory_mb = 0 OR allocated_memory_mb::float / NULLIF(total_memory_mb, 0) < 0.85)
+			  AND (
+			    total_memory_mb = 0
+			    OR (used_memory_mb > 0
+			        AND used_memory_mb::float / NULLIF(total_memory_mb, 0) < 0.80
+			        AND allocated_memory_mb::float / NULLIF(total_memory_mb, 0) < 1.50)
+			    OR (used_memory_mb = 0
+			        AND allocated_memory_mb::float / NULLIF(total_memory_mb, 0) < 0.85)
+			  )
 			ORDER BY COALESCE(priority, 100) ASC, (total_memory_mb - allocated_memory_mb) DESC
 			LIMIT 1`
 	}
