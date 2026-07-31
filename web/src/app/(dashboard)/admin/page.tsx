@@ -228,10 +228,11 @@ export default function AdminPage() {
   const [planSaved, setPlanSaved] = useState<string | null>(null);
   const [diagOpen, setDiagOpen] = useState<string | null>(null);
   // Move-project-to-server
-  interface MoveServer { id: string; label: string; host: string; region: string; status: string; is_local: boolean; user_id?: string | null; current_projects: number; max_projects: number; }
+  interface MoveServer { id: string; label: string; host: string; region: string; status: string; is_local: boolean; user_id?: string | null; current_projects: number; max_projects: number; docker_installed?: boolean; }
   const [moveOpen, setMoveOpen] = useState<string | null>(null);
   const [moveServers, setMoveServers] = useState<MoveServer[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
+  const [moveDbOpen, setMoveDbOpen] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
@@ -636,6 +637,25 @@ export default function AdminPage() {
     }, `Moving ${name} to ${label}`);
     setMoveBusy(false);
     if (ok) { setMoveOpen(null); setTimeout(() => resetProjects(projectSearch, projectStatus), 1500); }
+  };
+  const openMoveDb = async (id: string) => {
+    if (moveDbOpen === id) { setMoveDbOpen(null); return; }
+    setMoveDbOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/admin/servers`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  };
+  const migrateDatabase = async (id: string, name: string, serverId: string, label: string) => {
+    if (!confirm(`Migrate a copy of "${name}" to ${label}?\n\nThis provisions the database on ${label} and copies the data. Your ORIGINAL is left untouched — repoint your app to the new connection string, then delete the source once verified.`)) return;
+    setMoveBusy(true);
+    const ok = await adminFetch(`${API}/api/v1/admin/databases/${id}/move`, {
+      method: "POST", body: JSON.stringify({ worker_server_id: serverId }),
+    }, `Migrating ${name} to ${label}`);
+    setMoveBusy(false);
+    if (ok) { setMoveDbOpen(null); setActionError(`Migrating "${name}" to ${label} — copying data now. The original is untouched; find the new copy in this list once it finishes, repoint your app, then delete the source.`); }
   };
   const deleteProject = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
@@ -1655,12 +1675,34 @@ export default function AdminPage() {
                           title={revealed ? "Hide connection string" : "Reveal connection string"}>
                           {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                         </Button>
+                        {svc.type !== "redis" && (
+                          <Button variant="ghost" size="sm"
+                            className={`h-7 px-2 ${moveDbOpen === svc.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                            onClick={() => openMoveDb(svc.id)} title="Migrate to another server">
+                            <Server className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                           onClick={() => deleteDatabase(svc.id, svc.name, d.user_email)} title="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
+
+                    {moveDbOpen === svc.id && (
+                      <div className="border-t border-border/50 bg-muted/20 px-3 py-3">
+                        <p className="text-[11px] text-muted-foreground mb-2">Migrate <span className="font-medium text-foreground">{svc.name}</span> to another server. It provisions the DB there and copies the data — your <span className="font-medium">original stays untouched</span> (repoint your app, then delete the source when verified).</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {moveServers.filter(s => s.status === "active" && s.docker_installed !== false).map(s => (
+                            <button key={s.id} onClick={() => migrateDatabase(svc.id, svc.name, s.id, s.label)} disabled={moveBusy}
+                              className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                              <span>{s.is_local ? "🖥️" : s.user_id ? "🔧" : "☁️"}</span>{s.label}
+                            </button>
+                          ))}
+                          {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                        </div>
+                      </div>
+                    )}
 
                     {revealed && (
                       <div className="border-t border-border/50 bg-muted/20 px-3 py-2.5 space-y-1.5">

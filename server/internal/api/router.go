@@ -327,6 +327,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				// Standalone databases/services across all users
 				r.Get("/databases", s.handleAdminListServices)
 				r.Delete("/databases/{serviceId}", s.handleAdminDeleteService)
+				r.Post("/databases/{serviceId}/move", s.handleAdminMoveService)
 
 				// Orphan container detection + reaping (report-only scan)
 				r.Get("/orphans", s.handleAdminScanOrphans)

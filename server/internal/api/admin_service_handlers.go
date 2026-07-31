@@ -1,15 +1,18 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/deploy"
+	"github.com/serverme/serverme/server/internal/migrate"
 )
 
 // Admin visibility + control over standalone databases/services across all
@@ -122,4 +125,104 @@ func (s *Server) handleAdminReapOrphan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reaped"})
+}
+
+// handleAdminMoveService migrates a standalone database to another server by
+// provisioning a fresh instance on the target and copying the data (dump →
+// restore). It is NON-DESTRUCTIVE: the source database is left completely
+// intact, so nothing can be lost. The admin verifies the copy, repoints their
+// app to the new connection string, then deletes the source when satisfied.
+// Only relational engines (postgres/mysql/mongodb) — Redis isn't supported yet.
+func (s *Server) handleAdminMoveService(w http.ResponseWriter, r *http.Request) {
+	svcID := chi.URLParam(r, "serviceId")
+	var body struct {
+		WorkerServerID string `json:"worker_server_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	target := strings.TrimSpace(body.WorkerServerID)
+	if target == "" || target == "auto" || target == "platform" {
+		writeError(w, http.StatusBadRequest, "pick a specific target server to migrate the database to")
+		return
+	}
+
+	svc, err := s.db.GetService(r.Context(), svcID)
+	if err != nil || svc == nil {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if svc.Type == "redis" {
+		writeError(w, http.StatusBadRequest, "Redis migration isn't supported yet — only Postgres, MySQL and MongoDB can be moved.")
+		return
+	}
+	if svc.WorkerServerID != nil && *svc.WorkerServerID == target {
+		writeError(w, http.StatusBadRequest, "database is already on that server")
+		return
+	}
+	tsrv, err := s.db.GetWorkerServer(r.Context(), target)
+	if err != nil || tsrv == nil {
+		writeError(w, http.StatusBadRequest, "target server not found")
+		return
+	}
+	if tsrv.Status != "active" {
+		writeError(w, http.StatusBadRequest, "target server is not active")
+		return
+	}
+	if !tsrv.DockerInstalled {
+		writeError(w, http.StatusBadRequest, "Docker isn't installed on the target server — install it first")
+		return
+	}
+
+	// Build the source connection URL.
+	dbName, dbUser, dbPass := "", "", ""
+	if svc.DBName != nil {
+		dbName = *svc.DBName
+	}
+	if svc.DBUser != nil {
+		dbUser = *svc.DBUser
+	}
+	if svc.DBPassword != nil {
+		dbPass = *svc.DBPassword
+	}
+	var sourceURL string
+	if svc.WorkerServerID == nil || *svc.WorkerServerID == "" {
+		port := svc.Port
+		if port == 0 {
+			port = 5432
+		}
+		sourceURL = fmt.Sprintf("postgresql://%s:%s@localhost:%d/%s", dbUser, dbPass, port, dbName)
+	} else {
+		sourceURL = svc.ExternalConnectionURL("")
+	}
+
+	// Provision a fresh DB instance on the target (new service record).
+	newSvc, err := s.provisionBYOCService(r.Context(), svc.UserID, svc.Name+"-"+strings.ToLower(tsrv.Label), svc.Type, target)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to provision the database on the target server: "+err.Error())
+		return
+	}
+	targetURL := newSvc.ExternalConnectionURL("")
+
+	// Copy the data in the background. Source stays untouched.
+	go func() {
+		if out, err := migrate.Run(context.Background(), svc.Type, sourceURL, targetURL); err != nil {
+			s.log.Error().Err(err).Str("service", svcID).Str("out", trimForLog(out)).Msg("admin database migration failed")
+		} else {
+			s.log.Info().Str("service", svc.Name).Str("target", tsrv.Label).Msg("admin database migration complete")
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":         "migrating",
+		"target":         tsrv.Label,
+		"new_database":   newSvc.Name,
+		"new_connection": targetURL,
+		"note":           "Copying data now. Your original database is untouched — verify the copy, repoint your app to the new connection, then delete the source when satisfied.",
+	})
+}
+
+func trimForLog(s string) string {
+	if len(s) > 500 {
+		return s[:500]
+	}
+	return s
 }
