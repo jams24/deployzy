@@ -364,6 +364,10 @@ func main() {
 			metricsScraper := deploy.NewMetricsScraper(database, deployEngine, log)
 			go metricsScraper.Start(context.Background())
 
+			// Idle sleep/wake sweeper — stops idle free-tier app containers to
+			// free real CPU/RAM; the proxy wakes them on the next request.
+			deployEngine.StartIdleSweeper(context.Background())
+
 			// DB quota sweeper — enforces per-plan Postgres disk caps on
 			// standalone services. Revokes INSERT/UPDATE when over quota.
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)

@@ -66,6 +66,15 @@ type DomainResolver interface {
 	ResolveDomain(hostname string) (targetType, targetSubdomain string, ok bool)
 }
 
+// SleepAware is optionally implemented by the project provider to support idle
+// sleep/wake. The proxy wakes a slept container before forwarding, and records
+// activity so the sweeper knows the app is in use. Only exercised for local
+// platform projects.
+type SleepAware interface {
+	WakeIfSleeping(projectID string, port int) error
+	NoteRequest(projectID string)
+}
+
 // HTTPProxy handles incoming HTTP requests and forwards them through tunnels.
 type HTTPProxy struct {
 	registry   *tunnel.Registry
@@ -606,6 +615,31 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 	if serverHost != "" {
 		targetHost = serverHost
 	}
+
+	// Idle sleep/wake (local platform projects only). Wake a slept container
+	// before forwarding; record activity so the sweeper keeps it awake while in
+	// use. If the wake can't complete in time, serve a friendly "starting" page
+	// rather than a raw connection-refused 502.
+	if serverHost == "" && projectID != "" {
+		if sa, ok := p.projects.(SleepAware); ok {
+			if err := sa.WakeIfSleeping(projectID, port); err != nil {
+				writeErrorPage(w, http.StatusServiceUnavailable, errorPageData{
+					Code:      "503",
+					Title:     "Starting up",
+					BadgeText: "Waking",
+					DotColor:  "#f59e0b",
+					Heading:   "This app is waking up",
+					Body:      "It was idle and is starting back up — this takes a few seconds. Refresh in a moment.",
+					Host:      r.Host,
+					Reason:    "waking",
+					DashURL:   "https://deployzy.com/projects",
+				})
+				return
+			}
+			sa.NoteRequest(projectID)
+		}
+	}
+
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"

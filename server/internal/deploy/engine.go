@@ -30,6 +30,7 @@ type Engine struct {
 	log          zerolog.Logger
 	deployLocks  sync.Map // per-project mutex to prevent concurrent deploys
 	buildLimiter *buildLimiter // caps platform-wide concurrent docker builds
+	idle         *idleManager  // idle sleep/wake tracker for free-tier apps
 }
 
 // NewEngine creates a new deploy engine.
@@ -45,6 +46,7 @@ func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, e
 		emailSvc:     emailSvc,
 		log:          log.With().Str("component", "deploy").Logger(),
 		buildLimiter: newBuildLimiter(settingBuildLimit(database)),
+		idle:         newIdleManager(),
 	}
 }
 
@@ -670,8 +672,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// build on the box (2026-07-20). The crash sweeper marks these projects
 	// 'crashed' so the dashboard shows what happened.
 	// CPU: weighted shares (priority when busy) + a generous burst ceiling
-	// (use idle cores when quiet). RAM stays a hard cap — never overcommitted.
-	cpuShares, cpuBurst := runtimeCPUPolicy(cpus, project.CPUs > 0)
+	// (use idle cores when quiet), clamped to the host's core count so Docker
+	// won't reject `--cpus` on a small (e.g. 1-core) BYOC box. RAM stays a hard
+	// cap — never overcommitted.
+	cpuShares, cpuBurst := runtimeCPUPolicy(cpus, project.CPUs > 0, hostCPUs(ctx, runner))
 	args = append(args, "--restart", "on-failure:5",
 		"--memory", fmt.Sprintf("%dm", memMB),
 		"--cpus", strconv.FormatFloat(cpuBurst, 'f', -1, 64),
@@ -740,6 +744,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		// Atomic route swap: proxy reads container_port on every request; this
 		// single UPDATE makes it immediately start routing to the new container.
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
+		// A fresh deploy recreates the container, so it's awake now — clear any
+		// lingering sleep state and start the idle clock from this moment.
+		if e.idle != nil {
+			e.idle.setSleeping(project.ID, false)
+			e.db.SetProjectSleeping(ctx, project.ID, false)
+			e.NoteRequest(project.ID)
+		}
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
 
 		// Publish sibling-subdomain routes for any extra services. Replace the
@@ -808,6 +819,12 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 		local.Exec(ctx, "docker", "rm", "-f", containerName)
 	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
+	// Clear any idle-sleep state — a stopped project isn't "sleeping", and the
+	// container is gone so there's nothing to wake.
+	if e.idle != nil {
+		e.idle.setSleeping(project.ID, false)
+		e.db.SetProjectSleeping(ctx, project.ID, false)
+	}
 	// Drop sibling-subdomain routes — the container (and all its services) is gone.
 	e.db.DeleteServiceRoutes(ctx, project.ID)
 	e.logMsg(ctx, project.ID, "Project stopped", "deploy")
@@ -1344,7 +1361,12 @@ func buildCPUFlags(cores int) string {
 //
 // When the user pinned an explicit CPU size (advanced settings) we honour it as
 // a hard cap — no surprise bursting. RAM is never affected; it stays a hard cap.
-func runtimeCPUPolicy(cpus float64, userPinned bool) (shares int, burst float64) {
+//
+// hostCores is the number of cores on the target host (from nproc); the burst
+// ceiling is clamped to it because Docker rejects a `--cpus` value greater than
+// the machine's core count ("range of CPUs is from 0.01 to N"). 0 means unknown,
+// in which case we assume a single core to stay safe.
+func runtimeCPUPolicy(cpus float64, userPinned bool, hostCores int) (shares int, burst float64) {
 	if cpus <= 0 {
 		cpus = 0.5
 	}
@@ -1352,7 +1374,15 @@ func runtimeCPUPolicy(cpus float64, userPinned bool) (shares int, burst float64)
 	if shares < 128 {
 		shares = 128
 	}
+	// The most a container may ever be granted on this host.
+	maxOnHost := float64(hostCores)
+	if hostCores <= 0 {
+		maxOnHost = 1.0 // unknown → be conservative, never exceed one core
+	}
 	if userPinned {
+		if cpus > maxOnHost {
+			cpus = maxOnHost // even an explicit size can't exceed the host
+		}
 		return shares, cpus // explicit size chosen by the user — respect it
 	}
 	burst = cpus * 4 // let apps burst to ~4x their steady share into idle cores
@@ -1362,7 +1392,10 @@ func runtimeCPUPolicy(cpus float64, userPinned bool) (shares int, burst float64)
 	if burst > 4.0 {
 		burst = 4.0 // but never let a single app swallow a large host
 	}
-	if burst < cpus {
+	if burst > maxOnHost {
+		burst = maxOnHost // ...and never exceed what the host physically has
+	}
+	if burst < cpus && cpus <= maxOnHost {
 		burst = cpus
 	}
 	return shares, burst
