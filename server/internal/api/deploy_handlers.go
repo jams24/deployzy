@@ -94,11 +94,21 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		_ = req
 	}
 
-	// Check subdomain availability
+	// Check subdomain availability. A plain collision (the name is taken by
+	// another user's project/reservation) shouldn't dead-end the deploy —
+	// names often come straight from a repo or template ("app", "web", "api")
+	// and would otherwise 409. Auto-pick the next free variant instead. The
+	// user's own existing subdomain still reports available (see
+	// CheckSubdomainAvailable) so idempotent redeploys keep reusing it; and
+	// plan-limit reasons still surface as an error rather than being bypassed.
 	available, reason := s.db.CheckSubdomainAvailable(r.Context(), req.Subdomain, u.ID)
 	if !available {
-		writeError(w, http.StatusConflict, reason)
-		return
+		if reason == "subdomain already taken" {
+			req.Subdomain = s.uniqueSubdomain(r.Context(), req.Subdomain, u.ID)
+		} else {
+			writeError(w, http.StatusConflict, reason)
+			return
+		}
 	}
 
 	project, err := s.db.CreateProject(r.Context(), u.ID, req.Name, req.Subdomain, req.Framework)

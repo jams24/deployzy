@@ -180,18 +180,10 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 
 	subdomain := req.Subdomain
 	if subdomain == "" {
-		subdomain = templateSubdomain(name)
+		subdomain = name
 	}
-
-	// Ensure subdomain is available; append a suffix if not
-	base := subdomain
-	for i := 1; i <= 10; i++ {
-		available, _ := s.db.CheckSubdomainAvailable(r.Context(), subdomain, u.ID)
-		if available {
-			break
-		}
-		subdomain = base + "-" + strconv.Itoa(i)
-	}
+	// Slugify + guarantee a free variant (shared with the main deploy path).
+	subdomain = s.uniqueSubdomain(r.Context(), subdomain, u.ID)
 
 	project, err := s.db.CreateProject(r.Context(), u.ID, name, subdomain, "docker")
 	if err != nil {
