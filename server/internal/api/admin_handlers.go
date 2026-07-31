@@ -460,6 +460,37 @@ func (s *Server) handleAdminMoveProject(w http.ResponseWriter, r *http.Request) 
 	s.db.AssignProjectServer(r.Context(), projectID, target)
 	project.WorkerServerID = target
 
+	// If the project has a central database, repoint DATABASE_URL so it stays
+	// reachable from the new host. Project DBs live in the platform's central
+	// Postgres — internal (localhost) works only on the primary; from any other
+	// server the app must use the external host. This is what makes DB-backed
+	// projects movable without touching the data.
+	if pdb, _ := s.db.GetProjectDatabase(r.Context(), projectID); pdb != nil {
+		targetLocal := false
+		if target != "" {
+			if srv, _ := s.db.GetWorkerServer(r.Context(), target); srv != nil && srv.IsLocal {
+				targetLocal = true
+			}
+		}
+		var dbURL string
+		if targetLocal {
+			dbURL = pdb.ConnectionURL() // localhost — fastest on the primary
+		} else {
+			publicHost := "database.deployzy.com"
+			if s.deployer != nil && s.deployer.ServiceHost != "" {
+				publicHost = s.deployer.ServiceHost
+			}
+			dbURL = pdb.ExternalConnectionURL(publicHost)
+		}
+		env := project.EnvVars
+		if env == nil {
+			env = map[string]string{}
+		}
+		env["DATABASE_URL"] = dbURL
+		s.db.UpdateProjectEnvVars(r.Context(), projectID, env)
+		project.EnvVars = env
+	}
+
 	// Fresh GitHub token for the rebuild on the new host (use the project owner's).
 	if s.deployer.GitHub != nil && project.RepoURL != "" && !strings.Contains(project.RepoURL, "@github.com") {
 		if repoName := extractRepoFullName(project.RepoURL); repoName != "" {
