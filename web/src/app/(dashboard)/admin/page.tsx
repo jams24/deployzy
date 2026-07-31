@@ -19,7 +19,25 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn";
+type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn";
+
+interface DensityServer {
+  id: string; label: string; region: string; is_local: boolean; status: string;
+  total_memory_mb: number; allocated_memory_mb: number; used_memory_mb: number;
+  load_avg: number; current_projects: number; max_projects: number;
+  reserved_pct: number; used_pct: number; reclaimable_mb: number; sleeping_count: number;
+}
+interface SleepingProject {
+  id: string; subdomain: string; email: string; memory_mb: number;
+  slept_at: string | null; last_request_at: string | null;
+}
+interface DensityStats {
+  servers: DensityServer[];
+  sleeping_count: number; sleeping_memory_mb: number; eligible_awake: number; total_running: number;
+  sleeping_projects: SleepingProject[];
+  total_memory_mb: number; allocated_memory_mb: number; used_memory_mb: number;
+  reserved_pct: number; used_pct: number;
+}
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -216,6 +234,8 @@ export default function AdminPage() {
   const [reaping, setReaping] = useState<string | null>(null);
   const [seo, setSeo] = useState<SEOInsight | null>(null);
   const [seoLoading, setSeoLoading] = useState(false);
+  const [density, setDensity] = useState<DensityStats | null>(null);
+  const [densityLoading, setDensityLoading] = useState(false);
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -444,6 +464,20 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "seo" && !seo && !seoLoading) loadSEO();
   }, [tab, seo, seoLoading, loadSEO]);
+
+  // ── Density / idle-sleep analytics ─────────────────────────────────────────
+  const loadDensity = useCallback(async () => {
+    setDensityLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/density`, { headers: headers() });
+      if (res.ok) setDensity(await res.json());
+    } catch {}
+    setDensityLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "density") loadDensity();
+  }, [tab, loadDensity]);
 
   // ── VPN panel config ───────────────────────────────────────────────────────
   const loadVpn = useCallback(async () => {
@@ -898,6 +932,7 @@ export default function AdminPage() {
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
     { id: "analytics", label: "Analytics" },
+    { id: "density", label: "Density" },
     { id: "seo", label: "SEO & LLM" },
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
@@ -1501,6 +1536,109 @@ export default function AdminPage() {
               <div ref={projectSentinelRef} className="py-2 flex justify-center">
                 {projectsLoading && projects.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 {!projectsHasMore && projects.length > 0 && <p className="text-[11px] text-muted-foreground">All {projectsTotal} projects loaded</p>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── DENSITY TAB ──────────────────────────────────────────────────── */}
+      {tab === "density" && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold">Density &amp; Idle Sleep</h2>
+              <p className="text-sm text-muted-foreground">Real vs reserved memory per box, and idle sleep/wake activity.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadDensity} disabled={densityLoading} className="gap-1.5">
+              {densityLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh
+            </Button>
+          </div>
+
+          {!density ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(() => {
+                  const savedGB = (density.sleeping_memory_mb / 1024).toFixed(1);
+                  const cards = [
+                    { label: "Sleeping now", value: density.sleeping_count, sub: `${savedGB} GB reserved freed`, accent: "text-indigo-500" },
+                    { label: "Reserved (platform)", value: `${density.reserved_pct}%`, sub: `${(density.allocated_memory_mb/1024).toFixed(1)} / ${(density.total_memory_mb/1024).toFixed(1)} GB`, accent: density.reserved_pct > 90 ? "text-amber-500" : "text-foreground" },
+                    { label: "Actually used", value: `${density.used_pct}%`, sub: `${(density.used_memory_mb/1024).toFixed(1)} GB real RAM`, accent: density.used_pct > 80 ? "text-red-500" : "text-emerald-500" },
+                    { label: "Idle & awake", value: density.eligible_awake, sub: "free/local, >30m idle", accent: "text-muted-foreground" },
+                  ];
+                  return cards.map((c) => (
+                    <div key={c.label} className="rounded-xl border border-border/60 bg-card/40 p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{c.label}</p>
+                      <p className={`mt-1 text-2xl font-semibold ${c.accent}`}>{c.value}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{c.sub}</p>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* Per-server memory: reserved vs actually used */}
+              <div className="rounded-xl border border-border/60 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border/50 bg-muted/30">
+                  <p className="text-sm font-medium">Memory: reserved vs actually used</p>
+                  <p className="text-[11px] text-muted-foreground">The gap (grey→green) is idle headroom the usage-aware scheduler can pack into.</p>
+                </div>
+                <div className="divide-y divide-border/40">
+                  {density.servers.map((s) => (
+                    <div key={s.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Server className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-sm font-medium truncate">{s.label}</span>
+                          {s.is_local && <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">primary</span>}
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded ${s.status === "active" ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>{s.status}</span>
+                          {s.sleeping_count > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-500">{s.sleeping_count} asleep</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground font-mono">
+                          {s.current_projects}/{s.max_projects || "∞"} proj · load {s.load_avg.toFixed(2)}
+                        </div>
+                      </div>
+                      {/* stacked bar: used (green) within reserved (grey) within total */}
+                      <div className="relative h-3 w-full rounded-full bg-muted/50 overflow-hidden">
+                        <div className="absolute inset-y-0 left-0 bg-muted-foreground/25" style={{ width: `${Math.min(100, s.reserved_pct)}%` }} title={`reserved ${s.reserved_pct}%`} />
+                        <div className={`absolute inset-y-0 left-0 ${s.used_pct > 80 ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, s.used_pct)}%` }} title={`used ${s.used_pct}%`} />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span><span className="text-emerald-500 font-medium">{s.used_pct}%</span> used · <span className="text-foreground">{s.reserved_pct}%</span> reserved</span>
+                        <span>{(s.reclaimable_mb/1024).toFixed(1)} GB reserved-but-idle · {(s.total_memory_mb/1024).toFixed(1)} GB total</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sleeping projects */}
+              <div className="rounded-xl border border-border/60 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border/50 bg-muted/30 flex items-center justify-between">
+                  <p className="text-sm font-medium">Currently sleeping ({density.sleeping_count})</p>
+                  <p className="text-[11px] text-muted-foreground">Wakes on next request</p>
+                </div>
+                {density.sleeping_projects.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">No projects are asleep right now.</p>
+                ) : (
+                  <div className="divide-y divide-border/40">
+                    {density.sleeping_projects.map((p) => (
+                      <div key={p.id} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium">{p.subdomain}</span>
+                          <span className="text-[11px] text-muted-foreground ml-2">{p.email}</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground font-mono">
+                          {p.memory_mb} MB freed · slept {p.slept_at ? new Date(p.slept_at).toLocaleString() : "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}

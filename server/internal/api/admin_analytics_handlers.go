@@ -39,6 +39,18 @@ var topColumns = map[string]bool{
 // handleAdminAnalytics returns platform-wide traffic for the admin console:
 // headline counts, a human-vs-bot timeseries, top breakdowns, and the busiest
 // projects. One endpoint rather than six so the tab renders in a single fetch.
+// handleAdminDensity returns per-server real-vs-reserved memory plus idle
+// sleep/wake activity — the payoff view for the density work.
+func (s *Server) handleAdminDensity(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.db.AdminDensityStats(r.Context())
+	if err != nil {
+		s.log.Error().Err(err).Msg("admin density stats")
+		writeError(w, http.StatusInternalServerError, "failed to load density stats")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (s *Server) handleAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
 	since, bucket, resolved := periodWindow(period)
