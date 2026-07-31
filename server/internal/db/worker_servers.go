@@ -283,7 +283,7 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 
 	if userID != nil {
 		// Try user's BYOC servers first
-		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(user_selectable, true), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 			FROM worker_servers
 			WHERE user_id = $1 AND status = 'active' AND current_projects < max_projects
 			ORDER BY (total_memory_mb - allocated_memory_mb) DESC LIMIT 1`
@@ -292,7 +292,7 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 		// Platform servers — priority ASC (lower = primary, fills first), then
 		// most-free-RAM as tiebreaker. Also exclude servers already at >85%
 		// memory so we genuinely overflow instead of squeezing the host.
-		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		query = `SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(user_selectable, true), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 			FROM worker_servers
 			WHERE user_id IS NULL
 			  AND status = 'active'
@@ -344,7 +344,7 @@ func (d *DB) SetWorkerServerServiceHost(ctx context.Context, serverID, serviceHo
 func (d *DB) PickPlatformServerForService(ctx context.Context) (*WorkerServer, error) {
 	var s WorkerServer
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
+		`SELECT id, user_id, label, host, port, ssh_user, ssh_password, ssh_key, region, total_cpu, total_memory_mb, allocated_cpu, allocated_memory_mb, max_projects, current_projects, status, last_heartbeat, docker_installed, created_at, COALESCE(docker_install_status, 'idle'), docker_install_error, COALESCE(priority, 100), COALESCE(is_local, false), COALESCE(user_selectable, true), COALESCE(service_host, ''), COALESCE(used_memory_mb, 0), COALESCE(load_avg, 0)
 		 FROM worker_servers
 		 WHERE user_id IS NULL AND status = 'active'
 		 ORDER BY COALESCE(priority, 100) ASC, (max_projects - current_projects) DESC
