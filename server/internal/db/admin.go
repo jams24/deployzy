@@ -20,6 +20,7 @@ type AdminUser struct {
 	SignupCountry string `json:"signup_country"`
 	LastLoginIP   string `json:"last_login_ip"`
 	LastCountry   string `json:"last_country"`
+	Blocked       bool   `json:"blocked"`
 }
 
 type AdminStats struct {
@@ -71,7 +72,7 @@ func (d *DB) AdminListUsers(ctx context.Context, search string, limit, offset in
 			`SELECT u.id, u.email, u.name, u.plan, COALESCE(u.is_admin, false), u.created_at,
 			 (SELECT COUNT(*) FROM api_keys WHERE user_id = u.id),
 			 COALESCE((SELECT COUNT(*) FROM captured_requests WHERE user_id = u.id), 0),
-			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,'')
+			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,''), COALESCE(u.blocked,false)
 			 FROM users u WHERE u.email ILIKE $1 OR u.name ILIKE $1
 			 ORDER BY u.created_at DESC LIMIT $2 OFFSET $3`,
 			pattern, limit, offset,
@@ -88,7 +89,7 @@ func (d *DB) AdminListUsers(ctx context.Context, search string, limit, offset in
 			`SELECT u.id, u.email, u.name, u.plan, COALESCE(u.is_admin, false), u.created_at,
 			 (SELECT COUNT(*) FROM api_keys WHERE user_id = u.id),
 			 COALESCE((SELECT COUNT(*) FROM captured_requests WHERE user_id = u.id), 0),
-			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,'')
+			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,''), COALESCE(u.blocked,false)
 			 FROM users u
 			 ORDER BY u.created_at DESC LIMIT $1 OFFSET $2`,
 			limit, offset,
@@ -107,7 +108,7 @@ func scanAdminUsers(rows interface{ Next() bool; Scan(...interface{}) error }) [
 	var users []AdminUser
 	for rows.Next() {
 		var u AdminUser
-		rows.Scan(&u.ID, &u.Email, &u.Name, &u.Plan, &u.IsAdmin, &u.CreatedAt, &u.KeyCount, &u.TunnelReqs, &u.SignupIP, &u.SignupCountry, &u.LastLoginIP, &u.LastCountry)
+		rows.Scan(&u.ID, &u.Email, &u.Name, &u.Plan, &u.IsAdmin, &u.CreatedAt, &u.KeyCount, &u.TunnelReqs, &u.SignupIP, &u.SignupCountry, &u.LastLoginIP, &u.LastCountry, &u.Blocked)
 		users = append(users, u)
 	}
 	return users

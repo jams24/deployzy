@@ -281,6 +281,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Suspended accounts can't sign in.
+	if s.db.IsUserBlocked(r.Context(), user.ID) {
+		writeError(w, http.StatusForbidden, "This account has been suspended. Contact support@deployzy.com if you believe this is a mistake.")
+		return
+	}
+
 	// Record where this sign-in came from (and block banned IPs).
 	ip, country := requestIP(r), requestCountry(r)
 	if s.db.IsIPBanned(r.Context(), ip) {

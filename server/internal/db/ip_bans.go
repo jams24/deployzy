@@ -27,6 +27,27 @@ func (d *DB) TouchUserLogin(ctx context.Context, userID, ip, country string) err
 	return err
 }
 
+// SetUserBlocked suspends or restores a user account.
+func (d *DB) SetUserBlocked(ctx context.Context, userID string, blocked bool, reason string) error {
+	if blocked {
+		_, err := d.Pool.Exec(ctx,
+			`UPDATE users SET blocked = true, blocked_reason = $2, blocked_at = now(), updated_at = now() WHERE id = $1`,
+			userID, reason)
+		return err
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE users SET blocked = false, blocked_reason = NULL, blocked_at = NULL, updated_at = now() WHERE id = $1`,
+		userID)
+	return err
+}
+
+// IsUserBlocked reports whether an account is suspended.
+func (d *DB) IsUserBlocked(ctx context.Context, userID string) bool {
+	var blocked bool
+	d.Pool.QueryRow(ctx, `SELECT COALESCE(blocked, false) FROM users WHERE id = $1`, userID).Scan(&blocked)
+	return blocked
+}
+
 // IPBan is a single ban entry.
 type IPBan struct {
 	IP        string    `json:"ip"`

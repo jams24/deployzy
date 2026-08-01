@@ -56,6 +56,7 @@ interface AdminUser {
   created_at: string; key_count: number; tunnel_requests: number;
   project_count?: number;
   signup_ip?: string; signup_country?: string; last_login_ip?: string; last_country?: string;
+  blocked?: boolean;
 }
 interface IPBan { ip: string; reason: string; created_by: string; created_at: string; }
 
@@ -366,7 +367,7 @@ export default function AdminPage() {
     obs.observe(el); return () => obs.disconnect();
   }, [usersHasMore, usersLoading, usersOffset, userSearch, userPlanFilter, fetchUsers]);
 
-  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean }) => {
+  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean; blocked?: boolean; blocked_reason?: string }) => {
     if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, {
       method: "PUT", body: JSON.stringify(updates),
     }, "Updating user")) {
@@ -1309,6 +1310,7 @@ export default function AdminPage() {
                           </Badge>
                         )}
                         <Badge variant="outline" className={`text-[10px] ${PLAN_COLORS[u.plan] || ""}`}>{u.plan}</Badge>
+                        {u.blocked && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-500">suspended</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{u.email}</p>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
@@ -1343,11 +1345,20 @@ export default function AdminPage() {
                         title={u.is_admin ? "Remove admin" : "Make admin"}>
                         <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-500" : "text-muted-foreground"}`} />
                       </Button>
+                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-500 hover:text-emerald-600" : "text-amber-500 hover:text-amber-600"}`}
+                        title={u.blocked ? "Unsuspend account" : "Suspend account (block login + deploys)"}
+                        onClick={() => {
+                          if (u.blocked) { updateUser(u.id, { blocked: false }); return; }
+                          const reason = prompt(`Suspend ${u.email}?\n\nThey won't be able to sign in or deploy. Optional reason:`, "abuse");
+                          if (reason !== null) updateUser(u.id, { blocked: true, blocked_reason: reason });
+                        }}>
+                        {u.blocked ? <UserCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                      </Button>
                       {u.signup_ip && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-500 hover:text-orange-600"
                           title={`Ban IP ${u.signup_ip}`}
                           onClick={() => banIP(u.signup_ip!, `abuse — user ${u.email}`)}>
-                          <Ban className="h-3.5 w-3.5" />
+                          <WifiOff className="h-3.5 w-3.5" />
                         </Button>
                       )}
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"

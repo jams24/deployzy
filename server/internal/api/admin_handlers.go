@@ -47,6 +47,12 @@ func (s *Server) requireVerifiedEmail(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		// Suspended accounts can't perform deploy/create actions even with a
+		// still-valid token.
+		if s.db.IsUserBlocked(r.Context(), u.ID) {
+			writeError(w, http.StatusForbidden, "This account has been suspended. Contact support@deployzy.com if you believe this is a mistake.")
+			return
+		}
 		verified, err := s.db.IsEmailVerified(r.Context(), u.ID)
 		if err != nil {
 			// Fail open on a lookup error so a transient DB blip doesn't wall off
@@ -144,8 +150,10 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userId")
 
 	var req struct {
-		Plan    *string `json:"plan"`
-		IsAdmin *bool   `json:"is_admin"`
+		Plan          *string `json:"plan"`
+		IsAdmin       *bool   `json:"is_admin"`
+		Blocked       *bool   `json:"blocked"`
+		BlockedReason string  `json:"blocked_reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -155,6 +163,12 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.AdminUpdateUser(r.Context(), userID, req.Plan, req.IsAdmin); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update user")
 		return
+	}
+	if req.Blocked != nil {
+		if err := s.db.SetUserBlocked(r.Context(), userID, *req.Blocked, req.BlockedReason); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update block status")
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
