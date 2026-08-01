@@ -34,6 +34,34 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 	})
 }
 
+// requireVerifiedEmail blocks unverified accounts from mutating/deploy actions.
+// The register + login flows already gate on verification when email is
+// configured; this is defense-in-depth so that even a credential obtained via
+// the email-unconfigured fallback (or any future path) can't deploy resources
+// until the address is confirmed. One indexed PK lookup — negligible on the
+// infrequent create/deploy path.
+func (s *Server) requireVerifiedEmail(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := auth.GetUser(r)
+		if u == nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		verified, err := s.db.IsEmailVerified(r.Context(), u.ID)
+		if err != nil {
+			// Fail open on a lookup error so a transient DB blip doesn't wall off
+			// legitimate verified users; the register/login gates still apply.
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !verified {
+			writeError(w, http.StatusForbidden, "Please verify your email address before deploying. Check your inbox (and spam) for the verification code.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.db.AdminGetStats(r.Context())
 	if err != nil {

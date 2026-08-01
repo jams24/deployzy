@@ -186,7 +186,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)
-			r.With(deployScope).Post("/projects", s.handleCreateProject)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects", s.handleCreateProject)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
@@ -206,7 +206,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(deployScope).Put("/projects/{projectId}/crons/{cronId}", s.handleUpdateCron)
 			r.With(deployScope).Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
 			r.With(deployScope).Post("/projects/{projectId}/upload", s.handleUploadProject)
-			r.With(deployScope).Post("/projects/{projectId}/deploy", s.handleDeployProject)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects/{projectId}/deploy", s.handleDeployProject)
 			r.With(deployScope).Post("/projects/{projectId}/move", s.handleMoveProject)
 			r.With(deployScope).Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
 			r.With(deployScope).Post("/projects/{projectId}/stop", s.handleStopProject)
@@ -214,7 +214,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/projects/{projectId}/logs", s.handleGetDeployLogs)
 
 			// Project Databases
-			r.With(deployScope).Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
 			// Database editor — SQL runner + table browser (query mutates → deploy)
 			r.With(deployScope).Post("/projects/{projectId}/database/query", s.handleProjectDatabaseQuery)
 			r.Get("/projects/{projectId}/database/tables", s.handleProjectDatabaseTables)
@@ -261,7 +261,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Standalone Services (databases, Redis, etc.)
 			r.Get("/services", s.handleListServices)
-			r.With(deployScope).Post("/services", s.handleCreateService)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/services", s.handleCreateService)
 			r.Get("/services/{serviceId}", s.handleGetService)
 			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
 			r.With(deployScope).Post("/services/{serviceId}/move", s.handleMoveService)
@@ -274,7 +274,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Templates — star and deploy require auth
 			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
-			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
 
 			// Servers a user may deploy to (platform regions + own BYOC)
 			r.Get("/servers/selectable", s.handleListSelectableServers)
