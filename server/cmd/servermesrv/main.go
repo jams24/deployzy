@@ -368,6 +368,10 @@ func main() {
 			// free real CPU/RAM; the proxy wakes them on the next request.
 			deployEngine.StartIdleSweeper(context.Background())
 
+			// Banned-IP cache — loads the ban list and keeps it fresh so the
+			// proxy can reject banned traffic with an in-memory lookup.
+			deployEngine.StartBanRefresher(context.Background())
+
 			// DB quota sweeper — enforces per-plan Postgres disk caps on
 			// standalone services. Revokes INSERT/UPDATE when over quota.
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)

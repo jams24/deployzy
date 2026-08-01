@@ -74,6 +74,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Block signups from banned IPs.
+	ip, country := requestIP(r), requestCountry(r)
+	if s.db.IsIPBanned(r.Context(), ip) {
+		writeError(w, http.StatusForbidden, "signups from your network are not permitted")
+		return
+	}
+
 	// Check if email exists
 	existing, err := s.db.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
@@ -92,6 +99,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
+	s.db.SetUserSignupIP(r.Context(), user.ID, ip, country)
 
 	// Referral attribution: if a valid ref code was passed, link this signup.
 	if req.Ref != "" {
@@ -272,6 +280,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+
+	// Record where this sign-in came from (and block banned IPs).
+	ip, country := requestIP(r), requestCountry(r)
+	if s.db.IsIPBanned(r.Context(), ip) {
+		writeError(w, http.StatusForbidden, "access from your network is not permitted")
+		return
+	}
+	s.db.TouchUserLogin(r.Context(), user.ID, ip, country)
 
 	// Unverified password signup: send a fresh code and tell the client to
 	// show the verification step instead of logging in. Flagged distinctly so

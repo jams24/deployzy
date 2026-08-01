@@ -789,7 +789,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
-		go e.sendDeployFailedEmail(project, crashLogs)
+		go e.sendDeployFailedEmail(project, crashLogs, fmt.Sprintf("Deploy failed — %s", project.Name))
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -1036,6 +1036,11 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 	}
 	for i := range projects {
 		p := &projects[i]
+		// A container we deliberately stopped for idleness is 'exited' but NOT
+		// crashed — skip it so sleep/wake doesn't trip the crash detector.
+		if e.idle != nil && e.idle.isSleeping(p.ID) {
+			continue
+		}
 		containerName := fmt.Sprintf("sm-%s", p.ID[:8])
 		runner := e.getRunner(ctx, p)
 		out, err := runner.RunShell(ctx,
@@ -1052,6 +1057,9 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 			e.db.UpdateProjectStatus(ctx, p.ID, "crashed", p.ContainerID, p.ContainerPort)
 			e.logMsg(ctx, p.ID, "Container crashed and exhausted its restart budget (5 failed starts). Marked as crashed — check logs and redeploy after fixing. Last output:\n"+logs, "deploy")
 			e.log.Warn().Str("project", p.Name).Str("container", containerName).Msg("crash sweep: marked project crashed")
+			// Notify the owner (Railway-style). Fires once: the project leaves
+			// the 'running' set after this, so the sweep won't re-email it.
+			go e.sendDeployFailedEmail(p, logs, fmt.Sprintf("Your app crashed — %s is offline", p.Name))
 		}
 	}
 }
@@ -1160,7 +1168,7 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 
 // sendDeployFailedEmail emails the project owner when a new container fails to
 // pass the health check. Best-effort; must be called in a goroutine.
-func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
+func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs, subject string) {
 	if e.emailSvc == nil {
 		return
 	}
@@ -1173,7 +1181,6 @@ func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
 	projectURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s", project.ID)
 	logsURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s/logs", project.ID)
 	body := notify.DeployFailedEmail(project.Name, projectURL, logsURL, crashLogs)
-	subject := fmt.Sprintf("Deploy failed — %s", project.Name)
 	if err := e.emailSvc.SendOne(user.Email, subject, body); err != nil {
 		e.log.Warn().Err(err).Str("to", user.Email).Str("project", project.ID).Msg("deploy-failed email send failed")
 	}

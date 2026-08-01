@@ -66,6 +66,12 @@ type DomainResolver interface {
 	ResolveDomain(hostname string) (targetType, targetSubdomain string, ok bool)
 }
 
+// IPBanChecker is optionally implemented by the project provider to reject
+// traffic from banned IPs at the proxy edge.
+type IPBanChecker interface {
+	IsIPBanned(ip string) bool
+}
+
 // SleepAware is optionally implemented by the project provider to support idle
 // sleep/wake. The proxy wakes a slept container before forwarding, and records
 // activity so the sweeper knows the app is in use. Only exercised for local
@@ -118,6 +124,16 @@ func (p *HTTPProxy) SetDomainResolver(dr DomainResolver, baseDomain string) {
 func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	hostname := extractHostname(r.Host)
+
+	// Banned-IP gate: reject at the edge before any routing/forwarding. Applies
+	// to all proxied traffic (projects, tunnels, custom domains). Skips the TLS
+	// gate path below so Caddy cert issuance isn't affected.
+	if p.projects != nil && r.URL.Path != "/tls/ask" {
+		if ban, ok := p.projects.(IPBanChecker); ok && ban.IsIPBanned(clientIP(r)) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
 
 	// /tls/ask — Caddy on-demand TLS gate. Called by Caddy before issuing a
 	// new certificate. We approve only:

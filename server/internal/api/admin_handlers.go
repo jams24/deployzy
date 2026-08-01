@@ -62,6 +62,49 @@ func (s *Server) requireVerifiedEmail(next http.Handler) http.Handler {
 	})
 }
 
+// --- IP bans (admin) ---
+
+func (s *Server) handleAdminListIPBans(w http.ResponseWriter, r *http.Request) {
+	bans, err := s.db.ListIPBans(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list bans")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"bans": bans})
+}
+
+func (s *Server) handleAdminBanIP(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	var req struct {
+		IP     string `json:"ip"`
+		Reason string `json:"reason"`
+	}
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.IP) == "" {
+		writeError(w, http.StatusBadRequest, "ip is required")
+		return
+	}
+	if err := s.db.BanIP(r.Context(), req.IP, req.Reason, u.Email); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to ban ip")
+		return
+	}
+	if s.deployer != nil {
+		s.deployer.RefreshBannedIPs(r.Context())
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "banned", "ip": req.IP})
+}
+
+func (s *Server) handleAdminUnbanIP(w http.ResponseWriter, r *http.Request) {
+	ip := chi.URLParam(r, "ip")
+	if err := s.db.UnbanIP(r.Context(), ip); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unban ip")
+		return
+	}
+	if s.deployer != nil {
+		s.deployer.RefreshBannedIPs(r.Context())
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "unbanned", "ip": ip})
+}
+
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.db.AdminGetStats(r.Context())
 	if err != nil {

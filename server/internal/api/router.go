@@ -321,6 +321,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/vpn/test", s.handleAdminTestVPN)
 				r.Get("/analytics", s.handleAdminAnalytics)
 				r.Get("/density", s.handleAdminDensity)
+
+				// IP bans
+				r.Get("/ip-bans", s.handleAdminListIPBans)
+				r.Post("/ip-bans", s.handleAdminBanIP)
+				r.Delete("/ip-bans/{ip}", s.handleAdminUnbanIP)
 				r.Get("/projects/{projectId}/diagnostics", s.handleAdminProjectDiagnostics)
 				r.Post("/projects/{projectId}/stop", s.handleAdminStopProject)
 				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)

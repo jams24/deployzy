@@ -14,12 +14,12 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy,
+  Eye, EyeOff, Copy, Ban,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn";
+type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "bans";
 
 interface DensityServer {
   id: string; label: string; region: string; is_local: boolean; status: string;
@@ -55,6 +55,15 @@ interface AdminUser {
   id: string; email: string; name: string; plan: string; is_admin: boolean;
   created_at: string; key_count: number; tunnel_requests: number;
   project_count?: number;
+  signup_ip?: string; signup_country?: string; last_login_ip?: string; last_country?: string;
+}
+interface IPBan { ip: string; reason: string; created_by: string; created_at: string; }
+
+// Turn a 2-letter ISO country code into its flag emoji (regional indicators).
+function countryFlag(code?: string): string {
+  if (!code || code.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + code.charCodeAt(0) - 65, A + code.charCodeAt(1) - 65);
 }
 
 interface AdminProject {
@@ -236,6 +245,8 @@ export default function AdminPage() {
   const [seoLoading, setSeoLoading] = useState(false);
   const [density, setDensity] = useState<DensityStats | null>(null);
   const [densityLoading, setDensityLoading] = useState(false);
+  const [ipBans, setIpBans] = useState<IPBan[]>([]);
+  const [banForm, setBanForm] = useState({ ip: "", reason: "" });
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -478,6 +489,36 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "density") loadDensity();
   }, [tab, loadDensity]);
+
+  // ── IP bans ────────────────────────────────────────────────────────────────
+  const loadIPBans = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setIpBans(Array.isArray(d.bans) ? d.bans : []); }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "bans") loadIPBans();
+  }, [tab, loadIPBans]);
+
+  async function banIP(ip: string, reason: string) {
+    if (!confirm(`Ban ${ip}?\n\nThey'll be blocked from signing up, signing in, and all proxied traffic. Use a trailing dot (e.g. "203.0.113.") to ban a range.`)) return;
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ ip, reason }),
+      });
+      if (res.ok) { setActionError(""); loadIPBans(); }
+      else { const d = await res.json().catch(() => ({})); setActionError(d.error || "Ban failed"); }
+    } catch { setActionError("Ban failed"); }
+  }
+
+  async function unbanIP(ip: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans/${encodeURIComponent(ip)}`, { method: "DELETE", headers: headers() });
+      if (res.ok) loadIPBans();
+    } catch {}
+  }
 
   // ── VPN panel config ───────────────────────────────────────────────────────
   const loadVpn = useCallback(async () => {
@@ -936,6 +977,7 @@ export default function AdminPage() {
     { id: "seo", label: "SEO & LLM" },
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
+    { id: "bans", label: "IP Bans", badge: ipBans.length || undefined },
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "databases", label: "Databases" },
     { id: "orphans", label: "Orphans", badge: orphanScan?.orphans.length || undefined },
@@ -1273,6 +1315,16 @@ export default function AdminPage() {
                         <span className="flex items-center gap-1"><Key className="h-2.5 w-2.5" />{u.key_count} keys</span>
                         <span className="flex items-center gap-1"><Activity className="h-2.5 w-2.5" />{u.tunnel_requests.toLocaleString()} requests</span>
                         <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Joined {new Date(u.created_at).toLocaleDateString()}</span>
+                        {u.signup_ip && (
+                          <span className="flex items-center gap-1 font-mono" title={`signup IP${u.signup_country ? ` · ${u.signup_country}` : ""}`}>
+                            {countryFlag(u.signup_country)} {u.signup_ip}
+                          </span>
+                        )}
+                        {u.last_login_ip && u.last_login_ip !== u.signup_ip && (
+                          <span className="flex items-center gap-1 font-mono" title="last login IP">
+                            ↻ {countryFlag(u.last_country)} {u.last_login_ip}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -1291,6 +1343,13 @@ export default function AdminPage() {
                         title={u.is_admin ? "Remove admin" : "Make admin"}>
                         <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-500" : "text-muted-foreground"}`} />
                       </Button>
+                      {u.signup_ip && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-500 hover:text-orange-600"
+                          title={`Ban IP ${u.signup_ip}`}
+                          onClick={() => banIP(u.signup_ip!, `abuse — user ${u.email}`)}>
+                          <Ban className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                         onClick={() => deleteUser(u.id, u.email)}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1539,6 +1598,60 @@ export default function AdminPage() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── IP BANS TAB ──────────────────────────────────────────────────── */}
+      {tab === "bans" && (
+        <div className="space-y-5 max-w-3xl">
+          <div>
+            <h2 className="text-lg font-semibold">IP Bans</h2>
+            <p className="text-sm text-muted-foreground">Blocked IPs can&apos;t sign up, sign in, or reach any deployed app through the proxy. Use a trailing dot to ban a range (e.g. <span className="font-mono">203.0.113.</span>).</p>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <input
+              value={banForm.ip}
+              onChange={(e) => setBanForm((f) => ({ ...f, ip: e.target.value }))}
+              placeholder="IP or prefix (203.0.113.45 or 203.0.113.)"
+              className="h-9 flex-1 min-w-[220px] rounded-md border border-input bg-background px-3 text-sm font-mono"
+            />
+            <input
+              value={banForm.reason}
+              onChange={(e) => setBanForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder="reason (optional)"
+              className="h-9 flex-1 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button size="sm" className="h-9 gap-1.5" disabled={!banForm.ip.trim()}
+              onClick={() => { const ip = banForm.ip.trim(); banIP(ip, banForm.reason.trim()); setBanForm({ ip: "", reason: "" }); }}>
+              <Ban className="h-3.5 w-3.5" /> Ban
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-border/60 overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/50 bg-muted/30 flex items-center justify-between">
+              <p className="text-sm font-medium">Banned ({ipBans.length})</p>
+              <Button variant="ghost" size="sm" onClick={loadIPBans} className="h-7 gap-1 text-xs"><RefreshCw className="h-3 w-3" /> Refresh</Button>
+            </div>
+            {ipBans.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">No IPs are banned.</p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {ipBans.map((b) => (
+                  <div key={b.ip} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <span className="text-sm font-mono font-medium">{b.ip}</span>
+                      {b.reason && <span className="text-[11px] text-muted-foreground ml-2">{b.reason}</span>}
+                      <div className="text-[10px] text-muted-foreground">by {b.created_by || "—"} · {new Date(b.created_at).toLocaleString()}</div>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-500 hover:text-emerald-600 text-xs" onClick={() => unbanIP(b.ip)}>
+                      Unban
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
