@@ -95,6 +95,12 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user == nil {
+		// Same disposable/temp-mail gate as password signup (Google already
+		// proved the mailbox, so this mainly blocks throwaway-domain accounts).
+		if err := validateSignupEmail(r.Context(), userInfo.Email); err != nil {
+			redirectWithError(w, r, s.google.FrontendURL, err.Error())
+			return
+		}
 		randPass := make([]byte, 32)
 		rand.Read(randPass)
 		user, err = s.db.CreateUser(r.Context(), userInfo.Email, userInfo.Name, hex.EncodeToString(randPass))

@@ -68,6 +68,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject disposable/temp-mail domains and domains that can't receive mail.
+	if err := validateSignupEmail(r.Context(), req.Email); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Check if email exists
 	existing, err := s.db.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
