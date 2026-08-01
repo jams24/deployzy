@@ -739,14 +739,18 @@ func (s *Server) handleMoveProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate a BYOC target belongs to the user and is active. Empty = platform.
+	// Validate the target: either a platform server (region) or the user's own
+	// BYOC box. Empty = shared platform. Mirrors the create-time region picker so
+	// move offers the same set of destinations (e.g. a France region + own BYOC).
 	if target != "" {
 		srv, err := s.db.GetWorkerServer(r.Context(), target)
 		if err != nil || srv == nil {
 			writeError(w, http.StatusBadRequest, "target server not found")
 			return
 		}
-		if srv.UserID == nil || *srv.UserID != u.ID {
+		isPlatform := srv.UserID == nil
+		isOwnBYOC := srv.UserID != nil && *srv.UserID == u.ID
+		if !isPlatform && !isOwnBYOC {
 			writeError(w, http.StatusForbidden, "you don't own that server")
 			return
 		}

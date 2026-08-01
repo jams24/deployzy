@@ -456,7 +456,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// whether the build ran on the primary or the BYOC server.
 	buildHost := "the primary server"
 	if runner.IsRemote() {
-		buildHost = "BYOC server " + runner.Host()
+		// Name the server by its friendly label/region — never the raw IP.
+		buildHost = "your server"
+		if assignedServer != nil && assignedServer.Label != "" {
+			buildHost = assignedServer.Label
+		}
 	}
 
 	// Build-minute quota. Checked here rather than at request time so it also

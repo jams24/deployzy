@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
+import { regionName } from "@/lib/regions";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -273,6 +274,9 @@ function ProjectsContent() {
   const [importing, setImporting] = useState(false);
   const [importEnvText, setImportEnvText] = useState("");
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
+  // Valid "Move to…" destinations — platform regions the user can deploy to +
+  // their own BYOC servers (same set as the create-time region picker).
+  const [moveTargets, setMoveTargets] = useState<{ id: string; label: string; region: string; is_byoc: boolean; full: boolean }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
   const [togglingAutoDeploy, setTogglingAutoDeploy] = useState<string | null>(null);
   const [editingBuild, setEditingBuild] = useState<string | null>(null);
@@ -960,6 +964,12 @@ function ProjectsContent() {
       .then(r => r.ok ? r.json() : [])
       .then(data => setUserServers(Array.isArray(data) ? data : []))
       .catch(() => {});
+    // Selectable destinations for "Move to…" (platform regions + own BYOC,
+    // proper names, no raw IPs, excludes hidden servers like the primary).
+    fetch(`${API}/api/v1/servers/selectable`, { headers: headers() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setMoveTargets(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }
 
   useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
@@ -1420,9 +1430,10 @@ function ProjectsContent() {
                           <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>
                         </Button>
                         {(() => {
-                          const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
-                          const showPlatform = !!p.worker_server_id;
-                          if (!showPlatform && otherServers.length === 0) return null;
+                          // Destinations = selectable platform regions + own BYOC,
+                          // minus wherever this project already lives and any full box.
+                          const targets = moveTargets.filter(s => !s.full && s.id !== p.worker_server_id);
+                          if (targets.length === 0) return null;
                           // Hidden on collapsed grid cards — it was the widest
                           // control on the row for an action taken rarely.
                           if (isGrid && !isSel) return null;
@@ -1432,12 +1443,11 @@ function ProjectsContent() {
                               value=""
                               disabled={deploying === p.id}
                               title="Move this project to another server (Pro)"
-                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
+                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v); }}
                             >
                               <option value="">Move to…</option>
-                              {showPlatform && <option value="platform">Platform (shared)</option>}
-                              {otherServers.map(s => (
-                                <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                              {targets.map(s => (
+                                <option key={s.id} value={s.id}>{s.is_byoc ? s.label : regionName(s.region, s.label)}</option>
                               ))}
                             </select>
                           );
