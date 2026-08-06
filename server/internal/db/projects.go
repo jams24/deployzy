@@ -185,6 +185,7 @@ type SleepCandidate struct {
 	ID            string
 	ContainerName string // "sm-" + id[:8]
 	ContainerPort int
+	NeverVisited  bool // no last_request_at — must pass an HTTP probe before sleeping
 }
 
 // ListSleepEligibleProjects returns free-tier, platform-local, HTTP-serving
@@ -194,11 +195,15 @@ type SleepCandidate struct {
 //   - lives on a platform-local host (no BYOC/remote — we only manage local docker)
 //   - owner is on the free plan (paid apps are never slept)
 //   - sleep_enabled (per-project opt-out is off)
-//   - last_request_at IS NOT NULL and older than the idle window. NULL means the
-//     app has never received HTTP — which deliberately excludes workers/bots.
+//   - EITHER it has served HTTP before (last_request_at set) and gone idle past
+//     the window — the safe, proven-HTTP case; OR it has never received HTTP
+//     (last_request_at NULL) but was deployed long ago (>6h). The never-visited
+//     case is flagged so the caller can HTTP-probe it before sleeping — that
+//     probe is what protects workers/bots (which don't answer HTTP) from being
+//     slept. A project can always opt out via sleep_enabled = false.
 func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]SleepCandidate, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT p.id, p.container_port
+		`SELECT p.id, p.container_port, (p.last_request_at IS NULL) AS never_visited
 		   FROM projects p
 		   JOIN users u ON u.id = p.user_id
 		   LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
@@ -210,8 +215,10 @@ func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]
 		    AND COALESCE(u.plan, 'free') IN ('', 'free')
 		    AND u.is_admin = false
 		    AND p.parent_project_id IS NULL
-		    AND p.last_request_at IS NOT NULL
-		    AND p.last_request_at < now() - make_interval(mins => $1)`,
+		    AND (
+		      (p.last_request_at IS NOT NULL AND p.last_request_at < now() - make_interval(mins => $1))
+		      OR (p.last_request_at IS NULL AND p.created_at < now() - interval '24 hours')
+		    )`,
 		idleMinutes,
 	)
 	if err != nil {
@@ -221,7 +228,7 @@ func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]
 	var out []SleepCandidate
 	for rows.Next() {
 		var c SleepCandidate
-		if err := rows.Scan(&c.ID, &c.ContainerPort); err != nil {
+		if err := rows.Scan(&c.ID, &c.ContainerPort, &c.NeverVisited); err != nil {
 			return nil, err
 		}
 		if len(c.ID) >= 8 {

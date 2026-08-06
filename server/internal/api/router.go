@@ -330,6 +330,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/projects/{projectId}/stop", s.handleAdminStopProject)
 				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)
 				r.Post("/projects/{projectId}/move", s.handleAdminMoveProject)
+				r.Post("/projects/{projectId}/sleep", s.handleAdminSleepProject)
+				r.Post("/projects/{projectId}/wake", s.handleAdminWakeProject)
 				r.Delete("/projects/{projectId}", s.handleAdminDeleteProject)
 
 				// Standalone databases/services across all users

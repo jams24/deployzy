@@ -211,8 +211,34 @@ func (e *Engine) sweepIdle(ctx context.Context) {
 		if seen && now.Sub(last) < idleThreshold {
 			continue
 		}
+		// Never-visited apps: only sleep them if they actually answer HTTP. This
+		// is the safety gate — a background worker or Telegram bot doesn't serve
+		// HTTP, so the probe fails and we leave it running. An app that DOES
+		// answer HTTP can be safely slept because a future request will wake it.
+		if c.NeverVisited {
+			if !e.respondsHTTP(c.ContainerPort) {
+				continue
+			}
+			e.log.Info().Str("project", c.ID).Msg("sleeping never-visited app (passed HTTP probe, 24h+ no traffic)")
+		}
 		e.sleepProject(ctx, c)
 	}
+}
+
+// respondsHTTP reports whether something answers HTTP on the given local port.
+// Any HTTP response (even 404/500) counts — it proves an HTTP server is there.
+// A connection error (worker/bot with no HTTP listener) returns false.
+func (e *Engine) respondsHTTP(port int) bool {
+	if port <= 0 {
+		return false
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
 }
 
 // sleepProject stops a project's container (kept for a fast `docker start` wake)
@@ -232,4 +258,46 @@ func (e *Engine) sleepProject(ctx context.Context, c db.SleepCandidate) {
 		e.log.Error().Err(err).Str("project", c.ID).Msg("idle sweeper: mark sleeping failed")
 	}
 	e.log.Info().Str("project", c.ID).Msg("slept idle project")
+}
+
+// ForceSleep is an explicit admin action: sleep a specific platform-local
+// project now, bypassing the eligibility rules (plan/traffic/admin checks). Used
+// from the admin console to observe or manually reclaim. Local-only — remote
+// (BYOC) projects can't be managed by the local docker path.
+func (e *Engine) ForceSleep(ctx context.Context, projectID string) error {
+	p, err := e.db.GetProject(ctx, projectID)
+	if err != nil || p == nil {
+		return fmt.Errorf("project not found")
+	}
+	if p.Status != "running" {
+		return fmt.Errorf("project is not running")
+	}
+	if e.idle.isSleeping(projectID) {
+		return nil // already asleep
+	}
+	if p.WorkerServerID != "" {
+		if srv, _ := e.db.GetWorkerServer(ctx, p.WorkerServerID); srv != nil && !srv.IsLocal {
+			return fmt.Errorf("force sleep is only supported for platform-local projects")
+		}
+	}
+	if len(p.ID) < 8 {
+		return fmt.Errorf("invalid project")
+	}
+	e.sleepProject(ctx, db.SleepCandidate{ID: p.ID, ContainerName: "sm-" + p.ID[:8], ContainerPort: p.ContainerPort})
+	if !e.idle.isSleeping(projectID) {
+		return fmt.Errorf("failed to sleep the container")
+	}
+	return nil
+}
+
+// ForceWake is an explicit admin action: wake a slept project now.
+func (e *Engine) ForceWake(ctx context.Context, projectID string) error {
+	p, err := e.db.GetProject(ctx, projectID)
+	if err != nil || p == nil {
+		return fmt.Errorf("project not found")
+	}
+	if !e.idle.isSleeping(projectID) {
+		return nil // already awake
+	}
+	return e.WakeIfSleeping(projectID, p.ContainerPort)
 }

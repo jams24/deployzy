@@ -68,6 +68,32 @@ func (s *Server) requireVerifiedEmail(next http.Handler) http.Handler {
 	})
 }
 
+// handleAdminSleepProject force-sleeps a platform-local project (admin/ops).
+func (s *Server) handleAdminSleepProject(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	if err := s.deployer.ForceSleep(r.Context(), chi.URLParam(r, "projectId")); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sleeping"})
+}
+
+// handleAdminWakeProject wakes a slept project (admin/ops).
+func (s *Server) handleAdminWakeProject(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	if err := s.deployer.ForceWake(r.Context(), chi.URLParam(r, "projectId")); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "awake"})
+}
+
 // --- IP bans (admin) ---
 
 func (s *Server) handleAdminListIPBans(w http.ResponseWriter, r *http.Request) {

@@ -14,7 +14,7 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy, Ban,
+  Eye, EyeOff, Copy, Ban, Moon,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -694,6 +694,15 @@ export default function AdminPage() {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST" }, `Redeploying ${name}`))
       setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+  };
+  const sleepProject = async (id: string, name: string) => {
+    if (!confirm(`Sleep "${name}" now?\n\nStops its container to free resources; it wakes automatically on the next HTTP request. Platform-local projects only.`)) return;
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/sleep`, { method: "POST" }, `Sleeping ${name}`))
+      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
+  };
+  const wakeProject = async (id: string, name: string) => {
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/wake`, { method: "POST" }, `Waking ${name}`))
+      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
   };
   const openMove = async (id: string) => {
     if (moveOpen === id) { setMoveOpen(null); return; }
@@ -1474,6 +1483,12 @@ export default function AdminPage() {
                         <Activity className="h-3.5 w-3.5" />
                       </Button>
                       {p.status === "running" && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-indigo-500 hover:text-indigo-500"
+                          onClick={() => sleepProject(p.id, p.name)} title="Sleep now (frees resources; wakes on next request — platform-local only)">
+                          <Moon className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {p.status === "running" && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-500 hover:text-amber-500"
                           onClick={() => stopProject(p.id, p.name)} title="Stop">
                           <Square className="h-3.5 w-3.5" />
@@ -1756,8 +1771,14 @@ export default function AdminPage() {
                           <span className="text-sm font-medium">{p.subdomain}</span>
                           <span className="text-[11px] text-muted-foreground ml-2">{p.email}</span>
                         </div>
-                        <div className="text-[11px] text-muted-foreground font-mono">
-                          {p.memory_mb} MB freed · slept {p.slept_at ? new Date(p.slept_at).toLocaleString() : "—"}
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {p.memory_mb} MB freed · slept {p.slept_at ? new Date(p.slept_at).toLocaleString() : "—"}
+                          </span>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-500 hover:text-emerald-600 text-xs gap-1"
+                            onClick={() => wakeProject(p.id, p.subdomain)} title="Wake now">
+                            <Zap className="h-3 w-3" /> Wake
+                          </Button>
                         </div>
                       </div>
                     ))}
