@@ -397,6 +397,17 @@ func (d *DB) UpdateProjectBuildConfig(ctx context.Context, projectID string, cfg
 	return err
 }
 
+// SetProjectMemory sets the per-container memory ceiling (MB) for a project.
+// Used by template deploys to honour a template's min_memory_mb (the deploy
+// engine still clamps this to the user's plan ceiling).
+func (d *DB) SetProjectMemory(ctx context.Context, projectID string, memMB int) error {
+	if memMB <= 0 {
+		return nil
+	}
+	_, err := d.Pool.Exec(ctx, `UPDATE projects SET memory_mb = $2, updated_at = now() WHERE id = $1`, projectID, memMB)
+	return err
+}
+
 // SetProjectSource sets where a project's container comes from: "git" (default),
 // "image" (registry image_ref), or "upload" (uploaded tarball). Kept separate
 // from UpdateProjectBuildConfig so the build-config editor can't wipe it.

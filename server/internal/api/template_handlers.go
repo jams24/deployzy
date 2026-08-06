@@ -222,6 +222,13 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Honour the template's memory requirement — heavy apps (n8n, etc.) OOM at
+	// the 512 MB default. The deploy engine still clamps this to the user's plan
+	// ceiling, so gated templates should require a plan whose ceiling fits.
+	if t.MinMemoryMB > 0 {
+		s.db.SetProjectMemory(r.Context(), project.ID, t.MinMemoryMB)
+	}
+
 	// Merge user-supplied env vars with defaults from template schema
 	merged := map[string]string{}
 	for _, schema := range t.EnvVars {
