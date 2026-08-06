@@ -60,6 +60,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+    site: "@itsjamsltn",
+    creator: "@itsjamsltn",
     title: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
     description:
       "Open-source Railway + ngrok + Supabase alternative. Deploy from GitHub, manage databases, tunnel localhost — on your own VPS.",
@@ -101,6 +103,7 @@ export default function RootLayout({
                 logo: "https://deployzy.com/icon-512.png",
                 description:
                   "Open-source Railway + ngrok + Supabase alternative — deploy apps, tunnel localhost, and manage databases on your own VPS.",
+                sameAs: ["https://x.com/itsjamsltn"],
               },
               {
                 "@context": "https://schema.org",

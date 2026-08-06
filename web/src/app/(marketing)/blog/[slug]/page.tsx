@@ -73,9 +73,12 @@ export async function generateMetadata({
   const post = await getPost(slug);
   if (!post) return {};
 
-  const ogImageUrl = post.cover_image
+  // When the post has an explicit cover image, use it. Otherwise omit images
+  // here and let the co-located opengraph-image.tsx generate a branded card with
+  // the post's title (previously this pointed at og-blog.png, which 404s).
+  const coverUrl = post.cover_image
     ? post.cover_image.startsWith("/api") ? `${API_URL}${post.cover_image}` : post.cover_image
-    : "https://deployzy.com/og-blog.png";
+    : null;
 
   return {
     title: `${post.title} | Deployzy Blog`,
@@ -91,13 +94,15 @@ export async function generateMetadata({
       modifiedTime: post.updated_at,
       authors: [post.author],
       tags: post.tags,
-      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: post.title }],
+      ...(coverUrl ? { images: [{ url: coverUrl, width: 1200, height: 630, alt: post.title }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
+      site: "@itsjamsltn",
+      creator: "@itsjamsltn",
       title: post.title,
       description: post.description,
-      images: [ogImageUrl],
+      ...(coverUrl ? { images: [coverUrl] } : {}),
     },
   };
 }
