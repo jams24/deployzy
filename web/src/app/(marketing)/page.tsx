@@ -5,6 +5,7 @@ import { fetchPlanCards } from "@/lib/plans";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { PlanCta } from "@/components/marketing/plan-cta";
+import { LogoCloud } from "@/components/marketing/logo-cloud";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
@@ -118,6 +119,9 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ── Deployable-stacks logo cloud ─────────────── */}
+      <LogoCloud />
 
       {/* ── Install bar ──────────────────────────────── */}
       <section className="border-b border-border/40 bg-muted/40">
