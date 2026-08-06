@@ -8,7 +8,7 @@ import { PlanCta } from "@/components/marketing/plan-cta";
 import { ConnectStack } from "@/components/marketing/connect-stack";
 import { DeployPipeline } from "@/components/marketing/deploy-pipeline";
 import { PillarsFold } from "@/components/marketing/pillars-fold";
-import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
+import { FadeIn, SlideIn } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
   Activity, BarChart3, GitBranch, Database, Globe, Terminal,
@@ -232,47 +232,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Everything else ─────────────────────────────── */}
-      <section className="py-20 sm:py-28">
-        <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal>
-            <SectionHeader
-              label="More"
-              title="Batteries included"
-              desc="The stuff you'd end up bolting on anyway — already there."
-            />
-          </ScrollReveal>
-          <StaggerContainer className="mt-12 grid gap-px rounded-lg border border-border/40 overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
-            {extras.map((f) => (
-              <StaggerItem key={f.title}>
-                <GlowCard className="bg-card/30 p-6 group transition-colors hover:bg-accent/20 h-full">
-                  <f.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  <h3 className="mt-3 text-sm font-medium">{f.title}</h3>
-                  <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
-                </GlowCard>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </div>
-      </section>
-
-      {/* ── SDKs ─────────────────────────────────────── */}
-      <section className="border-y border-border/40 py-20 sm:py-28">
-        <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal>
-            <SectionHeader
-              label="Programmatic"
-              title="CLI + SDKs"
-              desc="Scriptable from your terminal, your CI, or your own apps."
-            />
-          </ScrollReveal>
-          <div className="mt-12 grid gap-4 lg:grid-cols-2 items-stretch">
-            <ScrollReveal className="h-full"><CodeCard lang="TypeScript" code={tsCode} /></ScrollReveal>
-            <ScrollReveal delay={150} className="h-full"><CodeCard lang="Python" code={pyCode} /></ScrollReveal>
-          </div>
-        </div>
-      </section>
-
       {/* ── Pricing ──────────────────────────────────── */}
       <section id="pricing" className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-5 sm:px-6">
@@ -331,17 +290,6 @@ export default async function HomePage() {
 // ─── Data ────────────────────────────────────────────
 
 
-const extras = [
-  { icon: Clock,       title: "Scheduled jobs",     desc: "Cron-like jobs that run in a one-shot container from your image. Same env, same DB access." },
-  { icon: GitBranch,   title: "Preview deploys",    desc: "Every PR gets its own URL. Auto-cleanup when the PR closes." },
-  { icon: Eye,         title: "Health checks",      desc: "Deploy isn't marked 'running' until your /health endpoint returns 2xx. No silent bad pushes." },
-  { icon: Terminal,    title: "Release commands",   desc: "Run migrations, seed data, or warm caches in a one-shot container before the app starts." },
-  { icon: Users,       title: "Team collaboration", desc: "Invite members with roles. Shared projects, shared databases, shared tunnels." },
-  { icon: Shield,      title: "OAuth at edge",      desc: "Google/GitHub auth before traffic reaches your app — no code changes needed." },
-  { icon: Zap,         title: "Fast by default",    desc: "Go server, Docker under the hood, smux-multiplexed tunnels. Sub-ms overhead." },
-  { icon: Lock,        title: "End-to-end TLS",     desc: "Let's Encrypt via Caddy on-demand. Works with your custom domains automatically." },
-  { icon: Code,        title: "Self-hostable",      desc: "One-command install on any Ubuntu VPS. MIT license. Run your own stack." },
-];
 
 const FALLBACK_PLANS = [
   {
@@ -408,34 +356,7 @@ const FALLBACK_PLANS = [
   },
 ];
 
-const tsCode = `import { Deployzy } from 'deployzy-sdk';
 
-const sm = new Deployzy({ apiKey: 'sm_live_...' });
-
-// Deploy a GitHub repo
-const project = await sm.projects.create({
-  name: 'my-saas',
-  subdomain: 'my-saas',
-  github_repo: 'me/my-saas',
-});
-await sm.projects.deploy(project.id);
-
-// Tail live container logs
-for await (const line of sm.projects.logs(project.id)) {
-  console.log(line.message);
-}`;
-
-const pyCode = `from deployzy import Deployzy
-
-sm = Deployzy(api_key="sm_live_...")
-
-# Spin up a managed database
-db = sm.services.create(name="my-db", type="postgres")
-print(db.external_connection_url)
-
-# Trigger a deploy from a specific commit
-sm.projects.deploy(project_id,
-                   commit_sha="a1b2c3d")`;
 
 // ─── Components ──────────────────────────────────────
 
@@ -642,17 +563,3 @@ function DashboardPreview() {
   );
 }
 
-function CodeCard({ lang, code }: { lang: string; code: string }) {
-  return (
-    <div className="flex h-full flex-col rounded-lg border border-border overflow-hidden transition-colors hover:border-foreground/30 sm-terminal bg-zinc-50 dark:bg-[#09090b]">
-      <div className="border-b border-border px-4 py-2 text-[10px] font-mono shrink-0 text-muted-foreground">
-        {lang}
-      </div>
-      <div className="flex-1 overflow-x-auto">
-        <pre className="p-4 text-[12px] leading-relaxed">
-          <code className="font-mono text-zinc-700 dark:text-zinc-400">{code}</code>
-        </pre>
-      </div>
-    </div>
-  );
-}
