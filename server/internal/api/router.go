@@ -91,6 +91,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Post("/auth/login", s.handleLogin)
 			r.Post("/auth/verify-email", s.handleVerifyEmail)
 			r.Post("/auth/resend-verification", s.handleResendVerification)
+			// Public abuse reporting (phishing/malware/spam/illegal content).
+			r.Post("/abuse-report", s.handleSubmitAbuseReport)
 		})
 
 		// Google OAuth
@@ -323,6 +325,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/density", s.handleAdminDensity)
 
 				// IP bans
+				// Abuse reports
+				r.Get("/abuse-reports", s.handleAdminListAbuseReports)
+				r.Post("/abuse-reports/{id}/status", s.handleAdminSetAbuseReportStatus)
+
 				r.Get("/ip-bans", s.handleAdminListIPBans)
 				r.Post("/ip-bans", s.handleAdminBanIP)
 				r.Delete("/ip-bans/{ip}", s.handleAdminUnbanIP)

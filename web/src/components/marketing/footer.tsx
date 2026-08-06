@@ -38,13 +38,18 @@ const footerLinks = {
     { label: "Status", href: "/status" },
     { label: "Contact", href: "mailto:support@deployzy.com" },
   ],
+  Trust: [
+    { label: "Acceptable Use", href: "/acceptable-use" },
+    { label: "Report Abuse", href: "/report" },
+    { label: "Abuse Contact", href: "mailto:abuse@deployzy.com" },
+  ],
 };
 
 export function Footer() {
   return (
     <footer className="border-t border-border/40 bg-background">
       <div className="mx-auto max-w-6xl px-6 py-16">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 md:col-span-1">
             <Link
               href="/"
