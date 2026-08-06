@@ -32,6 +32,7 @@ type Template struct {
 	IsOfficial  bool           `json:"is_official"`
 	IsFeatured  bool           `json:"is_featured"`
 	IsActive    bool           `json:"is_active"`
+	RequiredPlan string        `json:"required_plan"`
 	DeployCount int            `json:"deploy_count"`
 	StarCount   int            `json:"star_count"`
 	IsStarred   bool           `json:"is_starred"`
@@ -129,7 +130,7 @@ func (d *DB) ListTemplates(ctx context.Context, f TemplateFilter, userID string)
 	query := fmt.Sprintf(`
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
 		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
-		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
+		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active, COALESCE(t.required_plan, '') AS required_plan,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
 		       COALESCE(BOOL_OR(ts2.user_id IS NOT NULL), false) AS is_starred
@@ -156,7 +157,7 @@ func (d *DB) ListTemplates(ctx context.Context, f TemplateFilter, userID string)
 		if err := rows.Scan(
 			&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
 			&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
-			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
+			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive, &t.RequiredPlan,
 			&t.DeployCount, &t.CreatedAt,
 			&t.StarCount, &t.IsStarred,
 		); err != nil {
@@ -184,7 +185,7 @@ func (d *DB) GetTemplate(ctx context.Context, slug, userID string) (*Template, e
 	err := d.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
 		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
-		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
+		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active, COALESCE(t.required_plan, '') AS required_plan,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
 		       COALESCE(BOOL_OR(ts2.user_id IS NOT NULL), false) AS is_starred
@@ -197,7 +198,7 @@ func (d *DB) GetTemplate(ctx context.Context, slug, userID string) (*Template, e
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
 		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
-		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
+		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive, &t.RequiredPlan,
 		&t.DeployCount, &t.CreatedAt,
 		&t.StarCount, &t.IsStarred,
 	)
@@ -274,13 +275,14 @@ type TemplateUpsert struct {
 	IsOfficial  bool           `json:"is_official"`
 	IsFeatured  bool           `json:"is_featured"`
 	IsActive    bool           `json:"is_active"`
+	RequiredPlan string        `json:"required_plan"`
 }
 
 func (d *DB) AdminListTemplates(ctx context.Context) ([]Template, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT t.id, t.slug, t.name, t.tagline, t.description, t.category, t.tags,
 		       t.icon, COALESCE(t.logo_slug, ''), t.color, t.source_repo, t.docker_image, t.env_vars, t.ports,
-		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active,
+		       t.min_memory_mb, t.post_deploy, t.is_official, t.is_featured, t.is_active, COALESCE(t.required_plan, '') AS required_plan,
 		       t.deploy_count, t.created_at,
 		       COUNT(ts.user_id)::int AS star_count,
 		       false AS is_starred
@@ -299,7 +301,7 @@ func (d *DB) AdminListTemplates(ctx context.Context) ([]Template, error) {
 		if err := rows.Scan(
 			&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
 			&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
-			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
+			&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive, &t.RequiredPlan,
 			&t.DeployCount, &t.CreatedAt, &t.StarCount, &t.IsStarred,
 		); err != nil {
 			d.log.Error().Err(err).Msg("AdminListTemplates scan")
@@ -333,15 +335,15 @@ func (d *DB) AdminCreateTemplate(ctx context.Context, u TemplateUpsert) (*Templa
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		RETURNING id, slug, name, tagline, description, category, tags,
 		          icon, COALESCE(logo_slug, ''), color, source_repo, docker_image, env_vars, ports,
-		          min_memory_mb, post_deploy, is_official, is_featured, is_active,
+		          min_memory_mb, post_deploy, is_official, is_featured, is_active, COALESCE(required_plan, '') AS required_plan,
 		          deploy_count, created_at`,
 		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.LogoSlug, u.Color,
 		u.SourceRepo, u.DockerImage, envJSON, u.Ports, u.MinMemoryMB,
-		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive,
+		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive, u.RequiredPlan,
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
 		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
-		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
+		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive, &t.RequiredPlan,
 		&t.DeployCount, &t.CreatedAt,
 	)
 	if err != nil {
@@ -367,20 +369,20 @@ func (d *DB) AdminUpdateTemplate(ctx context.Context, id string, u TemplateUpser
 		  slug=$2, name=$3, tagline=$4, description=$5, category=$6, tags=$7,
 		  icon=$8, logo_slug=$9, color=$10, source_repo=$11, docker_image=$12, env_vars=$13,
 		  ports=$14, min_memory_mb=$15, post_deploy=$16, is_official=$17,
-		  is_featured=$18, is_active=$19, updated_at=NOW()
+		  is_featured=$18, is_active=$19, required_plan=$20, updated_at=NOW()
 		WHERE id=$1
 		RETURNING id, slug, name, tagline, description, category, tags,
 		          icon, COALESCE(logo_slug, ''), color, source_repo, docker_image, env_vars, ports,
-		          min_memory_mb, post_deploy, is_official, is_featured, is_active,
+		          min_memory_mb, post_deploy, is_official, is_featured, is_active, COALESCE(required_plan, '') AS required_plan,
 		          deploy_count, created_at`,
 		id,
 		u.Slug, u.Name, u.Tagline, u.Description, u.Category, u.Tags, u.Icon, u.LogoSlug, u.Color,
 		u.SourceRepo, u.DockerImage, envJSON, u.Ports, u.MinMemoryMB,
-		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive,
+		u.PostDeploy, u.IsOfficial, u.IsFeatured, u.IsActive, u.RequiredPlan,
 	).Scan(
 		&t.ID, &t.Slug, &t.Name, &t.Tagline, &t.Description, &t.Category, &t.Tags,
 		&t.Icon, &t.LogoSlug, &t.Color, &t.SourceRepo, &t.DockerImage, &envVarsRaw, &t.Ports,
-		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive,
+		&t.MinMemoryMB, &t.PostDeploy, &t.IsOfficial, &t.IsFeatured, &t.IsActive, &t.RequiredPlan,
 		&t.DeployCount, &t.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {

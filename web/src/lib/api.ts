@@ -415,6 +415,7 @@ export interface Template {
   is_official: boolean;
   is_featured: boolean;
   is_active: boolean;
+  required_plan: string;
   deploy_count: number;
   star_count: number;
   is_starred: boolean;

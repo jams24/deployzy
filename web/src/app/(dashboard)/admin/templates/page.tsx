@@ -27,7 +27,7 @@ const EMPTY_TEMPLATE: Partial<Template> = {
   slug: "", name: "", tagline: "", description: "", category: "other",
   tags: [], icon: "📦", color: "#6366f1", source_repo: "", docker_image: "",
   env_vars: [], ports: [], min_memory_mb: 256, post_deploy: "",
-  is_official: false, is_featured: false, is_active: true,
+  is_official: false, is_featured: false, is_active: true, required_plan: "",
 };
 
 const EMPTY_ENV_VAR: EnvVarSchema = {
@@ -348,6 +348,20 @@ function TemplateFormModal({
                 value={form.min_memory_mb ?? 256}
                 onChange={(e) => set("min_memory_mb", parseInt(e.target.value) || 256)}
               />
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Required plan</Label>
+              <select
+                value={form.required_plan || ""}
+                onChange={(e) => set("required_plan", e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Free — anyone can deploy</option>
+                <option value="hobby">Hobby or higher</option>
+                <option value="pro">Pro or higher</option>
+                <option value="team">Team / Enterprise</option>
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">Users below this plan see an upgrade prompt instead of deploy.</p>
             </div>
           </div>
         </section>

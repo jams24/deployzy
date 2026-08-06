@@ -10,7 +10,7 @@ interface EnvVarSchema { key: string; label?: string; type?: string; required?: 
 interface Template {
   slug: string; name: string; tagline: string; description: string; category: string;
   logo_slug: string; color: string; deploy_count: number; star_count: number;
-  is_official: boolean; created_at: string; env_vars: EnvVarSchema[];
+  is_official: boolean; created_at: string; env_vars: EnvVarSchema[]; required_plan?: string;
 }
 
 async function getTemplate(slug: string): Promise<Template | null> {
@@ -73,7 +73,7 @@ export default async function TemplateDetailPage({ params }: { params: Promise<{
 
         {/* Sidebar */}
         <aside className="space-y-5">
-          <TemplateDeploy slug={t.slug} name={t.name} envVars={t.env_vars || []} />
+          <TemplateDeploy slug={t.slug} name={t.name} envVars={t.env_vars || []} requiredPlan={t.required_plan || ""} />
 
           <div className="rounded-xl border border-border/60 p-4 space-y-3 text-sm">
             {t.is_official && (

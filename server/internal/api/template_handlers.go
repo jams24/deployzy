@@ -110,6 +110,21 @@ func (s *Server) handleToggleTemplateStar(w http.ResponseWriter, r *http.Request
 
 var slugifyRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+// templatePlanRank orders subscription plans so template gating can compare a
+// user's plan against a template's required plan. "" / "free" = 0 (open to all).
+func templatePlanRank(plan string) int {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "hobby":
+		return 1
+	case "pro":
+		return 2
+	case "team", "enterprise":
+		return 3
+	default: // "", "free"
+		return 0
+	}
+}
+
 // templateWantsEnv reports whether a template declares an env var with the given
 // key — the signal that a template needs a Deployzy-side injected value.
 func templateWantsEnv(vars []db.EnvVarSchema, key string) bool {
@@ -155,6 +170,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 	if err != nil || t == nil {
 		writeError(w, http.StatusNotFound, "template not found")
 		return
+	}
+
+	// Plan gate: some templates require a paid plan. Admins bypass.
+	if req := templatePlanRank(t.RequiredPlan); req > 0 {
+		if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+			user, _ := s.db.GetUserByID(r.Context(), u.ID)
+			cur := 0
+			if user != nil {
+				cur = templatePlanRank(user.Plan)
+			}
+			if cur < req {
+				writeError(w, http.StatusPaymentRequired,
+					fmt.Sprintf("This template requires the %s plan or higher — upgrade to deploy it.", t.RequiredPlan))
+				return
+			}
+		}
 	}
 
 	// Validate required env vars
