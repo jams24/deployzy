@@ -35,7 +35,8 @@ import (
 
 func main() {
 	// Flags
-	domain := flag.String("domain", "localhost", "Base domain for tunnels (e.g., serverme.dev)")
+	domain := flag.String("domain", "localhost", "Brand base domain (dashboard/API/control, e.g. deployzy.com)")
+	appDomain := flag.String("app-domain", "", "User-facing domain for deployed apps + tunnels (e.g. deployzy.app). Isolates user content from the brand domain. Defaults to --domain.")
 	controlAddr := flag.String("addr", ":8443", "Control/tunnel listener address (TLS)")
 	httpAddr := flag.String("http-addr", ":8080", "HTTP proxy listener address")
 	apiAddr := flag.String("api-addr", ":8081", "REST API listener address")
@@ -69,6 +70,11 @@ func main() {
 	cfToken := flag.String("cloudflare-token", "", "Cloudflare API token (DNS edit permission) for auto-creating DNS records when servers are added")
 	cfZoneID := flag.String("cloudflare-zone-id", "", "Cloudflare Zone ID for the base domain")
 	flag.Parse()
+
+	// User-facing app/tunnel domain defaults to the brand domain when unset.
+	if *appDomain == "" {
+		*appDomain = *domain
+	}
 	api.SetSubscriptionGraceDays(*subscriptionGraceDays)
 
 	// Logger
@@ -335,7 +341,7 @@ func main() {
 			if svcHost == "" {
 				svcHost = *domain
 			}
-			deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
+			deployEngine = deploy.NewEngine(database, *domain, *appDomain, svcHost, githubApp, emailSvc, log)
 			// Reset any projects stuck in "building" from a previous process that was
 			// killed mid-deploy — otherwise they'd show as building forever.
 			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
@@ -431,7 +437,7 @@ func main() {
 
 	// Start TLS control listener
 	go func() {
-		if err := listenControl(*controlAddr, *tlsCert, *tlsKey, *authToken, *domain, scheme, serverHost, registry, manager, tcpProxy, database, jwtMgr, log); err != nil {
+		if err := listenControl(*controlAddr, *tlsCert, *tlsKey, *authToken, *appDomain, scheme, serverHost, registry, manager, tcpProxy, database, jwtMgr, log); err != nil {
 			log.Fatal().Err(err).Msg("control listener error")
 		}
 	}()

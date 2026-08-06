@@ -508,12 +508,12 @@ function startDocker() {
                 </p>
               ) : subCheck.available ? (
                 <p className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="h-3 w-3" /> <span className="font-mono">{subCheck.suggestion}.deployzy.com</span> is available
+                  <Check className="h-3 w-3" /> <span className="font-mono">{subCheck.suggestion}.deployzy.app</span> is available
                 </p>
               ) : subCheck.reason === "subdomain already taken" ? (
                 <p className="text-[11px] text-muted-foreground">
                   <span className="font-mono text-foreground">{subdomain}</span> is taken — deploys as{" "}
-                  <span className="font-mono text-foreground">{subCheck.suggestion}.deployzy.com</span>
+                  <span className="font-mono text-foreground">{subCheck.suggestion}.deployzy.app</span>
                 </p>
               ) : (
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">{subCheck.reason}</p>

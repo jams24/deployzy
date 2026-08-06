@@ -166,7 +166,7 @@ export default function SubdomainsPage() {
               {checkResult.available ? (
                 <>
                   <Check className="h-4 w-4" />
-                  <span><strong>{newSub}.deployzy.com</strong> is available</span>
+                  <span><strong>{newSub}.deployzy.app</strong> is available</span>
                 </>
               ) : (
                 <>
@@ -205,7 +205,7 @@ export default function SubdomainsPage() {
                   <div className="flex items-center gap-3">
                     <Globe className="h-4 w-4 text-primary" />
                     <div>
-                      <p className="font-mono text-sm font-medium">{s.subdomain}.deployzy.com</p>
+                      <p className="font-mono text-sm font-medium">{s.subdomain}.deployzy.app</p>
                       <p className="text-[10px] text-muted-foreground">
                         Reserved {new Date(s.created_at).toLocaleDateString()}
                       </p>

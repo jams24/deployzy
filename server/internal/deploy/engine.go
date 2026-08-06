@@ -24,6 +24,7 @@ import (
 type Engine struct {
 	db          *db.DB
 	Domain      string
+	AppDomain   string // user-facing domain for deployed app URLs (e.g. deployzy.app), isolated from the brand Domain (deployzy.com). Falls back to Domain.
 	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
 	GitHub      *GitHubApp
 	emailSvc    notify.Mailer
@@ -34,13 +35,17 @@ type Engine struct {
 }
 
 // NewEngine creates a new deploy engine.
-func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
+func NewEngine(database *db.DB, domain, appDomain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
 	if serviceHost == "" {
 		serviceHost = domain
+	}
+	if appDomain == "" {
+		appDomain = domain
 	}
 	return &Engine{
 		db:           database,
 		Domain:       domain,
+		AppDomain:    appDomain,
 		ServiceHost:  serviceHost,
 		GitHub:       github,
 		emailSvc:     emailSvc,
@@ -755,7 +760,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.db.SetProjectSleeping(ctx, project.ID, false)
 			e.NoteRequest(project.ID)
 		}
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.AppDomain, hostPort), "deploy")
 
 		// Publish sibling-subdomain routes for any extra services. Replace the
 		// whole set (ports are freshly allocated each deploy). On a single-service
@@ -764,7 +769,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.log.Error().Err(err).Str("project", project.ID).Msg("failed to publish service routes")
 		}
 		for _, rt := range serviceRoutes {
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.AppDomain), "deploy")
 		}
 
 		// Old container is still running — stop it now that the new one is confirmed healthy.
@@ -1160,7 +1165,7 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 			"id":        project.ID,
 			"name":      project.Name,
 			"subdomain": project.Subdomain,
-			"url":       fmt.Sprintf("https://%s.%s", project.Subdomain, e.Domain),
+			"url":       fmt.Sprintf("https://%s.%s", project.Subdomain, e.AppDomain),
 			"status":    status,
 		},
 	}

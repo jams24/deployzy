@@ -316,7 +316,7 @@ function ProjectRow({ p }: { p: Project }) {
           <span className="text-[13px] font-medium truncate">{p.name}</span>
           <span className={`text-[10px] font-medium shrink-0 ${s.cls}`}>{s.label}</span>
         </div>
-        <p className="text-[11px] text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.com</p>
+        <p className="text-[11px] text-muted-foreground font-mono truncate">{p.subdomain}.deployzy.app</p>
       </div>
 
       {/* Framework + branch */}

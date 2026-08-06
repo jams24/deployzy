@@ -151,7 +151,7 @@ function previewSubdomainExample(parent: string): string {
   const suffix = "-pr-123";
   const max = 63 - suffix.length;
   const p = parent.length > max ? parent.slice(0, max) : parent;
-  return `${p}${suffix}.deployzy.com`;
+  return `${p}${suffix}.deployzy.app`;
 }
 
 // Sparkline renders a tiny inline SVG line chart. Keeps us free of a heavy
@@ -220,7 +220,7 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
           </div>
           <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2">
             <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Public URL</p>
-            <p className="text-xs font-mono text-foreground truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.com</p>
+            <p className="text-xs font-mono text-foreground truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.app</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1">
@@ -1387,7 +1387,7 @@ function ProjectsContent() {
 
                       <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono min-w-0">
                         <Globe className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{p.subdomain}.deployzy.com</span>
+                        <span className="truncate">{p.subdomain}.deployzy.app</span>
                       </div>
 
                       {/* Metadata line — stack, repo and last deploy. None of
@@ -1419,7 +1419,7 @@ function ProjectsContent() {
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
+                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                           <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
@@ -1627,7 +1627,7 @@ function ProjectsContent() {
                             <div className="flex items-center gap-1 shrink-0">
                               {pv.commit_sha && <code className="text-[9px] text-muted-foreground font-mono">{pv.commit_sha.slice(0, 7)}</code>}
                               {pv.status === "running" && (
-                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                                   <ExternalLink className="h-2.5 w-2.5" /> Visit
                                 </Button>
                               )}

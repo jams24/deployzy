@@ -218,9 +218,9 @@ export default function DomainsPage() {
                       <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-muted-foreground">Routes to</span>
                       {d.target_type === "project" ? (
-                        <Badge variant="outline" className="gap-1 text-[10px]"><Rocket className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.com</Badge>
+                        <Badge variant="outline" className="gap-1 text-[10px]"><Rocket className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.app</Badge>
                       ) : (
-                        <Badge variant="outline" className="gap-1 text-[10px]"><Waypoints className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.com</Badge>
+                        <Badge variant="outline" className="gap-1 text-[10px]"><Waypoints className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.app</Badge>
                       )}
                       <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground ml-auto" onClick={() => startBinding(d.id)}>
                         Change
