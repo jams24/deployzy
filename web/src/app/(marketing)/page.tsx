@@ -8,6 +8,7 @@ import { PlanCta } from "@/components/marketing/plan-cta";
 import { ConnectStack } from "@/components/marketing/connect-stack";
 import { DeployPipeline } from "@/components/marketing/deploy-pipeline";
 import { PillarsFold } from "@/components/marketing/pillars-fold";
+import { ShowcaseCards } from "@/components/marketing/showcase-cards";
 import { FadeIn, SlideIn } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
@@ -166,6 +167,9 @@ export default async function HomePage() {
           <PillarsFold />
         </div>
       </section>
+
+      {/* ── Showcase cards (word-reveal) ───────────────────────────────── */}
+      <ShowcaseCards />
 
       {/* ── Dashboard preview ──────────────────────────────────────────── */}
       <section className="border-y border-border/40 py-20 sm:py-28">
