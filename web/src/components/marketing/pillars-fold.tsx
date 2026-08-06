@@ -76,9 +76,9 @@ const PILLARS = [
 const CSS = `
 .dz-fold {
   opacity: 0;
-  transform: rotateX(34deg) translateY(46px) scale(0.94);
+  transform: rotateX(58deg) translateY(70px) scale(0.9);
   transform-origin: center top;
-  transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1);
+  transition: opacity .8s cubic-bezier(.22,1,.36,1), transform .85s cubic-bezier(.22,1,.36,1);
   will-change: transform, opacity;
 }
 .dz-fold.in { opacity: 1; transform: rotateX(0deg) translateY(0) scale(1); }
