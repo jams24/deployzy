@@ -2,18 +2,18 @@
 
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { Menu, X, ArrowRight, LayoutDashboard, ChevronDown, Rocket, LayoutTemplate, Sparkles } from "lucide-react";
+import { Menu, X, ArrowRight, LayoutDashboard, ChevronDown, Rocket, LayoutTemplate } from "lucide-react";
 
 // Items inside the "Product" mega-menu (Railway-style).
 const productItems = [
   { href: "/#features",  title: "Features",  desc: "Explore the deploy platform",        icon: Rocket },
   { href: "/templates",  title: "Templates", desc: "Deploy popular apps in one click",    icon: LayoutTemplate },
-  { href: "/blog",       title: "Changelog", desc: "Latest features and releases",        icon: Sparkles },
 ];
 
 // Standalone top-level links (outside the Product menu).
 const links = [
   { href: "/#pricing", label: "Pricing" },
+  { href: "/blog",     label: "Blog" },
   { href: "/docs",     label: "Docs" },
 ];
 
