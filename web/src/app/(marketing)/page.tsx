@@ -7,7 +7,6 @@ import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { PlanCta } from "@/components/marketing/plan-cta";
 import { ConnectStack } from "@/components/marketing/connect-stack";
 import { DeployPipeline } from "@/components/marketing/deploy-pipeline";
-import { PillarsFold } from "@/components/marketing/pillars-fold";
 import { ShowcaseCards } from "@/components/marketing/showcase-cards";
 import { FadeIn, SlideIn } from "@/components/marketing/motion-elements";
 import {
@@ -154,21 +153,7 @@ export default async function HomePage() {
       {/* ── How it works: scroll pipeline spine + sticky panel ─────────── */}
       <DeployPipeline />
 
-      {/* ── Pillars: Deploy / Data / Tunnel / Observe / BYOC ───────────── */}
-      <section className="py-20 sm:py-28">
-        <div className="mx-auto max-w-6xl px-5 sm:px-6">
-          <ScrollReveal>
-            <SectionHeader
-              label="Platform"
-              title="Everything you'd otherwise glue together"
-              desc="Deploys, managed Postgres, tunnels, observability, and your own VPS — all wired together. No five-tool stack, no AWS console deep-dives."
-            />
-          </ScrollReveal>
-          <PillarsFold />
-        </div>
-      </section>
-
-      {/* ── Showcase cards (word-reveal) ───────────────────────────────── */}
+      {/* ── Showcase cards (sticky stack) ──────────────────────────────── */}
       <ShowcaseCards />
 
       {/* ── Dashboard preview ──────────────────────────────────────────── */}

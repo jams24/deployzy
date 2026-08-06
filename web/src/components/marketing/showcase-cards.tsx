@@ -76,47 +76,48 @@ const CARDS: Card[] = [
 
 function Visual({ kind }: { kind: Card["visual"] }) {
   return (
-    <div className="relative h-full min-h-[280px] overflow-hidden rounded-2xl border border-white/10 bg-[#0a0b0a]">
-      <div aria-hidden className="absolute inset-0 bg-[radial-gradient(80%_60%_at_30%_20%,rgba(16,185,129,0.22),transparent_60%)]" />
-      <div className="relative h-full p-6 font-mono text-[12.5px] leading-[1.9] text-zinc-400">
+    <div className="relative h-full min-h-[280px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#101114]">
+      {/* subtle top hairline — a refined highlight, not a colored glow */}
+      <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/12 to-transparent" />
+      <div className="relative h-full p-6 font-mono text-[12.5px] leading-[1.9] text-zinc-500">
         {kind === "repo" && (
           <>
-            <div className="flex items-center gap-2 text-zinc-300"><GitBranch className="h-4 w-4 text-emerald-400" /> main · pushed</div>
-            <div className="mt-3 text-zinc-500">$ git push origin main</div>
-            <div className="text-zinc-500">  <span className="text-emerald-400">✓</span> webhook received</div>
-            <div className="text-zinc-500">  <span className="text-emerald-400">✓</span> Docker image built</div>
-            <div className="text-zinc-500">  <span className="text-emerald-400">✓</span> migrations · health 200</div>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-200">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> my-saas.deployzy.com
+            <div className="flex items-center gap-2 text-zinc-300"><GitBranch className="h-4 w-4 text-zinc-500" /> main · pushed</div>
+            <div className="mt-3">$ git push origin main</div>
+            <div>  <span className="text-emerald-400/80">✓</span> webhook received</div>
+            <div>  <span className="text-emerald-400/80">✓</span> Docker image built</div>
+            <div>  <span className="text-emerald-400/80">✓</span> migrations <span className="text-zinc-600">·</span> health <span className="text-zinc-300">200</span></div>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-zinc-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> my-saas.deployzy.com
             </div>
           </>
         )}
         {kind === "live" && (
           <>
-            <div className="flex items-center gap-2 text-zinc-300"><Rocket className="h-4 w-4 text-emerald-400" /> deploying…</div>
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full w-[88%] rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300" />
+            <div className="flex items-center gap-2 text-zinc-300"><Rocket className="h-4 w-4 text-zinc-500" /> deploying…</div>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="h-full w-[88%] rounded-full bg-emerald-500/90" />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {["build 0:22", "TLS ✓", "DB linked", "region eu"].map((t) => (
-                <div key={t} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-zinc-400">{t}</div>
+                <div key={t} className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-zinc-400">{t}</div>
               ))}
             </div>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-200">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> Live · 28s
+            <div className="mt-4 inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-zinc-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Live <span className="text-zinc-500">·</span> 28s
             </div>
           </>
         )}
         {kind === "byoc" && (
           <>
-            <div className="flex items-center gap-2 text-zinc-300"><Server className="h-4 w-4 text-emerald-400" /> my-vps · probed</div>
-            <div className="mt-3 text-zinc-500">$ deployzy servers add my-vps</div>
-            <div className="text-zinc-500">  <span className="text-emerald-400">✓</span> 8 vCPU · 32 GB · Docker</div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-zinc-400">platform · shared</div>
-              <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-violet-200">my-vps · uncapped</div>
+            <div className="flex items-center gap-2 text-zinc-300"><Server className="h-4 w-4 text-zinc-500" /> my-vps · probed</div>
+            <div className="mt-3">$ deployzy servers add my-vps</div>
+            <div>  <span className="text-emerald-400/80">✓</span> 8 vCPU <span className="text-zinc-600">·</span> 32 GB <span className="text-zinc-600">·</span> Docker</div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-zinc-400">platform · shared</div>
+              <div className="rounded-md border border-white/12 bg-white/[0.05] px-3 py-2 text-zinc-200"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" />my-vps · uncapped</div>
             </div>
-            <div className="mt-3 text-zinc-500">  next deploy → <span className="text-violet-300">my-vps</span></div>
+            <div className="mt-4">  next deploy → <span className="text-zinc-200">my-vps</span></div>
           </>
         )}
       </div>
@@ -144,7 +145,7 @@ function StackCard({ card, index, total }: { card: Card; index: number; total: n
     >
       <div
         ref={ref}
-        className="dz-sc group relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-b from-card to-card/80 p-4 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.25)] backdrop-blur-sm sm:p-5 dark:from-[#0e1211] dark:to-[#0a0d0c]"
+        className="dz-sc group relative overflow-hidden rounded-3xl border border-border/60 bg-card p-4 shadow-[0_18px_50px_-24px_rgba(0,0,0,0.22)] sm:p-5 dark:bg-[#0c0d0f]"
       >
         <div className={`grid items-stretch gap-4 sm:gap-6 lg:grid-cols-2 ${card.reverse ? "lg:[&>*:first-child]:order-2" : ""}`}>
           <Visual kind={card.visual} />
