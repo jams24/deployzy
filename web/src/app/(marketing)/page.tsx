@@ -6,6 +6,7 @@ import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { PlanCta } from "@/components/marketing/plan-cta";
 import { LogoCloud } from "@/components/marketing/logo-cloud";
+import { ConnectStack } from "@/components/marketing/connect-stack";
 import { DeployPipeline } from "@/components/marketing/deploy-pipeline";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
@@ -149,6 +150,9 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── Connect your stack (converging cables) ─────────────────────── */}
+      <ConnectStack />
+
       {/* ── How it works: scroll pipeline spine + sticky panel ─────────── */}
       <DeployPipeline />
 
@@ -162,26 +166,30 @@ export default async function HomePage() {
               desc="Deploys, managed Postgres, tunnels, observability, and your own VPS — all wired together. No five-tool stack, no AWS console deep-dives."
             />
           </ScrollReveal>
-          <StaggerContainer className="mt-12 grid gap-4 sm:grid-cols-2">
+          <StaggerContainer className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {pillars.map((p, i) => (
-              <StaggerItem key={p.title} className={i === pillars.length - 1 && pillars.length % 2 === 1 ? "sm:col-span-2" : ""}>
-                <GlowCard className="bg-card/30 p-6 sm:p-8 h-full transition-colors hover:bg-accent/20">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-9 w-9 items-center justify-center rounded-md ${p.iconBg}`}>
-                      <p.icon className={`h-4 w-4 ${p.iconColor}`} />
+              <StaggerItem key={p.title} className={i === pillars.length - 1 && pillars.length % 3 === 1 ? "lg:col-span-1 sm:col-span-2 lg:col-start-2" : ""}>
+                <div className="group relative h-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card/80 to-card/30 p-6 sm:p-7 transition-all duration-300 hover:-translate-y-1 hover:border-foreground/15 hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-black/20">
+                  {/* soft hover glow */}
+                  <div aria-hidden className={`pointer-events-none absolute -top-20 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full ${p.glow} opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100`} />
+                  <div className="relative flex items-center gap-3.5">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${p.iconBg} ring-1 ring-inset ring-white/10 shadow-sm`}>
+                      <p.icon className={`h-5 w-5 ${p.iconColor}`} />
                     </div>
-                    <h3 className="text-base font-medium">{p.title}</h3>
+                    <h3 className="text-[15px] font-semibold tracking-tight">{p.title}</h3>
                   </div>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{p.desc}</p>
-                  <ul className="mt-5 space-y-2">
+                  <p className="relative mt-4 text-[13.5px] text-muted-foreground leading-relaxed">{p.desc}</p>
+                  <ul className="relative mt-5 space-y-2.5">
                     {p.bullets.map((b) => (
-                      <li key={b} className="flex items-start gap-2 text-xs text-foreground/80">
-                        <Check className="h-3 w-3 mt-0.5 text-emerald-500/80 shrink-0" />
+                      <li key={b} className="flex items-start gap-2.5 text-[13px] text-foreground/75">
+                        <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/12">
+                          <Check className="h-2.5 w-2.5 text-emerald-500" />
+                        </span>
                         <span>{b}</span>
                       </li>
                     ))}
                   </ul>
-                </GlowCard>
+                </div>
               </StaggerItem>
             ))}
           </StaggerContainer>
@@ -354,7 +362,7 @@ export default async function HomePage() {
 const pillars = [
   {
     icon: Rocket,
-    iconBg: "bg-emerald-500/10", iconColor: "text-emerald-400",
+    iconBg: "bg-emerald-500/10", iconColor: "text-emerald-400", glow: "bg-emerald-500/15",
     title: "Deploy",
     desc: "Connect a GitHub repo. Every push builds a Docker image, runs migrations, health-checks, and serves on a subdomain.",
     bullets: [
@@ -367,7 +375,7 @@ const pillars = [
   },
   {
     icon: Database,
-    iconBg: "bg-blue-500/10", iconColor: "text-blue-400",
+    iconBg: "bg-blue-500/10", iconColor: "text-blue-400", glow: "bg-blue-500/15",
     title: "Data",
     desc: "Managed PostgreSQL you can reach from your container and from your laptop. Backups on a schedule.",
     bullets: [
@@ -379,7 +387,7 @@ const pillars = [
   },
   {
     icon: Globe,
-    iconBg: "bg-violet-500/10", iconColor: "text-violet-400",
+    iconBg: "bg-violet-500/10", iconColor: "text-violet-400", glow: "bg-violet-500/15",
     title: "Tunnel",
     desc: "Expose your local machine to the internet over HTTP, TCP, or TLS. Real-time request inspector + replay.",
     bullets: [
@@ -391,7 +399,7 @@ const pillars = [
   },
   {
     icon: Activity,
-    iconBg: "bg-amber-500/10", iconColor: "text-amber-400",
+    iconBg: "bg-amber-500/10", iconColor: "text-amber-400", glow: "bg-amber-500/15",
     title: "Observe",
     desc: "Cookieless website analytics, CPU/memory/network metrics, and live-streaming container logs.",
     bullets: [
@@ -403,7 +411,7 @@ const pillars = [
   },
   {
     icon: HardDrive,
-    iconBg: "bg-orange-500/10", iconColor: "text-orange-400",
+    iconBg: "bg-orange-500/10", iconColor: "text-orange-400", glow: "bg-orange-500/15",
     title: "BYOC",
     desc: "Bring your own VPS. We SSH in, install Docker, and deploy projects there with no plan resource caps. The escape hatch every PaaS lacks.",
     bullets: [
