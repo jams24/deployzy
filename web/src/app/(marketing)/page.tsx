@@ -5,9 +5,9 @@ import { fetchPlanCards } from "@/lib/plans";
 import { LiveStream } from "@/components/marketing/live-stream";
 import { ScrollReveal } from "@/components/marketing/scroll-reveal";
 import { PlanCta } from "@/components/marketing/plan-cta";
-import { LogoCloud } from "@/components/marketing/logo-cloud";
 import { ConnectStack } from "@/components/marketing/connect-stack";
 import { DeployPipeline } from "@/components/marketing/deploy-pipeline";
+import { PillarsFold } from "@/components/marketing/pillars-fold";
 import { FadeIn, SlideIn, StaggerContainer, StaggerItem, HoverScale, GlowCard } from "@/components/marketing/motion-elements";
 import {
   ArrowRight, Check, Eye, Lock, Code, Gauge, Users, Shield, Zap,
@@ -122,9 +122,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Deployable-stacks logo cloud ─────────────── */}
-      <LogoCloud />
-
       {/* ── Install bar ──────────────────────────────── */}
       <section className="border-b border-border/40 bg-muted/40">
         <div className="mx-auto max-w-6xl px-5 sm:px-6 py-3.5">
@@ -166,33 +163,7 @@ export default async function HomePage() {
               desc="Deploys, managed Postgres, tunnels, observability, and your own VPS — all wired together. No five-tool stack, no AWS console deep-dives."
             />
           </ScrollReveal>
-          <StaggerContainer className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {pillars.map((p, i) => (
-              <StaggerItem key={p.title} className={i === pillars.length - 1 && pillars.length % 3 === 1 ? "lg:col-span-1 sm:col-span-2 lg:col-start-2" : ""}>
-                <div className="group relative h-full overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-card/80 to-card/30 p-6 sm:p-7 transition-all duration-300 hover:-translate-y-1 hover:border-foreground/15 hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-black/20">
-                  {/* soft hover glow */}
-                  <div aria-hidden className={`pointer-events-none absolute -top-20 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full ${p.glow} opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100`} />
-                  <div className="relative flex items-center gap-3.5">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${p.iconBg} ring-1 ring-inset ring-white/10 shadow-sm`}>
-                      <p.icon className={`h-5 w-5 ${p.iconColor}`} />
-                    </div>
-                    <h3 className="text-[15px] font-semibold tracking-tight">{p.title}</h3>
-                  </div>
-                  <p className="relative mt-4 text-[13.5px] text-muted-foreground leading-relaxed">{p.desc}</p>
-                  <ul className="relative mt-5 space-y-2.5">
-                    {p.bullets.map((b) => (
-                      <li key={b} className="flex items-start gap-2.5 text-[13px] text-foreground/75">
-                        <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/12">
-                          <Check className="h-2.5 w-2.5 text-emerald-500" />
-                        </span>
-                        <span>{b}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
+          <PillarsFold />
         </div>
       </section>
 
@@ -359,69 +330,6 @@ export default async function HomePage() {
 
 // ─── Data ────────────────────────────────────────────
 
-const pillars = [
-  {
-    icon: Rocket,
-    iconBg: "bg-emerald-500/10", iconColor: "text-emerald-400", glow: "bg-emerald-500/15",
-    title: "Deploy",
-    desc: "Connect a GitHub repo. Every push builds a Docker image, runs migrations, health-checks, and serves on a subdomain.",
-    bullets: [
-      "Auto-deploy on push to any branch",
-      "Preview URL for every pull request",
-      "Framework auto-detect: Next.js, Node, Python, Docker, static",
-      "Custom domains with automatic TLS",
-      "Deploy from specific commits, roll back in one click",
-    ],
-  },
-  {
-    icon: Database,
-    iconBg: "bg-blue-500/10", iconColor: "text-blue-400", glow: "bg-blue-500/15",
-    title: "Data",
-    desc: "Managed PostgreSQL you can reach from your container and from your laptop. Backups on a schedule.",
-    bullets: [
-      "PostgreSQL 16 per project, auto-injected as DATABASE_URL",
-      "External connection URL (pgAdmin, DBeaver, psql from your laptop)",
-      "Scheduled backups + one-click restore",
-      "Standalone databases not tied to a project",
-    ],
-  },
-  {
-    icon: Globe,
-    iconBg: "bg-violet-500/10", iconColor: "text-violet-400", glow: "bg-violet-500/15",
-    title: "Tunnel",
-    desc: "Expose your local machine to the internet over HTTP, TCP, or TLS. Real-time request inspector + replay.",
-    bullets: [
-      "HTTP tunnels with custom subdomains",
-      "TCP tunnels for databases, game servers, SSH",
-      "TLS passthrough (your certs, your control)",
-      "Live request capture + one-click replay",
-    ],
-  },
-  {
-    icon: Activity,
-    iconBg: "bg-amber-500/10", iconColor: "text-amber-400", glow: "bg-amber-500/15",
-    title: "Observe",
-    desc: "Cookieless website analytics, CPU/memory/network metrics, and live-streaming container logs.",
-    bullets: [
-      "Privacy-first analytics (no cookies, GDPR-safe)",
-      "Real-time visitor counter, top pages, countries",
-      "CPU / memory / network per project with sparklines",
-      "Live container logs via WebSocket — stop paying for Datadog",
-    ],
-  },
-  {
-    icon: HardDrive,
-    iconBg: "bg-orange-500/10", iconColor: "text-orange-400", glow: "bg-orange-500/15",
-    title: "BYOC",
-    desc: "Bring your own VPS. We SSH in, install Docker, and deploy projects there with no plan resource caps. The escape hatch every PaaS lacks.",
-    bullets: [
-      "Add any Linux VPS via SSH — we probe CPU/RAM and provision Docker",
-      "Deploys go straight to your hardware — no plan memory/CPU ceiling",
-      "Run managed Postgres on your own disk, your own quota",
-      "Mix BYOC with platform overflow — scheduler picks lowest priority with capacity",
-    ],
-  },
-];
 
 const extras = [
   { icon: Clock,       title: "Scheduled jobs",     desc: "Cron-like jobs that run in a one-shot container from your image. Same env, same DB access." },
@@ -544,10 +452,10 @@ function SectionHeader({ label, title, desc, align = "center" }: { label: string
 function Metric({ value, suffix, prefix, label }: { value: number; suffix?: string; prefix?: string; label: string }) {
   return (
     <div>
-      <div className="text-2xl sm:text-3xl font-semibold tracking-tight">
+      <div className="text-4xl sm:text-5xl font-extrabold tracking-tight">
         {prefix}<AnimatedCounter value={value} suffix={suffix} />
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1.5 text-[13px] font-medium text-muted-foreground">{label}</div>
     </div>
   );
 }
