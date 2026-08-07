@@ -14,12 +14,12 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy, Ban, Moon,
+  Eye, EyeOff, Copy, Ban, Moon, Flag,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "bans";
+type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "bans" | "abuse";
 
 interface DensityServer {
   id: string; label: string; region: string; is_local: boolean; status: string;
@@ -59,6 +59,10 @@ interface AdminUser {
   blocked?: boolean;
 }
 interface IPBan { ip: string; reason: string; created_by: string; created_at: string; }
+interface AbuseReport {
+  id: string; target_url: string; category: string; details: string;
+  reporter_email: string; reporter_ip: string; status: string; created_at: string;
+}
 
 // Turn a 2-letter ISO country code into its flag emoji (regional indicators).
 function countryFlag(code?: string): string {
@@ -248,6 +252,9 @@ export default function AdminPage() {
   const [densityLoading, setDensityLoading] = useState(false);
   const [ipBans, setIpBans] = useState<IPBan[]>([]);
   const [banForm, setBanForm] = useState({ ip: "", reason: "" });
+  const [abuseReports, setAbuseReports] = useState<AbuseReport[]>([]);
+  const [abuseLoading, setAbuseLoading] = useState(false);
+  const [abuseFilter, setAbuseFilter] = useState<"open" | "actioned" | "dismissed" | "all">("open");
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -519,6 +526,36 @@ export default function AdminPage() {
       const res = await fetch(`${API}/api/v1/admin/ip-bans/${encodeURIComponent(ip)}`, { method: "DELETE", headers: headers() });
       if (res.ok) loadIPBans();
     } catch {}
+  }
+
+  // ── Abuse reports ────────────────────────────────────────────────────────────
+  // Load the full set (status=all) once and filter client-side, so the tab badge
+  // can show an accurate open count regardless of the on-screen filter.
+  const loadAbuseReports = useCallback(async () => {
+    setAbuseLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/abuse-reports?status=all`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setAbuseReports(Array.isArray(d.reports) ? d.reports : []); }
+    } catch {}
+    setAbuseLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "abuse") loadAbuseReports();
+  }, [tab, loadAbuseReports]);
+
+  // Load once on mount too, so the "Abuse Reports" tab badge reflects pending
+  // open reports without the operator having to open the tab first.
+  useEffect(() => { loadAbuseReports(); }, [loadAbuseReports]);
+
+  async function setAbuseStatus(id: string, status: "open" | "actioned" | "dismissed") {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/abuse-reports/${id}/status`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ status }),
+      });
+      if (res.ok) { setActionError(""); loadAbuseReports(); }
+      else { const d = await res.json().catch(() => ({})); setActionError(d.error || "Update failed"); }
+    } catch { setActionError("Update failed"); }
   }
 
   // ── VPN panel config ───────────────────────────────────────────────────────
@@ -988,6 +1025,7 @@ export default function AdminPage() {
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "bans", label: "IP Bans", badge: ipBans.length || undefined },
+    { id: "abuse", label: "Abuse Reports", badge: abuseReports.filter(r => r.status === "open").length || undefined },
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "databases", label: "Databases" },
     { id: "orphans", label: "Orphans", badge: orphanScan?.orphans.length || undefined },
@@ -1680,6 +1718,100 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ── ABUSE REPORTS TAB ────────────────────────────────────────────── */}
+      {tab === "abuse" && (() => {
+        const catColor: Record<string, string> = {
+          phishing: "bg-red-500/15 text-red-400 border-red-500/40",
+          illegal:  "bg-red-500/15 text-red-400 border-red-500/40",
+          malware:  "bg-orange-500/15 text-orange-400 border-orange-500/40",
+          spam:     "bg-amber-500/15 text-amber-400 border-amber-500/40",
+          other:    "bg-zinc-500/15 text-zinc-400 border-zinc-500/40",
+        };
+        const statusColor: Record<string, string> = {
+          open:      "bg-amber-500/15 text-amber-400 border-amber-500/40",
+          actioned:  "bg-emerald-500/15 text-emerald-400 border-emerald-500/40",
+          dismissed: "bg-zinc-500/15 text-zinc-400 border-zinc-500/40",
+        };
+        const shown = abuseReports.filter(r => abuseFilter === "all" || r.status === abuseFilter);
+        const openCount = abuseReports.filter(r => r.status === "open").length;
+        return (
+        <div className="space-y-5 max-w-3xl">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2"><Flag className="h-4 w-4 text-red-400" /> Abuse Reports</h2>
+              <p className="text-sm text-muted-foreground">Public reports of phishing, malware, spam, or illegal content on deployed apps and tunnels. Submitted via <span className="font-mono">/report</span>.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadAbuseReports} disabled={abuseLoading} className="gap-1.5">
+              {abuseLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh
+            </Button>
+          </div>
+
+          <div className="flex gap-1.5 flex-wrap">
+            {(["open", "actioned", "dismissed", "all"] as const).map((f) => (
+              <button key={f} onClick={() => setAbuseFilter(f)}
+                className={`h-7 px-3 rounded-full text-xs capitalize border transition-colors ${
+                  abuseFilter === f ? "bg-primary text-primary-foreground border-primary" : "border-border/60 text-muted-foreground hover:bg-muted/40"
+                }`}>
+                {f}{f === "open" && openCount > 0 ? ` (${openCount})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {abuseLoading && abuseReports.length === 0 ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : shown.length === 0 ? (
+            <div className="rounded-xl border border-border/60 px-4 py-12 text-center text-sm text-muted-foreground">
+              {abuseFilter === "open" ? "No open reports. 🎉" : `No ${abuseFilter} reports.`}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {shown.map((r) => (
+                <div key={r.id} className="rounded-xl border border-border/60 p-4 space-y-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className={`text-[10px] capitalize ${catColor[r.category] || catColor.other}`}>{r.category}</Badge>
+                    <Badge variant="outline" className={`text-[10px] capitalize ${statusColor[r.status] || statusColor.open}`}>{r.status}</Badge>
+                    <span className="text-[11px] text-muted-foreground ml-auto">{new Date(r.created_at).toLocaleString()}</span>
+                  </div>
+                  {/* Reported URL is shown as plain selectable text, never a link —
+                      it may point to a live phishing/malware page. */}
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Reported URL</p>
+                    <p className="text-sm font-mono break-all select-all">{r.target_url || "—"}</p>
+                  </div>
+                  {r.details && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Details</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{r.details}</p>
+                    </div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground">
+                    Reporter: {r.reporter_email || "anonymous"}{r.reporter_ip ? <> · <span className="font-mono">{r.reporter_ip}</span></> : null}
+                  </div>
+                  <div className="flex gap-2 flex-wrap pt-1">
+                    {r.status !== "actioned" && (
+                      <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "actioned")}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Mark actioned
+                      </Button>
+                    )}
+                    {r.status !== "dismissed" && (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "dismissed")}>
+                        <X className="h-3.5 w-3.5" /> Dismiss
+                      </Button>
+                    )}
+                    {r.status !== "open" && (
+                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "open")}>
+                        <RotateCcw className="h-3.5 w-3.5" /> Reopen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        );
+      })()}
 
       {/* ── DENSITY TAB ──────────────────────────────────────────────────── */}
       {tab === "density" && (

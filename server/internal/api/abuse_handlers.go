@@ -49,7 +49,7 @@ func (s *Server) handleSubmitAbuseReport(w http.ResponseWriter, r *http.Request)
 				"URL: " + htmlEscapeSafe(rep.TargetURL) + "<br>" +
 				"Reporter: " + htmlEscapeSafe(rep.ReporterEmail) + " (" + htmlEscapeSafe(rep.ReporterIP) + ")</p>" +
 				"<p>" + htmlEscapeSafe(rep.Details) + "</p>" +
-				"<p>Triage in the admin console → IP Bans / Users / Projects.</p>"
+				"<p>Triage in the admin console → Abuse Reports tab (https://deployzy.com/admin).</p>"
 			_ = s.emailSvc.SendOne("support@deployzy.com", "⚠️ Abuse report: "+rep.Category, body)
 		}(*rep)
 	}
