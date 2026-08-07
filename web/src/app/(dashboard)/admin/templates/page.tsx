@@ -352,7 +352,7 @@ function TemplateFormModal({
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {(() => {
-                  const tiers = [128, 256, 512, 1024, 2048, 4096, 8192];
+                  const tiers = [128, 256, 512, 1024, 1536, 2048, 4096, 8192];
                   const cur = form.min_memory_mb ?? 256;
                   const opts = tiers.includes(cur) ? tiers : [cur, ...tiers].sort((a, b) => a - b);
                   return opts.map((mb) => (
