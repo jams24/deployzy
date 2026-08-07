@@ -343,11 +343,26 @@ function TemplateFormModal({
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Min memory (MB)</Label>
-              <Input
-                type="number"
+              {/* Standard memory tiers — a plain number input stepped by 1, which
+                  produced odd values like 1029. A select keeps sizes on the
+                  conventional grid while still showing any pre-existing custom value. */}
+              <select
                 value={form.min_memory_mb ?? 256}
                 onChange={(e) => set("min_memory_mb", parseInt(e.target.value) || 256)}
-              />
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {(() => {
+                  const tiers = [128, 256, 512, 1024, 2048, 4096, 8192];
+                  const cur = form.min_memory_mb ?? 256;
+                  const opts = tiers.includes(cur) ? tiers : [cur, ...tiers].sort((a, b) => a - b);
+                  return opts.map((mb) => (
+                    <option key={mb} value={mb}>
+                      {mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB (${mb} MB)` : `${mb} MB`}
+                      {!tiers.includes(mb) ? " — custom" : ""}
+                    </option>
+                  ));
+                })()}
+              </select>
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Required plan</Label>
