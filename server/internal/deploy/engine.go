@@ -546,6 +546,16 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if buildCtx2.Err() == context.DeadlineExceeded {
 			errMsg = "build timed out after 20 minutes"
 		}
+		// Persist the actual build output so users can debug the real cause.
+		// extractBuildError is only a best-effort headline (it greps for
+		// "error"/"failed" lines and can miss the true failure); the raw tail
+		// below is what actually lets someone see the npm/compiler/Dockerfile
+		// error. message is a TEXT column, so a few KB is fine; keep last ~6KB.
+		if raw := strings.TrimRight(trimLogs(string(output), 6000), "\n"); strings.TrimSpace(raw) != "" {
+			e.logMsg(ctx, project.ID, "---- Build output (last lines) ----", "error")
+			e.logMsg(ctx, project.ID, raw, "error")
+			e.logMsg(ctx, project.ID, "-----------------------------------", "error")
+		}
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
 		restoreOldState()
 		return fmt.Errorf("docker build: %w", err)
