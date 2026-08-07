@@ -315,6 +315,7 @@ function ProjectsContent() {
   const [liveMin, setLiveMin] = useState<Record<string, boolean>>({});   // minimized (header only)
   const [liveAutoscroll, setLiveAutoscroll] = useState<Record<string, boolean>>({});
   const wsRef = useRef<Record<string, WebSocket>>({});
+  const deployLogRef = useRef<HTMLDivElement>(null);
   const liveScrollRef = useRef<Record<string, HTMLDivElement | null>>({});
   // Panel collapse states (metrics + crons + analytics) — default collapsed so
   // opening a project doesn't blast the user with every panel at once.
@@ -1013,6 +1014,13 @@ function ProjectsContent() {
     const a = setInterval(() => loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h"), 30000);
     return () => { clearInterval(t); clearInterval(m); clearInterval(a); };
   }, [selectedProject]);
+
+  // Keep the Deploy Logs panel pinned to the newest line as logs stream in
+  // (they render oldest→newest, so the latest output is at the bottom).
+  useEffect(() => {
+    const el = deployLogRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs]);
 
   // While the open project is actively building, poll its deploy logs faster (2s)
   // so streamed build output feels live instead of arriving in 5s jumps.
@@ -2284,13 +2292,15 @@ function ProjectsContent() {
                     kept 14 days, so older projects show an empty state instead
                     of the panel silently vanishing. */}
                 {selectedProject === p.id && (
-                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-52 sm:max-h-64 overflow-y-auto">
+                  <div ref={deployLogRef} className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-52 sm:max-h-64 overflow-y-auto">
                     <div className="border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] text-muted-foreground font-mono flex items-center gap-2 sticky top-0">
                       <Terminal className="h-3 w-3 text-[#58a6ff]" /> <span className="text-[#c9d1d9]">Deploy Logs</span>
                     </div>
                     {logs.length > 0 ? (
                       <div className="p-2 font-mono text-[11px] space-y-0.5">
-                        {logs.map((l, i) => (
+                        {/* API returns newest-first; render oldest→newest so the
+                            build reads top-to-bottom like a terminal. */}
+                        {[...logs].reverse().map((l, i) => (
                           <div key={i} className={`px-2 py-0.5 rounded hover:bg-white/[0.03] ${
                             l.level === "error"  ? "text-[#f85149]" :
                             l.level === "build"  ? "text-[#d29922]" :

@@ -1307,6 +1307,9 @@ func getContainerLogs(name string, lines int) string {
 
 // extractBuildError extracts the meaningful error from Docker build output.
 func extractBuildError(output string) string {
+	// Strip ANSI colour codes first — the raw captured tail retains them, and we
+	// don't want escape sequences leaking into the "Build failed:" headline.
+	output = ansiRE.ReplaceAllString(output, "")
 	lines := strings.Split(output, "\n")
 	// Find lines with "error", "ERROR", "failed", "FAILED"
 	var errorLines []string
