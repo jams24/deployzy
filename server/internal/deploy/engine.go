@@ -530,7 +530,13 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		shellQuote(buildCtx),
 	)
 	buildStart := time.Now()
-	output, err := runner.RunShell(buildCtx2, buildShellCmd)
+	// Stream the build output live into deploy_logs (the dashboard polls it), so
+	// users watch progress and see the real failure as it happens — not just a
+	// grep-guess after the fact. RunShellStreaming also returns a capped tail of
+	// the raw output for the post-build error summary below.
+	buildLog := e.newBuildLogStreamer(project.ID)
+	output, err := runner.RunShellStreaming(buildCtx2, buildShellCmd, buildLog.line)
+	buildLog.stop() // final flush of any buffered lines
 	// Recorded on success AND failure: a broken Dockerfile burns the same CPU
 	// as a working one, so not counting failures would leave a free way to
 	// hammer the build host. context.Background() because ctx may already be
@@ -546,16 +552,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if buildCtx2.Err() == context.DeadlineExceeded {
 			errMsg = "build timed out after 20 minutes"
 		}
-		// Persist the actual build output so users can debug the real cause.
-		// extractBuildError is only a best-effort headline (it greps for
-		// "error"/"failed" lines and can miss the true failure); the raw tail
-		// below is what actually lets someone see the npm/compiler/Dockerfile
-		// error. message is a TEXT column, so a few KB is fine; keep last ~6KB.
-		if raw := strings.TrimRight(trimLogs(string(output), 6000), "\n"); strings.TrimSpace(raw) != "" {
-			e.logMsg(ctx, project.ID, "---- Build output (last lines) ----", "error")
-			e.logMsg(ctx, project.ID, raw, "error")
-			e.logMsg(ctx, project.ID, "-----------------------------------", "error")
-		}
+		// The full build output already streamed live above (buildLog), so we
+		// only add a concise headline here. extractBuildError is best-effort; if
+		// it whiffs, the streamed output above still shows the real cause.
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
 		restoreOldState()
 		return fmt.Errorf("docker build: %w", err)
