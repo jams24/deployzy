@@ -1297,13 +1297,13 @@ function ProjectsContent() {
                       <label className="text-[10px] text-muted-foreground">
                         Memory MB <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                       </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => { const v = parseInt(e.target.value) || 0; const cap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : Infinity; setImportBuildCfg({ ...importBuildCfg, memory_mb: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">
                         CPUs <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
                       </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => { const v = parseFloat(e.target.value) || 0; const cap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : Infinity; setImportBuildCfg({ ...importBuildCfg, cpus: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-muted-foreground">(e.g. /health; empty = skip)</span></label>
@@ -1756,13 +1756,13 @@ function ProjectsContent() {
                             <label className="text-[10px] text-muted-foreground">
                               Memory MB <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                             </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => { const v = parseInt(e.target.value) || 0; const cap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : Infinity; setBuildCfg({ ...buildCfg, memory_mb: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">
                               CPUs <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
                             </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => { const v = parseFloat(e.target.value) || 0; const cap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : Infinity; setBuildCfg({ ...buildCfg, cpus: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-muted-foreground">(e.g. /health; empty = skip)</span></label>

@@ -390,6 +390,24 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "cpus must be 0-8")
 		return
 	}
+	// Enforce the user's PLAN ceiling up front: a project can't request more
+	// memory/CPU than the plan allows. Admins (unlimited) bypass. 0 = "use
+	// default" is always fine. The deploy engine also clamps, but rejecting here
+	// with a clear message beats silently shrinking the value at deploy time.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		if usr, _ := s.db.GetUserByID(r.Context(), u.ID); usr != nil {
+			if lim, _ := s.db.GetPlanLimits(r.Context(), usr.Plan); lim != nil {
+				if req.MemoryMB > 0 && !db.Unlimited(lim.MaxMemoryMB) && req.MemoryMB > lim.MaxMemoryMB {
+					writeError(w, http.StatusForbidden, fmt.Sprintf("Memory %d MB exceeds your plan limit of %d MB. Upgrade your plan for more.", req.MemoryMB, lim.MaxMemoryMB))
+					return
+				}
+				if req.CPUs > 0 && lim.MaxCPUs > 0 && req.CPUs > lim.MaxCPUs {
+					writeError(w, http.StatusForbidden, fmt.Sprintf("%.2f vCPU exceeds your plan limit of %.2f vCPU. Upgrade your plan for more.", req.CPUs, lim.MaxCPUs))
+					return
+				}
+			}
+		}
+	}
 	// Only allow a small allowlist of node versions so users can't pass "; rm -rf /" as a tag
 	if req.NodeVersion != "" {
 		allowed := map[string]bool{"18": true, "20": true, "22": true}
