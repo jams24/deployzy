@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>You are visiting a tunnel — Deployzy</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0c0d10; color: #e7e9ee; padding: 24px; line-height: 1.55;
+  }
+  .card {
+    max-width: 560px; width: 100%; background: #141519; border: 1px solid #23252b;
+    border-radius: 16px; padding: 36px 34px; box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: #f4b740;
+    background: rgba(244,183,64,.1); border: 1px solid rgba(244,183,64,.28);
+    padding: 6px 12px; border-radius: 999px; margin-bottom: 20px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #f4b740; }
+  h1 { font-size: 22px; margin: 0 0 12px; font-weight: 700; letter-spacing: -.01em; }
+  p { margin: 0 0 16px; color: #b6bac3; font-size: 15px; }
+  .host {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px;
+    color: #e7e9ee; background: #0c0d10; border: 1px solid #23252b; border-radius: 8px;
+    padding: 10px 12px; word-break: break-all; margin: 0 0 20px;
+  }
+  ul { margin: 0 0 24px; padding-left: 20px; color: #b6bac3; font-size: 14px; }
+  li { margin-bottom: 6px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  a.btn {
+    display: inline-block; text-decoration: none; font-weight: 600; font-size: 15px;
+    padding: 12px 22px; border-radius: 10px; background: #3b82f6; color: #fff;
+    transition: background .15s;
+  }
+  a.btn:hover { background: #2f6fe0; }
+  a.report { color: #8b909b; font-size: 13px; text-decoration: none; }
+  a.report:hover { color: #b6bac3; text-decoration: underline; }
+  .foot { margin-top: 26px; padding-top: 18px; border-top: 1px solid #23252b; font-size: 12px; color: #6c707a; }
+  .foot a { color: #8b909b; text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge"><span class="dot"></span>Caution — user-run tunnel</div>
+    <h1>You're about to visit a site served over a tunnel</h1>
+    <p>You requested:</p>
+    <div class="host">{{.Host}}</div>
+    <p>This content is served by an <strong>independent user</strong> through Deployzy's tunneling service. It is <strong>not operated, reviewed, or endorsed by Deployzy</strong>.</p>
+    <ul>
+      <li>Do <strong>not</strong> enter passwords, card numbers, or personal details unless you fully trust whoever sent you this link.</li>
+      <li>Deployzy will never ask you to log in or pay through a tunnel link.</li>
+      <li>If this page impersonates a real company, it may be a scam.</li>
+    </ul>
+    <div class="actions">
+      <a class="btn" href="{{.ContinueURL}}" rel="nofollow">Continue to site</a>
+      <a class="report" href="https://deployzy.com/report?host={{.HostParam}}" target="_blank" rel="noopener">Report this site</a>
+    </div>
+    <div class="foot">
+      Tunneling by <a href="https://deployzy.com" target="_blank" rel="noopener">Deployzy</a> · Abuse: <a href="mailto:abuse@deployzy.com">abuse@deployzy.com</a>
+    </div>
+  </div>
+</body>
+</html>

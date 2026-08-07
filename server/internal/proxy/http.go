@@ -249,6 +249,15 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Anti-abuse interstitial: on the first HTML navigation to a tunnel host,
+	// show a "this is a user-run tunnel, not Deployzy" warning to deter
+	// phishing/scam use. Applies to all tunnels; skips assets, XHR/fetch,
+	// WebSocket upgrades, and clients that have already acknowledged. Deployed
+	// projects never reach here (they return early via proxyToProject above).
+	if p.maybeServeInterstitial(w, r, hostname) {
+		return
+	}
+
 	// Buffer the full request body before touching the stream. This must happen
 	// before inspection so the 10KB capture doesn't replace r.Body with a
 	// truncated version while r.ContentLength still holds the original size —
