@@ -567,6 +567,10 @@ function ProjectsContent() {
     setDeploying(id);
     // Optimistically mark as building so the polling useEffect kicks in immediately.
     setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "building" } : p));
+    // Open the project's Deploy Logs panel so build output streams into view live
+    // (the log poll is keyed on selectedProject — without this the build streams
+    // to the DB but the user sees nothing until they manually expand the project).
+    setSelectedProject(id);
     await fetch(`${API}/api/v1/projects/${id}/deploy`, { method: "POST", headers: headers() });
     loadLogs(id);
     setTimeout(() => setDeploying(null), 3000);
@@ -676,10 +680,14 @@ function ProjectsContent() {
 
   async function deployCommit(projectId: string, sha: string) {
     setDeploying(projectId);
+    // Mark building + open the log panel so build output streams into view live.
+    setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, status: "building" } : p));
+    setSelectedProject(projectId);
     await fetch(`${API}/api/v1/projects/${projectId}/deploy`, {
       method: "POST", headers: headers(),
       body: JSON.stringify({ commit_sha: sha }),
     });
+    loadLogs(projectId);
     setTimeout(() => { setDeploying(null); load(); }, 3000);
   }
 
@@ -1005,6 +1013,16 @@ function ProjectsContent() {
     const a = setInterval(() => loadSiteAnalytics(selectedProject, siteRange[selectedProject] || "24h"), 30000);
     return () => { clearInterval(t); clearInterval(m); clearInterval(a); };
   }, [selectedProject]);
+
+  // While the open project is actively building, poll its deploy logs faster (2s)
+  // so streamed build output feels live instead of arriving in 5s jumps.
+  useEffect(() => {
+    if (!selectedProject) return;
+    const building = projects.some(p => p.id === selectedProject && p.status === "building");
+    if (!building) return;
+    const t = setInterval(() => loadLogs(selectedProject), 2000);
+    return () => clearInterval(t);
+  }, [selectedProject, projects]);
 
   const filteredRepos = (ghRepos || []).filter((r) =>
     !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
