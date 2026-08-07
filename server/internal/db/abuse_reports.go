@@ -34,7 +34,7 @@ func (d *DB) ListAbuseReports(ctx context.Context, status string, limit int) ([]
 		q += ` WHERE status = $1`
 		args = append(args, status)
 	}
-	q += ` ORDER BY created_at DESC LIMIT ` + itoa(len(args)+1)
+	q += ` ORDER BY created_at DESC LIMIT $` + itoa(len(args)+1)
 	args = append(args, limit)
 	rows, err := d.Pool.Query(ctx, q, args...)
 	if err != nil {
