@@ -60,11 +60,25 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BYOC path — provision a container on the user's own server via SSH.
+	// A specific server/region was chosen (the region picker sends its
+	// worker_server_id). The target may be a PLATFORM region server (no owner,
+	// e.g. France) OR the user's own BYOC box — both provision a container on
+	// that server. Only reject a server owned by someone else. Previously this
+	// went straight to the BYOC path, which rejected any server the user didn't
+	// own, so picking a platform region like France 502'd with "server not found".
 	if req.WorkerServerID != "" {
-		svc, err := s.provisionBYOCService(r.Context(), u.ID, req.Name, req.Type, req.WorkerServerID)
+		server, gerr := s.db.GetWorkerServer(r.Context(), req.WorkerServerID)
+		if gerr != nil || server == nil {
+			writeError(w, http.StatusBadRequest, "selected region/server not found")
+			return
+		}
+		if server.UserID != nil && *server.UserID != u.ID {
+			writeError(w, http.StatusForbidden, "that server isn't available to you")
+			return
+		}
+		svc, err := s.provisionServiceContainerOn(r.Context(), u.ID, req.Name, req.Type, server)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "failed to create service on your server: "+err.Error())
+			writeError(w, http.StatusBadGateway, "failed to create service on that server: "+err.Error())
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
