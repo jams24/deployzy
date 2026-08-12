@@ -416,7 +416,10 @@ func (s *Server) handleInstallDocker(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runDockerInstall(server *db.WorkerServer) {
 	// get.docker.com is the official bootstrap. Idempotent — safe to re-run.
-	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker"
+	// Also open the Docker->host firewall on UFW-hardened boxes right away, so a
+	// co-located app can reach a DB container's published port on this server even
+	// before its first database is provisioned (see dockerFirewallPrefix).
+	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + dockerFirewallPrefix
 	var cmd string
 	if server.SSHPassword != "" {
 		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1",
