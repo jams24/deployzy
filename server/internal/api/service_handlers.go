@@ -15,6 +15,16 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
+// dockerFirewallPrefix is prepended to every DB-container `docker run`. On hosts
+// running an ACTIVE UFW (INPUT policy DROP, e.g. the France worker), a container
+// reaching another container's published port on the same host hairpins onto the
+// host INPUT chain via docker0 and UFW drops it — so a co-located app can't reach
+// its DB ("connect ETIMEDOUT <host>:<dbport>"). This idempotently allows the
+// Docker bridge to reach published app/DB ports (10000–40000, all already
+// 0.0.0.0-published, so no new exposure). No-op where UFW isn't active. `grep
+// -qiw active` matches "Status: active" but NOT "inactive".
+const dockerFirewallPrefix = `if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qiw active; then ufw allow in on docker0 to any port 10000:40000 proto tcp >/dev/null 2>&1 || true; fi; `
+
 // resolveServicePublicHost returns the public host users should use to connect
 // to standalone services from outside Docker (local dev, pgAdmin, etc).
 // Uses ServiceHost (raw VPS IP) so the address bypasses Cloudflare, which
@@ -189,7 +199,7 @@ func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, 
 		return nil, fmt.Errorf("unsupported type: %s", serviceType)
 	}
 
-	out, err := runRemoteSSH(server, dockerRun, 5*time.Minute)
+	out, err := runRemoteSSH(server, dockerFirewallPrefix+dockerRun, 5*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("docker run failed: %s", lastLine(string(out)))
 	}
@@ -271,6 +281,9 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 	default:
 		return nil, fmt.Errorf("unsupported type: %s", serviceType)
 	}
+
+	// Ensure a co-located app can reach this DB's published port on UFW-hardened hosts.
+	dockerRun = dockerFirewallPrefix + dockerRun
 
 	if isLocal {
 		execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
