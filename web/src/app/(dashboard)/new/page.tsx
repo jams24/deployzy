@@ -97,8 +97,11 @@ export default function NewResourcePage() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiGenerator, setAiGenerator] = useState("portfolio");
   const [aiBuilding, setAiBuilding] = useState(false);
-  const [aiResult, setAiResult] = useState<{ url: string; projectId: string } | null>(null);
+  const [aiResult, setAiResult] = useState<{ url: string; projectId: string; summary?: string } | null>(null);
   const [aiError, setAiError] = useState("");
+  // code-gen: when the generated service needs secrets before it can deploy
+  const [aiNeedsEnv, setAiNeedsEnv] = useState<{ projectId: string; url: string; summary: string; vars: { key: string; description: string }[] } | null>(null);
+  const [aiEnvValues, setAiEnvValues] = useState<Record<string, string>>({});
 
   // Template picker (API-backed)
   const [apiTemplates, setApiTemplates]         = useState<Template[]>([]);
@@ -382,7 +385,7 @@ function startDocker() {
           .catch(() => {})
           .finally(() => setTemplatesLoading(false));
         break;
-      case "ai": setAiPrompt(""); setAiResult(null); setAiError(""); setStep("ai"); break;
+      case "ai": setAiPrompt(""); setAiResult(null); setAiError(""); setAiNeedsEnv(null); setStep("ai"); break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
@@ -391,7 +394,7 @@ function startDocker() {
 
   async function runAIBuild() {
     if (!aiPrompt.trim() || aiBuilding) return;
-    setAiBuilding(true); setAiError(""); setAiResult(null);
+    setAiBuilding(true); setAiError(""); setAiResult(null); setAiNeedsEnv(null);
     try {
       const res = await fetch(`${API}/api/v1/ai/build`, {
         method: "POST", headers: headers(),
@@ -404,9 +407,34 @@ function startDocker() {
         setAiBuilding(false);
         return;
       }
-      setAiResult({ url: data.url, projectId: data.project?.id });
+      if (data.status === "needs_env") {
+        // code-gen service needs secrets before it can run
+        setAiNeedsEnv({ projectId: data.project?.id, url: data.url, summary: data.summary || "",
+          vars: (data.env_vars || []).map((e: { key: string; description: string }) => ({ key: e.key, description: e.description })) });
+        setAiEnvValues({});
+      } else {
+        setAiResult({ url: data.url, projectId: data.project?.id, summary: data.summary });
+      }
     } catch {
       setAiError("Build failed — please try again.");
+    }
+    setAiBuilding(false);
+  }
+
+  async function deployAIWithEnv() {
+    if (!aiNeedsEnv || aiBuilding) return;
+    setAiBuilding(true); setAiError("");
+    try {
+      const res = await fetch(`${API}/api/v1/ai/deploy`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ project_id: aiNeedsEnv.projectId, prompt: aiPrompt.trim(), env: aiEnvValues }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAiError(data.error || "Deploy failed."); setAiBuilding(false); return; }
+      setAiResult({ url: aiNeedsEnv.url, projectId: aiNeedsEnv.projectId, summary: aiNeedsEnv.summary });
+      setAiNeedsEnv(null);
+    } catch {
+      setAiError("Deploy failed — please try again.");
     }
     setAiBuilding(false);
   }
@@ -438,8 +466,10 @@ function startDocker() {
     const generators = [
       { id: "portfolio", label: "Portfolio", ready: true },
       { id: "landing", label: "Landing page", ready: true },
-      { id: "telegram", label: "Telegram bot", ready: false },
-      { id: "blog", label: "Blog", ready: false },
+      { id: "api", label: "API / microservice", ready: true },
+      { id: "telegram-bot", label: "Telegram bot", ready: true },
+      { id: "discord-bot", label: "Discord bot", ready: true },
+      { id: "worker", label: "Worker / job", ready: true },
     ];
     const examplesByGen: Record<string, string[]> = {
       portfolio: [
@@ -452,8 +482,27 @@ function startDocker() {
         "Landing page for an AI note-taking app for students, playful and colorful",
         "Landing page for a dev tool that monitors cron jobs, with 3 pricing tiers",
       ],
+      api: [
+        "A TypeScript REST API with /health, and /quote returning a random programming quote",
+        "A URL shortener API in TypeScript with in-memory storage",
+        "A Python API that converts currencies using a built-in rates table",
+      ],
+      "telegram-bot": [
+        "A meme bot: /meme sends a random meme, /joke tells a programming joke",
+        "A crypto price alert bot: /price BTC shows the price from CoinGecko",
+        "A reminder bot: /remind <minutes> <text> pings you after the delay",
+      ],
+      "discord-bot": [
+        "A Discord bot with /roll dice and /8ball fortune commands",
+        "A Discord welcome bot that greets new members",
+      ],
+      worker: [
+        "A worker that logs a heartbeat every 30 seconds",
+        "A Python job that fetches an RSS feed every 10 minutes and prints new items",
+      ],
     };
     const examples = examplesByGen[aiGenerator] || examplesByGen.portfolio;
+    const isCodegen = ["api", "telegram-bot", "discord-bot", "worker"].includes(aiGenerator);
     return (
       <div className="max-w-2xl mx-auto mt-8">
         <BackButton />
@@ -491,6 +540,38 @@ function startDocker() {
                 <Button variant="ghost" onClick={() => { setAiResult(null); setAiPrompt(""); }}>
                   Build another
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : aiNeedsEnv ? (
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Almost there — add your keys</h2>
+                <p className="text-sm text-muted-foreground mt-1">{aiNeedsEnv.summary}</p>
+                <p className="text-xs text-muted-foreground mt-2">This service needs the following secret(s) to run. They&apos;re stored as environment variables, never shown publicly.</p>
+              </div>
+              <div className="space-y-3">
+                {aiNeedsEnv.vars.map((v) => (
+                  <div key={v.key}>
+                    <label className="text-xs font-mono font-medium">{v.key}</label>
+                    {v.description && <p className="text-[11px] text-muted-foreground mb-1">{v.description}</p>}
+                    <Input
+                      type="password"
+                      value={aiEnvValues[v.key] || ""}
+                      onChange={(e) => setAiEnvValues({ ...aiEnvValues, [v.key]: e.target.value })}
+                      placeholder={`Paste your ${v.key}…`}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+              {aiError && <p className="text-sm text-red-400">{aiError}</p>}
+              <div className="flex gap-2">
+                <Button onClick={deployAIWithEnv} disabled={aiBuilding || aiNeedsEnv.vars.some(v => !aiEnvValues[v.key]?.trim())} className="gap-2">
+                  {aiBuilding ? <><Loader2 className="h-4 w-4 animate-spin" /> Deploying…</> : <><Rocket className="h-4 w-4" /> Deploy</>}
+                </Button>
+                <Button variant="ghost" onClick={() => { setAiNeedsEnv(null); }}>Cancel</Button>
               </div>
             </CardContent>
           </Card>
