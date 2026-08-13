@@ -20,15 +20,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, "schema/portfolio.schema.json"), "utf8"));
 
 // ---- args ----
 const args = process.argv.slice(2);
 const getArg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
+const generator = getArg("--generator", "portfolio");
 const prompt = getArg("--prompt", "A portfolio for a full-stack developer");
-const outPath = getArg("--out", path.join(__dirname, "scaffolds/portfolio/content.json"));
+const outPath = getArg("--out", path.join(__dirname, `scaffolds/${generator}/content.json`));
 
-const SYSTEM = `You generate content for a personal portfolio website. You output ONLY a
+const HINTS = {
+  portfolio: "You generate content for a personal PORTFOLIO website.",
+  landing: "You generate content for a modern PRODUCT / SaaS LANDING PAGE. Make the headline benefit-driven and the features concrete. Only include pricing/testimonials/faq/metrics if the product warrants them.",
+};
+const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, `schema/${generator}.schema.json`), "utf8"));
+
+const SYSTEM = `${HINTS[generator] || HINTS.portfolio} You output ONLY a
 single JSON object that strictly matches this JSON Schema — no markdown, no prose,
 no code fences. Fill every required field with real, specific, human-sounding copy
 based on the user's request. Write in the first person for "about". Keep it warm,

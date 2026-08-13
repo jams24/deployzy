@@ -23,7 +23,7 @@ import (
 // dependency on the VPS. The model only ever fills the schema; it never writes
 // code, which is what makes this cheap, reliable, and hard to abuse.
 //
-//go:embed aiassets/portfolio/index.html aiassets/portfolio/Dockerfile aiassets/portfolio.schema.json
+//go:embed aiassets/portfolio/index.html aiassets/portfolio/Dockerfile aiassets/portfolio.schema.json aiassets/landing/index.html aiassets/landing/Dockerfile aiassets/landing.schema.json
 var aiAssets embed.FS
 
 type aiGenerator struct {
@@ -39,6 +39,12 @@ var aiGenerators = map[string]aiGenerator{
 		schemaFile:  "aiassets/portfolio.schema.json",
 		files:       []string{"index.html", "Dockerfile"},
 		systemHint:  "You generate content for a personal PORTFOLIO website.",
+	},
+	"landing": {
+		scaffoldDir: "aiassets/landing",
+		schemaFile:  "aiassets/landing.schema.json",
+		files:       []string{"index.html", "Dockerfile"},
+		systemHint:  "You generate content for a modern PRODUCT / SaaS LANDING PAGE. Make the headline benefit-driven and the features concrete. Only include pricing/testimonials/faq/metrics if the product warrants them.",
 	},
 }
 
@@ -191,11 +197,26 @@ JSON Schema:
 	}
 	pretty, _ := json.MarshalIndent(obj, "", "  ")
 
-	// derive slug from hero.name
+	// derive a slug from the most name-like field the generator produced
+	// (portfolio → hero.name; landing → brand.name; fallback → meta.title).
 	slug := "site"
 	if hero, ok := obj["hero"].(map[string]any); ok {
 		if n, ok := hero["name"].(string); ok && n != "" {
 			slug = n
+		}
+	}
+	if slug == "site" {
+		if brand, ok := obj["brand"].(map[string]any); ok {
+			if n, ok := brand["name"].(string); ok && n != "" {
+				slug = n
+			}
+		}
+	}
+	if slug == "site" {
+		if meta, ok := obj["meta"].(map[string]any); ok {
+			if t, ok := meta["title"].(string); ok && t != "" {
+				slug = t
+			}
 		}
 	}
 	return pretty, sanitizeSubdomain(slug), nil

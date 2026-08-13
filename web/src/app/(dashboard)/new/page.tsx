@@ -437,15 +437,23 @@ function startDocker() {
   if (step === "ai") {
     const generators = [
       { id: "portfolio", label: "Portfolio", ready: true },
-      { id: "landing", label: "Landing page", ready: false },
+      { id: "landing", label: "Landing page", ready: true },
       { id: "telegram", label: "Telegram bot", ready: false },
       { id: "blog", label: "Blog", ready: false },
     ];
-    const examples = [
-      "A portfolio for a self-taught Go backend engineer from Lagos who built a message queue",
-      "A minimal portfolio for a UX designer who works on fintech apps",
-      "A portfolio for a data scientist doing ML for climate, published research, loves Python",
-    ];
+    const examplesByGen: Record<string, string[]> = {
+      portfolio: [
+        "A portfolio for a self-taught Go backend engineer from Lagos who built a message queue",
+        "A minimal portfolio for a UX designer who works on fintech apps",
+        "A portfolio for a data scientist doing ML for climate, published research, loves Python",
+      ],
+      landing: [
+        "Landing page for a SaaS that turns receipts into expense reports, with pricing and FAQ",
+        "Landing page for an AI note-taking app for students, playful and colorful",
+        "Landing page for a dev tool that monitors cron jobs, with 3 pricing tiers",
+      ],
+    };
+    const examples = examplesByGen[aiGenerator] || examplesByGen.portfolio;
     return (
       <div className="max-w-2xl mx-auto mt-8">
         <BackButton />

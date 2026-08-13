@@ -36,6 +36,7 @@ for (const f of fs.readdirSync(scaffold)) {
 // 2) generate content.json into outDir (uses DEEPSEEK_API_KEY if set, else mock)
 execFileSync(process.execPath, [
   path.join(__dirname, "generate.mjs"),
+  "--generator", generator,
   "--prompt", prompt,
   "--out", path.join(outDir, "content.json"),
 ], { stdio: "inherit", env: process.env });
