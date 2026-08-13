@@ -189,6 +189,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)
 			r.With(deployScope, s.requireVerifiedEmail).Post("/projects", s.handleCreateProject)
+			// AI builder: prompt -> generated site -> deployed. Counts as a project.
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/build", s.handleAIBuild)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)

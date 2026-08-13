@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PortfolioContent",
+  "description": "The ONLY thing the AI fills. Merged into the portfolio scaffold as content.json. The AI never writes code — it fills this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "theme", "hero", "about", "skills", "projects", "socials", "contact"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 70 },
+        "description": { "type": "string", "maxLength": 160 }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accent", "mode"],
+      "properties": {
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Hex accent color matching the person's vibe" },
+        "mode": { "type": "string", "enum": ["dark", "light"] }
+      }
+    },
+    "hero": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "tagline"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 60 },
+        "role": { "type": "string", "maxLength": 60, "description": "e.g. 'Backend Engineer · Available for work'" },
+        "tagline": { "type": "string", "maxLength": 180, "description": "One punchy sentence about what they do" },
+        "avatar_initials": { "type": "string", "maxLength": 3 }
+      }
+    },
+    "about": { "type": "string", "maxLength": 600, "description": "2-4 sentences, first person, warm and specific" },
+    "skills": { "type": "array", "items": { "type": "string", "maxLength": 30 }, "maxItems": 14 },
+    "projects": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description", "tags"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 50 },
+          "description": { "type": "string", "maxLength": 220 },
+          "url": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string", "maxLength": 20 }, "maxItems": 5 }
+        }
+      }
+    },
+    "experience": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "org", "period"],
+        "properties": {
+          "role": { "type": "string", "maxLength": 60 },
+          "org": { "type": "string", "maxLength": 60 },
+          "period": { "type": "string", "maxLength": 30 },
+          "detail": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    "socials": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "url"],
+        "properties": {
+          "label": { "type": "string", "maxLength": 20 },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cta"],
+      "properties": {
+        "cta": { "type": "string", "maxLength": 60 },
+        "sub": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string" }
+      }
+    }
+  }
+}

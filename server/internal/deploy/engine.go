@@ -196,14 +196,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Build context: clone a repo, untar an upload, or (image) leave it empty.
 	buildCtx := buildDir
 	if uploadSource {
-		// Local-directory upload: the API host staged a tarball; untar it as the
-		// build context. Remote-worker uploads aren't wired yet (the tar lives on
-		// the API host, not the worker).
-		if runner.IsRemote() {
-			e.logMsg(ctx, project.ID, "Upload deploys aren't supported on custom/remote servers yet — use a platform server.", "error")
-			restoreOldState()
-			return fmt.Errorf("upload deploy on remote worker")
-		}
+		// Upload deploy: the API host staged the build context as a tarball. For a
+		// LOCAL worker we untar it directly; for a REMOTE worker we SCP the tarball
+		// over first (it lives on the API host, not the worker), then extract there.
 		tarPath := fmt.Sprintf("/tmp/serverme-uploads/%s.tar.gz", project.ID)
 		if !fileExists(tarPath) {
 			e.logMsg(ctx, project.ID, "No uploaded build context found — upload your directory before deploying.", "error")
@@ -213,7 +208,24 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		cloneDir := buildDir + "/app"
 		runner.Exec(ctx, "mkdir", "-p", cloneDir)
 		e.logMsg(ctx, project.ID, "Extracting uploaded build context...", "build")
-		if out, err := runner.Run(ctx, "tar", "xzf", tarPath, "-C", cloneDir); err != nil {
+
+		extractTar := tarPath
+		if runner.IsRemote() {
+			// Ship the tarball to the worker, then extract from there.
+			remoteTar := fmt.Sprintf("/tmp/sm-upload-%s.tar.gz", project.ID)
+			workerLabel := "the worker"
+			if assignedServer != nil {
+				workerLabel = assignedServer.Label
+			}
+			if err := runner.SCPTo(ctx, tarPath, remoteTar); err != nil {
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Failed to transfer build context to %s: %v", workerLabel, err), "error")
+				restoreOldState()
+				return fmt.Errorf("scp upload to remote: %w", err)
+			}
+			defer runner.Exec(context.Background(), "rm", "-f", remoteTar)
+			extractTar = remoteTar
+		}
+		if out, err := runner.Run(ctx, "tar", "xzf", extractTar, "-C", cloneDir); err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Extract failed: %s", trimLogs(string(out), 1000)), "error")
 			restoreOldState()
 			return fmt.Errorf("untar upload: %w", err)

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio</title>
+<meta name="description" content="" />
+<style>
+  :root {
+    --accent: #34d399;
+    --bg: #0a0b0d;
+    --bg2: #101216;
+    --panel: #14161b;
+    --border: rgba(255,255,255,0.08);
+    --text: #e8eaef;
+    --dim: #9aa0ab;
+    --faint: #5b616c;
+    --radius: 16px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  html[data-mode="light"] {
+    --bg: #f7f8fa; --bg2: #ffffff; --panel: #ffffff; --border: rgba(0,0,0,0.08);
+    --text: #14161b; --dim: #5b616c; --faint: #9aa0ab;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font); background: var(--bg); color: var(--text);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  .glow {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(700px 500px at 20% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      radial-gradient(600px 500px at 90% 20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+  }
+  .grid-bg {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(120% 90% at 50% 0%, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, black 30%, transparent 80%);
+  }
+  /* nav */
+  nav {
+    position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .brand .dot {
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: var(--accent); font-weight: 800;
+  }
+  nav .links { display: flex; gap: 22px; align-items: center; }
+  nav .links a { color: var(--dim); font-size: 14px; font-weight: 500; }
+  nav .links a:hover { color: var(--text); }
+  .theme-toggle { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--dim);
+    width: 34px; height: 34px; border-radius: 9px; }
+  /* hero */
+  header { padding: 90px 0 70px; }
+  .avatar {
+    width: 96px; height: 96px; border-radius: 24px; display: grid; place-items: center;
+    font-size: 38px; font-weight: 800; color: var(--accent); margin-bottom: 28px;
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 18%, transparent), var(--panel));
+    border: 1px solid var(--border);
+  }
+  .role-chip {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim);
+    border: 1px solid var(--border); padding: 6px 14px; border-radius: 999px; margin-bottom: 22px;
+  }
+  .role-chip .live { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  h1 { font-size: clamp(38px, 6vw, 64px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
+  .tagline { font-size: clamp(18px, 2.6vw, 24px); color: var(--dim); margin-top: 20px; max-width: 620px; }
+  .cta-row { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+  .btn {
+    padding: 13px 24px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px; transition: transform .12s, background .12s;
+  }
+  .btn.primary { background: var(--accent); color: #04120c; }
+  .btn.primary:hover { transform: translateY(-2px); }
+  .btn.ghost { border: 1px solid var(--border); color: var(--text); }
+  .btn.ghost:hover { background: var(--panel); }
+  /* sections */
+  section { padding: 48px 0; }
+  .sec-label { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--accent); margin-bottom: 22px; }
+  .about-text { font-size: 19px; color: var(--dim); max-width: 720px; }
+  .skills { display: flex; flex-wrap: wrap; gap: 10px; }
+  .skill { padding: 9px 16px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; color: var(--text);
+    background: var(--panel); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--bg2)); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; transition: transform .15s, border-color .15s;
+  }
+  .card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .card h3 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .card p { color: var(--dim); font-size: 15px; margin-top: 10px; }
+  .card .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .card .tag { font-size: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); padding: 4px 10px; border-radius: 7px; }
+  .exp-item { display: flex; gap: 20px; padding: 20px 0; border-bottom: 1px solid var(--border); }
+  .exp-item:last-child { border-bottom: none; }
+  .exp-period { color: var(--faint); font-size: 14px; min-width: 130px; }
+  .exp-role { font-weight: 700; font-size: 17px; }
+  .exp-org { color: var(--accent); font-size: 14px; }
+  .exp-detail { color: var(--dim); font-size: 15px; margin-top: 6px; }
+  /* contact / footer */
+  .contact-card {
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 12%, var(--panel)), var(--bg2));
+    border: 1px solid var(--border); border-radius: 22px; padding: 48px; text-align: center;
+  }
+  .contact-card h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; }
+  .contact-card p { color: var(--dim); margin-top: 12px; font-size: 18px; }
+  footer { padding: 40px 0 60px; border-top: 1px solid var(--border); margin-top: 40px; color: var(--faint); font-size: 14px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .socials { display: flex; gap: 16px; }
+  .socials a { color: var(--dim); }
+  .socials a:hover { color: var(--accent); }
+  /* reveal animation */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (max-width: 600px) { .exp-item { flex-direction: column; gap: 4px; } .contact-card { padding: 32px 20px; } }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="grid-bg"></div>
+
+  <nav><div class="wrap">
+    <div class="brand"><span class="dot" id="brand-dot">·</span><span id="brand-name">Portfolio</span></div>
+    <div class="links">
+      <a href="#work">Work</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle theme">◐</button>
+    </div>
+  </div></nav>
+
+  <header><div class="wrap">
+    <div class="avatar" id="avatar">·</div>
+    <div class="role-chip"><span class="live"></span><span id="role">Available for work</span></div>
+    <h1 id="name">Your Name</h1>
+    <p class="tagline" id="tagline"></p>
+    <div class="cta-row" id="cta-row"></div>
+  </div></header>
+
+  <section id="about"><div class="wrap reveal">
+    <div class="sec-label">ABOUT</div>
+    <p class="about-text" id="about-text"></p>
+    <div class="skills" id="skills" style="margin-top:28px"></div>
+  </div></section>
+
+  <section id="work"><div class="wrap reveal">
+    <div class="sec-label">SELECTED WORK</div>
+    <div class="cards" id="projects"></div>
+  </div></section>
+
+  <section id="experience"><div class="wrap reveal">
+    <div class="sec-label">EXPERIENCE</div>
+    <div id="experience-list"></div>
+  </div></section>
+
+  <section id="contact"><div class="wrap reveal">
+    <div class="contact-card">
+      <h2 id="contact-cta">Let's build something.</h2>
+      <p id="contact-sub"></p>
+      <div class="cta-row" style="justify-content:center;margin-top:28px" id="contact-actions"></div>
+    </div>
+  </div></section>
+
+  <footer><div class="wrap" style="display:flex;justify-content:space-between;width:100%;flex-wrap:wrap;gap:16px">
+    <span id="footer-name">© Portfolio</span>
+    <div class="socials" id="socials"></div>
+    <span>Built on <a href="https://deployzy.com" style="color:var(--accent)">Deployzy</a></span>
+  </div></footer>
+
+<script>
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  let data;
+  try { data = await (await fetch("content.json")).json(); }
+  catch (e) { console.error("content.json missing", e); return; }
+
+  const root = document.documentElement;
+  const theme = data.theme || {};
+  if (theme.accent) root.style.setProperty("--accent", theme.accent);
+  root.setAttribute("data-mode", theme.mode === "light" ? "light" : "dark");
+
+  const meta = data.meta || {};
+  document.title = meta.title || (data.hero && data.hero.name) || "Portfolio";
+  if (meta.description) document.querySelector('meta[name=description]').setAttribute("content", meta.description);
+
+  const hero = data.hero || {};
+  const initials = hero.avatar_initials || (hero.name || "").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+  $("avatar").textContent = initials || "·";
+  $("brand-dot").textContent = (initials || "·")[0];
+  $("brand-name").textContent = hero.name || "Portfolio";
+  $("footer-name").textContent = "© " + (hero.name || "Portfolio");
+  $("name").textContent = hero.name || "Your Name";
+  $("role").textContent = hero.role || "Available for work";
+  $("tagline").textContent = hero.tagline || "";
+
+  // hero CTAs
+  const ctas = [];
+  const email = (data.contact || {}).email;
+  if (email) ctas.push({ cls: "primary", label: "Get in touch", href: "mailto:" + email });
+  const primaryLink = (data.socials || [])[0];
+  if (primaryLink) ctas.push({ cls: "ghost", label: primaryLink.label, href: primaryLink.url });
+  $("cta-row").innerHTML = ctas.map(c => `<a class="btn ${c.cls}" href="${c.href}">${c.label}</a>`).join("");
+
+  $("about-text").textContent = data.about || "";
+  $("skills").innerHTML = (data.skills || []).map(s => `<span class="skill">${s}</span>`).join("");
+
+  $("projects").innerHTML = (data.projects || []).map(p => `
+    <${p.url ? "a" : "div"} class="card" ${p.url ? `href="${p.url}" target="_blank" rel="noopener"` : ""}>
+      <h3>${p.name || ""} ${p.url ? '<span style="color:var(--accent);font-size:14px">↗</span>' : ""}</h3>
+      <p>${p.description || ""}</p>
+      <div class="tags">${(p.tags || []).map(t => `<span class="tag">${t}</span>`).join("")}</div>
+    </${p.url ? "a" : "div"}>`).join("");
+
+  const exp = data.experience || [];
+  $("experience-list").innerHTML = exp.length ? exp.map(e => `
+    <div class="exp-item">
+      <div class="exp-period">${e.period || ""}</div>
+      <div><div class="exp-role">${e.role || ""}</div><div class="exp-org">${e.org || ""}</div>
+      <div class="exp-detail">${e.detail || ""}</div></div>
+    </div>`).join("") : "";
+  if (!exp.length) $("experience").style.display = "none";
+
+  const contact = data.contact || {};
+  $("contact-cta").textContent = contact.cta || "Let's build something.";
+  $("contact-sub").textContent = contact.sub || (email ? "Reach me any time." : "");
+  const cActions = [];
+  if (email) cActions.push(`<a class="btn primary" href="mailto:${email}">${email}</a>`);
+  $("contact-actions").innerHTML = cActions.join("");
+
+  $("socials").innerHTML = (data.socials || []).map(s => `<a href="${s.url}" target="_blank" rel="noopener">${s.label}</a>`).join("");
+
+  // theme toggle
+  $("theme-toggle").onclick = () => {
+    const cur = root.getAttribute("data-mode");
+    root.setAttribute("data-mode", cur === "light" ? "dark" : "light");
+  };
+
+  // scroll reveal
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(en => { if (en.isIntersecting) en.target.classList.add("in"); });
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+})();
+</script>
+</body>
+</html>
