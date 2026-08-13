@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   GitBranch, Database, Container, Layers, Search, Rocket,
   ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
-  Download,
+  Download, Sparkles, ExternalLink,
 } from "lucide-react";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
@@ -33,6 +33,7 @@ const langColor: Record<string, string> = {
 };
 
 const options = [
+  { id: "ai", title: "Build with AI", desc: "Describe it — we generate & deploy it", icon: Sparkles, color: "text-fuchsia-400 bg-fuchsia-500/20", category: "deploy" },
   { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-400 bg-violet-500/20", category: "deploy" },
   { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-400 bg-emerald-500/20", category: "infra" },
   { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-400 bg-amber-500/20", category: "deploy" },
@@ -91,6 +92,13 @@ export default function NewResourcePage() {
 
   // Docker image
   const [dockerImage, setDockerImage] = useState("");
+
+  // AI builder
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiGenerator, setAiGenerator] = useState("portfolio");
+  const [aiBuilding, setAiBuilding] = useState(false);
+  const [aiResult, setAiResult] = useState<{ url: string; projectId: string } | null>(null);
+  const [aiError, setAiError] = useState("");
 
   // Template picker (API-backed)
   const [apiTemplates, setApiTemplates]         = useState<Template[]>([]);
@@ -374,10 +382,33 @@ function startDocker() {
           .catch(() => {})
           .finally(() => setTemplatesLoading(false));
         break;
+      case "ai": setAiPrompt(""); setAiResult(null); setAiError(""); setStep("ai"); break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
     }
+  }
+
+  async function runAIBuild() {
+    if (!aiPrompt.trim() || aiBuilding) return;
+    setAiBuilding(true); setAiError(""); setAiResult(null);
+    try {
+      const res = await fetch(`${API}/api/v1/ai/build`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ generator: aiGenerator, prompt: aiPrompt.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 402) { showPlanLimit(data.error || "Plan limit reached"); }
+        else setAiError(data.error || "Build failed — please try again.");
+        setAiBuilding(false);
+        return;
+      }
+      setAiResult({ url: data.url, projectId: data.project?.id });
+    } catch {
+      setAiError("Build failed — please try again.");
+    }
+    setAiBuilding(false);
   }
 
   const filtered = options.filter(o =>
@@ -401,6 +432,113 @@ function startDocker() {
   const memCap = byocSrv?.total_memory_mb || (planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 0);
   const cpuCap = byocSrv?.total_cpu || (planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 0);
   const capLabel = byocSrv ? "server max" : "plan max";
+
+  // ── Step: Build with AI ──
+  if (step === "ai") {
+    const generators = [
+      { id: "portfolio", label: "Portfolio", ready: true },
+      { id: "landing", label: "Landing page", ready: false },
+      { id: "telegram", label: "Telegram bot", ready: false },
+      { id: "blog", label: "Blog", ready: false },
+    ];
+    const examples = [
+      "A portfolio for a self-taught Go backend engineer from Lagos who built a message queue",
+      "A minimal portfolio for a UX designer who works on fintech apps",
+      "A portfolio for a data scientist doing ML for climate, published research, loves Python",
+    ];
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <BackButton />
+        <div className="flex items-center gap-3 mb-1.5">
+          <div className="h-10 w-10 rounded-xl bg-fuchsia-500/20 text-fuchsia-400 grid place-items-center">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <h1 className="text-2xl font-bold">Build with AI</h1>
+        </div>
+        <p className="text-sm text-muted-foreground mb-6">
+          Describe what you want in a sentence or two. We generate the site and deploy it live — no code.
+        </p>
+
+        {aiResult ? (
+          <Card className="border-emerald-500/40">
+            <CardContent className="p-6 text-center">
+              <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-400 grid place-items-center mx-auto mb-4">
+                <Rocket className="h-6 w-6" />
+              </div>
+              <h2 className="text-lg font-semibold">Your site is deploying 🎉</h2>
+              <p className="text-sm text-muted-foreground mt-2">
+                It’ll be live in under a minute at:
+              </p>
+              <a href={aiResult.url} target="_blank" rel="noopener noreferrer"
+                 className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm text-emerald-400 hover:underline break-all">
+                {aiResult.url} <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              </a>
+              <div className="flex gap-2 justify-center mt-6 flex-wrap">
+                <Button onClick={() => window.open(aiResult.url, "_blank")} className="gap-1.5">
+                  <ExternalLink className="h-4 w-4" /> View site
+                </Button>
+                <Button variant="outline" onClick={() => router.push("/projects")} className="gap-1.5">
+                  <Rocket className="h-4 w-4" /> Go to project
+                </Button>
+                <Button variant="ghost" onClick={() => { setAiResult(null); setAiPrompt(""); }}>
+                  Build another
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-5">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">What do you want to build?</label>
+              <div className="flex gap-2 flex-wrap">
+                {generators.map((g) => (
+                  <button key={g.id} disabled={!g.ready}
+                    onClick={() => g.ready && setAiGenerator(g.id)}
+                    className={`h-8 px-3 rounded-full text-xs border transition-colors ${
+                      aiGenerator === g.id ? "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/50"
+                      : g.ready ? "border-border/60 text-muted-foreground hover:bg-accent/40"
+                      : "border-border/30 text-muted-foreground/40 cursor-not-allowed"}`}>
+                    {g.label}{!g.ready && " · soon"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                maxLength={1200}
+                rows={4}
+                disabled={aiBuilding}
+                placeholder="e.g. A portfolio for Ada, a fintech product designer in Lagos who loves clean, minimal interfaces…"
+                className="w-full rounded-lg border border-input bg-background p-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-fuchsia-500/50"
+              />
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {examples.map((ex, i) => (
+                  <button key={i} onClick={() => setAiPrompt(ex)} disabled={aiBuilding}
+                    className="text-[11px] text-muted-foreground border border-border/40 rounded-full px-2.5 py-1 hover:bg-accent/40 transition-colors">
+                    {ex.length > 46 ? ex.slice(0, 46) + "…" : ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {aiError && <p className="text-sm text-red-400">{aiError}</p>}
+
+            <Button onClick={runAIBuild} disabled={!aiPrompt.trim() || aiBuilding} className="w-full gap-2 h-11">
+              {aiBuilding
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating & deploying…</>
+                : <><Sparkles className="h-4 w-4" /> Build &amp; deploy</>}
+            </Button>
+            <p className="text-[11px] text-center text-muted-foreground">
+              Uses one project slot on your plan. You can edit or delete it anytime.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // ── Step: GitHub Repo Picker ──
   if (step === "github") {
