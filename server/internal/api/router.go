@@ -189,8 +189,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)
 			r.With(deployScope, s.requireVerifiedEmail).Post("/projects", s.handleCreateProject)
-			// AI builder: prompt -> generated site -> deployed. Counts as a project.
+			// AI builder: prompt -> generated site/code -> deployed. Counts as a project.
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/build", s.handleAIBuild)
+			// Finishes a code-gen build that needed secrets: set env + deploy (with self-repair).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/deploy", s.handleAIDeploy)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)

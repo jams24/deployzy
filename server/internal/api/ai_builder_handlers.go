@@ -31,6 +31,10 @@ type aiGenerator struct {
 	schemaFile  string   // embed path to the JSON schema
 	files       []string // scaffold files (relative names) to include in the build context
 	systemHint  string   // what kind of site this is
+	// codegen generators write real code instead of filling a schema. `kind`
+	// prefixes the prompt so the model knows what to build.
+	codegen bool
+	kind    string
 }
 
 var aiGenerators = map[string]aiGenerator{
@@ -46,6 +50,11 @@ var aiGenerators = map[string]aiGenerator{
 		files:       []string{"index.html", "Dockerfile"},
 		systemHint:  "You generate content for a modern PRODUCT / SaaS LANDING PAGE. Make the headline benefit-driven and the features concrete. Only include pricing/testimonials/faq/metrics if the product warrants them.",
 	},
+	// ── code-gen generators (write real TypeScript/Python) ──
+	"api":          {codegen: true, kind: "Build an HTTP JSON API / microservice"},
+	"telegram-bot": {codegen: true, kind: "Build a Telegram bot (long-polling, python-telegram-bot or grammY)"},
+	"discord-bot":  {codegen: true, kind: "Build a Discord bot (discord.js or discord.py)"},
+	"worker":       {codegen: true, kind: "Build a background worker / scheduled service"},
 }
 
 // handleAIBuild: prompt -> DeepSeek (constrained to the generator's schema) ->
@@ -55,16 +64,17 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	var req struct {
-		Generator string `json:"generator"`
-		Prompt    string `json:"prompt"`
-		Subdomain string `json:"subdomain"`
+		Generator string            `json:"generator"`
+		Prompt    string            `json:"prompt"`
+		Subdomain string            `json:"subdomain"`
+		Env       map[string]string `json:"env"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
 		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
-	if len(req.Prompt) > 1200 {
-		writeError(w, http.StatusBadRequest, "prompt too long (max 1200 characters)")
+	if len(req.Prompt) > 1500 {
+		writeError(w, http.StatusBadRequest, "prompt too long (max 1500 characters)")
 		return
 	}
 	if req.Generator == "" {
@@ -83,6 +93,12 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.deployer == nil {
 		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+
+	// Code-gen generators (api/bots/workers) write real code + self-repair.
+	if gen.codegen {
+		s.buildCodegen(w, r, u, gen.kind, strings.TrimSpace(req.Prompt), req.Env, sanitizeSubdomain(req.Subdomain))
 		return
 	}
 
