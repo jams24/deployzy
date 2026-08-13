@@ -108,6 +108,22 @@ func (s *Server) deepseekRepair(ctx context.Context, key, userPrompt string, fil
 	})
 }
 
+// deepseekEdit sends the current files + a change request and asks for the
+// updated file set. This is how the AI edits an already-deployed project.
+func (s *Server) deepseekEdit(ctx context.Context, key, origPrompt string, files map[string]string, instruction string) (*codegenResult, error) {
+	var b strings.Builder
+	b.WriteString("Here are the CURRENT files of a working, already-deployed app:\n\n")
+	for p, c := range files {
+		b.WriteString("=== " + p + " ===\n" + c + "\n\n")
+	}
+	b.WriteString("The user wants this change:\n" + instruction + "\n\nReturn the SAME JSON shape with the FULL updated file set. Keep everything that still works, change only what's needed for this request. If the change needs a new secret, declare it in env_vars; if it needs storage, set needs_database.")
+	return s.deepseekCodeCall(ctx, key, []map[string]string{
+		{"role": "system", "content": codegenContract},
+		{"role": "user", "content": "This app was originally: " + origPrompt},
+		{"role": "user", "content": b.String()},
+	})
+}
+
 func (s *Server) deepseekCodeCall(ctx context.Context, key string, messages []map[string]string) (*codegenResult, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model":           "deepseek-chat",
@@ -435,6 +451,66 @@ func (s *Server) provisionDBForBuild(ctx context.Context, project *db.Project, d
 		key = "REDIS_URL"
 	}
 	return key, svc.ConnectionURL(), nil
+}
+
+// handleAIEdit lets the AI modify an already-deployed code-gen project: load its
+// current files, apply the requested change, restage, and redeploy (with repair).
+func (s *Server) handleAIEdit(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	var req struct {
+		ProjectID   string `json:"project_id"`
+		Instruction string `json:"instruction"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ProjectID == "" || strings.TrimSpace(req.Instruction) == "" {
+		writeError(w, http.StatusBadRequest, "project_id and instruction are required")
+		return
+	}
+	if len(req.Instruction) > 1500 {
+		writeError(w, http.StatusBadRequest, "instruction too long")
+		return
+	}
+	project, _ := s.db.GetProject(r.Context(), req.ProjectID)
+	if project == nil || project.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	key := os.Getenv("DEEPSEEK_API_KEY")
+	if key == "" || s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI builder isn't available")
+		return
+	}
+	files, err := readStagedFiles(project.ID)
+	if err != nil || len(files) == 0 {
+		writeError(w, http.StatusConflict, "this project has no AI-editable source")
+		return
+	}
+	res, err := s.deepseekEdit(r.Context(), key, req.Instruction, files, req.Instruction)
+	if err != nil {
+		s.log.Error().Err(err).Msg("ai edit: generation failed")
+		writeError(w, http.StatusBadGateway, "couldn't apply that change, please try again")
+		return
+	}
+	if err := validateCodegen(res); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "couldn't apply that: "+err.Error())
+		return
+	}
+	if err := stageCodegenFiles(project.ID, res.Files); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to stage the change")
+		return
+	}
+	newFiles := map[string]string{}
+	for _, f := range res.Files {
+		newFiles[f.Path] = f.Content
+	}
+	s.db.AddDeployLog(r.Context(), project.ID, "🤖 Applying your change and redeploying…", "build")
+	go s.deployWithRepair(project, newFiles, req.Instruction)
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":  "deploying",
+		"project": project,
+		"summary": res.Summary,
+		"url":     fmt.Sprintf("https://%s.%s", project.Subdomain, s.deployer.AppDomain),
+	})
 }
 
 // deployWithRepair deploys and, if the build fails, sends the logs + files back

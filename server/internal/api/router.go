@@ -193,6 +193,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/build", s.handleAIBuild)
 			// Finishes a code-gen build that needed secrets: set env + deploy (with self-repair).
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/deploy", s.handleAIDeploy)
+			// AI edits an already-deployed code-gen project (load files -> change -> redeploy).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/edit", s.handleAIEdit)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)

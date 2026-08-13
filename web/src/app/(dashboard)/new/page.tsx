@@ -118,6 +118,8 @@ export default function NewResourcePage() {
   const [aiEnvValues, setAiEnvValues] = useState<Record<string, string>>({});
   const [aiDbChoice, setAiDbChoice] = useState("postgres");
   const [aiResult, setAiResult] = useState<{ ok: boolean; url: string; summary: string; error?: string; isSite: boolean } | null>(null);
+  // the current code-gen project being iterated on — follow-up messages edit it
+  const [aiCurrentProject, setAiCurrentProject] = useState<{ id: string; sub: string } | null>(null);
   const aiMetaRef = useRef<{ url: string; summary: string; isSite: boolean }>({ url: "", summary: "", isSite: false });
   const aiScrollRef = useRef<HTMLDivElement>(null);
 
@@ -403,7 +405,7 @@ function startDocker() {
           .catch(() => {})
           .finally(() => setTemplatesLoading(false));
         break;
-      case "ai": setAiPrompt(""); setAiChat([]); setAiResult(null); setAiSetup(null); setAiLogs([]); setAiPhase(null); setAiActivePid(null); setStep("ai"); break;
+      case "ai": setAiPrompt(""); setAiChat([]); setAiResult(null); setAiSetup(null); setAiLogs([]); setAiPhase(null); setAiActivePid(null); setAiCurrentProject(null); setStep("ai"); break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
@@ -413,9 +415,33 @@ function startDocker() {
   const pushAssistant = (text: string) => setAiChat((c) => [...c, { role: "assistant" as const, text }]);
   const isCodegenGen = (g: string) => ["api", "telegram-bot", "discord-bot", "worker"].includes(g);
 
+  // Edit the current code-gen project instead of building a new one.
+  async function editCurrentProject(instruction: string) {
+    if (!aiCurrentProject) return;
+    setAiChat((c) => [...c, { role: "user", text: instruction }]);
+    setAiPrompt("");
+    setAiBusy(true); setAiPhase("generating"); setAiResult(null); setAiSetup(null); setAiLogs([]);
+    try {
+      const res = await fetch(`${API}/api/v1/ai/edit`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ project_id: aiCurrentProject.id, instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) { pushAssistant("❌ " + (data.error || "Couldn't apply that change.")); setAiPhase(null); setAiBusy(false); return; }
+      pushAssistant(`Applying your change${data.summary ? ` — ${data.summary}` : ""}. Redeploying…`);
+      setAiPhase("building"); setAiActivePid(aiCurrentProject.id);
+    } catch {
+      pushAssistant("❌ Something went wrong — please try again.");
+      setAiPhase(null);
+    }
+    setAiBusy(false);
+  }
+
   async function runAIBuild() {
     const p = aiPrompt.trim();
     if (!p || aiBusy) return;
+    // Follow-up messages iterate on the current code-gen project.
+    if (aiCurrentProject && isCodegenGen(aiGenerator)) { editCurrentProject(p); return; }
     setAiChat((c) => [...c, { role: "user", text: p }]);
     setAiPrompt("");
     setAiBusy(true); setAiPhase("generating"); setAiResult(null); setAiSetup(null); setAiLogs([]);
@@ -446,6 +472,7 @@ function startDocker() {
       } else {
         pushAssistant(`On it — building "${data.summary || "your project"}". Streaming the logs below…`);
         setAiPhase("building"); setAiActivePid(data.project?.id);
+        if (isCodegenGen(aiGenerator)) setAiCurrentProject({ id: data.project?.id, sub: data.project?.subdomain });
       }
     } catch {
       pushAssistant("❌ Something went wrong — please try again.");
@@ -468,6 +495,7 @@ function startDocker() {
       const data = await res.json();
       if (!res.ok) { pushAssistant("❌ " + (data.error || "Deploy failed.")); setAiBusy(false); return; }
       pushAssistant("Thanks — deploying now. Streaming the logs below…");
+      setAiCurrentProject({ id: aiSetup.projectId, sub: "" });
       setAiSetup(null); setAiPhase("building"); setAiActivePid(aiSetup.projectId);
     } catch {
       pushAssistant("❌ Deploy failed — please try again.");
@@ -587,7 +615,7 @@ function startDocker() {
           </div>
         </div>
 
-        <div className="flex gap-1.5 flex-wrap mb-3">
+        <div className="flex gap-1.5 flex-wrap mb-3 items-center">
           {generators.map((g) => (
             <button key={g.id} disabled={!g.ready || aiChat.length > 0}
               onClick={() => g.ready && setAiGenerator(g.id)}
@@ -597,7 +625,16 @@ function startDocker() {
               {g.label}
             </button>
           ))}
+          {aiChat.length > 0 && (
+            <button onClick={() => { setAiChat([]); setAiResult(null); setAiSetup(null); setAiLogs([]); setAiPhase(null); setAiActivePid(null); setAiCurrentProject(null); }}
+              className="h-7 px-3 rounded-full text-xs border border-border/60 text-muted-foreground hover:bg-accent/40 ml-auto">
+              + New build
+            </button>
+          )}
         </div>
+        {aiCurrentProject && !aiPhase && (
+          <p className="text-[11px] text-muted-foreground mb-2">✏️ Editing <span className="font-mono">{aiCurrentProject.sub || "your project"}</span> — describe a change, or start a “+ New build”.</p>
+        )}
 
         <div ref={aiScrollRef} className="flex-1 overflow-y-auto rounded-xl border border-border/60 bg-background/50 p-4 space-y-3">
           {aiChat.length === 0 && !aiPhase && (
