@@ -124,7 +124,7 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 	if sub == "" {
 		sub = name
 	}
-	sub = s.uniqueSubdomain(r.Context(), sanitizeSubdomain(sub), u.ID)
+	sub = s.freeSubdomain(r.Context(), sub)
 	project, err := s.db.CreateProject(r.Context(), u.ID, sub, sub, "docker")
 	if err != nil || project == nil {
 		writeError(w, http.StatusInternalServerError, "could not create project")
@@ -279,6 +279,22 @@ func (s *Server) stageAIBuildContext(projectID string, gen aiGenerator, content 
 		return err
 	}
 	return gz.Close()
+}
+
+// freeSubdomain returns a globally-unique subdomain based on `base`, appending
+// -2, -3, … if taken. Unlike uniqueSubdomain it never reuses the caller's own
+// existing subdomain — AI builds always create a NEW project, so reusing an
+// existing name would collide on the projects_subdomain_key unique constraint.
+func (s *Server) freeSubdomain(ctx context.Context, base string) string {
+	base = sanitizeSubdomain(base)
+	sub := base
+	for n := 2; n <= 60; n++ {
+		if existing, _ := s.db.GetProjectBySubdomain(ctx, sub); existing == nil {
+			return sub
+		}
+		sub = fmt.Sprintf("%s-%d", base, n)
+	}
+	return fmt.Sprintf("%s-%d", base, time.Now().UnixNano()%100000)
 }
 
 var subSanitize = regexp.MustCompile(`[^a-z0-9-]+`)

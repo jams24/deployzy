@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,19 @@ const options = [
   { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/20", category: "infra" },
 ];
 
+
+// Turn a raw error log line into a short, human hint for the chat.
+function shortErr(line: string): string {
+  if (!line) return "The container didn't stay up. Check the logs on the project page.";
+  const l = line.toLowerCase();
+  if (l.includes("environment variable not set") || l.includes("token") && l.includes("not set"))
+    return "It looks like a required key wasn't set (or was empty/invalid).";
+  if (l.includes("unauthorized") || l.includes("invalid token") || l.includes("401"))
+    return "A key was rejected — double-check the token/API key you provided.";
+  if (l.includes("econnrefused") || l.includes("connect") && l.includes("refused"))
+    return "It couldn't reach a service it needs (maybe a database or external API).";
+  return line.length > 200 ? line.slice(0, 200) + "…" : line;
+}
 
 function detectFramework(language: string | null): string {
   switch (language) {
@@ -93,15 +106,20 @@ export default function NewResourcePage() {
   // Docker image
   const [dockerImage, setDockerImage] = useState("");
 
-  // AI builder
+  // AI builder — streaming chat model
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiGenerator, setAiGenerator] = useState("portfolio");
-  const [aiBuilding, setAiBuilding] = useState(false);
-  const [aiResult, setAiResult] = useState<{ url: string; projectId: string; summary?: string } | null>(null);
-  const [aiError, setAiError] = useState("");
-  // code-gen: when the generated service needs secrets before it can deploy
-  const [aiNeedsEnv, setAiNeedsEnv] = useState<{ projectId: string; url: string; summary: string; vars: { key: string; description: string }[] } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiChat, setAiChat] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [aiPhase, setAiPhase] = useState<null | "generating" | "building">(null);
+  const [aiLogs, setAiLogs] = useState<{ level: string; message: string; created_at: string }[]>([]);
+  const [aiActivePid, setAiActivePid] = useState<string | null>(null);
+  const [aiSetup, setAiSetup] = useState<{ projectId: string; url: string; summary: string; vars: { key: string; description: string }[]; needsDb: boolean; dbType: string } | null>(null);
   const [aiEnvValues, setAiEnvValues] = useState<Record<string, string>>({});
+  const [aiDbChoice, setAiDbChoice] = useState("postgres");
+  const [aiResult, setAiResult] = useState<{ ok: boolean; url: string; summary: string; error?: string; isSite: boolean } | null>(null);
+  const aiMetaRef = useRef<{ url: string; summary: string; isSite: boolean }>({ url: "", summary: "", isSite: false });
+  const aiScrollRef = useRef<HTMLDivElement>(null);
 
   // Template picker (API-backed)
   const [apiTemplates, setApiTemplates]         = useState<Template[]>([]);
@@ -385,59 +403,113 @@ function startDocker() {
           .catch(() => {})
           .finally(() => setTemplatesLoading(false));
         break;
-      case "ai": setAiPrompt(""); setAiResult(null); setAiError(""); setAiNeedsEnv(null); setStep("ai"); break;
+      case "ai": setAiPrompt(""); setAiChat([]); setAiResult(null); setAiSetup(null); setAiLogs([]); setAiPhase(null); setAiActivePid(null); setStep("ai"); break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
     }
   }
 
+  const pushAssistant = (text: string) => setAiChat((c) => [...c, { role: "assistant" as const, text }]);
+  const isCodegenGen = (g: string) => ["api", "telegram-bot", "discord-bot", "worker"].includes(g);
+
   async function runAIBuild() {
-    if (!aiPrompt.trim() || aiBuilding) return;
-    setAiBuilding(true); setAiError(""); setAiResult(null); setAiNeedsEnv(null);
+    const p = aiPrompt.trim();
+    if (!p || aiBusy) return;
+    setAiChat((c) => [...c, { role: "user", text: p }]);
+    setAiPrompt("");
+    setAiBusy(true); setAiPhase("generating"); setAiResult(null); setAiSetup(null); setAiLogs([]);
     try {
       const res = await fetch(`${API}/api/v1/ai/build`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ generator: aiGenerator, prompt: aiPrompt.trim() }),
+        body: JSON.stringify({ generator: aiGenerator, prompt: p }),
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 402) { showPlanLimit(data.error || "Plan limit reached"); }
-        else setAiError(data.error || "Build failed — please try again.");
-        setAiBuilding(false);
-        return;
+        if (res.status === 402) showPlanLimit(data.error || "Plan limit reached");
+        else pushAssistant("❌ " + (data.error || "That didn't work — try rephrasing your idea."));
+        setAiPhase(null); setAiBusy(false); return;
       }
-      if (data.status === "needs_env") {
-        // code-gen service needs secrets before it can run
-        setAiNeedsEnv({ projectId: data.project?.id, url: data.url, summary: data.summary || "",
-          vars: (data.env_vars || []).map((e: { key: string; description: string }) => ({ key: e.key, description: e.description })) });
-        setAiEnvValues({});
+      aiMetaRef.current = { url: data.url, summary: data.summary || "your project", isSite: !isCodegenGen(aiGenerator) };
+      if (data.status === "needs_setup") {
+        setAiPhase(null);
+        const bits: string[] = [];
+        if ((data.env_vars || []).length) bits.push(`${data.env_vars.length} secret${data.env_vars.length > 1 ? "s" : ""}`);
+        if (data.needs_database) bits.push(`a ${data.database_type} database`);
+        pushAssistant(`Here's the plan: ${data.summary}\n\nBefore I deploy it, I need ${bits.join(" and ")}. Grant below 👇`);
+        setAiSetup({
+          projectId: data.project?.id, url: data.url, summary: data.summary || "",
+          vars: (data.env_vars || []).map((e: { key: string; description: string }) => ({ key: e.key, description: e.description })),
+          needsDb: !!data.needs_database, dbType: data.database_type || "postgres",
+        });
+        setAiEnvValues({}); setAiDbChoice(data.database_type || "postgres");
       } else {
-        setAiResult({ url: data.url, projectId: data.project?.id, summary: data.summary });
+        pushAssistant(`On it — building "${data.summary || "your project"}". Streaming the logs below…`);
+        setAiPhase("building"); setAiActivePid(data.project?.id);
       }
     } catch {
-      setAiError("Build failed — please try again.");
+      pushAssistant("❌ Something went wrong — please try again.");
+      setAiPhase(null);
     }
-    setAiBuilding(false);
+    setAiBusy(false);
   }
 
-  async function deployAIWithEnv() {
-    if (!aiNeedsEnv || aiBuilding) return;
-    setAiBuilding(true); setAiError("");
+  async function grantAndDeploy() {
+    if (!aiSetup || aiBusy) return;
+    setAiBusy(true);
     try {
       const res = await fetch(`${API}/api/v1/ai/deploy`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ project_id: aiNeedsEnv.projectId, prompt: aiPrompt.trim(), env: aiEnvValues }),
+        body: JSON.stringify({
+          project_id: aiSetup.projectId, prompt: aiChat.filter(m => m.role === "user").slice(-1)[0]?.text || "",
+          env: aiEnvValues, database: aiSetup.needsDb ? aiDbChoice : "",
+        }),
       });
       const data = await res.json();
-      if (!res.ok) { setAiError(data.error || "Deploy failed."); setAiBuilding(false); return; }
-      setAiResult({ url: aiNeedsEnv.url, projectId: aiNeedsEnv.projectId, summary: aiNeedsEnv.summary });
-      setAiNeedsEnv(null);
+      if (!res.ok) { pushAssistant("❌ " + (data.error || "Deploy failed.")); setAiBusy(false); return; }
+      pushAssistant("Thanks — deploying now. Streaming the logs below…");
+      setAiSetup(null); setAiPhase("building"); setAiActivePid(aiSetup.projectId);
     } catch {
-      setAiError("Deploy failed — please try again.");
+      pushAssistant("❌ Deploy failed — please try again.");
     }
-    setAiBuilding(false);
+    setAiBusy(false);
   }
+
+  // Stream deploy logs + detect terminal state while a build is active.
+  useEffect(() => {
+    if (!aiActivePid) return;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${API}/api/v1/projects/${aiActivePid}`, { headers: headers() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const logs = (data.logs || []).slice().reverse(); // chronological
+        setAiLogs(logs);
+        const st = data.project?.status;
+        if (st === "running" || st === "failed" || st === "crashed") {
+          if (stopped) return;
+          stopped = true;
+          const ok = st === "running";
+          const meta = aiMetaRef.current;
+          const errLine = logs.filter((l: { level: string }) => l.level === "error").slice(-1)[0]?.message || "";
+          setAiPhase(null); setAiActivePid(null);
+          setAiResult({ ok, url: meta.url, summary: meta.summary, isSite: meta.isSite, error: ok ? undefined : errLine });
+          if (ok) pushAssistant(meta.isSite ? `✅ Done! Your site is live at ${meta.url}` : `✅ Deployed and running. ${meta.url ? "Live at " + meta.url : ""}`);
+          else pushAssistant(`❌ It failed to start.\n\n${shortErr(errLine)}\n\nTell me a fix (e.g. a valid key) or a change and I'll rebuild.`);
+        }
+      } catch {}
+    };
+    const iv = setInterval(tick, 1800);
+    tick();
+    return () => { stopped = true; clearInterval(iv); };
+  }, [aiActivePid]);
+
+  // Auto-scroll the chat as it grows.
+  useEffect(() => {
+    const el = aiScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [aiChat, aiLogs, aiSetup, aiResult, aiPhase]);
 
   const filtered = options.filter(o =>
     !search || o.title.toLowerCase().includes(search.toLowerCase()) || o.desc.toLowerCase().includes(search.toLowerCase())
@@ -502,129 +574,138 @@ function startDocker() {
       ],
     };
     const examples = examplesByGen[aiGenerator] || examplesByGen.portfolio;
-    const isCodegen = ["api", "telegram-bot", "discord-bot", "worker"].includes(aiGenerator);
     return (
-      <div className="max-w-2xl mx-auto mt-8">
+      <div className="max-w-2xl mx-auto mt-6 flex flex-col h-[calc(100vh-150px)]">
         <BackButton />
-        <div className="flex items-center gap-3 mb-1.5">
-          <div className="h-10 w-10 rounded-xl bg-fuchsia-500/20 text-fuchsia-400 grid place-items-center">
-            <Sparkles className="h-5 w-5" />
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-9 w-9 rounded-xl bg-fuchsia-500/20 text-fuchsia-400 grid place-items-center">
+            <Sparkles className="h-4 w-4" />
           </div>
-          <h1 className="text-2xl font-bold">Build with AI</h1>
+          <div>
+            <h1 className="text-xl font-bold leading-tight">Build with AI</h1>
+            <p className="text-xs text-muted-foreground">Describe it in plain English — I&apos;ll generate, deploy, and stream the logs.</p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground mb-6">
-          Describe what you want in a sentence or two. We generate the site and deploy it live — no code.
-        </p>
 
-        {aiResult ? (
-          <Card className="border-emerald-500/40">
-            <CardContent className="p-6 text-center">
-              <div className="h-12 w-12 rounded-full bg-emerald-500/15 text-emerald-400 grid place-items-center mx-auto mb-4">
-                <Rocket className="h-6 w-6" />
+        <div className="flex gap-1.5 flex-wrap mb-3">
+          {generators.map((g) => (
+            <button key={g.id} disabled={!g.ready || aiChat.length > 0}
+              onClick={() => g.ready && setAiGenerator(g.id)}
+              className={`h-7 px-3 rounded-full text-xs border transition-colors disabled:opacity-40 ${
+                aiGenerator === g.id ? "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/50"
+                : "border-border/60 text-muted-foreground hover:bg-accent/40"}`}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+
+        <div ref={aiScrollRef} className="flex-1 overflow-y-auto rounded-xl border border-border/60 bg-background/50 p-4 space-y-3">
+          {aiChat.length === 0 && !aiPhase && (
+            <div className="text-sm text-muted-foreground">
+              <p className="mb-3">Try one of these, or write your own:</p>
+              <div className="flex flex-col gap-1.5">
+                {examples.map((ex, i) => (
+                  <button key={i} onClick={() => setAiPrompt(ex)}
+                    className="text-left text-[13px] border border-border/40 rounded-lg px-3 py-2 hover:bg-accent/40 transition-colors">
+                    {ex}
+                  </button>
+                ))}
               </div>
-              <h2 className="text-lg font-semibold">Your site is deploying 🎉</h2>
-              <p className="text-sm text-muted-foreground mt-2">
-                It’ll be live in under a minute at:
-              </p>
-              <a href={aiResult.url} target="_blank" rel="noopener noreferrer"
-                 className="mt-2 inline-flex items-center gap-1.5 font-mono text-sm text-emerald-400 hover:underline break-all">
-                {aiResult.url} <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-              </a>
-              <div className="flex gap-2 justify-center mt-6 flex-wrap">
-                <Button onClick={() => window.open(aiResult.url, "_blank")} className="gap-1.5">
-                  <ExternalLink className="h-4 w-4" /> View site
-                </Button>
-                <Button variant="outline" onClick={() => router.push("/projects")} className="gap-1.5">
-                  <Rocket className="h-4 w-4" /> Go to project
-                </Button>
-                <Button variant="ghost" onClick={() => { setAiResult(null); setAiPrompt(""); }}>
-                  Build another
-                </Button>
+            </div>
+          )}
+
+          {aiChat.map((m, i) => (
+            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                m.role === "user" ? "bg-fuchsia-500/20 text-foreground" : "bg-muted/60 text-foreground"}`}>
+                {m.text}
               </div>
-            </CardContent>
-          </Card>
-        ) : aiNeedsEnv ? (
-          <Card>
-            <CardContent className="p-6 space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Almost there — add your keys</h2>
-                <p className="text-sm text-muted-foreground mt-1">{aiNeedsEnv.summary}</p>
-                <p className="text-xs text-muted-foreground mt-2">This service needs the following secret(s) to run. They&apos;re stored as environment variables, never shown publicly.</p>
+            </div>
+          ))}
+
+          {aiPhase === "generating" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Generating code…
+            </div>
+          )}
+
+          {aiLogs.length > 0 && (
+            <div className="rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.08] bg-[#161b22] text-[10px] font-mono text-muted-foreground">
+                {aiPhase === "building"
+                  ? <><span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> streaming build logs…</>
+                  : <>build logs</>}
               </div>
-              <div className="space-y-3">
-                {aiNeedsEnv.vars.map((v) => (
-                  <div key={v.key}>
-                    <label className="text-xs font-mono font-medium">{v.key}</label>
-                    {v.description && <p className="text-[11px] text-muted-foreground mb-1">{v.description}</p>}
-                    <Input
-                      type="password"
-                      value={aiEnvValues[v.key] || ""}
-                      onChange={(e) => setAiEnvValues({ ...aiEnvValues, [v.key]: e.target.value })}
-                      placeholder={`Paste your ${v.key}…`}
-                      className="font-mono text-sm"
-                    />
+              <div className="p-2 font-mono text-[11px] max-h-56 overflow-y-auto space-y-0.5">
+                {aiLogs.map((l, i) => (
+                  <div key={i} className={
+                    l.level === "error" ? "text-[#f85149]" : l.level === "deploy" ? "text-[#3fb950]" : "text-[#d29922]"}>
+                    {l.message}
                   </div>
                 ))}
               </div>
-              {aiError && <p className="text-sm text-red-400">{aiError}</p>}
-              <div className="flex gap-2">
-                <Button onClick={deployAIWithEnv} disabled={aiBuilding || aiNeedsEnv.vars.some(v => !aiEnvValues[v.key]?.trim())} className="gap-2">
-                  {aiBuilding ? <><Loader2 className="h-4 w-4 animate-spin" /> Deploying…</> : <><Rocket className="h-4 w-4" /> Deploy</>}
-                </Button>
-                <Button variant="ghost" onClick={() => { setAiNeedsEnv(null); }}>Cancel</Button>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-5">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-2 block">What do you want to build?</label>
-              <div className="flex gap-2 flex-wrap">
-                {generators.map((g) => (
-                  <button key={g.id} disabled={!g.ready}
-                    onClick={() => g.ready && setAiGenerator(g.id)}
-                    className={`h-8 px-3 rounded-full text-xs border transition-colors ${
-                      aiGenerator === g.id ? "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/50"
-                      : g.ready ? "border-border/60 text-muted-foreground hover:bg-accent/40"
-                      : "border-border/30 text-muted-foreground/40 cursor-not-allowed"}`}>
-                    {g.label}{!g.ready && " · soon"}
-                  </button>
-                ))}
-              </div>
             </div>
+          )}
 
-            <div>
-              <textarea
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                maxLength={1200}
-                rows={4}
-                disabled={aiBuilding}
-                placeholder="e.g. A portfolio for Ada, a fintech product designer in Lagos who loves clean, minimal interfaces…"
-                className="w-full rounded-lg border border-input bg-background p-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-fuchsia-500/50"
-              />
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {examples.map((ex, i) => (
-                  <button key={i} onClick={() => setAiPrompt(ex)} disabled={aiBuilding}
-                    className="text-[11px] text-muted-foreground border border-border/40 rounded-full px-2.5 py-1 hover:bg-accent/40 transition-colors">
-                    {ex.length > 46 ? ex.slice(0, 46) + "…" : ex}
-                  </button>
+          {aiSetup && (
+            <Card className="border-fuchsia-500/40">
+              <CardContent className="p-4 space-y-3">
+                {aiSetup.vars.map((v) => (
+                  <div key={v.key}>
+                    <label className="text-xs font-mono font-medium">{v.key}</label>
+                    {v.description && <p className="text-[11px] text-muted-foreground mb-1">{v.description}</p>}
+                    <Input type="password" value={aiEnvValues[v.key] || ""}
+                      onChange={(e) => setAiEnvValues({ ...aiEnvValues, [v.key]: e.target.value })}
+                      placeholder={`Paste your ${v.key}…`} className="font-mono text-sm" />
+                  </div>
                 ))}
-              </div>
-            </div>
+                {aiSetup.needsDb && (
+                  <div>
+                    <label className="text-xs font-medium">Database</label>
+                    <p className="text-[11px] text-muted-foreground mb-1.5">This app needs storage — pick one (PostgreSQL is the default). I&apos;ll provision it and wire up DATABASE_URL.</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {["postgres", "redis", "mongodb", "mysql"].map((t) => (
+                        <button key={t} onClick={() => setAiDbChoice(t)}
+                          className={`h-8 px-3 rounded-lg text-xs border capitalize ${aiDbChoice === t ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50" : "border-border/60 text-muted-foreground hover:bg-accent/40"}`}>
+                          {t === "postgres" ? "PostgreSQL" : t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button onClick={grantAndDeploy} disabled={aiBusy || aiSetup.vars.some((v) => !aiEnvValues[v.key]?.trim())} className="gap-2">
+                    {aiBusy ? <><Loader2 className="h-4 w-4 animate-spin" /> Deploying…</> : <><Rocket className="h-4 w-4" /> Grant &amp; deploy</>}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-            {aiError && <p className="text-sm text-red-400">{aiError}</p>}
+          {aiResult && (
+            <Card className={aiResult.ok ? "border-emerald-500/40" : "border-red-500/40"}>
+              <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-sm font-medium">{aiResult.ok ? "🎉 Deployed successfully" : "⚠️ Deployment failed"}</div>
+                <div className="flex gap-2">
+                  {aiResult.ok && aiResult.isSite && <Button size="sm" onClick={() => window.open(aiResult.url, "_blank")} className="gap-1.5"><ExternalLink className="h-4 w-4" /> View site</Button>}
+                  <Button size="sm" variant="outline" onClick={() => router.push("/projects")} className="gap-1.5"><Rocket className="h-4 w-4" /> Open project</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
-            <Button onClick={runAIBuild} disabled={!aiPrompt.trim() || aiBuilding} className="w-full gap-2 h-11">
-              {aiBuilding
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating & deploying…</>
-                : <><Sparkles className="h-4 w-4" /> Build &amp; deploy</>}
-            </Button>
-            <p className="text-[11px] text-center text-muted-foreground">
-              Uses one project slot on your plan. You can edit or delete it anytime.
-            </p>
-          </div>
-        )}
+        <div className="mt-3 flex gap-2 items-end">
+          <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runAIBuild(); } }}
+            rows={1} maxLength={1500} disabled={aiBusy || aiPhase === "building"}
+            placeholder={aiChat.length ? "Describe a change, or build something new…" : "Describe what you want to build…"}
+            className="flex-1 rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-fuchsia-500/50 max-h-32" />
+          <Button onClick={runAIBuild} disabled={!aiPrompt.trim() || aiBusy || aiPhase === "building"} className="h-11 w-11 p-0 shrink-0">
+            {aiBusy || aiPhase === "building" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-[10px] text-center text-muted-foreground mt-1.5">Each build uses one project slot · TypeScript/Python only · your keys stay private</p>
       </div>
     );
   }

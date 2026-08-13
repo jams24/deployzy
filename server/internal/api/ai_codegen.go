@@ -38,12 +38,14 @@ type codegenEnv struct {
 	Required    bool   `json:"required"`
 }
 type codegenResult struct {
-	Language string       `json:"language"`
-	Name     string       `json:"name"`
-	Summary  string       `json:"summary"`
-	Port     int          `json:"port"`
-	EnvVars  []codegenEnv `json:"env_vars"`
-	Files    []codegenFile `json:"files"`
+	Language     string        `json:"language"`
+	Name         string        `json:"name"`
+	Summary      string        `json:"summary"`
+	Port         int           `json:"port"`
+	EnvVars      []codegenEnv  `json:"env_vars"`
+	Files        []codegenFile `json:"files"`
+	NeedsDatabase bool         `json:"needs_database"`
+	DatabaseType  string       `json:"database_type"` // postgres|redis|mongodb|mysql
 }
 
 // The contract DeepSeek MUST follow. Grounds it in how Deployzy builds and runs
@@ -56,6 +58,8 @@ OUTPUT: return ONLY one JSON object, no markdown, no code fences, with EXACTLY t
   "name": "short-kebab-name",
   "summary": "one sentence describing what it does",
   "port": 3000,
+  "needs_database": false,
+  "database_type": "postgres",
   "env_vars": [ { "key": "SOME_KEY", "description": "what it's for", "required": true } ],
   "files": [ { "path": "relative/path", "content": "full file contents" } ]
 }
@@ -67,6 +71,7 @@ HARD RULES:
 - HTTP APIs / microservices: listen on 0.0.0.0, read the PORT env var, default 3000, and EXPOSE 3000 in the Dockerfile.
 - Bots (Telegram/Discord) and workers: no HTTP port needed; the Dockerfile just runs the long-lived process (use polling for bots, not webhooks).
 - ALL secrets and third-party API keys come from environment variables and MUST be declared in env_vars (e.g. TELEGRAM_BOT_TOKEN, DISCORD_TOKEN, OPENAI_API_KEY). NEVER hardcode a secret or invent a fake key. Read them with process.env / os.environ.
+- DATABASE: if the app needs persistent storage, set "needs_database": true and pick "database_type" (default "postgres"; or "redis"/"mongodb"/"mysql"). Read the connection string from the DATABASE_URL env var (or REDIS_URL for redis) — the platform provisions the database and injects that variable for you. Do NOT declare DATABASE_URL/REDIS_URL in env_vars, and do NOT hardcode a connection string. If no storage is needed, set "needs_database": false.
 - Only relative file paths (e.g. "src/index.ts", "Dockerfile", "requirements.txt"). No absolute paths, no "..".
 - Write complete, runnable code. No TODOs, no "// implement this", no placeholders that break the build.
 - Do NOT do anything privileged, no host mounts, no crypto mining, no spam/abuse tooling. Refuse (return an empty files array with a summary explaining why) if the request is for phishing, spam, malware, or a bot that places real financial trades — for trading, build SIGNALS/ALERTS (read-only), never order execution.
@@ -273,9 +278,10 @@ func (s *Server) buildCodegen(w http.ResponseWriter, r *http.Request, u *auth.Au
 			sub = strings.Join(words, "-")
 		}
 	}
-	sub = s.uniqueSubdomain(r.Context(), sanitizeSubdomain(sub), u.ID)
+	sub = s.freeSubdomain(r.Context(), sub)
 	project, err := s.db.CreateProject(r.Context(), u.ID, sub, sub, "docker")
 	if err != nil || project == nil {
+		s.log.Error().Err(err).Str("sub", sub).Str("name", res.Name).Msg("codegen: CreateProject failed")
 		writeError(w, http.StatusInternalServerError, "could not create project")
 		return
 	}
@@ -284,6 +290,9 @@ func (s *Server) buildCodegen(w http.ResponseWriter, r *http.Request, u *auth.Au
 	s.db.ReserveSubdomainAuto(r.Context(), u.ID, sub)
 	if len(providedEnv) > 0 {
 		s.db.UpdateProjectEnvVars(r.Context(), project.ID, providedEnv)
+		if fresh, _ := s.db.GetProject(r.Context(), project.ID); fresh != nil {
+			project = fresh
+		}
 	}
 	if err := stageCodegenFiles(project.ID, res.Files); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to stage build")
@@ -292,15 +301,25 @@ func (s *Server) buildCodegen(w http.ResponseWriter, r *http.Request, u *auth.Au
 
 	url := fmt.Sprintf("https://%s.%s", sub, s.deployer.AppDomain)
 
-	// 4) if required secrets are missing, don't deploy yet — ask the user for them.
-	if len(missing) > 0 {
+	// 4) if the service needs secrets or a database, pause and ask the user
+	//    (permission-request style). Nothing deploys until they confirm.
+	if len(missing) > 0 || res.NeedsDatabase {
+		dbType := ""
+		if res.NeedsDatabase {
+			dbType = res.DatabaseType
+			if dbType == "" {
+				dbType = "postgres"
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":   "needs_env",
-			"project":  project,
-			"url":      url,
-			"language": res.Language,
-			"summary":  res.Summary,
-			"env_vars": missing,
+			"status":        "needs_setup",
+			"project":       project,
+			"url":           url,
+			"language":      res.Language,
+			"summary":       res.Summary,
+			"env_vars":      missing,
+			"needs_database": res.NeedsDatabase,
+			"database_type": dbType,
 		})
 		return
 	}
@@ -329,6 +348,7 @@ func (s *Server) handleAIDeploy(w http.ResponseWriter, r *http.Request) {
 		ProjectID string            `json:"project_id"`
 		Prompt    string            `json:"prompt"`
 		Env       map[string]string `json:"env"`
+		Database  string            `json:"database"` // "", "postgres", "redis", "mongodb", "mysql"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ProjectID == "" {
 		writeError(w, http.StatusBadRequest, "project_id required")
@@ -339,8 +359,30 @@ func (s *Server) handleAIDeploy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
-	if len(req.Env) > 0 {
-		s.db.UpdateProjectEnvVars(r.Context(), project.ID, req.Env)
+
+	env := map[string]string{}
+	for k, v := range req.Env {
+		env[k] = v
+	}
+	// Provision a database if requested, and inject its connection URL so the
+	// generated app (which reads DATABASE_URL/REDIS_URL) just works.
+	if req.Database != "" {
+		key, url, err := s.provisionDBForBuild(r.Context(), project, req.Database)
+		if err != nil {
+			s.log.Error().Err(err).Str("project", project.ID).Msg("ai deploy: db provision failed")
+			writeError(w, http.StatusBadGateway, "couldn't create the database: "+err.Error())
+			return
+		}
+		env[key] = url
+		s.db.AddDeployLog(r.Context(), project.ID, fmt.Sprintf("🗄️  Provisioned a %s database and injected %s", req.Database, key), "deploy")
+	}
+	if len(env) > 0 {
+		s.db.UpdateProjectEnvVars(r.Context(), project.ID, env)
+		// Reload so project.EnvVars is fresh — the deploy engine injects env from
+		// the struct, not a re-fetch, so a stale struct would drop DATABASE_URL etc.
+		if fresh, _ := s.db.GetProject(r.Context(), project.ID); fresh != nil {
+			project = fresh
+		}
 	}
 	files, err := readStagedFiles(project.ID)
 	if err != nil {
@@ -349,6 +391,50 @@ func (s *Server) handleAIDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	go s.deployWithRepair(project, files, req.Prompt)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "deploying"})
+}
+
+// provisionDBForBuild creates a managed database for a code-gen project and
+// returns the env var (DATABASE_URL / REDIS_URL) + connection string to inject.
+// It co-locates the DB on the same worker the app will run on so the connection
+// works (co-located reachability is opened by the UFW rule on DB provision).
+func (s *Server) provisionDBForBuild(ctx context.Context, project *db.Project, dbType string) (string, string, error) {
+	valid := map[string]bool{"postgres": true, "redis": true, "mongodb": true, "mysql": true}
+	if !valid[dbType] {
+		return "", "", fmt.Errorf("unsupported database %q", dbType)
+	}
+	// Ensure the project has a server, then put the DB on that same server.
+	if project.WorkerServerID == "" {
+		if srv, _ := s.db.SelectServerForProject(ctx, nil); srv != nil {
+			s.db.AssignProjectServer(ctx, project.ID, srv.ID)
+			project.WorkerServerID = srv.ID
+		}
+	}
+	name := project.Subdomain + "-db"
+	var svc *db.Service
+	var err error
+	if project.WorkerServerID != "" {
+		server, gerr := s.db.GetWorkerServer(ctx, project.WorkerServerID)
+		if gerr != nil || server == nil {
+			return "", "", fmt.Errorf("server unavailable")
+		}
+		if server.IsLocal && dbType == "postgres" {
+			svc, err = s.db.CreateService(ctx, project.UserID, name, "postgres")
+		} else {
+			svc, err = s.provisionServiceContainerOn(ctx, project.UserID, name, dbType, server)
+		}
+	} else if dbType == "postgres" {
+		svc, err = s.db.CreateService(ctx, project.UserID, name, "postgres")
+	} else {
+		svc, err = s.provisionPlatformContainer(ctx, project.UserID, name, dbType)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	key := "DATABASE_URL"
+	if dbType == "redis" {
+		key = "REDIS_URL"
+	}
+	return key, svc.ConnectionURL(), nil
 }
 
 // deployWithRepair deploys and, if the build fails, sends the logs + files back
