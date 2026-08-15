@@ -75,6 +75,37 @@ var agentTools = []map[string]any{
 			"instruction": map[string]any{"type": "string", "description": "the change to make"},
 		}, "required": []string{"project", "instruction"}},
 	}},
+	{"type": "function", "function": map[string]any{
+		"name": "get_env", "description": "List a project's environment variable KEYS (values are masked for safety).",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"project": map[string]any{"type": "string"},
+		}, "required": []string{"project"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "set_env", "description": "Set/update an environment variable on a project (e.g. a missing token). Redeploy afterwards for it to take effect.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"project": map[string]any{"type": "string"},
+			"key":     map[string]any{"type": "string"},
+			"value":   map[string]any{"type": "string"},
+		}, "required": []string{"project", "key", "value"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "attach_database", "description": "Provision a managed database (postgres/redis/mongodb/mysql) and inject its connection URL (DATABASE_URL or REDIS_URL) into a project. Redeploy afterwards.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"project": map[string]any{"type": "string"},
+			"type":    map[string]any{"type": "string", "enum": []string{"postgres", "redis", "mongodb", "mysql"}},
+		}, "required": []string{"project", "type"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "stop_project", "description": "Stop a running project (takes it offline).",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"project": map[string]any{"type": "string"},
+		}, "required": []string{"project"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "list_databases", "description": "List the user's managed databases with type and status.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{}},
+	}},
 }
 
 // ── tool execution ──
@@ -176,6 +207,73 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 
 	case "build_project":
 		return s.agentBuildProject(ctx, u, str(args["kind"]), str(args["description"]))
+
+	case "get_env":
+		p := s.findUserProject(ctx, u.ID, str(args["project"]))
+		if p == nil {
+			return jsonStr(map[string]any{"error": "no project matched that name"})
+		}
+		keys := []string{}
+		for k := range p.EnvVars {
+			keys = append(keys, k)
+		}
+		return jsonStr(map[string]any{"project": p.Subdomain, "env_keys": keys, "note": "values are hidden"})
+
+	case "set_env":
+		p := s.findUserProject(ctx, u.ID, str(args["project"]))
+		if p == nil {
+			return jsonStr(map[string]any{"error": "no project matched that name"})
+		}
+		k, v := str(args["key"]), str(args["value"])
+		if k == "" {
+			return jsonStr(map[string]any{"error": "key is required"})
+		}
+		envs := p.EnvVars
+		if envs == nil {
+			envs = map[string]string{}
+		}
+		envs[k] = v
+		if err := s.db.UpdateProjectEnvVars(ctx, p.ID, envs); err != nil {
+			return jsonStr(map[string]any{"error": "failed to set env var"})
+		}
+		return jsonStr(map[string]any{"status": "set", "project": p.Subdomain, "key": k, "note": "redeploy the project for this to take effect"})
+
+	case "attach_database":
+		p := s.findUserProject(ctx, u.ID, str(args["project"]))
+		if p == nil {
+			return jsonStr(map[string]any{"error": "no project matched that name"})
+		}
+		dbType := str(args["type"])
+		if dbType == "" {
+			dbType = "postgres"
+		}
+		envKey, connURL, err := s.provisionDBForBuild(ctx, p, dbType)
+		if err != nil {
+			return jsonStr(map[string]any{"error": "couldn't provision the database: " + err.Error()})
+		}
+		envs := p.EnvVars
+		if envs == nil {
+			envs = map[string]string{}
+		}
+		envs[envKey] = connURL
+		s.db.UpdateProjectEnvVars(ctx, p.ID, envs)
+		return jsonStr(map[string]any{"status": "attached", "project": p.Subdomain, "type": dbType, "injected_env": envKey, "note": "redeploy the project for it to use the database"})
+
+	case "stop_project":
+		p := s.findUserProject(ctx, u.ID, str(args["project"]))
+		if p == nil {
+			return jsonStr(map[string]any{"error": "no project matched that name"})
+		}
+		go func(proj db.Project) { _ = s.deployer.Stop(context.Background(), &proj) }(*p)
+		return jsonStr(map[string]any{"status": "stopping", "project": p.Subdomain})
+
+	case "list_databases":
+		svcs, _ := s.db.ListServices(ctx, u.ID)
+		out := []map[string]any{}
+		for _, sv := range svcs {
+			out = append(out, map[string]any{"name": sv.Name, "type": sv.Type, "status": sv.Status})
+		}
+		return jsonStr(map[string]any{"databases": out, "count": len(out)})
 
 	default:
 		return jsonStr(map[string]any{"error": "unknown tool"})

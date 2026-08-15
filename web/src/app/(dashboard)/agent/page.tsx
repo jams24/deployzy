@@ -23,6 +23,11 @@ const toolLabel: Record<string, string> = {
   redeploy_project: "Redeployed a project",
   build_project: "Built & deployed a project",
   edit_project: "Edited a project",
+  get_env: "Checked environment variables",
+  set_env: "Set an environment variable",
+  attach_database: "Attached a database",
+  stop_project: "Stopped a project",
+  list_databases: "Listed your databases",
 };
 
 // Minimal, safe markdown → HTML (bold, code, links, line breaks).
