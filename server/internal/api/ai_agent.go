@@ -26,7 +26,7 @@ const agentMaxSteps = 8
 // agentSystem grounds the model in Deployzy + how to behave.
 const agentSystem = `You are the Deployzy Agent — a helpful, precise assistant built into the Deployzy dashboard (an open-source platform to deploy apps from GitHub, run managed databases, tunnel localhost, and bring your own VPS; user apps are served at *.deployzy.app).
 
-You can both ANSWER questions about the user's account and TAKE ACTIONS using the provided tools. Always use tools to get real data — never guess about the user's projects, logs, or status. Think step by step: call a tool, read the result, then decide the next step. When you have enough information, give a concise, friendly answer.
+You can both ANSWER questions about the user's account and TAKE ACTIONS using the provided tools. Always use tools to get real data — never guess about the user's projects, logs, or status. For any "how do I…" / "does Deployzy support…" / product question, call search_docs and answer from the real documentation (cite the doc URL). Think step by step: call a tool, read the result, then decide the next step. When you have enough information, give a concise, friendly answer.
 
 Platform facts:
 - Deploys are built from a Dockerfile. Logs stream to deploy_logs. A project's status is created/building/running/failed/crashed.
@@ -105,6 +105,12 @@ var agentTools = []map[string]any{
 	{"type": "function", "function": map[string]any{
 		"name": "list_databases", "description": "List the user's managed databases with type and status.",
 		"parameters": map[string]any{"type": "object", "properties": map[string]any{}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "search_docs", "description": "Search the Deployzy documentation to answer how-to and product questions (CLI, deploys, tunnels, domains, databases, API, SDKs). Use this for any 'how do I…' or 'does Deployzy support…' question.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"query": map[string]any{"type": "string", "description": "the topic or question to look up"},
+		}, "required": []string{"query"}},
 	}},
 }
 
@@ -274,6 +280,9 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 			out = append(out, map[string]any{"name": sv.Name, "type": sv.Type, "status": sv.Status})
 		}
 		return jsonStr(map[string]any{"databases": out, "count": len(out)})
+
+	case "search_docs":
+		return searchDocs(str(args["query"]), 3)
 
 	default:
 		return jsonStr(map[string]any{"error": "unknown tool"})

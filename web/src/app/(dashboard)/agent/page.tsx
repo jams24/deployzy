@@ -28,6 +28,7 @@ const toolLabel: Record<string, string> = {
   attach_database: "Attached a database",
   stop_project: "Stopped a project",
   list_databases: "Listed your databases",
+  search_docs: "Searched the docs",
 };
 
 // Minimal, safe markdown → HTML (bold, code, links, line breaks).
