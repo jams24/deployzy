@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Rocket, Database, Waypoints, Server, BarChart3,
   Link2, Globe, Eye, Key, Bell, Users, CreditCard, Settings,
-  ShieldCheck, LogOut, Plus, ChevronDown, Check, LayoutTemplate,
+  ShieldCheck, LogOut, Plus, ChevronDown, Check, LayoutTemplate, Sparkles,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,6 +16,7 @@ const navGroups = [
   {
     label: "Deploy",
     items: [
+      { href: "/agent",      icon: Sparkles,         label: "Agent" },
       { href: "/overview",   icon: LayoutDashboard,  label: "Overview" },
       { href: "/projects",   icon: Rocket,           label: "Projects" },
       { href: "/templates",  icon: LayoutTemplate,   label: "Templates" },
