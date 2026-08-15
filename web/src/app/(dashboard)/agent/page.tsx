@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Sparkles, ArrowUp, Loader2, Check, Wrench, Rocket, Bug, Database, BookOpen } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -142,21 +143,47 @@ export default function AgentPage() {
 
   const empty = chat.length === 0;
 
+  const composer = (
+    <div className="w-full">
+      {/* Modern composer: textarea on top, an action row beneath */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+          rows={2}
+          disabled={busy}
+          placeholder="Ask the agent to check something, or build & deploy an app…"
+          className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm resize-none focus:outline-none max-h-48 placeholder:text-muted-foreground/60"
+        />
+        <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
+            <Image src="/logo-mark.png" alt="" width={14} height={14} className="rounded-sm" /> Deployzy Agent
+          </span>
+          <button onClick={() => send(input)} disabled={!input.trim() || busy}
+            className="h-8 w-8 rounded-lg bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+      <p className="text-[10px] text-center text-muted-foreground/60 mt-2">
+        The agent reads your projects & logs and can build, fix & deploy apps · verify important actions
+      </p>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] max-w-3xl mx-auto w-full">
       {empty ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="relative mb-6">
-            <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 blur-2xl" />
-            <div className="relative h-14 w-14 rounded-2xl bg-emerald-500 grid place-items-center shadow-lg shadow-emerald-500/25">
-              <Sparkles className="h-7 w-7 text-white" />
-            </div>
+        <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-8">
+          <div className="mb-5">
+            <Image src="/logo-mark.png" alt="Deployzy" width={56} height={56} className="rounded-2xl" priority />
           </div>
           <h1 className="text-4xl font-bold text-center tracking-tight">
             {name ? `Hi ${name}` : "Deployzy Agent"}
           </h1>
           <p className="mt-2 text-lg text-muted-foreground text-center">What would you like to build or fix today?</p>
-          <div className="mt-9 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
+          <div className="mt-8 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
             {suggestions.map((s) => {
               const Icon = s.icon;
               return (
@@ -173,6 +200,7 @@ export default function AgentPage() {
               );
             })}
           </div>
+          <div className="mt-6 w-full max-w-2xl">{composer}</div>
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-5">
@@ -243,35 +271,7 @@ export default function AgentPage() {
         </div>
       )}
 
-      <div className="px-4 pb-5 pt-2">
-        {/* Modern composer: textarea on top, an action row beneath (like Brimble) */}
-        <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
-            rows={2}
-            disabled={busy}
-            placeholder="Ask the agent to check something, or build & deploy an app…"
-            className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm resize-none focus:outline-none max-h-48 placeholder:text-muted-foreground/60"
-          />
-          <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-1">
-                <Sparkles className="h-3 w-3 text-emerald-500" /> Deployzy Agent
-              </span>
-              <span className="hidden sm:inline text-muted-foreground/60">on DeepSeek</span>
-            </div>
-            <button onClick={() => send(input)} disabled={!input.trim() || busy}
-              className="h-8 w-8 rounded-lg bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-            </button>
-          </div>
-        </div>
-        <p className="text-[10px] text-center text-muted-foreground/60 mt-2">
-          The agent reads your projects & logs and can build, fix & deploy apps · verify important actions
-        </p>
-      </div>
+      {!empty && <div className="px-4 pb-5 pt-2 max-w-3xl mx-auto w-full">{composer}</div>}
     </div>
   );
 }
