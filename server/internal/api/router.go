@@ -195,6 +195,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/deploy", s.handleAIDeploy)
 			// AI edits an already-deployed code-gen project (load files -> change -> redeploy).
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/edit", s.handleAIEdit)
+			// Deployzy Agent: DeepSeek tool-calling loop grounded in the platform —
+			// answers about the user's account + takes actions (build/edit/redeploy).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/agent", s.handleAIAgent)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
