@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, Loader2, Check, Wrench } from "lucide-react";
+import { Sparkles, ArrowUp, Loader2, Check, Wrench, Rocket, Bug, Database, BookOpen } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -17,10 +17,10 @@ type Msg = {
 };
 
 const suggestions = [
-  "Why did my last deploy fail?",
-  "Which of my projects are failing, and why?",
-  "Is GitHub connected to my account?",
-  "Build me a TypeScript API with a /health and /joke endpoint",
+  { icon: Rocket, title: "Build & deploy an app", text: "Build me a TypeScript API with a /health and a /joke endpoint, then deploy it" },
+  { icon: Bug, title: "Diagnose a failure", text: "Which of my projects are failing, and why?" },
+  { icon: Database, title: "Manage infrastructure", text: "List my databases and which projects use them" },
+  { icon: BookOpen, title: "Ask the docs", text: "How do I expose my localhost to the internet with Deployzy?" },
 ];
 
 // Turn a tool name into a friendly label.
@@ -145,20 +145,32 @@ export default function AgentPage() {
     <div className="flex flex-col h-[calc(100vh-64px)] max-w-3xl mx-auto w-full">
       {empty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="h-11 w-11 rounded-2xl bg-fuchsia-500/15 text-fuchsia-400 grid place-items-center mb-5">
-            <Sparkles className="h-6 w-6" />
+          <div className="relative mb-6">
+            <div className="absolute inset-0 rounded-2xl bg-fuchsia-500/25 blur-2xl" />
+            <div className="relative h-14 w-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-violet-600 grid place-items-center shadow-lg shadow-fuchsia-500/30">
+              <Sparkles className="h-7 w-7 text-white" />
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-center">
+          <h1 className="text-4xl font-bold text-center tracking-tight">
             {name ? `Hi ${name}` : "Deployzy Agent"}
-            <br />What would you like to do?
           </h1>
-          <div className="mt-8 grid sm:grid-cols-2 gap-2 w-full max-w-xl">
-            {suggestions.map((s) => (
-              <button key={s} onClick={() => send(s)}
-                className="text-left text-sm border border-border/60 rounded-xl px-4 py-3 hover:bg-accent/40 transition-colors">
-                {s}
-              </button>
-            ))}
+          <p className="mt-2 text-lg text-muted-foreground text-center">What would you like to build or fix today?</p>
+          <div className="mt-9 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
+            {suggestions.map((s) => {
+              const Icon = s.icon;
+              return (
+                <button key={s.title} onClick={() => send(s.text)}
+                  className="group text-left rounded-2xl border border-border/60 p-4 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/[0.04] transition-all">
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="h-8 w-8 rounded-lg bg-muted/60 grid place-items-center text-fuchsia-400 group-hover:bg-fuchsia-500/15 transition-colors">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-semibold">{s.title}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed pl-[42px]">{s.text}</p>
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -166,7 +178,7 @@ export default function AgentPage() {
           {chat.map((m, i) => (
             <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
               {m.role === "user" ? (
-                <div className="max-w-[85%] rounded-2xl bg-fuchsia-500/20 px-4 py-2.5 text-sm">{m.text}</div>
+                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-fuchsia-500/25 to-violet-500/20 border border-fuchsia-500/20 px-4 py-2.5 text-sm">{m.text}</div>
               ) : (
                 <div className="space-y-2">
                   {/* live tool steps */}
@@ -231,7 +243,7 @@ export default function AgentPage() {
       )}
 
       <div className="px-4 pb-5 pt-2">
-        <div className="rounded-2xl border border-border/60 bg-background/60 p-2 flex items-end gap-2">
+        <div className="rounded-2xl border border-border/60 bg-background/80 backdrop-blur p-2.5 flex items-end gap-2 shadow-sm focus-within:border-fuchsia-500/40 transition-colors">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -239,15 +251,15 @@ export default function AgentPage() {
             rows={1}
             disabled={busy}
             placeholder="Ask the agent to check something, or build & deploy an app…"
-            className="flex-1 bg-transparent px-2 py-2 text-sm resize-none focus:outline-none max-h-40"
+            className="flex-1 bg-transparent px-2 py-1.5 text-sm resize-none focus:outline-none max-h-40 placeholder:text-muted-foreground/70"
           />
           <button onClick={() => send(input)} disabled={!input.trim() || busy}
-            className="h-9 w-9 rounded-xl bg-fuchsia-500 text-white grid place-items-center disabled:opacity-40 shrink-0">
+            className="h-9 w-9 rounded-xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white grid place-items-center disabled:opacity-30 disabled:grayscale shrink-0 transition-all hover:shadow-md hover:shadow-fuchsia-500/30">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
-        <p className="text-[10px] text-center text-muted-foreground mt-2">
-          The agent can read your projects & logs and build/deploy apps. It can make mistakes — verify important actions.
+        <p className="text-[10px] text-center text-muted-foreground/70 mt-2 flex items-center justify-center gap-1.5">
+          <Sparkles className="h-3 w-3" /> Powered by DeepSeek · reads your projects & logs, builds & deploys apps · verify important actions
         </p>
       </div>
     </div>
