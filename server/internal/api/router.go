@@ -198,6 +198,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Deployzy Agent: DeepSeek tool-calling loop grounded in the platform —
 			// answers about the user's account + takes actions (build/edit/redeploy).
 			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/agent", s.handleAIAgent)
+			// Streaming (SSE) agent: live tool-calls + streamed reply + build/fix logs in-chat.
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/agent/stream", s.handleAIAgentStream)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)

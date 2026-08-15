@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, ArrowUp, Loader2, ChevronRight, Wrench } from "lucide-react";
+import { Sparkles, ArrowUp, Loader2, Check, Wrench } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Step = { tool: string; args: string; result: string };
-type Msg = { role: "user" | "assistant"; text: string; steps?: Step[] };
+type LiveStep = { tool: string; done: boolean };
+type BuildLog = { line: string; level: string };
+type Msg = {
+  role: "user" | "assistant";
+  text: string;
+  steps?: LiveStep[];
+  buildLogs?: BuildLog[];
+  buildStatus?: { ok: boolean; url?: string; error?: string } | null;
+  streaming?: boolean;
+};
 
 const suggestions = [
   "Why did my last deploy fail?",
@@ -49,7 +57,6 @@ export default function AgentPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
-  const [openSteps, setOpenSteps] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const headers = () => ({
@@ -69,28 +76,65 @@ export default function AgentPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat, busy]);
 
+  // Mutate the last (assistant) message in place as SSE events arrive.
+  const patchLast = (fn: (m: Msg) => Msg) =>
+    setChat((c) => {
+      const copy = [...c];
+      copy[copy.length - 1] = fn(copy[copy.length - 1]);
+      return copy;
+    });
+
   async function send(text: string) {
     const q = text.trim();
     if (!q || busy) return;
-    const nextChat: Msg[] = [...chat, { role: "user", text: q }];
-    setChat(nextChat);
+    const history = [...chat, { role: "user" as const, text: q }];
+    // append the user msg + an empty streaming assistant msg
+    setChat([...history, { role: "assistant", text: "", steps: [], buildLogs: [], streaming: true }]);
     setInput("");
     setBusy(true);
     try {
-      const res = await fetch(`${API}/api/v1/ai/agent`, {
+      const res = await fetch(`${API}/api/v1/ai/agent/stream`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({
-          messages: nextChat.map((m) => ({ role: m.role, content: m.text })),
-        }),
+        body: JSON.stringify({ messages: history.map((m) => ({ role: m.role, content: m.text })) }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setChat((c) => [...c, { role: "assistant", text: "⚠️ " + (data.error || "The agent had a problem. Please try again.") }]);
-      } else {
-        setChat((c) => [...c, { role: "assistant", text: data.reply || "(no response)", steps: data.steps || [] }]);
+      if (!res.ok || !res.body) {
+        patchLast((m) => ({ ...m, text: "⚠️ The agent is unavailable right now. Please try again.", streaming: false }));
+        setBusy(false); return;
       }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const events = buf.split("\n\n");
+        buf = events.pop() || "";
+        for (const ev of events) {
+          const evLine = ev.split("\n").find((l) => l.startsWith("event:"));
+          const dataLine = ev.split("\n").find((l) => l.startsWith("data:"));
+          if (!evLine || !dataLine) continue;
+          const type = evLine.slice(6).trim();
+          let data: any = {};
+          try { data = JSON.parse(dataLine.slice(5).trim()); } catch {}
+          if (type === "step") {
+            patchLast((m) => ({ ...m, steps: [...(m.steps || []), { tool: data.tool, done: false }] }));
+          } else if (type === "step_done") {
+            patchLast((m) => ({ ...m, steps: (m.steps || []).map((s) => s.tool === data.tool && !s.done ? { ...s, done: true } : s) }));
+          } else if (type === "token") {
+            patchLast((m) => ({ ...m, text: m.text + (data.text || "") }));
+          } else if (type === "build_log") {
+            patchLast((m) => ({ ...m, buildLogs: [...(m.buildLogs || []), { line: data.line, level: data.level }] }));
+          } else if (type === "build_status") {
+            patchLast((m) => ({ ...m, buildStatus: { ok: !!data.ok, url: data.url, error: data.error } }));
+          } else if (type === "done") {
+            patchLast((m) => ({ ...m, streaming: false }));
+          }
+        }
+      }
+      patchLast((m) => ({ ...m, streaming: false }));
     } catch {
-      setChat((c) => [...c, { role: "assistant", text: "⚠️ Something went wrong — please try again." }]);
+      patchLast((m) => ({ ...m, text: (chat.length ? "" : "") + "⚠️ Connection interrupted — please try again.", streaming: false }));
     }
     setBusy(false);
   }
@@ -125,33 +169,64 @@ export default function AgentPage() {
                 <div className="max-w-[85%] rounded-2xl bg-fuchsia-500/20 px-4 py-2.5 text-sm">{m.text}</div>
               ) : (
                 <div className="space-y-2">
+                  {/* live tool steps */}
                   {m.steps && m.steps.length > 0 && (
-                    <button onClick={() => setOpenSteps((o) => ({ ...o, [i]: !o[i] }))}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${openSteps[i] ? "rotate-90" : ""}`} />
-                      <Wrench className="h-3.5 w-3.5" /> {m.steps.length} tool {m.steps.length === 1 ? "call" : "calls"}
-                    </button>
-                  )}
-                  {m.steps && openSteps[i] && (
-                    <div className="ml-5 space-y-1.5 border-l border-border/50 pl-3">
+                    <div className="space-y-1">
                       {m.steps.map((s, j) => (
-                        <div key={j} className="text-xs">
-                          <div className="text-foreground/80">{toolLabel[s.tool] || s.tool}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground truncate">{s.args !== "{}" ? s.args : ""}</div>
+                        <div key={j} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {s.done
+                            ? <Check className="h-3.5 w-3.5 text-emerald-500" />
+                            : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          <Wrench className="h-3 w-3" /> {toolLabel[s.tool] || s.tool}{!s.done && "…"}
                         </div>
                       ))}
                     </div>
                   )}
-                  <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMd(m.text) }} />
+
+                  {/* streamed reply text */}
+                  {m.text && (
+                    <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMd(m.text) }} />
+                  )}
+
+                  {/* live build / self-repair logs, piped into the chat */}
+                  {m.buildLogs && m.buildLogs.length > 0 && (
+                    <div className="rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden mt-1">
+                      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.08] bg-[#161b22] text-[10px] font-mono text-muted-foreground">
+                        {m.buildStatus
+                          ? (m.buildStatus.ok ? <><Check className="h-3 w-3 text-emerald-500" /> deployed</> : <span className="text-red-400">build failed</span>)
+                          : <><span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> building & deploying…</>}
+                      </div>
+                      <div className="p-2 font-mono text-[11px] max-h-52 overflow-y-auto space-y-0.5">
+                        {m.buildLogs.map((l, j) => (
+                          <div key={j} className={l.level === "error" ? "text-[#f85149]" : l.level === "deploy" ? "text-[#3fb950]" : "text-[#d29922]"}>
+                            {l.line}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* terminal build result */}
+                  {m.buildStatus && (
+                    m.buildStatus.ok ? (
+                      <div className="flex items-center gap-2 text-sm text-emerald-500">
+                        <Check className="h-4 w-4" /> Live at{" "}
+                        <a href={m.buildStatus.url} target="_blank" rel="noopener" className="text-fuchsia-400 hover:underline">{m.buildStatus.url}</a>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-red-400">⚠️ It failed to deploy. {m.buildStatus.error ? <span className="font-mono text-xs">{m.buildStatus.error}</span> : ""} — tell me a fix and I&apos;ll retry.</div>
+                    )
+                  )}
+
+                  {m.streaming && !m.text && (!m.steps || m.steps.length === 0) && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ))}
-          {busy && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
-            </div>
-          )}
         </div>
       )}
 
