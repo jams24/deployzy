@@ -135,6 +135,16 @@ func streamText(text string, emit func(string, any)) {
 // the chat, not just on the project page.
 func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit func(string, any)) {
 	emit("build_log", map[string]string{"line": "Starting deployment…", "level": "deploy"})
+	// note narrates in the agent's own voice (rendered as assistant text), once each.
+	narrated := map[string]bool{}
+	note := func(id, text string) {
+		if narrated[id] {
+			return
+		}
+		narrated[id] = true
+		emit("note", map[string]string{"text": text})
+	}
+
 	seen := map[string]bool{}
 	deadline := time.Now().Add(4 * time.Minute)
 
@@ -154,15 +164,26 @@ func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit f
 			}
 			seen[key] = true
 			emit("build_log", map[string]string{"line": l.Message, "level": l.Level})
+
+			// Narrate key moments in the agent's voice as they happen.
+			low := strings.ToLower(l.Message)
+			switch {
+			case strings.HasPrefix(l.Message, "🤖 Build failed") || (l.Level == "error" && strings.Contains(low, "build failed")):
+				note("fixing", "\n\n⚠️ The build failed — I'm reading the error and fixing the code now…")
+			case strings.HasPrefix(l.Message, "🤖 Applied a fix"):
+				note("applied", "\n🔧 Applied a fix — redeploying…")
+			}
 		}
 		if p, _ := s.db.GetProject(ctx, projectID); p != nil {
 			switch p.Status {
 			case "running":
+				if narrated["fixing"] {
+					note("fixed", "\n\n✅ Got it working and deployed it.")
+				}
 				emit("build_status", map[string]any{"ok": true,
 					"url": fmt.Sprintf("https://%s.%s", p.Subdomain, s.deployer.AppDomain)})
 				return
 			case "failed", "crashed":
-				// surface the last error line
 				errLine := ""
 				for _, l := range logs {
 					if l.Level == "error" {
@@ -170,6 +191,7 @@ func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit f
 						break
 					}
 				}
+				note("gaveup", "\n\n❌ I tried but couldn't get it to build cleanly. The error is below — tell me how you'd like to change it and I'll try again.")
 				emit("build_status", map[string]any{"ok": false, "error": errLine})
 				return
 			}
