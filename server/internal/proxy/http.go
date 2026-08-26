@@ -176,18 +176,10 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	tun := p.registry.LookupByHost(hostname)
 	if tun == nil {
-		// Check if this is a deployed project (subdomain path: myapp.deployzy.com)
-		if p.projects != nil {
-			parts := strings.SplitN(hostname, ".", 2)
-			if len(parts) >= 1 {
-				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
-					p.proxyToProject(w, r, svrHost, port, projID)
-					return
-				}
-			}
-		}
-
-		// Check if this is a verified custom domain
+		// Verified custom domains FIRST: an exact domains-table match always
+		// wins over the bare-label project lookup. Otherwise an apex custom
+		// domain like foo.com whose first label matches a platform project
+		// subdomain (e.g. a project named "foo") gets hijacked by that project.
 		if p.domains != nil {
 			targetType, targetSub, ok := p.domains.ResolveDomain(hostname)
 			if ok {
@@ -218,6 +210,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						Reason:    "service_not_running",
 						DashURL:   "https://deployzy.com/projects",
 					})
+					return
+				}
+			}
+		}
+
+		// Platform project subdomains (myapp.deployzy.com / myapp.deployzy.app).
+		if tun == nil && p.projects != nil {
+			parts := strings.SplitN(hostname, ".", 2)
+			if len(parts) >= 1 {
+				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
+					p.proxyToProject(w, r, svrHost, port, projID)
 					return
 				}
 			}
@@ -466,17 +469,21 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Resolve host → projectID.
+	// Resolve host → projectID. Custom domains first so apex domains whose
+	// first label matches a platform project subdomain attribute analytics
+	// to the bound project, not the colliding one.
 	var projectID string
-	parts := strings.SplitN(hostname, ".", 2)
-	if len(parts) >= 1 {
-		if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
-			projectID = pid
-		}
-	}
-	if projectID == "" && p.domains != nil {
+	if p.domains != nil {
 		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
 			if _, _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
+				projectID = pid
+			}
+		}
+	}
+	if projectID == "" && p.projects != nil {
+		parts := strings.SplitN(hostname, ".", 2)
+		if len(parts) >= 1 {
+			if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
 				projectID = pid
 			}
 		}
