@@ -47,15 +47,17 @@ const footerLinks = {
 
 export function Footer() {
   return (
-    <footer className="border-t border-border/40 bg-background">
+    <footer className="relative border-t border-border/40 bg-background">
+      {/* top edge glow */}
+      <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
       <div className="mx-auto max-w-6xl px-6 py-16">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 md:col-span-1">
             <Link
               href="/"
-              className="flex items-center gap-2 font-bold text-lg"
+              className="group flex items-center gap-2 font-bold text-lg"
             >
-              <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg" />
+              <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg transition-transform duration-300 group-hover:rotate-[8deg]" />
               Deployzy
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">
@@ -70,7 +72,7 @@ export function Footer() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={s.label}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent hover:text-foreground"
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden><path d={s.path} /></svg>
                 </a>
@@ -101,8 +103,12 @@ export function Footer() {
           <p className="text-xs text-muted-foreground">
             &copy; {new Date().getFullYear()} Deployzy. MIT License.
           </p>
-          <p className="text-xs text-muted-foreground">
-            Made with care for the developer community.
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            All systems operational
           </p>
         </div>
       </div>
