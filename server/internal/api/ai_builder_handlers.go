@@ -51,6 +51,7 @@ var aiGenerators = map[string]aiGenerator{
 		systemHint:  "You generate content for a modern PRODUCT / SaaS LANDING PAGE. Make the headline benefit-driven and the features concrete. Only include pricing/testimonials/faq/metrics if the product warrants them.",
 	},
 	// ── code-gen generators (write real TypeScript/Python) ──
+	"web":          {codegen: true, kind: "Build a full-stack WEB APP / website — a served frontend (HTML/CSS/JS pages) PLUS its backend API, and an /admin panel if the request implies management/CRUD. The root URL must render a real page, not JSON"},
 	"api":          {codegen: true, kind: "Build an HTTP JSON API / microservice"},
 	"telegram-bot": {codegen: true, kind: "Build a Telegram bot (long-polling, python-telegram-bot or grammY)"},
 	"discord-bot":  {codegen: true, kind: "Build a Discord bot (discord.js or discord.py)"},
@@ -77,6 +78,14 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "prompt too long (max 1500 characters)")
 		return
 	}
+	// Guardrails: per-user rate limit + prompt moderation.
+	if !s.checkAIRate(w, r, u.ID) {
+		return
+	}
+	if reason := moderatePrompt(req.Prompt); reason != "" {
+		writeError(w, http.StatusUnprocessableEntity, reason)
+		return
+	}
 	if req.Generator == "" {
 		req.Generator = "portfolio"
 	}
@@ -86,7 +95,7 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := os.Getenv("DEEPSEEK_API_KEY")
+	key := s.llm(r.Context()).Key
 	if key == "" {
 		writeError(w, http.StatusServiceUnavailable, "AI builder isn't configured yet")
 		return
@@ -107,10 +116,14 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
+	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
+		return
+	}
 
 	// 1) Generate content.json (the ONLY thing the model produces).
 	schema, _ := aiAssets.ReadFile(gen.schemaFile)
-	content, name, err := s.deepseekGenerate(r.Context(), key, gen.systemHint, string(schema), req.Prompt)
+	content, name, err := s.deepseekGenerate(withAIBill(r.Context(), u, "build", ""), key, gen.systemHint, string(schema), req.Prompt)
 	if err != nil {
 		s.log.Error().Err(err).Msg("ai build: generation failed")
 		writeError(w, http.StatusBadGateway, "generation failed, please try again")
@@ -167,8 +180,9 @@ func (s *Server) deepseekGenerate(ctx context.Context, key, hint, schema, prompt
 JSON Schema:
 ` + schema
 
+	p := s.llm(ctx)
 	body, _ := json.Marshal(map[string]any{
-		"model": "deepseek-chat",
+		"model": p.Model,
 		"messages": []map[string]string{
 			{"role": "system", "content": system},
 			{"role": "user", "content": prompt},
@@ -180,9 +194,9 @@ JSON Schema:
 
 	reqCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	httpReq, _ := http.NewRequestWithContext(reqCtx, http.MethodPost, "https://api.deepseek.com/chat/completions", bytes.NewReader(body))
+	httpReq, _ := http.NewRequestWithContext(reqCtx, http.MethodPost, p.chatURL(), bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+key)
+	httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
@@ -198,6 +212,10 @@ JSON Schema:
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, "", err
@@ -205,6 +223,7 @@ JSON Schema:
 	if len(out.Choices) == 0 {
 		return nil, "", fmt.Errorf("empty completion")
 	}
+	s.chargeUsage(ctx, p.Model, out.Usage.PromptTokens, out.Usage.CompletionTokens)
 
 	// Validate it parses as an object, then re-marshal pretty.
 	var obj map[string]any

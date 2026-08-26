@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 )
 
 // handleAIAgentStream is the streaming (SSE) version of the agent. It emits:
@@ -22,8 +25,12 @@ import (
 // in-line, instead of the user having to open the project logs page.
 func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
-	if agentKey() == "" || s.deployer == nil {
+	if s.agentKey(r.Context()) == "" || s.deployer == nil {
 		http.Error(w, "agent unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -36,10 +43,37 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
+	// All writes to w go through this mutex — the heartbeat goroutine below and
+	// the main loop both write, and concurrent writes to a ResponseWriter race.
+	var writeMu sync.Mutex
 	emit := func(event string, data any) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, jsonStr(data))
 		flusher.Flush()
 	}
+
+	// Heartbeat: SSE comment pings every 10s keep the connection alive through
+	// long docker builds (60-90s+) where few new log lines arrive. Without this,
+	// Cloudflare / the reverse proxy idle-times-out the stream mid-build and the
+	// client sees "Connection interrupted".
+	hbCtx, hbStop := context.WithCancel(r.Context())
+	defer hbStop()
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-t.C:
+				writeMu.Lock()
+				fmt.Fprint(w, ": ping\n\n")
+				flusher.Flush()
+				writeMu.Unlock()
+			}
+		}
+	}()
 
 	var req struct {
 		Messages []struct {
@@ -52,6 +86,22 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 		emit("done", map[string]any{})
 		return
 	}
+	// Guardrails: rate-limit + moderation (SSE can't set a 429 status after the
+	// stream opens, so surface it as a chat message).
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		if ok, retry := aiLimiter.allow(u.ID); !ok {
+			emit("token", map[string]string{"text": "You're doing a lot right now — please wait ~" + strconv.Itoa(int(retry.Minutes())+1) + " min before the next AI action."})
+			emit("done", map[string]any{})
+			return
+		}
+	}
+	if last := lastUserMsg(req.Messages); last != "" {
+		if reason := moderatePrompt(last); reason != "" {
+			emit("token", map[string]string{"text": reason})
+			emit("done", map[string]any{})
+			return
+		}
+	}
 
 	msgs := []map[string]any{{"role": "system", "content": agentSystem}}
 	for _, m := range req.Messages {
@@ -60,8 +110,9 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx := r.Context()
+	ctx := withAIBill(r.Context(), u, "agent", "")
 	var activeSub string // a project a build/edit/redeploy tool touched
+	builtOnce := false   // one new project per turn — never spawn duplicates
 
 	for i := 0; i < agentMaxSteps; i++ {
 		resp, err := s.deepseekAgentCall(ctx, msgs)
@@ -80,13 +131,23 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 			var args map[string]any
 			json.Unmarshal([]byte(tc.Args), &args)
 			emit("step", map[string]string{"tool": tc.Name, "args": tc.Args})
-			result := s.runAgentTool(ctx, u, tc.Name, args)
+			var result string
+			creates := tc.Name == "build_project" || tc.Name == "deploy_github" || tc.Name == "deploy_template"
+			if creates && builtOnce {
+				// Refuse a duplicate project-creating call in the same turn without executing it.
+				result = jsonStr(map[string]any{"error": "already_built", "note": "You already created/deployed a project for this request in this turn. Do NOT call build_project or deploy_github again — a single request is ONE project. Stop and give the user the URL you already have."})
+			} else {
+				result = s.runAgentTool(ctx, u, tc.Name, args)
+				if creates && !strings.Contains(result, `"error"`) {
+					builtOnce = true
+				}
+			}
 			emit("step_done", map[string]string{"tool": tc.Name})
 			msgs = append(msgs, map[string]any{"role": "tool", "tool_call_id": tc.ID, "content": result})
 
 			// If this tool kicked off a deploy, remember the project so we can
 			// stream its build + self-repair logs into the chat afterwards.
-			if tc.Name == "build_project" || tc.Name == "edit_project" || tc.Name == "redeploy_project" {
+			if tc.Name == "build_project" || tc.Name == "deploy_github" || tc.Name == "deploy_template" || tc.Name == "edit_project" || tc.Name == "redeploy_project" {
 				var rr map[string]any
 				if json.Unmarshal([]byte(result), &rr) == nil {
 					if p, ok := rr["project"].(string); ok && p != "" {
@@ -146,7 +207,8 @@ func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit f
 	}
 
 	seen := map[string]bool{}
-	deadline := time.Now().Add(4 * time.Minute)
+	// Long enough to cover a failed build + AI repair + a second full build.
+	deadline := time.Now().Add(8 * time.Minute)
 
 	for time.Now().Before(deadline) {
 		select {
@@ -154,7 +216,11 @@ func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit f
 			return
 		default:
 		}
-		logs, _ := s.db.GetDeployLogs(ctx, projectID, 80)
+		// Fetch a WIDE window: a Next.js/web build emits hundreds of lines, so an
+		// 80-line window slides past the "🤖 Build failed / Applied a fix" repair
+		// markers before we can emit them — the chat then misses the self-repair
+		// progression the project page shows. 600 keeps the whole run in view.
+		logs, _ := s.db.GetDeployLogs(ctx, projectID, 600)
 		// logs are newest-first; walk oldest-first and emit unseen lines
 		for i := len(logs) - 1; i >= 0; i-- {
 			l := logs[i]

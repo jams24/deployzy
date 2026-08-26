@@ -252,6 +252,18 @@ func (s *Server) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 // upgrades the user (idempotent — replayed webhooks are no-ops), then fires
 // the Telegram notification if the user connected one.
 func (s *Server) activatePaidSubscription(r *http.Request, paymentID string) {
+	// A payment id is either a plan subscription OR an AI credit-pack purchase.
+	// Try credits first; a match short-circuits (and stays idempotent via the
+	// status flip), otherwise we fall through to plan-subscription activation.
+	if uid, credits, ok, _ := s.db.ActivateCreditPurchase(r.Context(), paymentID); ok {
+		if err := s.db.GrantAICredits(r.Context(), uid, credits, "topup"); err != nil {
+			s.log.Error().Err(err).Str("payment_id", paymentID).Msg("failed to grant AI credits")
+			return
+		}
+		s.log.Info().Str("payment_id", paymentID).Float64("credits", credits).Str("user", uid).Msg("AI credits topped up")
+		return
+	}
+
 	res, err := s.db.ActivateSubscriptionDetailed(r.Context(), paymentID)
 	if err != nil {
 		s.log.Error().Err(err).Str("payment_id", paymentID).Msg("failed to activate subscription")

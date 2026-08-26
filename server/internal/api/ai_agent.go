@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
 
@@ -30,13 +30,17 @@ You can both ANSWER questions about the user's account and TAKE ACTIONS using th
 
 Platform facts:
 - Deploys are built from a Dockerfile. Logs stream to deploy_logs. A project's status is created/building/running/failed/crashed.
-- You can build and deploy real TypeScript/Python apps, APIs, and bots via the build_project tool, and change deployed ones via edit_project.
+- You can build and deploy real TypeScript/Python apps, websites, APIs, and bots via the build_project tool, and change deployed ones via edit_project. If the user asks for a website, store, landing page, dashboard, or admin panel, use kind "web" (renders real pages at the root URL) — NOT "api" (which serves only JSON and shows "Cannot GET /" in a browser).
+- Deployzy has one-click TEMPLATES (pre-built apps/services: databases, tools like n8n/WordPress, starters). Use list_templates to see them and deploy_template (by slug) to deploy one. Prefer a template when the user wants a well-known off-the-shelf app rather than custom code.
+- To deploy an EXISTING GitHub repo the user links (a SOURCE deploy), use deploy_github with the repo URL — do NOT use build_project (that generates new code). Node, Next.js, Python, and static sites auto-detect and build; repos with their own Dockerfile build as-is. Deployzy does NOT have native PHP/Laravel, Ruby, Java, or .NET buildpacks — those deploy ONLY if the repo ships its own Dockerfile. If a repo is one of those with no Dockerfile, say so honestly and offer to add a Dockerfile or diagnose from the build logs rather than pretending it will work.
 - Secrets are per-project environment variables. Databases (postgres/redis/mongodb/mysql) can be attached; the app reads DATABASE_URL / REDIS_URL.
 - Be honest about limits. If something failed, read the logs and explain the actual cause in plain language.
 
 Keep answers short and human. Use markdown. When you take an action, say what you did and the resulting URL.
 
-IMPORTANT: builds take ~30-90s. After build_project or a redeploy/edit returns status "deploying", do NOT repeatedly poll get_deploy_logs waiting for it to finish — just tell the user it's deploying and give the URL. They can ask you to check on it later.`
+IMPORTANT: builds take ~30-90s. After build_project or a redeploy/edit returns status "deploying", do NOT repeatedly poll get_deploy_logs waiting for it to finish — just tell the user it's deploying and give the URL. They can ask you to check on it later.
+
+ONE PROJECT PER REQUEST: a single "build me X" request is ONE app — call build_project exactly ONCE, with everything (storefront + admin + API) in that one project. NEVER call build_project multiple times for the same request, and never split one app into several projects. If the user later asks to change it, use edit_project on that SAME project — do not build a new one.`
 
 // agentTools is the OpenAI-format tool schema advertised to DeepSeek.
 var agentTools = []map[string]any{
@@ -62,11 +66,32 @@ var agentTools = []map[string]any{
 		}, "required": []string{"project"}},
 	}},
 	{"type": "function", "function": map[string]any{
-		"name": "build_project", "description": "Generate and deploy a NEW app/API/bot from a description. kind is one of: api, telegram-bot, discord-bot, worker. Returns the live URL (or asks for required secrets/database).",
+		"name": "build_project", "description": "Generate and deploy a NEW app from a description. Choose kind carefully: use 'web' for anything with a user-facing PAGE — a website, store, landing page, dashboard, or admin panel (its root URL renders HTML, not JSON); 'api' ONLY for a headless JSON API / microservice with no frontend; 'telegram-bot' / 'discord-bot' for bots; 'worker' for a background/scheduled job. Returns the live URL (or asks for required secrets/database).",
 		"parameters": map[string]any{"type": "object", "properties": map[string]any{
-			"kind":        map[string]any{"type": "string", "enum": []string{"api", "telegram-bot", "discord-bot", "worker"}},
+			"kind":        map[string]any{"type": "string", "enum": []string{"web", "api", "telegram-bot", "discord-bot", "worker"}},
 			"description": map[string]any{"type": "string", "description": "what to build, in detail"},
 		}, "required": []string{"kind", "description"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "deploy_github", "description": "Deploy an existing GitHub repository (SOURCE deploy) from its URL. Use this when the user gives a github.com repo link and asks to deploy/ship it (NOT build_project, which generates new code). The build framework (Node, Next.js, Python, static, or a repo Dockerfile) is auto-detected. Auto-deploys on future pushes. Returns the live URL and streams build logs. Note: PHP/Laravel/Ruby/etc. are only supported if the repo ships its own Dockerfile.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"repo_url": map[string]any{"type": "string", "description": "the https://github.com/owner/repo URL"},
+			"branch":   map[string]any{"type": "string", "description": "branch to deploy (default main)"},
+		}, "required": []string{"repo_url"}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "list_templates", "description": "List Deployzy's one-click deploy templates (pre-built apps/services like databases, tools, starters). Use to answer 'what can I deploy?' or to find a template before deploying it. Optional search filters by name/tag.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"search": map[string]any{"type": "string", "description": "optional keyword to filter templates (e.g. 'postgres', 'wordpress', 'n8n')"},
+		}},
+	}},
+	{"type": "function", "function": map[string]any{
+		"name": "deploy_template", "description": "Deploy one of Deployzy's one-click templates by its slug (get slugs from list_templates). Use this when the user wants a known pre-built app/service (e.g. n8n, WordPress, a Postgres+Node starter) rather than custom-generated code. If the template needs secrets, it returns needs_setup listing them.",
+		"parameters": map[string]any{"type": "object", "properties": map[string]any{
+			"slug":      map[string]any{"type": "string", "description": "the template slug from list_templates"},
+			"subdomain": map[string]any{"type": "string", "description": "optional desired subdomain"},
+			"env":       map[string]any{"type": "object", "description": "optional map of required env var KEY->value"},
+		}, "required": []string{"slug"}},
 	}},
 	{"type": "function", "function": map[string]any{
 		"name": "edit_project", "description": "Change an already-deployed code-gen project (add a feature, fix a bug) and redeploy it.",
@@ -198,7 +223,7 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 			return jsonStr(map[string]any{"error": "this project has no AI-editable source"})
 		}
 		instr := str(args["instruction"])
-		res, err := s.deepseekEdit(ctx, agentKey(), instr, files, instr)
+		res, err := s.deepseekEdit(ctx, s.agentKey(ctx), instr, files, instr)
 		if err != nil || validateCodegen(res) != nil {
 			return jsonStr(map[string]any{"error": "couldn't generate that change"})
 		}
@@ -213,6 +238,21 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 
 	case "build_project":
 		return s.agentBuildProject(ctx, u, str(args["kind"]), str(args["description"]))
+
+	case "deploy_github":
+		return s.agentDeployGithub(ctx, u, str(args["repo_url"]), str(args["branch"]))
+
+	case "list_templates":
+		return s.agentListTemplates(ctx, u, str(args["search"]))
+
+	case "deploy_template":
+		env := map[string]string{}
+		if m, ok := args["env"].(map[string]any); ok {
+			for k, v := range m {
+				env[k] = fmt.Sprintf("%v", v)
+			}
+		}
+		return s.agentDeployTemplate(ctx, u, str(args["slug"]), str(args["subdomain"]), env)
 
 	case "get_env":
 		p := s.findUserProject(ctx, u.ID, str(args["project"]))
@@ -294,11 +334,16 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 func (s *Server) agentBuildProject(ctx context.Context, u *auth.AuthenticatedUser, kind, desc string) string {
 	g, ok := aiGenerators[kind]
 	if !ok || !g.codegen {
-		return jsonStr(map[string]any{"error": "kind must be api, telegram-bot, discord-bot, or worker"})
+		return jsonStr(map[string]any{"error": "kind must be web, api, telegram-bot, discord-bot, or worker"})
 	}
-	res, err := s.deepseekCodegen(ctx, agentKey(), g.kind+" — "+desc)
-	if err != nil || validateCodegen(res) != nil {
-		return jsonStr(map[string]any{"error": "generation failed"})
+	res, err := s.deepseekCodegen(ctx, s.agentKey(ctx), g.kind+" — "+desc)
+	if err != nil {
+		s.log.Error().Err(err).Str("kind", kind).Msg("agent build: generation failed")
+		return jsonStr(map[string]any{"error": "generation failed: " + err.Error()})
+	}
+	if verr := validateCodegen(res); verr != nil {
+		s.log.Error().Err(verr).Str("kind", kind).Msg("agent build: validation failed")
+		return jsonStr(map[string]any{"error": "generation failed: " + verr.Error()})
 	}
 	sub := s.freeSubdomain(ctx, res.Name)
 	project, err := s.db.CreateProject(ctx, u.ID, sub, sub, "docker")
@@ -330,6 +375,178 @@ func (s *Server) agentBuildProject(ctx context.Context, u *auth.AuthenticatedUse
 	return jsonStr(map[string]any{"status": "deploying", "project": sub, "url": url, "summary": res.Summary})
 }
 
+// agentDeployGithub: SOURCE deploy of an existing GitHub repo from its URL.
+// Creates the project, wires the repo (with a token for private repos + a
+// webhook for auto-deploy), and deploys. The engine auto-detects the framework
+// (node/nextjs/python/static, or a repo Dockerfile) at build time.
+func (s *Server) agentDeployGithub(ctx context.Context, u *auth.AuthenticatedUser, repoURL, branch string) string {
+	repoURL = strings.TrimSpace(repoURL)
+	// Normalise a bare "owner/repo" or a URL without .git.
+	if repoURL != "" && !strings.HasPrefix(repoURL, "http") && strings.Count(repoURL, "/") == 1 {
+		repoURL = "https://github.com/" + repoURL
+	}
+	if !isSafeRepoURL(repoURL) {
+		return jsonStr(map[string]any{"error": "please give a plain https://github.com/owner/repo URL"})
+	}
+	if branch = strings.TrimSpace(branch); branch == "" {
+		branch = "main"
+	}
+	if !isSafeBranchName(branch) {
+		return jsonStr(map[string]any{"error": "invalid branch name"})
+	}
+	fullName := extractRepoFullName(repoURL) // "owner/repo"
+	if fullName == "" {
+		return jsonStr(map[string]any{"error": "couldn't parse the repository from that URL"})
+	}
+	repoName := fullName
+	if i := strings.LastIndex(fullName, "/"); i >= 0 {
+		repoName = fullName[i+1:]
+	}
+
+	sub := s.freeSubdomain(ctx, sanitizeSubdomain(repoName))
+	project, err := s.db.CreateProject(ctx, u.ID, sub, sub, "node") // engine re-detects at build
+	if err != nil || project == nil {
+		return jsonStr(map[string]any{"error": "could not create project"})
+	}
+	s.db.ReserveSubdomainAuto(ctx, u.ID, sub)
+
+	// For private repos, embed a short-lived access token in the clone URL.
+	cloneURL := repoURL
+	if !strings.HasSuffix(cloneURL, ".git") {
+		cloneURL += ".git"
+	}
+	if token, ok := s.bestUserGitHubToken(ctx, u.ID); ok {
+		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, fullName)
+		// Register the auto-deploy webhook (best-effort).
+		if s.deployer != nil && s.deployer.GitHub != nil {
+			webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
+			s.deployer.GitHub.EnsureWebhook(token, fullName, webhookURL)
+		}
+	}
+	s.db.UpdateProjectConfig(ctx, project.ID, cloneURL, branch, "", "", nil)
+	s.db.UpdateProjectGitHub(ctx, project.ID, fullName, branch, true)
+	project.RepoURL = cloneURL
+	project.Branch = branch
+	project.DeploySource = "git"
+
+	go func(p db.Project) { _ = s.deployer.Deploy(context.Background(), &p) }(*project)
+	return jsonStr(map[string]any{"status": "deploying", "project": sub, "repo": fullName, "branch": branch,
+		"url": fmt.Sprintf("https://%s.%s", sub, s.deployer.AppDomain)})
+}
+
+// agentListTemplates returns the active one-click templates (optionally filtered).
+func (s *Server) agentListTemplates(ctx context.Context, u *auth.AuthenticatedUser, search string) string {
+	tmpls, _, err := s.db.ListTemplates(ctx, db.TemplateFilter{Search: strings.TrimSpace(search), Sort: "popular", Limit: 40}, u.ID)
+	if err != nil {
+		return jsonStr(map[string]any{"error": "couldn't list templates"})
+	}
+	out := make([]map[string]any, 0, len(tmpls))
+	for _, t := range tmpls {
+		var req []string
+		for _, ev := range t.EnvVars {
+			if ev.Required && ev.Type != "auto" {
+				req = append(req, ev.Key)
+			}
+		}
+		out = append(out, map[string]any{"slug": t.Slug, "name": t.Name, "category": t.Category,
+			"tagline": t.Tagline, "required_env": req, "required_plan": t.RequiredPlan})
+	}
+	return jsonStr(map[string]any{"templates": out, "count": len(out)})
+}
+
+// agentDeployTemplate deploys a one-click template by slug (mirrors
+// handleDeployFromTemplate, minus the HTTP plumbing). Missing required secrets
+// come back as needs_setup so the agent can ask the user for them.
+func (s *Server) agentDeployTemplate(ctx context.Context, u *auth.AuthenticatedUser, slug, subdomain string, env map[string]string) string {
+	slug = strings.TrimSpace(slug)
+	t, err := s.db.GetTemplate(ctx, slug, u.ID)
+	if err != nil || t == nil {
+		return jsonStr(map[string]any{"error": "no template with that slug — call list_templates first"})
+	}
+	// Plan gate (admins bypass).
+	if rank := templatePlanRank(t.RequiredPlan); rank > 0 {
+		if isAdmin, _ := s.db.IsUserAdmin(ctx, u.ID); !isAdmin {
+			user, _ := s.db.GetUserByID(ctx, u.ID)
+			cur := 0
+			if user != nil {
+				cur = templatePlanRank(user.Plan)
+			}
+			if cur < rank {
+				return jsonStr(map[string]any{"error": "plan_required", "note": "This template needs the " + t.RequiredPlan + " plan or higher."})
+			}
+		}
+	}
+	// Required secrets the user hasn't supplied → ask for them.
+	var missing []string
+	for _, ev := range t.EnvVars {
+		if ev.Required && ev.Type != "auto" {
+			if v, ok := env[ev.Key]; !ok || v == "" {
+				missing = append(missing, ev.Key)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return jsonStr(map[string]any{"status": "needs_setup", "template": t.Slug, "needs_secrets": missing,
+			"note": "Ask the user for these secret value(s), then call deploy_template again with them in env."})
+	}
+
+	name := t.Name
+	if subdomain == "" {
+		subdomain = name
+	}
+	subdomain = s.uniqueSubdomain(ctx, subdomain, u.ID)
+	project, err := s.db.CreateProject(ctx, u.ID, name, subdomain, "docker")
+	if err != nil || project == nil {
+		return jsonStr(map[string]any{"error": "could not create project"})
+	}
+	if t.MinMemoryMB > 0 {
+		s.db.SetProjectMemory(ctx, project.ID, t.MinMemoryMB)
+	}
+	merged := map[string]string{}
+	for _, sc := range t.EnvVars {
+		if sc.Default != "" {
+			merged[sc.Key] = sc.Default
+		}
+	}
+	for k, v := range env {
+		if v != "" {
+			merged[k] = v
+		}
+	}
+	// Auto-inject env vars the template declares as type "auto" — same as the
+	// dashboard deploy path. The VPN-panel template needs a freshly-minted,
+	// per-deployment TUNNELTWEAK_API_KEY (+ base URL); without this the panel
+	// container fails its health check demanding the key.
+	if templateWantsEnv(t.EnvVars, "TUNNELTWEAK_API_KEY") && merged["TUNNELTWEAK_API_KEY"] == "" {
+		if key, err := s.mintPanelKey(ctx, "deployzy-"+subdomain); err == nil && key != "" {
+			merged["TUNNELTWEAK_API_KEY"] = key
+			if base := s.vpnBaseURL(ctx); base != "" && merged["TUNNELTWEAK_BASE_URL"] == "" {
+				merged["TUNNELTWEAK_BASE_URL"] = base
+			}
+		} else if err != nil {
+			s.log.Error().Err(err).Str("project", project.ID).Msg("agent template: vpn key mint failed")
+		}
+	}
+	if len(merged) > 0 {
+		s.db.UpdateProjectEnvVars(ctx, project.ID, merged)
+		project.EnvVars = merged
+	}
+	if t.DockerImage != nil && *t.DockerImage != "" && isSafeImageRef(*t.DockerImage) {
+		s.db.SetProjectSource(ctx, project.ID, "image", *t.DockerImage)
+		project.DeploySource = "image"
+		project.ImageRef = *t.DockerImage
+	} else if t.SourceRepo != nil && *t.SourceRepo != "" && isSafeRepoURL(*t.SourceRepo) {
+		s.db.UpdateProjectConfig(ctx, project.ID, *t.SourceRepo, "main", "", "", merged)
+		project.RepoURL = *t.SourceRepo
+		project.Branch = "main"
+	}
+	s.db.ReserveSubdomainAuto(ctx, u.ID, subdomain)
+	go s.db.IncrementTemplateDeployCount(context.Background(), t.ID)
+	go func(p db.Project) { _ = s.deployer.Deploy(context.Background(), &p) }(*project)
+	return jsonStr(map[string]any{"status": "deploying", "project": subdomain, "template": t.Slug,
+		"url": fmt.Sprintf("https://%s.%s", subdomain, s.deployer.AppDomain)})
+}
+
 // ── the agentic loop endpoint ──
 
 type agentMessage struct {
@@ -345,7 +562,7 @@ type agentMessage struct {
 // show "N tool calls" like Railway/Brimble.
 func (s *Server) handleAIAgent(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
-	if agentKey() == "" || s.deployer == nil {
+	if s.agentKey(r.Context()) == "" || s.deployer == nil {
 		writeError(w, http.StatusServiceUnavailable, "agent isn't available")
 		return
 	}
@@ -359,6 +576,21 @@ func (s *Server) handleAIAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "messages required")
 		return
 	}
+	// Guardrails: rate-limit + moderate the latest user message.
+	if !s.checkAIRate(w, r, u.ID) {
+		return
+	}
+	if last := lastUserMsg(req.Messages); last != "" {
+		if reason := moderatePrompt(last); reason != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"reply": reason, "steps": []any{}})
+			return
+		}
+	}
+	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+		writeError(w, http.StatusPaymentRequired, err.Error())
+		return
+	}
+	bctx := withAIBill(r.Context(), u, "agent", "")
 
 	// Build the running message list for DeepSeek.
 	msgs := []map[string]any{{"role": "system", "content": agentSystem}}
@@ -374,9 +606,10 @@ func (s *Server) handleAIAgent(w http.ResponseWriter, r *http.Request) {
 		Result string `json:"result"`
 	}
 	var steps []step
+	builtOnce := false // one new project per turn — never let the model spawn duplicates
 
 	for i := 0; i < agentMaxSteps; i++ {
-		resp, err := s.deepseekAgentCall(r.Context(), msgs)
+		resp, err := s.deepseekAgentCall(bctx, msgs)
 		if err != nil {
 			s.log.Error().Err(err).Msg("agent: deepseek call failed")
 			writeError(w, http.StatusBadGateway, "agent had a problem, please try again")
@@ -392,14 +625,25 @@ func (s *Server) handleAIAgent(w http.ResponseWriter, r *http.Request) {
 		for _, tc := range resp.ToolCalls {
 			var args map[string]any
 			json.Unmarshal([]byte(tc.Args), &args)
-			result := s.runAgentTool(r.Context(), u, tc.Name, args)
+			var result string
+			creates := tc.Name == "build_project" || tc.Name == "deploy_github" || tc.Name == "deploy_template"
+			if creates && builtOnce {
+				// Refuse a second project-creating call in the same turn WITHOUT
+				// executing it — otherwise the model spawns duplicate projects.
+				result = jsonStr(map[string]any{"error": "already_built", "note": "You already created/deployed a project for this request in this turn. Do NOT call build_project or deploy_github again — a single request is ONE project. Stop and give the user the URL you already have."})
+			} else {
+				result = s.runAgentTool(bctx, u, tc.Name, args)
+				if creates && !strings.Contains(result, `"error"`) {
+					builtOnce = true
+				}
+			}
 			steps = append(steps, step{Tool: tc.Name, Args: tc.Args, Result: result})
 			msgs = append(msgs, map[string]any{"role": "tool", "tool_call_id": tc.ID, "content": result})
 		}
 	}
 	// ran out of steps — ask model for a final summary with what it has
 	msgs = append(msgs, map[string]any{"role": "user", "content": "Summarize what you found/did for me now, concisely."})
-	resp, _ := s.deepseekAgentCall(r.Context(), msgs)
+	resp, _ := s.deepseekAgentCall(bctx, msgs)
 	reply := "I did a few steps but couldn't fully finish — try narrowing the request."
 	if resp != nil && resp.Content != "" {
 		reply = resp.Content
@@ -421,8 +665,9 @@ type agentResp struct {
 }
 
 func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (*agentResp, error) {
+	p := s.llm(ctx)
 	body, _ := json.Marshal(map[string]any{
-		"model":       "deepseek-chat",
+		"model":       p.Model,
 		"messages":    msgs,
 		"tools":       agentTools,
 		"temperature": 0.4,
@@ -430,9 +675,9 @@ func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (
 	})
 	reqCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	httpReq, _ := http.NewRequestWithContext(reqCtx, http.MethodPost, "https://api.deepseek.com/chat/completions", bytes.NewReader(body))
+	httpReq, _ := http.NewRequestWithContext(reqCtx, http.MethodPost, p.chatURL(), bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+agentKey())
+	httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -448,6 +693,10 @@ func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (
 				ToolCalls json.RawMessage `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
@@ -455,6 +704,7 @@ func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (
 	if len(out.Choices) == 0 {
 		return nil, fmt.Errorf("empty completion")
 	}
+	s.chargeUsage(ctx, p.Model, out.Usage.PromptTokens, out.Usage.CompletionTokens)
 	m := out.Choices[0].Message
 	ar := &agentResp{Content: m.Content, ToolCallsRaw: m.ToolCalls}
 	if len(m.ToolCalls) > 0 {
@@ -474,7 +724,19 @@ func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (
 }
 
 // ── helpers ──
-func agentKey() string { return os.Getenv("DEEPSEEK_API_KEY") }
+
+// lastUserMsg returns the most recent user message text from an agent request.
+func lastUserMsg(msgs []struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
 func jsonStr(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
