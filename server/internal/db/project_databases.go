@@ -96,6 +96,9 @@ func (d *DB) CreateProjectDatabase(ctx context.Context, projectID string) (*Proj
 		return nil, fmt.Errorf("insert tracking record: %w", err)
 	}
 
+	// Backups ON by default — every provisioned database gets a daily schedule.
+	_ = d.EnableProjectBackup(ctx, projectID)
+
 	return &pdb, nil
 }
 

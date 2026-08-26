@@ -419,7 +419,17 @@ func (s *Server) runDockerInstall(server *db.WorkerServer) {
 	// Also open the Docker->host firewall on UFW-hardened boxes right away, so a
 	// co-located app can reach a DB container's published port on this server even
 	// before its first database is provisioned (see dockerFirewallPrefix).
-	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + dockerFirewallPrefix
+	// get.docker.com installs the buildx plugin on most distros, but not all — so
+	// ensure it explicitly: if `docker buildx` is missing after install, drop the
+	// official binary into the CLI-plugins dir. BuildKit (buildx) is what gives new
+	// servers fast, cached builds; without it the engine falls back to the slower
+	// legacy builder. Best-effort (|| true) so a buildx hiccup never fails Docker setup.
+	ensureBuildx := "if ! docker buildx version >/dev/null 2>&1; then " +
+		"A=$(uname -m); case $A in x86_64) A=amd64;; aarch64|arm64) A=arm64;; esac; " +
+		"D=/usr/libexec/docker/cli-plugins; mkdir -p $D; " +
+		"curl -fsSL -o $D/docker-buildx https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-$A && chmod +x $D/docker-buildx; " +
+		"fi; true; "
+	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + ensureBuildx + dockerFirewallPrefix
 	var cmd string
 	if server.SSHPassword != "" {
 		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1",
@@ -520,6 +530,24 @@ func (s *Server) handleAdminSetServerSelectable(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"user_selectable": req.Selectable})
+}
+
+// handleAdminSetServerBackups enables/disables scheduled database backups for
+// every database hosted on a given platform/BYOC server.
+func (s *Server) handleAdminSetServerBackups(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.SetServerBackups(r.Context(), serverID, req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server backups")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"backups_enabled": req.Enabled})
 }
 
 
