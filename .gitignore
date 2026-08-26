@@ -79,3 +79,9 @@ server/servermesrv
 server/deployzysrv
 video/out/
 video/node_modules/.remotion/
+
+# texis-bot is a separate project that merely lives in this directory. It holds
+# live Telegram bot tokens hardcoded in source (bot.py, module/ActionMode.py),
+# a .env, user records and ~200 payment receipts. It must not enter this repo's
+# history — give it its own repository.
+texis-bot/
