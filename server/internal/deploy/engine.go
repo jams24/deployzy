@@ -539,18 +539,45 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		defer e.buildLimiter.Release()
 	}
 
-	cpuFlags := buildCPUFlags(hostCPUs(ctx, runner))
-	if cpuFlags != "" {
-		e.logMsg(ctx, project.ID, "Throttling build CPU so the live version stays responsive during the rebuild.", "build")
+	// Only throttle build CPU when a previous version is actually serving — the
+	// throttle protects the LIVE container, so a first deploy (nothing to
+	// protect) should build at full speed instead of being needlessly slowed.
+	cpuFlags := ""
+	if oldContainerID != "" {
+		cpuFlags = buildCPUFlags(hostCPUs(ctx, runner))
+		if cpuFlags != "" {
+			e.logMsg(ctx, project.ID, "Throttling build CPU so the live version stays responsive during the rebuild.", "build")
+		}
 	}
-	buildShellCmd := fmt.Sprintf(
-		"DOCKER_BUILDKIT=0 docker build --no-cache %s--memory=%dm -f %s -t %s %s",
-		cpuFlags,
-		buildMemMB,
-		shellQuote(buildCtx+"/"+effectiveDockerfile),
-		shellQuote(imageName),
-		shellQuote(buildCtx),
-	)
+	// Prefer BuildKit (a persistent, memory-capped container builder) when the
+	// worker has buildx: it adds cache mounts + parallel stages on top of layer
+	// caching, so even clean builds reuse the npm/pip download cache. Falls back
+	// to the legacy cached `docker build` where buildx isn't available.
+	//
+	// Either way, layer cache is ON (no --no-cache): unchanged steps — base image,
+	// apt/npm/pip installs — are reused, so a rebuild that only changes source
+	// code skips dependency installation entirely. Cache-friendly Dockerfiles
+	// (COPY manifest → install → COPY source) get near-instant rebuilds.
+	var buildShellCmd string
+	if builder := e.ensureBuildx(buildCtx2, runner, buildMemMB); builder != "" {
+		e.logMsg(ctx, project.ID, "Building with BuildKit (cached) for a faster build…", "build")
+		buildShellCmd = fmt.Sprintf(
+			"docker buildx build --builder %s --load --progress=plain -f %s -t %s %s",
+			builder,
+			shellQuote(buildCtx+"/"+effectiveDockerfile),
+			shellQuote(imageName),
+			shellQuote(buildCtx),
+		)
+	} else {
+		buildShellCmd = fmt.Sprintf(
+			"DOCKER_BUILDKIT=0 docker build %s--memory=%dm -f %s -t %s %s",
+			cpuFlags,
+			buildMemMB,
+			shellQuote(buildCtx+"/"+effectiveDockerfile),
+			shellQuote(imageName),
+			shellQuote(buildCtx),
+		)
+	}
 	buildStart := time.Now()
 	// Stream the build output live into deploy_logs (the dashboard polls it), so
 	// users watch progress and see the real failure as it happens — not just a
@@ -559,6 +586,36 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	buildLog := e.newBuildLogStreamer(project.ID)
 	output, err := runner.RunShellStreaming(buildCtx2, buildShellCmd, buildLog.line)
 	buildLog.stop() // final flush of any buffered lines
+
+	// Auto-recover from a build killed during layer export — the OOM killer (the
+	// --memory cap is tight for a heavy image) or a racy containerd ingest leaves
+	// the content store unable to commit the layer: "failed to commit: rename
+	// ingest→blobs: no such file", "mount callback failed", "failed to export
+	// layer". Retrying at the same cap would just OOM again, so prune the build
+	// cache and retry ONCE with a higher memory cap (bounded by host free memory).
+	if err != nil && isContainerdCorruption(string(output)) {
+		hi := buildMemMB * 2
+		// Never exceed the plan's build-memory ceiling (0 = admin/unlimited). This
+		// keeps the retry within plan limits: capped plans retry at the SAME cap
+		// (a prune still fixes the racy-ingest case; a genuine OOM will report that
+		// the image needs more build memory than the plan allows), while
+		// unlimited/admin builds get the extra headroom the host can spare.
+		if planCap := e.planBuildMemoryMB(ctx, project.UserID); planCap > 0 && hi > planCap {
+			hi = planCap
+		}
+		if avail := availableMemoryMB(buildCtx2, runner); avail > 0 && hi > avail-512 {
+			hi = avail - 512
+		}
+		if hi < buildMemMB {
+			hi = buildMemMB
+		}
+		e.logMsg(ctx, project.ID, fmt.Sprintf("⚠️ Build host storage/OOM hiccup — clearing build cache and retrying with %d MB…", hi), "build")
+		runner.RunShell(buildCtx2, "docker builder prune -f >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; true")
+		retryCmd := strings.Replace(buildShellCmd, fmt.Sprintf("--memory=%dm", buildMemMB), fmt.Sprintf("--memory=%dm", hi), 1)
+		retryLog := e.newBuildLogStreamer(project.ID)
+		output, err = runner.RunShellStreaming(buildCtx2, retryCmd, retryLog.line)
+		retryLog.stop()
+	}
 	// Recorded on success AND failure: a broken Dockerfile burns the same CPU
 	// as a working one, so not counting failures would leave a free way to
 	// hammer the build host. context.Background() because ctx may already be
@@ -1328,6 +1385,61 @@ func getContainerLogs(name string, lines int) string {
 }
 
 // extractBuildError extracts the meaningful error from Docker build output.
+// ensureBuildx returns the name of a persistent, memory-limited BuildKit builder
+// on the given runner (creating it once if missing), or "" if buildx isn't
+// available — in which case the caller falls back to the legacy `docker build`.
+//
+// Why a docker-container builder: BuildKit gives us cache mounts (persistent
+// npm/pip download caches → fast even on clean builds) and parallel stages, but
+// the default docker driver ignores --memory. A container-driver builder can be
+// memory-capped at creation, and because only one build runs platform-wide at a
+// time (buildLimiter), that cap IS the effective per-build ceiling — so we keep
+// host protection while gaining BuildKit's speed. The builder persists so its
+// layer + mount caches survive across builds.
+func (e *Engine) ensureBuildx(ctx context.Context, runner *Runner, minMB int) string {
+	const name = "deployzy-bk"
+	out, err := runner.RunShell(ctx, "docker buildx version >/dev/null 2>&1 && echo OK || echo NO")
+	if err != nil || !strings.Contains(string(out), "OK") {
+		return "" // no buildx → legacy build
+	}
+	// Already created?
+	if chk, _ := runner.RunShell(ctx, "docker buildx inspect "+name+" >/dev/null 2>&1 && echo EXISTS || echo NO"); strings.Contains(string(chk), "EXISTS") {
+		return name
+	}
+	// Size the builder generously but leave a host reserve. A too-tight cap is
+	// what OOM-killed heavy image exports before.
+	memMB := minMB
+	if memMB < 4096 {
+		memMB = 4096
+	}
+	if avail := availableMemoryMB(ctx, runner); avail > 0 && memMB > avail-1024 {
+		memMB = avail - 1024
+	}
+	if memMB < 2048 {
+		return "" // not enough headroom for a container builder; use legacy
+	}
+	create := fmt.Sprintf(
+		"docker buildx create --name %s --driver docker-container --driver-opt memory=%dm --driver-opt memory-swap=%dm >/dev/null 2>&1 && docker buildx inspect --bootstrap %s >/dev/null 2>&1 && echo CREATED || echo FAIL",
+		name, memMB, memMB, name)
+	res, err := runner.RunShell(ctx, create)
+	if err != nil || !strings.Contains(string(res), "CREATED") {
+		return "" // creation failed → legacy build
+	}
+	return name
+}
+
+// isContainerdCorruption reports whether a build failure is the containerd
+// content-store commit error that follows an OOM-killed / racy layer export —
+// an infrastructure hiccup that a prune + higher-memory retry recovers from,
+// not a code bug the self-repair loop should try to "fix".
+func isContainerdCorruption(output string) bool {
+	low := strings.ToLower(output)
+	return (strings.Contains(low, "failed to commit") && strings.Contains(low, "no such file or directory")) ||
+		strings.Contains(low, "failed to export layer") ||
+		strings.Contains(low, "mount callback failed") ||
+		strings.Contains(low, "creatediff")
+}
+
 func extractBuildError(output string) string {
 	// Strip ANSI colour codes first — the raw captured tail retains them, and we
 	// don't want escape sequences leaking into the "Build failed:" headline.
