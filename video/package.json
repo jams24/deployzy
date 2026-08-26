@@ -1,0 +1,21 @@
+{
+  "name": "deployzy-launch-video",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion render src/index.ts DeployzyLaunch out/deployzy-launch.mp4",
+    "build-square": "remotion render src/index.ts DeployzyLaunchSquare out/deployzy-launch-square.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.242",
+    "@remotion/google-fonts": "^4.0.242",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.242"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

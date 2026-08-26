@@ -71,11 +71,11 @@ GOOS=linux GOARCH=amd64 go build -o /tmp/deployzysrv ./cmd/servermesrv/
 
 # 2. Upload (rsync is more reliable than scp on flaky connections)
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15" \
-  /tmp/deployzysrv root@163.245.208.218:/usr/local/bin/deployzysrv.new
+  /tmp/deployzysrv root@169.58.235.86:/usr/local/bin/deployzysrv.new
 
 # 3. Stop → swap → start ALL THREE services (never restart just one)
 #    NOTE: use `restart` for deployzy-web, NOT `start`. See warning below.
-sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
+sshpass -p 'PASSWORD' ssh root@169.58.235.86 '
   systemctl stop deployzy deployzy-texis &&
   cp /usr/local/bin/deployzysrv.new /usr/local/bin/deployzysrv &&
   cp /usr/local/bin/deployzysrv /usr/local/bin/servermesrv &&
@@ -116,14 +116,14 @@ NODE_ENV=production npm run build
 #    Rsyncing only .next/ deletes server.js and takes the whole site DOWN
 #    (this happened 2026-07-19).
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/.next/standalone/ root@163.245.208.218:/opt/deployzy-web-next/
+  web/.next/standalone/ root@169.58.235.86:/opt/deployzy-web-next/
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/.next/static/ root@163.245.208.218:/opt/deployzy-web-next/.next/static/
+  web/.next/static/ root@169.58.235.86:/opt/deployzy-web-next/.next/static/
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/public/ root@163.245.208.218:/opt/deployzy-web-next/public/
+  web/public/ root@169.58.235.86:/opt/deployzy-web-next/public/
 
 # 3. Verify server.js exists, then atomic swap
-sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
+sshpass -p 'PASSWORD' ssh root@169.58.235.86 '
   test -f /opt/deployzy-web-next/server.js &&
   mv /opt/deployzy-web /opt/deployzy-web-old &&
   mv /opt/deployzy-web-next /opt/deployzy-web &&
@@ -140,7 +140,7 @@ sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
 
 | Item | Value |
 |------|-------|
-| IP | `163.245.208.218` |
+| IP | `169.58.235.86` |
 | SSH user | `root` |
 | Go binary path | `/usr/local/bin/deployzysrv` (also symlinked as `servermesrv`) |
 | Web app path | `/opt/deployzy-web` |
