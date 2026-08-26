@@ -418,13 +418,17 @@ func main() {
 		}
 
 		cfClient := cf.New(*cfToken, *cfZoneID)
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, log)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, analyticsCollector, log)
 		apiServer := &http.Server{
-			Addr:         *apiAddr,
-			Handler:      apiRouter,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
+			Addr:    *apiAddr,
+			Handler: apiRouter,
+			// ReadHeaderTimeout guards slowloris without capping request-body reads.
+			// WriteTimeout MUST be 0 (unlimited): SSE streams (the AI agent's live
+			// build/self-repair logs) run for minutes, and any positive WriteTimeout
+			// kills the connection mid-build → "Connection interrupted" in the chat.
+			ReadHeaderTimeout: 30 * time.Second,
+			WriteTimeout:      0,
+			IdleTimeout:       120 * time.Second,
 		}
 
 		go func() {

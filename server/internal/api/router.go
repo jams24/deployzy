@@ -2,12 +2,15 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
 	cf "github.com/serverme/serverme/server/internal/cloudflare"
@@ -43,12 +46,14 @@ type Server struct {
 	ctrlManager         *control.Manager
 	cfDNS               *cf.Client // nil when Cloudflare token not configured
 	cfDomain            string     // base domain for auto-DNS (e.g. "deployzy.com")
+	analytics           *analytics.Collector // records first-party (deployzy.com) pageviews
 	log                 zerolog.Logger
 	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
+	selfProjectID       atomic.Value // cached reserved project id for first-party analytics
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, analyticsCollector *analytics.Collector, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -64,6 +69,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		ctrlManager:         ctrlManager,
 		cfDNS:               cfClient,
 		cfDomain:            cfDomain,
+		analytics:           analyticsCollector,
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 
@@ -73,7 +79,21 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(30 * time.Second))
+	// 30s request timeout for normal endpoints, but NOT the AI routes: the agent
+	// builds & self-repairs apps (minutes) and streams over SSE — a blanket
+	// timeout cancels the request context mid-build ("the agent had a problem")
+	// and http.TimeoutHandler buffers the response, breaking streaming entirely.
+	timeout30 := chimw.Timeout(30 * time.Second)
+	r.Use(func(next http.Handler) http.Handler {
+		wrapped := timeout30(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api/v1/ai/") {
+				next.ServeHTTP(w, req) // no timeout — long-running / streaming
+				return
+			}
+			wrapped.ServeHTTP(w, req)
+		})
+	})
 	r.Use(corsMiddleware)
 
 	// Rate limiters for unauthenticated endpoints — blocks brute-force
@@ -94,6 +114,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Public abuse reporting (phishing/malware/spam/illegal content).
 			r.Post("/abuse-report", s.handleSubmitAbuseReport)
 		})
+
+		// First-party website analytics beacon (deployzy.com). Public + cookieless;
+		// the marketing site posts a pageview here. Lightly IP-rate-limited.
+		r.With(rateLimitMiddleware(newIPRateLimiter(120, time.Minute))).
+			Post("/analytics/collect", s.handleCollectSelfAnalytics)
 
 		// Google OAuth
 		r.Get("/auth/google", s.handleGoogleLogin)
@@ -175,6 +200,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Billing (account-level → full)
 			r.With(fullScope).Post("/billing/checkout", s.handleCreateCheckout)
+			// AI credits (builder/agent metering + top-ups)
+			r.Get("/ai/credits", s.handleGetAICredits)
+			r.With(fullScope).Post("/ai/credits/topup", s.handleCreateCreditTopup)
 			r.Get("/billing/status", s.handleBillingStatus)
 			r.Get("/billing/check", s.handleCheckPayment)
 
@@ -305,6 +333,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/users", s.handleAdminListUsers)
 				r.Put("/users/{userId}", s.handleAdminUpdateUser)
 				r.Delete("/users/{userId}", s.handleAdminDeleteUser)
+				r.Get("/users/{userId}/credits", s.handleAdminGetUserCredits)
+				r.Post("/users/{userId}/credits", s.handleAdminAdjustUserCredits)
 				r.Post("/redeploy-all", s.handleAdminRedeployAll)
 
 				// Infrastructure management
@@ -313,6 +343,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
 				r.Put("/servers/{serverId}/selectable", s.handleAdminSetServerSelectable)
+				r.Put("/servers/{serverId}/backups", s.handleAdminSetServerBackups)
 				r.Put("/servers/{serverId}", s.handleAdminUpdateServer)
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
@@ -329,10 +360,19 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Put("/build-config", s.handleAdminSetBuildConfig)
 
 				// VPN panel (TuTBot reseller) configuration
+				// AI builder / agent LLM provider (pluggable: DeepSeek, OpenAI,
+				// Anthropic, Moonshot/Kimi, Groq, OpenRouter, xAI… all OpenAI-compatible)
+				r.Get("/ai/config", s.handleAdminGetAIConfig)
+				r.Put("/ai/config", s.handleAdminSetAIConfig)
+				r.Post("/ai/test", s.handleAdminTestAI)
+
 				r.Get("/vpn/config", s.handleAdminGetVPNConfig)
 				r.Put("/vpn/config", s.handleAdminSetVPNConfig)
 				r.Post("/vpn/test", s.handleAdminTestVPN)
 				r.Get("/analytics", s.handleAdminAnalytics)
+				// First-party (deployzy.com) website analytics.
+				r.Get("/website/analytics", s.handleWebsiteAnalytics)
+				r.Get("/website/analytics/top", s.handleWebsiteTop)
 				r.Get("/density", s.handleAdminDensity)
 
 				// IP bans
