@@ -28,7 +28,8 @@ const (
 // denyExtraIPs are hosts we refuse to dump from even though they're public —
 // notably our own VPS, so the tool can't be turned against the platform.
 var denyExtraIPs = map[string]bool{
-	"163.245.208.218": true,
+	"163.245.208.218": true, // legacy primary (InterServer), retained during migration
+	"169.58.235.86":   true, // primary (Contabo)
 }
 
 // ValidateSource parses and sanity-checks a source connection string and returns

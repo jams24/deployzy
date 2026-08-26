@@ -260,9 +260,19 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			}
 			out, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.CommitSHA))
 			if err != nil {
-				e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out)), "error")
-				restoreOldState()
-				return fmt.Errorf("git checkout: %w", err)
+				// The pinned commit can vanish upstream — a force-push or a
+				// rebase makes it unreachable ("reference is not a tree") even
+				// though the clone succeeded. Failing here would leave the app
+				// permanently down, so fall back to the branch tip. This builds
+				// NEWER code than was pinned, so say so loudly in the log.
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Commit %s is no longer in the repository (force-push or rebase upstream) — falling back to the tip of %s", project.CommitSHA[:min(8, len(project.CommitSHA))], project.Branch), "error")
+				e.log.Warn().Str("project", project.ID).Str("commit", project.CommitSHA).Str("branch", project.Branch).
+					Str("out", trimLogs(string(out), 200)).Msg("pinned commit unreachable — building branch tip instead")
+				if out2, err2 := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.Branch)); err2 != nil {
+					e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out2)), "error")
+					restoreOldState()
+					return fmt.Errorf("git checkout: %w", err2)
+				}
 			}
 		}
 

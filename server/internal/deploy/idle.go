@@ -30,6 +30,14 @@ const (
 	sweepInterval = 60 * time.Second // how often the sweeper runs
 	wakeTimeout   = 20 * time.Second // max time to wait for a woken container
 	touchThrottle = 60 * time.Second // min gap between DB last_request_at writes
+
+	// A wake can find the container gone entirely (pruned, or removed by a
+	// failed redeploy). `docker start` can never recover from that, so we
+	// rebuild from the project's recorded source instead. Builds are slow and
+	// can fail permanently (deleted/private repo), so they run off the request
+	// path and are rate-limited per project.
+	rebuildTimeout  = 15 * time.Minute // max time for a wake-triggered rebuild
+	rebuildCooldown = 2 * time.Minute  // min gap between rebuild attempts per project
 )
 
 // idleManager tracks per-project activity and sleep state in memory. All maps
@@ -40,6 +48,8 @@ type idleManager struct {
 	lastPersisted map[string]time.Time // projectID → last DB touch
 	sleeping      map[string]bool      // projectID → container is stopped for idleness
 	wakeLocks     map[string]*sync.Mutex
+	rebuilding    map[string]bool      // projectID → a wake-triggered rebuild is in flight
+	lastRebuild   map[string]time.Time // projectID → last rebuild attempt (cooldown)
 }
 
 func newIdleManager() *idleManager {
@@ -48,6 +58,8 @@ func newIdleManager() *idleManager {
 		lastPersisted: make(map[string]time.Time),
 		sleeping:      make(map[string]bool),
 		wakeLocks:     make(map[string]*sync.Mutex),
+		rebuilding:    make(map[string]bool),
+		lastRebuild:   make(map[string]time.Time),
 	}
 }
 
@@ -60,6 +72,29 @@ func (m *idleManager) isSleeping(id string) bool {
 func (m *idleManager) setSleeping(id string, v bool) {
 	m.mu.Lock()
 	m.sleeping[id] = v
+	m.mu.Unlock()
+}
+
+// tryStartRebuild claims the right to rebuild a project, returning false if one
+// is already in flight or the last attempt was too recent. The cooldown stops a
+// project whose repo is gone from triggering a build on every single request.
+func (m *idleManager) tryStartRebuild(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rebuilding[id] {
+		return false
+	}
+	if last, ok := m.lastRebuild[id]; ok && time.Since(last) < rebuildCooldown {
+		return false
+	}
+	m.rebuilding[id] = true
+	m.lastRebuild[id] = time.Now()
+	return true
+}
+
+func (m *idleManager) finishRebuild(id string) {
+	m.mu.Lock()
+	delete(m.rebuilding, id)
 	m.mu.Unlock()
 }
 
@@ -126,6 +161,17 @@ func (e *Engine) WakeIfSleeping(projectID string, port int) error {
 
 	local := NewLocalRunner()
 	if out, err := local.Run(ctx, "docker", "start", name); err != nil {
+		// If the container is simply gone, `docker start` can never succeed and
+		// the project would 503 forever. Rebuild it from its recorded source
+		// instead — off the request path, since a build takes minutes.
+		if !containerExists(ctx, local, name) {
+			if e.idle.tryStartRebuild(projectID) {
+				e.log.Warn().Str("project", projectID).Str("container", name).
+					Msg("wake: container missing — rebuilding from source")
+				go e.rebuildMissingContainer(projectID, name)
+			}
+			return fmt.Errorf("app is rebuilding, please retry shortly")
+		}
 		e.log.Error().Err(err).Str("project", projectID).Str("out", trimLogs(string(out), 300)).Msg("wake: docker start failed")
 		return fmt.Errorf("failed to wake container")
 	}
@@ -300,4 +346,42 @@ func (e *Engine) ForceWake(ctx context.Context, projectID string) error {
 		return nil // already awake
 	}
 	return e.WakeIfSleeping(projectID, p.ContainerPort)
+}
+
+// containerExists reports whether a container with this name is known to Docker
+// (in any state). Used to tell "stopped container failed to start" apart from
+// "container no longer exists", which need different recovery.
+func containerExists(ctx context.Context, r *Runner, name string) bool {
+	_, err := r.Run(ctx, "docker", "inspect", "--type", "container", name)
+	return err == nil
+}
+
+// rebuildMissingContainer redeploys a sleeping project whose container has
+// disappeared. Runs in its own goroutine off the request path; the caller has
+// already claimed the rebuild slot via tryStartRebuild.
+func (e *Engine) rebuildMissingContainer(projectID, name string) {
+	defer e.idle.finishRebuild(projectID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
+	defer cancel()
+
+	p, err := e.db.GetProject(ctx, projectID)
+	if err != nil || p == nil {
+		e.log.Error().Err(err).Str("project", projectID).Msg("wake rebuild: project not found")
+		return
+	}
+	if err := e.Deploy(ctx, p); err != nil {
+		// Leave the sleeping flag set so a later request retries after the
+		// cooldown; a permanently broken source (deleted or private repo) will
+		// keep failing here rather than spinning.
+		e.log.Error().Err(err).Str("project", projectID).Str("container", name).
+			Msg("wake rebuild: deploy failed")
+		return
+	}
+
+	e.idle.setSleeping(projectID, false)
+	if err := e.db.SetProjectSleeping(ctx, projectID, false); err != nil {
+		e.log.Error().Err(err).Str("project", projectID).Msg("wake rebuild: clear sleeping flag failed")
+	}
+	e.log.Info().Str("project", projectID).Str("container", name).Msg("wake rebuild: project restored")
 }
