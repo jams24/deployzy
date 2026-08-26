@@ -608,7 +608,7 @@ export default function AdminTemplatesPage() {
                       <div className="font-medium text-foreground flex items-center gap-1.5">
                         {t.name}
                         {t.is_featured && (
-                          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">FEATURED</span>
+                          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">FEATURED</span>
                         )}
                         {t.is_official && (
                           <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">OFFICIAL</span>
@@ -655,7 +655,7 @@ export default function AdminTemplatesPage() {
                     onClick={() => toggleActive(t)}
                     className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
                       t.is_active
-                        ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >

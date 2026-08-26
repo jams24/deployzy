@@ -38,6 +38,9 @@ const toolLabel: Record<string, string> = {
   stop_project: "Stopped a project",
   list_databases: "Listed your databases",
   search_docs: "Searched the docs",
+  deploy_github: "Deployed from GitHub",
+  list_templates: "Browsed templates",
+  deploy_template: "Deployed a template",
 };
 
 // Minimal, safe markdown → HTML (bold, code, links, line breaks).
@@ -145,28 +148,30 @@ export default function AgentPage() {
 
   const composer = (
     <div className="w-full">
-      {/* Modern composer: textarea on top, an action row beneath */}
-      <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
+      {/* Composer: a tall, roomy card — prompt sits at the top, a control row
+          runs along the bottom (Claude-style layout, Deployzy identity). */}
+      <div className="rounded-3xl border border-border bg-card shadow-sm px-2.5 pt-3 pb-2.5 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
           rows={2}
           disabled={busy}
-          placeholder="Ask the agent to check something, or build & deploy an app…"
-          className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm resize-none focus:outline-none max-h-48 placeholder:text-muted-foreground/60"
+          placeholder="How can I help you build or ship today?"
+          className="w-full bg-transparent px-2.5 pt-1 pb-2 text-[15px] leading-relaxed resize-none focus:outline-none max-h-56 min-h-[2.5rem] placeholder:text-muted-foreground/50"
         />
-        <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
-            <Image src="/logo-mark.png" alt="" width={14} height={14} className="rounded-sm" /> Deployzy Agent
+        <div className="flex items-center justify-between px-1">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 pl-1.5 pr-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            <Image src="/logo-mark.png" alt="" width={15} height={15} className="rounded-sm" /> Deployzy Agent
           </span>
           <button onClick={() => send(input)} disabled={!input.trim() || busy}
-            className="h-8 w-8 rounded-lg bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            aria-label="Send"
+            className="h-9 w-9 rounded-full bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
           </button>
         </div>
       </div>
-      <p className="text-[10px] text-center text-muted-foreground/60 mt-2">
+      <p className="text-[10px] text-center text-muted-foreground/50 mt-2.5">
         The agent reads your projects & logs and can build, fix & deploy apps · verify important actions
       </p>
     </div>
@@ -175,7 +180,7 @@ export default function AgentPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] max-w-3xl mx-auto w-full">
       {empty ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-8">
+        <div className="flex-1 flex flex-col items-center justify-start px-4 pt-[11vh]">
           <div className="mb-5">
             <Image src="/logo-mark.png" alt="Deployzy" width={56} height={56} className="rounded-2xl" priority />
           </div>
@@ -183,7 +188,8 @@ export default function AgentPage() {
             {name ? `Hi ${name}` : "Deployzy Agent"}
           </h1>
           <p className="mt-2 text-lg text-muted-foreground text-center">What would you like to build or fix today?</p>
-          <div className="mt-8 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
+          <div className="mt-7 w-full max-w-2xl">{composer}</div>
+          <div className="mt-6 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
             {suggestions.map((s) => {
               const Icon = s.icon;
               return (
@@ -200,7 +206,6 @@ export default function AgentPage() {
               );
             })}
           </div>
-          <div className="mt-6 w-full max-w-2xl">{composer}</div>
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-5">

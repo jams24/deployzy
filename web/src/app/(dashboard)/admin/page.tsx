@@ -14,12 +14,12 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy, Ban, Moon, Flag,
+  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "bans" | "abuse";
+type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse";
 
 interface DensityServer {
   id: string; label: string; region: string; is_local: boolean; status: string;
@@ -120,7 +120,7 @@ interface PlanLimitRow {
   max_projects: number; max_custom_domains: number; max_databases: number;
   max_services: number; max_crons: number; max_byoc_servers: number;
   max_preview_deploys: number; max_memory_mb: number; max_cpus: number;
-  max_bandwidth_gb: number; max_build_minutes_monthly: number;
+  max_bandwidth_gb: number; max_build_minutes_monthly: number; monthly_ai_credits: number;
   max_build_memory_mb: number;
   max_db_size_mb: number;
   analytics_retention_days: number; metrics_retention_days: number;
@@ -172,7 +172,7 @@ interface WorkerServer {
   allocated_memory_mb: number; max_projects: number; current_projects: number;
   used_memory_mb: number; load_avg: number;
   user_id: string | null;
-  status: string; docker_installed: boolean; priority?: number; is_local?: boolean; user_selectable?: boolean;
+  status: string; docker_installed: boolean; priority?: number; is_local?: boolean; user_selectable?: boolean; backups_enabled?: boolean;
 }
 
 interface SessionTunnel { url: string; protocol: string; local_addr: string; name: string; inspect: boolean; }
@@ -187,17 +187,17 @@ interface BackupRun {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  running:  "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
-  building: "bg-sky-500/20 text-sky-500 border-sky-500/50",
+  running:  "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50",
+  building: "bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/50",
   stopped:  "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
-  failed:   "bg-red-500/20 text-red-500 border-red-500/40",
-  created:  "bg-amber-500/20 text-amber-500 border-amber-500/50",
+  failed:   "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/40",
+  created:  "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50",
 };
 
 const PLAN_COLORS: Record<string, string> = {
   free: "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
-  pro:  "bg-blue-500/20 text-blue-400 border-blue-500/50",
-  team: "bg-violet-500/20 text-violet-400 border-violet-500/50",
+  pro:  "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50",
+  team: "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/50",
 };
 
 function formatBytes(n: number) {
@@ -313,6 +313,22 @@ export default function AdminPage() {
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnTest, setVpnTest] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // ── AI model provider config ───────────────────────────────────────────────
+  interface AiPreset { id: string; label: string; base_url: string; model: string; key_hint: string; }
+  interface AiCfg {
+    provider: string; base_url: string; model: string; api_key_set: boolean; api_key_preview: string;
+    credits_enabled: boolean; price_in_per_m: string; price_out_per_m: string;
+    card_configured?: boolean;
+    polar_credits_product?: string;
+    effective: { provider: string; base_url: string; model: string; key_configured: boolean; using_env_fallback: boolean };
+    presets: AiPreset[];
+  }
+  const [aiCfg, setAiCfg] = useState<AiCfg | null>(null);
+  const [aiForm, setAiForm] = useState({ provider: "deepseek", base_url: "", model: "", api_key: "", credits_enabled: false, price_in_per_m: "", price_out_per_m: "", polar_credits_product: "" });
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // ── Platform build concurrency ────────────────────────────────────────────
   const [buildConc, setBuildConc] = useState<number | null>(null);
   const [buildConcInput, setBuildConcInput] = useState("1");
@@ -389,6 +405,36 @@ export default function AdminPage() {
       resetUsers(userSearch, userPlanFilter);
       loadStats();
     }
+  };
+
+  // ── Per-user AI credits (admin view + manual adjust) ─────────────────────────
+  interface UserCreditData {
+    user_id: string; plan: string; free_allotment: number; credits_enabled: boolean;
+    status: { free_used: number; free_remaining: number; wallet: number; available: number; unlimited: boolean };
+    ledger: { delta: number; reason: string; source: string; model: string; tokens_in: number; tokens_out: number; created_at: string }[];
+  }
+  const [creditUser, setCreditUser] = useState<{ id: string; email: string } | null>(null);
+  const [creditData, setCreditData] = useState<UserCreditData | null>(null);
+  const [creditGrant, setCreditGrant] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+
+  const openUserCredits = async (userId: string, email: string) => {
+    setCreditUser({ id: userId, email }); setCreditData(null); setCreditGrant("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/users/${userId}/credits`, { headers: headers() });
+      if (res.ok) setCreditData(await res.json());
+    } catch {}
+  };
+  const adjustUserCredits = async (delta: number) => {
+    if (!creditUser || !delta) return;
+    setCreditBusy(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/users/${creditUser.id}/credits`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ credits: delta, reason: "admin adjustment" }),
+      });
+      if (res.ok) { setCreditGrant(""); await openUserCredits(creditUser.id, creditUser.email); }
+    } catch {}
+    setCreditBusy(false);
   };
 
   // ── Projects ───────────────────────────────────────────────────────────────
@@ -596,6 +642,63 @@ export default function AdminPage() {
       const d = await res.json();
       setVpnTest(d.ok ? { ok: true, msg: `Connected — upstream user #${d.upstream_user_id}` } : { ok: false, msg: d.error || "Connection failed" });
     } catch { setVpnTest({ ok: false, msg: "Network error" }); }
+  };
+
+  // ── AI model provider (pluggable LLM for the AI builder / agent) ─────────────
+  const loadAi = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ai/config`, { headers: headers() });
+      if (res.ok) {
+        const c: AiCfg = await res.json();
+        setAiCfg(c);
+        setAiForm({ provider: c.provider || "deepseek", base_url: c.base_url || "", model: c.model || "", api_key: "", credits_enabled: !!c.credits_enabled, price_in_per_m: c.price_in_per_m || "", price_out_per_m: c.price_out_per_m || "", polar_credits_product: c.polar_credits_product || "" });
+      }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "ai" && !aiCfg) loadAi();
+  }, [tab, aiCfg, loadAi]);
+
+  const applyPreset = (id: string) => {
+    const p = aiCfg?.presets.find((x) => x.id === id);
+    setAiForm((f) => ({
+      ...f,
+      provider: id,
+      // Keep custom's existing values; otherwise auto-fill from the preset.
+      base_url: id === "custom" ? f.base_url : (p?.base_url ?? f.base_url),
+      model: id === "custom" ? f.model : (p?.model ?? f.model),
+    }));
+    setAiTest(null);
+  };
+
+  const saveAi = async () => {
+    setAiSaving(true); setAiTest(null);
+    try {
+      const body: Record<string, unknown> = {
+        provider: aiForm.provider, base_url: aiForm.base_url.trim(), model: aiForm.model.trim(),
+        credits_enabled: aiForm.credits_enabled,
+        price_in_per_m: aiForm.price_in_per_m.trim(), price_out_per_m: aiForm.price_out_per_m.trim(),
+        polar_credits_product: aiForm.polar_credits_product.trim(),
+      };
+      if (aiForm.api_key.trim()) body.api_key = aiForm.api_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/ai/config`, { method: "PUT", headers: headers(), body: JSON.stringify(body) });
+      if (res.ok) { setAiCfg(null); await loadAi(); }
+    } catch {}
+    setAiSaving(false);
+  };
+
+  const testAi = async () => {
+    setAiTesting(true); setAiTest(null);
+    try {
+      // Send current form values so the admin can test BEFORE saving.
+      const body: Record<string, string> = { base_url: aiForm.base_url.trim(), model: aiForm.model.trim() };
+      if (aiForm.api_key.trim()) body.api_key = aiForm.api_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/ai/test`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+      const d = await res.json();
+      setAiTest(d.ok ? { ok: true, msg: `Works — responded as "${d.model}"` } : { ok: false, msg: d.error || "Request failed" });
+    } catch { setAiTest({ ok: false, msg: "Network error" }); }
+    setAiTesting(false);
   };
 
   // Every admin mutation goes through this so a failing request surfaces
@@ -894,6 +997,13 @@ export default function AdminPage() {
       loadServers();
   };
 
+  const toggleServerBackups = async (id: string, enabled: boolean) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/backups`, {
+      method: "PUT", body: JSON.stringify({ enabled }),
+    }, "Updating server backups"))
+      loadServers();
+  };
+
   const setServerStatus = async (id: string, status: string) => {
     if (await adminFetch(`${API}/api/v1/admin/servers/${id}/status`, {
       method: "PUT", body: JSON.stringify({ status }),
@@ -1034,15 +1144,17 @@ export default function AdminPage() {
     { id: "backups", label: "Backups" },
     { id: "broadcast", label: "Broadcast" },
     { id: "vpn", label: "VPN Panel" },
+    { id: "ai", label: "AI Model" },
   ];
 
   return (
     <div>
       {/* Page Header */}
-      <div className="flex items-start justify-between gap-3 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" />
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">System</p>
+          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em] flex items-center gap-2">
+            <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             Admin Console
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -1058,7 +1170,7 @@ export default function AdminPage() {
           <Button
             size="sm"
             variant="outline"
-            className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-500" : ""}`}
+            className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
             onClick={() => setAutoRefresh(v => !v)}
           >
             <Radio className={`h-3 w-3 ${autoRefresh ? "animate-pulse" : ""}`} />
@@ -1083,7 +1195,7 @@ export default function AdminPage() {
       {/* Action errors — mutations used to fail silently, which read as
           "the button does nothing". */}
       {actionError && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
           <span className="flex-1">{actionError}</span>
           <button onClick={() => setActionError("")} className="text-xs text-muted-foreground hover:text-foreground">
             Dismiss
@@ -1099,7 +1211,7 @@ export default function AdminPage() {
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t whitespace-nowrap transition-colors ${
               tab === t.id
-                ? "text-foreground border-b-2 border-primary -mb-px"
+                ? "text-foreground border-b-2 border-emerald-500 -mb-px"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -1107,7 +1219,7 @@ export default function AdminPage() {
             {t.badge !== undefined && t.badge > 0 && (
               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                 t.id === "sessions" && t.badge > 0
-                  ? "bg-emerald-500/20 text-emerald-500"
+                  ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                   : "bg-muted text-muted-foreground"
               }`}>
                 {t.badge}
@@ -1126,32 +1238,32 @@ export default function AdminPage() {
               <KpiCard
                 label="Total Users" value={stats.total_users}
                 sub={`+${stats.users_today} today`} trend="up"
-                icon={<Users className="h-4 w-4" />} color="text-blue-400 bg-blue-500/20"
+                icon={<Users className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20"
               />
               <KpiCard
                 label="New This Week" value={stats.users_this_week}
                 sub={`${stats.users_this_month} this month`}
-                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-400 bg-emerald-500/20"
+                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20"
               />
               <KpiCard
                 label="Projects" value={stats.projects_total}
                 sub={`${runningCount} running`}
-                icon={<Rocket className="h-4 w-4" />} color="text-violet-400 bg-violet-500/20"
+                icon={<Rocket className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20"
               />
               <KpiCard
                 label="Deploys Today" value={stats.deploys_today}
                 sub={`${stats.deploys_this_week} this week`}
-                icon={<Zap className="h-4 w-4" />} color="text-amber-400 bg-amber-500/20"
+                icon={<Zap className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20"
               />
               <KpiCard
                 label="Databases" value={stats.services_total}
                 sub={`${stats.tunnels_total} tunnels`}
-                icon={<Database className="h-4 w-4" />} color="text-cyan-400 bg-cyan-500/20"
+                icon={<Database className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20"
               />
               <KpiCard
                 label="API Keys" value={stats.total_keys}
                 sub={`${stats.total_domains} domains`}
-                icon={<Key className="h-4 w-4" />} color="text-pink-400 bg-pink-500/20"
+                icon={<Key className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20"
               />
             </div>
           ) : (
@@ -1178,7 +1290,7 @@ export default function AdminPage() {
                     <div>
                       <div className="flex justify-between text-xs mb-1.5">
                         <span className="text-muted-foreground">Deploy success rate</span>
-                        <span className={`font-mono font-medium ${deploySuccessRate >= 90 ? "text-emerald-500" : deploySuccessRate >= 70 ? "text-amber-500" : "text-red-500"}`}>
+                        <span className={`font-mono font-medium ${deploySuccessRate >= 90 ? "text-emerald-600 dark:text-emerald-400" : deploySuccessRate >= 70 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
                           {deploySuccessRate}%
                         </span>
                       </div>
@@ -1193,10 +1305,10 @@ export default function AdminPage() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {[
-                      { label: "Running", count: runningCount, cls: "text-emerald-500" },
-                      { label: "Building", count: buildingCount, cls: "text-sky-500" },
-                      { label: "Failed", count: failedCount, cls: "text-red-500" },
-                      { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-zinc-400" },
+                      { label: "Running", count: runningCount, cls: "text-emerald-600 dark:text-emerald-400" },
+                      { label: "Building", count: buildingCount, cls: "text-sky-600 dark:text-sky-400" },
+                      { label: "Failed", count: failedCount, cls: "text-red-600 dark:text-red-400" },
+                      { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-muted-foreground" },
                     ].map(({ label, count, cls }) => (
                       <div key={label} className="flex items-center justify-between rounded-md bg-muted/20 px-2.5 py-1.5">
                         <span className="text-muted-foreground">{label}</span>
@@ -1208,7 +1320,7 @@ export default function AdminPage() {
                   {sessions.length > 0 && (
                     <div className="flex items-center gap-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-xs text-emerald-500 font-medium">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                         {sessions.length} active tunnel session{sessions.length !== 1 ? "s" : ""}
                       </span>
                     </div>
@@ -1261,12 +1373,12 @@ export default function AdminPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{s.label}</span>
                           <Badge variant="outline" className={`text-[9px] ${
-                            s.status === "active" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                            : s.status === "draining" ? "bg-amber-500/20 text-amber-500"
-                            : "bg-red-500/20 text-red-500"
+                            s.status === "active" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                            : s.status === "draining" ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                            : "bg-red-500/20 text-red-600 dark:text-red-400"
                           }`}>{s.status}</Badge>
                           {s.is_local && <Badge variant="outline" className="text-[9px]">primary</Badge>}
-                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-400 border-violet-500/30">BYOC</Badge>}
+                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-600 dark:text-violet-400 border-violet-500/30">BYOC</Badge>}
                         </div>
                         <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
                       </div>
@@ -1352,12 +1464,12 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{u.name || u.email}</span>
                         {u.is_admin && (
-                          <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                          <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/50">
                             <Crown className="h-2.5 w-2.5" /> Admin
                           </Badge>
                         )}
                         <Badge variant="outline" className={`text-[10px] ${PLAN_COLORS[u.plan] || ""}`}>{u.plan}</Badge>
-                        {u.blocked && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-500">suspended</Badge>}
+                        {u.blocked && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-600 dark:text-red-400">suspended</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{u.email}</p>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
@@ -1390,9 +1502,9 @@ export default function AdminPage() {
                       <Button variant="ghost" size="sm" className="h-7 px-2"
                         onClick={() => updateUser(u.id, { is_admin: !u.is_admin })}
                         title={u.is_admin ? "Remove admin" : "Make admin"}>
-                        <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-500" : "text-muted-foreground"}`} />
+                        <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground"}`} />
                       </Button>
-                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-500 hover:text-emerald-600" : "text-amber-500 hover:text-amber-600"}`}
+                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-600 dark:text-emerald-400 hover:text-emerald-600" : "text-amber-600 dark:text-amber-400 hover:text-amber-600"}`}
                         title={u.blocked ? "Unsuspend account" : "Suspend account (block login + deploys)"}
                         onClick={() => {
                           if (u.blocked) { updateUser(u.id, { blocked: false }); return; }
@@ -1402,12 +1514,17 @@ export default function AdminPage() {
                         {u.blocked ? <UserCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
                       </Button>
                       {u.signup_ip && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-500 hover:text-orange-600"
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-600 dark:text-orange-400 hover:text-orange-600"
                           title={`Ban IP ${u.signup_ip}`}
                           onClick={() => banIP(u.signup_ip!, `abuse — user ${u.email}`)}>
                           <WifiOff className="h-3.5 w-3.5" />
                         </Button>
                       )}
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground"
+                        title="AI credits & usage"
+                        onClick={() => openUserCredits(u.id, u.email)}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                         onClick={() => deleteUser(u.id, u.email)}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1465,7 +1582,7 @@ export default function AdminPage() {
           </div>
 
           {redeployResult && (
-            <p className="text-[11px] text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-3 py-2">
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-3 py-2">
               Queued {redeployResult.queued} of {redeployResult.total} projects
               {redeployResult.skipped > 0 ? ` (skipped ${redeployResult.skipped})` : ""}
               {" "}— deploys staggered 2s apart.
@@ -1527,7 +1644,7 @@ export default function AdminPage() {
                         </Button>
                       )}
                       {p.status === "running" && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-500 hover:text-amber-500"
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-600 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-600 dark:text-amber-400"
                           onClick={() => stopProject(p.id, p.name)} title="Stop">
                           <Square className="h-3.5 w-3.5" />
                         </Button>
@@ -1596,7 +1713,7 @@ export default function AdminPage() {
                           {/* Why it died — only shown when there's something to say */}
                           {(diag.container.oom_killed || diag.container.error ||
                             (diag.container.state !== "running" && diag.container.state !== "missing")) && (
-                            <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                            <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
                               {diag.container.oom_killed
                                 ? `Killed by the kernel for exceeding its memory limit (${diag.container.memory_limit_mb} MB). The app needs more RAM than its plan allows.`
                                 : diag.container.error
@@ -1708,7 +1825,7 @@ export default function AdminPage() {
                       {b.reason && <span className="text-[11px] text-muted-foreground ml-2">{b.reason}</span>}
                       <div className="text-[10px] text-muted-foreground">by {b.created_by || "—"} · {new Date(b.created_at).toLocaleString()}</div>
                     </div>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-500 hover:text-emerald-600 text-xs" onClick={() => unbanIP(b.ip)}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-600 text-xs" onClick={() => unbanIP(b.ip)}>
                       Unban
                     </Button>
                   </div>
@@ -1722,16 +1839,16 @@ export default function AdminPage() {
       {/* ── ABUSE REPORTS TAB ────────────────────────────────────────────── */}
       {tab === "abuse" && (() => {
         const catColor: Record<string, string> = {
-          phishing: "bg-red-500/15 text-red-400 border-red-500/40",
-          illegal:  "bg-red-500/15 text-red-400 border-red-500/40",
-          malware:  "bg-orange-500/15 text-orange-400 border-orange-500/40",
-          spam:     "bg-amber-500/15 text-amber-400 border-amber-500/40",
-          other:    "bg-zinc-500/15 text-zinc-400 border-zinc-500/40",
+          phishing: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
+          illegal:  "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
+          malware:  "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/40",
+          spam:     "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40",
+          other:    "bg-zinc-500/15 text-muted-foreground border-zinc-500/40",
         };
         const statusColor: Record<string, string> = {
-          open:      "bg-amber-500/15 text-amber-400 border-amber-500/40",
-          actioned:  "bg-emerald-500/15 text-emerald-400 border-emerald-500/40",
-          dismissed: "bg-zinc-500/15 text-zinc-400 border-zinc-500/40",
+          open:      "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40",
+          actioned:  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+          dismissed: "bg-zinc-500/15 text-muted-foreground border-zinc-500/40",
         };
         const shown = abuseReports.filter(r => abuseFilter === "all" || r.status === abuseFilter);
         const openCount = abuseReports.filter(r => r.status === "open").length;
@@ -1739,7 +1856,7 @@ export default function AdminPage() {
         <div className="space-y-5 max-w-3xl">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <h2 className="text-lg font-semibold flex items-center gap-2"><Flag className="h-4 w-4 text-red-400" /> Abuse Reports</h2>
+              <h2 className="text-lg font-semibold flex items-center gap-2"><Flag className="h-4 w-4 text-red-600 dark:text-red-400" /> Abuse Reports</h2>
               <p className="text-sm text-muted-foreground">Public reports of phishing, malware, spam, or illegal content on deployed apps and tunnels. Submitted via <span className="font-mono">/report</span>.</p>
             </div>
             <Button variant="outline" size="sm" onClick={loadAbuseReports} disabled={abuseLoading} className="gap-1.5">
@@ -1838,8 +1955,8 @@ export default function AdminPage() {
                   const savedGB = (density.sleeping_memory_mb / 1024).toFixed(1);
                   const cards = [
                     { label: "Sleeping now", value: density.sleeping_count, sub: `${savedGB} GB reserved freed`, accent: "text-indigo-500" },
-                    { label: "Reserved (platform)", value: `${density.reserved_pct}%`, sub: `${(density.allocated_memory_mb/1024).toFixed(1)} / ${(density.total_memory_mb/1024).toFixed(1)} GB`, accent: density.reserved_pct > 90 ? "text-amber-500" : "text-foreground" },
-                    { label: "Actually used", value: `${density.used_pct}%`, sub: `${(density.used_memory_mb/1024).toFixed(1)} GB real RAM`, accent: density.used_pct > 80 ? "text-red-500" : "text-emerald-500" },
+                    { label: "Reserved (platform)", value: `${density.reserved_pct}%`, sub: `${(density.allocated_memory_mb/1024).toFixed(1)} / ${(density.total_memory_mb/1024).toFixed(1)} GB`, accent: density.reserved_pct > 90 ? "text-amber-600 dark:text-amber-400" : "text-foreground" },
+                    { label: "Actually used", value: `${density.used_pct}%`, sub: `${(density.used_memory_mb/1024).toFixed(1)} GB real RAM`, accent: density.used_pct > 80 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400" },
                     { label: "Idle & awake", value: density.eligible_awake, sub: "free/local, >30m idle", accent: "text-muted-foreground" },
                   ];
                   return cards.map((c) => (
@@ -1866,7 +1983,7 @@ export default function AdminPage() {
                           <Server className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="text-sm font-medium truncate">{s.label}</span>
                           {s.is_local && <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">primary</span>}
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded ${s.status === "active" ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>{s.status}</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded ${s.status === "active" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{s.status}</span>
                           {s.sleeping_count > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-500">{s.sleeping_count} asleep</span>}
                         </div>
                         <div className="text-[11px] text-muted-foreground font-mono">
@@ -1879,7 +1996,7 @@ export default function AdminPage() {
                         <div className={`absolute inset-y-0 left-0 ${s.used_pct > 80 ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, s.used_pct)}%` }} title={`used ${s.used_pct}%`} />
                       </div>
                       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span><span className="text-emerald-500 font-medium">{s.used_pct}%</span> used · <span className="text-foreground">{s.reserved_pct}%</span> reserved</span>
+                        <span><span className="text-emerald-600 dark:text-emerald-400 font-medium">{s.used_pct}%</span> used · <span className="text-foreground">{s.reserved_pct}%</span> reserved</span>
                         <span>{(s.reclaimable_mb/1024).toFixed(1)} GB reserved-but-idle · {(s.total_memory_mb/1024).toFixed(1)} GB total</span>
                       </div>
                     </div>
@@ -1907,7 +2024,7 @@ export default function AdminPage() {
                           <span className="text-[11px] text-muted-foreground font-mono">
                             {p.memory_mb} MB freed · slept {p.slept_at ? new Date(p.slept_at).toLocaleString() : "—"}
                           </span>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-500 hover:text-emerald-600 text-xs gap-1"
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-600 text-xs gap-1"
                             onClick={() => wakeProject(p.id, p.subdomain)} title="Wake now">
                             <Zap className="h-3 w-3" /> Wake
                           </Button>
@@ -1951,10 +2068,10 @@ export default function AdminPage() {
               {/* Headline cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label: "AI crawler hits", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-500 bg-violet-500/15" },
-                  { label: "Search crawler hits", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-500 bg-sky-500/15" },
-                  { label: "LLM referrals", value: seo.totals.llm_referral_hits, hint: "clicks from AI answers", color: "text-emerald-500 bg-emerald-500/15" },
-                  { label: "Search referrals", value: seo.totals.search_referral_hits, hint: "organic search clicks", color: "text-amber-500 bg-amber-500/15" },
+                  { label: "AI crawler hits", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-600 dark:text-violet-400 bg-violet-500/15" },
+                  { label: "Search crawler hits", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-600 dark:text-sky-400 bg-sky-500/15" },
+                  { label: "LLM referrals", value: seo.totals.llm_referral_hits, hint: "clicks from AI answers", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15" },
+                  { label: "Search referrals", value: seo.totals.search_referral_hits, hint: "organic search clicks", color: "text-amber-600 dark:text-amber-400 bg-amber-500/15" },
                 ].map(c => (
                   <div key={c.label} className="rounded-xl border border-border/60 p-4">
                     <div className={`inline-flex h-7 w-7 items-center justify-center rounded-lg mb-2 ${c.color}`}>
@@ -2000,14 +2117,14 @@ export default function AdminPage() {
                         {col.rows.map(row => (
                           <div key={row.name} className="flex items-center gap-2 px-3 py-2">
                             <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-medium shrink-0 ${
-                              row.channel === "ai" || row.channel === "llm" ? "bg-violet-500/15 text-violet-500"
-                              : row.channel === "search" ? "bg-sky-500/15 text-sky-500"
-                              : row.channel === "social" ? "bg-emerald-500/15 text-emerald-500"
+                              row.channel === "ai" || row.channel === "llm" ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                              : row.channel === "search" ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                              : row.channel === "social" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                               : "bg-muted text-muted-foreground"}`}>
                               {row.channel === "llm" ? "AI" : row.channel}
                             </span>
                             <span className="text-sm flex-1 min-w-0 truncate">{row.name}</span>
-                            {row.recent > 0 && <span className="text-[10px] text-emerald-500" title="last 7 days">+{row.recent.toLocaleString()} · 7d</span>}
+                            {row.recent > 0 && <span className="text-[10px] text-emerald-600 dark:text-emerald-400" title="last 7 days">+{row.recent.toLocaleString()} · 7d</span>}
                             <span className="text-sm font-medium tabular-nums">{row.hits.toLocaleString()}</span>
                           </div>
                         ))}
@@ -2074,7 +2191,7 @@ export default function AdminPage() {
                           <Badge variant="outline" className={`text-[9px] shrink-0 ${STATUS_COLORS[svc.status] || "bg-muted text-muted-foreground"}`}>
                             {svc.status}
                           </Badge>
-                          {svc.over_quota && <Badge variant="outline" className="text-[9px] shrink-0 bg-red-500/15 text-red-500 border-red-500/30">over quota</Badge>}
+                          {svc.over_quota && <Badge variant="outline" className="text-[9px] shrink-0 bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30">over quota</Badge>}
                         </div>
                         <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
                           <span className="text-muted-foreground/80">{d.user_email || svc.user_id.slice(0, 8)}</span>
@@ -2164,7 +2281,7 @@ export default function AdminPage() {
               <span>{orphanScan.hosts_scanned} host{orphanScan.hosts_scanned === 1 ? "" : "s"} scanned</span>
               {orphanScan.scanned_at && <span>· {new Date(orphanScan.scanned_at).toLocaleTimeString()}</span>}
               {orphanScan.unreachable_hosts.length > 0 && (
-                <span className="flex items-center gap-1 text-amber-500">
+                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
                   <AlertCircle className="h-3 w-3" />
                   Unreachable: {orphanScan.unreachable_hosts.join(", ")} (scan may be incomplete)
                 </span>
@@ -2178,7 +2295,7 @@ export default function AdminPage() {
             </div>
           ) : !orphanScan || orphanScan.orphans.length === 0 ? (
             <div className="flex flex-col items-center py-12">
-              <CheckCircle2 className="h-8 w-8 text-emerald-500/50 mb-2" />
+              <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400/50 mb-2" />
               <p className="text-sm text-muted-foreground">No orphan containers found. Every running container has an owner.</p>
             </div>
           ) : (
@@ -2189,7 +2306,7 @@ export default function AdminPage() {
                     <div className="flex-1 min-w-0 space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <code className="text-sm font-mono font-medium">{o.name}</code>
-                        <Badge variant="outline" className={`text-[9px] shrink-0 ${o.state === "running" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" : "bg-muted text-muted-foreground"}`}>
+                        <Badge variant="outline" className={`text-[9px] shrink-0 ${o.state === "running" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" : "bg-muted text-muted-foreground"}`}>
                           {o.state || "unknown"}
                         </Badge>
                       </div>
@@ -2236,7 +2353,7 @@ export default function AdminPage() {
               {sessions.length} active session{sessions.length !== 1 ? "s" : ""}
             </span>
             {sessionsRefresh && <span>· last refreshed {sessionsRefresh.toLocaleTimeString()}</span>}
-            {autoRefresh && <span className="text-emerald-500/70">· auto-refresh every 15s</span>}
+            {autoRefresh && <span className="text-emerald-600 dark:text-emerald-400/70">· auto-refresh every 15s</span>}
           </div>
 
           {filteredSessions.length === 0 ? (
@@ -2253,7 +2370,7 @@ export default function AdminPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 rounded px-1.5 py-0.5 font-medium">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/50 rounded px-1.5 py-0.5 font-medium">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           connected
                         </span>
@@ -2280,9 +2397,9 @@ export default function AdminPage() {
                         <div key={t.url} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <Badge variant="outline" className={`text-[9px] shrink-0 ${
-                              t.protocol === "http"  ? "bg-blue-500/20 text-blue-400 border-blue-500/50" :
-                              t.protocol === "tcp"   ? "bg-amber-500/20 text-amber-400 border-amber-500/50" :
-                              "bg-violet-500/20 text-violet-400 border-violet-500/50"
+                              t.protocol === "http"  ? "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50" :
+                              t.protocol === "tcp"   ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50" :
+                              "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/50"
                             }`}>
                               {t.protocol.toUpperCase()}
                             </Badge>
@@ -2368,19 +2485,19 @@ export default function AdminPage() {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3 mb-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 text-xs font-mono shrink-0">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-mono shrink-0">
                             {s.region.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium">{s.label}</span>
                               <Badge variant="outline" className={`text-[9px] ${
-                                s.status === "active" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                                : s.status === "draining" ? "bg-amber-500/20 text-amber-500 border-amber-500/50"
-                                : "bg-red-500/20 text-red-500"
+                                s.status === "active" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                                : s.status === "draining" ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50"
+                                : "bg-red-500/20 text-red-600 dark:text-red-400"
                               }`}>{s.status}</Badge>
-                              {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-400 border-blue-500/30">primary · local</Badge>}
-                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-400 border-violet-500/30">BYOC</Badge>}
+                              {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">primary · local</Badge>}
+                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30">BYOC</Badge>}
                               {s.docker_installed && <Badge variant="outline" className="text-[9px]">Docker</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.host}</p>
@@ -2414,13 +2531,22 @@ export default function AdminPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className={`h-7 text-xs ${s.user_selectable ? "text-emerald-500 border-emerald-500/40" : "text-muted-foreground"}`}
+                              className={`h-7 text-xs ${s.user_selectable ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-muted-foreground"}`}
                               title={s.user_selectable ? "Shown in the user region picker — click to hide" : "Hidden from the user region picker — click to offer"}
                               onClick={() => setSelectable(s.id, !s.user_selectable)}
                             >
                               {s.user_selectable ? "Offered" : "Hidden"}
                             </Button>
                           )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={`h-7 text-xs ${s.backups_enabled !== false ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-amber-600 dark:text-amber-400 border-amber-500/40"}`}
+                            title={s.backups_enabled !== false ? "Nightly backups ON for databases on this server — click to disable" : "Backups DISABLED for this server — click to enable"}
+                            onClick={() => toggleServerBackups(s.id, s.backups_enabled === false)}
+                          >
+                            {s.backups_enabled !== false ? "Backups on" : "Backups off"}
+                          </Button>
                           {!s.is_local && (
                             <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => removeServer(s.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -2486,7 +2612,7 @@ export default function AdminPage() {
                 Nightly Postgres dump + project data tarball. Local 7-day retention.
               </p>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className={backups?.timer_active ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" : "bg-red-500/20 text-red-500 border-red-500/40"}>
+                <Badge variant="outline" className={backups?.timer_active ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50" : "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/40"}>
                   Timer: {backups?.timer_active ? "active" : "inactive"}
                 </Badge>
                 <Badge variant="outline">Last: {backups?.last_run ? formatTs(backups.last_run) : "never"}</Badge>
@@ -2511,7 +2637,7 @@ export default function AdminPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono">{formatTs(run.timestamp)}</span>
-                      <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-500 border-emerald-500/50">
+                      <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50">
                         {formatBytes(run.total_bytes)}
                       </Badge>
                     </div>
@@ -2602,7 +2728,7 @@ export default function AdminPage() {
                     {!isAdminPlan && (
                       <span className="flex items-center gap-2">
                         {planSaved === p.plan && (
-                          <span className="text-[11px] text-emerald-500">Saved</span>
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Saved</span>
                         )}
                         <Button size="sm" className="h-7 text-xs" disabled={!dirty || planSaving === p.plan}
                           onClick={() => savePlan(p.plan)}>
@@ -2623,6 +2749,7 @@ export default function AdminPage() {
                       {numField("Runtime vCPU", "max_cpus", undefined, 0.25)}
                       {numField("Build memory (MB)", "max_build_memory_mb", "Ceiling — still clamped to free host RAM")}
                       {numField("Build minutes / mo", "max_build_minutes_monthly", "Counts failed builds too")}
+                      {numField("AI credits / mo", "monthly_ai_credits", "Free AI-builder credits; -1 = unlimited")}
                     </div>
                   </div>
 
@@ -2678,7 +2805,7 @@ export default function AdminPage() {
                           onClick={() => setField(key, !d[key])}
                           className={`rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
                             d[key]
-                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500"
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                               : "border-border text-muted-foreground hover:text-foreground"
                           }`}
                         >
@@ -2775,8 +2902,8 @@ export default function AdminPage() {
                               </div>
                               <div className="pointer-events-none absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 whitespace-nowrap rounded bg-popover border border-border px-2 py-1 text-[10px] shadow">
                                 <div className="font-medium">{new Date(pt.ts).toLocaleString()}</div>
-                                <div className="text-emerald-500">{pt.pageviews} views · {pt.visitors} visitors</div>
-                                <div className="text-amber-500">{pt.bot_hits} bot hits</div>
+                                <div className="text-emerald-600 dark:text-emerald-400">{pt.pageviews} views · {pt.visitors} visitors</div>
+                                <div className="text-amber-600 dark:text-amber-400">{pt.bot_hits} bot hits</div>
                               </div>
                             </div>
                           );
@@ -2803,10 +2930,10 @@ export default function AdminPage() {
                       const rows = analytics.crawlers;
                       const max = Math.max(1, ...rows.map(c => c.hits));
                       const tone: Record<string, string> = {
-                        ai: "bg-violet-500/20 text-violet-400 border-violet-500/40",
-                        search: "bg-emerald-500/20 text-emerald-500 border-emerald-500/40",
-                        social: "bg-sky-500/20 text-sky-400 border-sky-500/40",
-                        seo: "bg-amber-500/20 text-amber-500 border-amber-500/40",
+                        ai: "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/40",
+                        search: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+                        social: "bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/40",
+                        seo: "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40",
                         monitoring: "bg-zinc-500/20 text-muted-foreground border-zinc-500/40",
                       };
                       return (
@@ -2879,9 +3006,9 @@ export default function AdminPage() {
                                 </td>
                                 <td className="text-right font-mono">{fmtNum(pr.pageviews)}</td>
                                 <td className="text-right font-mono">{fmtNum(pr.visitors)}</td>
-                                <td className="text-right font-mono text-amber-500">{fmtNum(pr.bot_hits)}</td>
+                                <td className="text-right font-mono text-amber-600 dark:text-amber-400">{fmtNum(pr.bot_hits)}</td>
                                 <td className="text-right font-mono">{fmtBytes(pr.bytes)}</td>
-                                <td className={`text-right font-mono ${pr.error_hits > 0 ? "text-red-500" : ""}`}>{fmtNum(pr.error_hits)}</td>
+                                <td className={`text-right font-mono ${pr.error_hits > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{fmtNum(pr.error_hits)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2911,10 +3038,10 @@ export default function AdminPage() {
           {bcResult && (
             <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
-                <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                <svg className="h-4 w-4 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-emerald-500">Broadcast sent</p>
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Broadcast sent</p>
                 <p className="text-xs text-muted-foreground">{bcResult.sent} delivered · {bcResult.failed} failed · {bcResult.total} total recipients</p>
               </div>
               <button onClick={() => setBcResult(null)} className="ml-auto text-muted-foreground hover:text-foreground text-xs">Dismiss</button>
@@ -2922,7 +3049,7 @@ export default function AdminPage() {
           )}
 
           {bcError && (
-            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">{bcError}</div>
+            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">{bcError}</div>
           )}
 
           {/* Audience */}
@@ -3011,7 +3138,7 @@ export default function AdminPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                Reseller API Key {vpnCfg?.api_key_set && <span className="text-emerald-500">· currently set ({vpnCfg.api_key_preview})</span>}
+                Reseller API Key {vpnCfg?.api_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({vpnCfg.api_key_preview})</span>}
               </label>
               <input type="password" value={vpnForm.api_key} onChange={e => setVpnForm(f => ({ ...f, api_key: e.target.value }))}
                 placeholder={vpnCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : "ttk_…"}
@@ -3019,7 +3146,7 @@ export default function AdminPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                Reseller Master Key {vpnCfg?.master_key_set && <span className="text-emerald-500">· currently set ({vpnCfg.master_key_preview})</span>}
+                Reseller Master Key {vpnCfg?.master_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({vpnCfg.master_key_preview})</span>}
               </label>
               <input type="password" value={vpnForm.master_key} onChange={e => setVpnForm(f => ({ ...f, master_key: e.target.value }))}
                 placeholder={vpnCfg?.master_key_set ? "•••••••• (leave blank to keep current)" : "dzy_master_…"}
@@ -3048,7 +3175,7 @@ export default function AdminPage() {
             </div>
 
             {vpnTest && (
-              <div className={`rounded-lg border px-3 py-2 text-xs ${vpnTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500" : "border-red-500/40 bg-red-500/10 text-red-400"}`}>
+              <div className={`rounded-lg border px-3 py-2 text-xs ${vpnTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"}`}>
                 {vpnTest.msg}
               </div>
             )}
@@ -3069,6 +3196,195 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === "ai" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">AI Model — Builder &amp; Agent</h3>
+            <p className="text-xs text-muted-foreground">
+              The AI builder and agent talk to any OpenAI-compatible provider. Pick a provider, paste its API key,
+              and choose a model — this replaces the default DeepSeek model everywhere the AI generates or edits code.
+            </p>
+          </div>
+
+          {aiCfg?.effective && (
+            <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+              Currently active:{" "}
+              <span className="font-medium text-foreground">{aiCfg.effective.provider}</span>
+              {" · "}<span className="font-mono">{aiCfg.effective.model}</span>
+              {aiCfg.effective.using_env_fallback && <span className="text-amber-600 dark:text-amber-400"> · using DEEPSEEK_API_KEY env fallback</span>}
+              {!aiCfg.effective.key_configured && <span className="text-red-600 dark:text-red-400"> · no API key set — AI is disabled</span>}
+            </div>
+          )}
+
+          <div className="space-y-4 rounded-xl border border-border/60 p-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Provider</label>
+              <select value={aiForm.provider} onChange={e => applyPreset(e.target.value)}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30">
+                {(aiCfg?.presets || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">API Base URL</label>
+              <input value={aiForm.base_url} onChange={e => setAiForm(f => ({ ...f, base_url: e.target.value }))}
+                placeholder="https://api.deepseek.com"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+              <p className="text-[11px] text-muted-foreground">The OpenAI-compatible root, without <code className="font-mono">/chat/completions</code>.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Model</label>
+              <input value={aiForm.model} onChange={e => setAiForm(f => ({ ...f, model: e.target.value }))}
+                placeholder="deepseek-chat"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                API Key {aiCfg?.api_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({aiCfg.api_key_preview})</span>}
+              </label>
+              <input type="password" value={aiForm.api_key} onChange={e => setAiForm(f => ({ ...f, api_key: e.target.value }))}
+                placeholder={aiCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : (aiCfg?.presets.find(p => p.id === aiForm.provider)?.key_hint || "bearer token")}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+
+            {aiTest && (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${aiTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"}`}>
+                {aiTest.msg}
+              </div>
+            )}
+
+            <div className="border-t border-border/60 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold">Credit metering</div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    When ON, AI builder/agent usage spends credits (free monthly allotment → top-up wallet).
+                    When OFF, AI is unlimited for everyone. Admins are always unlimited.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setAiForm(f => ({ ...f, credits_enabled: !f.credits_enabled }))}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${aiForm.credits_enabled ? "bg-foreground" : "bg-input"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background transition-transform ${aiForm.credits_enabled ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Input price ($/1M tokens)</label>
+                  <input value={aiForm.price_in_per_m} onChange={e => setAiForm(f => ({ ...f, price_in_per_m: e.target.value }))}
+                    placeholder="0.30" inputMode="decimal"
+                    className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Output price ($/1M tokens)</label>
+                  <input value={aiForm.price_out_per_m} onChange={e => setAiForm(f => ({ ...f, price_out_per_m: e.target.value }))}
+                    placeholder="1.20" inputMode="decimal"
+                    className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Set these to the current model&apos;s real rates (e.g. Claude Opus ≈ 5 / 25, DeepSeek ≈ 0.30 / 1.20).
+                1 credit = $0.01 of usage. Blank = defaults ($0.30 / $1.20). Per-plan free allotments are on the Plans tab.
+              </p>
+
+              <div className="pt-2 space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Polar credits product ID (card top-ups)</label>
+                <input value={aiForm.polar_credits_product} onChange={e => setAiForm(f => ({ ...f, polar_credits_product: e.target.value }))}
+                  placeholder="prod_…"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                <p className="text-[11px] text-muted-foreground">
+                  Create ONE <span className="font-medium">&quot;pay what you want&quot;</span> product in Polar (e.g. &quot;AI Credits&quot;) and paste its ID here to
+                  enable card top-ups for any amount. Leave blank to keep top-ups crypto-only (USDT).
+                  {aiCfg && aiCfg.card_configured === false && <span className="text-amber-600 dark:text-amber-400"> Polar isn&apos;t configured on this server.</span>}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={saveAi} disabled={aiSaving}>
+                {aiSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={testAi} disabled={aiTesting || (!aiCfg?.api_key_set && !aiForm.api_key)}>
+                {aiTesting ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testing…</> : "Test model"}
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Test sends a 1-token request using the values above (no need to save first). If a provider rejects
+              JSON mode or tool calls, the builder may error — pick another model. Anthropic uses its OpenAI-compatible endpoint.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Per-user AI credits modal */}
+      {creditUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4"
+          onClick={() => setCreditUser(null)}>
+          <Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-base">
+                <span className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> AI Credits — {creditUser.email}</span>
+                <button onClick={() => setCreditUser(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!creditData ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="rounded-full border border-border/60 px-2 py-0.5 capitalize">{creditData.plan} plan</span>
+                    <span className={`rounded-full px-2 py-0.5 ${creditData.credits_enabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                      metering {creditData.credits_enabled ? "ON" : "OFF"}
+                    </span>
+                    {creditData.status.unlimited && <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">unlimited</span>}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { l: "Free/mo", v: creditData.free_allotment < 0 ? "∞" : String(creditData.free_allotment) },
+                      { l: "Used", v: (Math.round(creditData.status.free_used * 100) / 100).toString() },
+                      { l: "Wallet", v: (Math.round(creditData.status.wallet * 100) / 100).toString() },
+                      { l: "Available", v: creditData.status.unlimited ? "∞" : (Math.round(creditData.status.available * 100) / 100).toString() },
+                    ].map(s => (
+                      <div key={s.l} className="rounded-lg border border-border/60 p-2 text-center">
+                        <div className="text-[10px] text-muted-foreground">{s.l}</div>
+                        <div className="text-lg font-semibold tracking-tight">{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[11px] text-muted-foreground">Adjust wallet (credits; negative to deduct)</label>
+                      <input value={creditGrant} onChange={e => setCreditGrant(e.target.value)} inputMode="numeric"
+                        placeholder="e.g. 500 or -100"
+                        className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                    </div>
+                    <Button size="sm" disabled={creditBusy || !creditGrant.trim()} onClick={() => adjustUserCredits(Number(creditGrant))}>
+                      {creditBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Apply"}
+                    </Button>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-medium text-muted-foreground mb-1">History ({creditData.ledger.length})</div>
+                    <div className="max-h-56 overflow-y-auto rounded-lg border border-border/60 divide-y divide-border/40">
+                      {creditData.ledger.length === 0 && <div className="px-3 py-4 text-xs text-muted-foreground text-center">No activity yet</div>}
+                      {creditData.ledger.map((row, i) => (
+                        <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                          <span className="text-muted-foreground truncate">
+                            <span className="capitalize">{row.reason}</span>{row.model ? ` · ${row.model}` : ""}
+                            {(row.tokens_in > 0 || row.tokens_out > 0) ? ` · ${row.tokens_in}/${row.tokens_out} tok` : ""}
+                          </span>
+                          <span className={row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-foreground"}>
+                            {row.delta >= 0 ? "+" : ""}{Math.round(row.delta * 100) / 100}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -3085,7 +3401,7 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
         <div className="flex items-center justify-between mb-2">
           <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}>{icon}</span>
           {trend && (
-            <span className={`text-[10px] flex items-center gap-0.5 ${trend === "up" ? "text-emerald-500" : "text-red-500"}`}>
+            <span className={`text-[10px] flex items-center gap-0.5 ${trend === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
               {trend === "up" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </span>
           )}
@@ -3099,7 +3415,7 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
 }
 
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "bad" }) {
-  const color = tone === "warn" ? "text-amber-500" : tone === "bad" ? "text-red-500" : "text-foreground";
+  const color = tone === "warn" ? "text-amber-600 dark:text-amber-400" : tone === "bad" ? "text-red-600 dark:text-red-400" : "text-foreground";
   return (
     <div className="rounded-lg border border-border/60 p-3">
       <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -3137,9 +3453,9 @@ function TopList({ title, rows, empty }: { title: string; rows?: { key: string; 
 }
 
 function DiagStat({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" | "bad" }) {
-  const color = tone === "good" ? "text-emerald-500"
-    : tone === "warn" ? "text-amber-500"
-    : tone === "bad" ? "text-red-500"
+  const color = tone === "good" ? "text-emerald-600 dark:text-emerald-400"
+    : tone === "warn" ? "text-amber-600 dark:text-amber-400"
+    : tone === "bad" ? "text-red-600 dark:text-red-400"
     : "text-foreground";
   return (
     <div className="rounded-md bg-background/60 border border-border/50 px-2.5 py-1.5">
@@ -3162,7 +3478,7 @@ function UtilBar({ label, used, total, pct, unit, large }: {
       <div className={`rounded-full bg-muted/40 overflow-hidden ${large ? "h-2" : "h-1.5"}`}>
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <p className={`text-[10px] mt-0.5 ${pct > 85 ? "text-red-500" : pct > 65 ? "text-amber-500" : "text-muted-foreground/60"}`}>
+      <p className={`text-[10px] mt-0.5 ${pct > 85 ? "text-red-600 dark:text-red-400" : pct > 65 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/60"}`}>
         {Math.round(pct)}%
       </p>
     </div>

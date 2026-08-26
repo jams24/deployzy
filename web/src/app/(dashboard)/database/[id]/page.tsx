@@ -325,11 +325,11 @@ export default function DatabaseEditorPage() {
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <Database className="h-4 w-4 text-emerald-400" />
+        <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
         <span className="text-sm font-medium">Database Editor</span>
         {selectedTable && <Badge variant="outline" className="text-[10px]">{selectedTable}</Badge>}
         {selectedTable && !hasPK && (
-          <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/50">no primary key · read only</Badge>
+          <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/50">no primary key · read only</Badge>
         )}
         <div className="ml-auto flex gap-1">
           {(["browse", "columns", "sql"] as const).map(t => (
@@ -374,7 +374,7 @@ export default function DatabaseEditorPage() {
                 </span>
                 <div className="flex items-center gap-1.5">
                   {hasPK && !addingRow && (
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1 text-emerald-400 hover:text-emerald-300" onClick={openAddRow}>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={openAddRow}>
                       <Plus className="h-3 w-3" />Add Row
                     </Button>
                   )}
@@ -388,7 +388,7 @@ export default function DatabaseEditorPage() {
 
               {/* Save error */}
               {saveError && (
-                <div className="mx-3 mt-1.5 rounded border border-red-500/50 bg-red-500/20 px-2.5 py-1.5 text-[10px] text-red-400 font-mono flex items-center gap-2 shrink-0">
+                <div className="mx-3 mt-1.5 rounded border border-red-500/50 bg-red-500/20 px-2.5 py-1.5 text-[10px] text-red-600 dark:text-red-400 font-mono flex items-center gap-2 shrink-0">
                   <span className="flex-1">{saveError}</span>
                   <button onClick={() => setSaveError("")}><X className="h-3 w-3" /></button>
                 </div>
@@ -403,11 +403,11 @@ export default function DatabaseEditorPage() {
                       <div key={col.name} className="flex flex-col gap-0.5">
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-[9px] font-mono text-muted-foreground truncate">
-                            {col.name}{col.is_primary_key && <span className="ml-0.5 text-amber-500">·PK</span>}
+                            {col.name}{col.is_primary_key && <span className="ml-0.5 text-amber-600 dark:text-amber-400">·PK</span>}
                           </span>
                           {col.is_nullable === "YES" && (
                             <button onClick={() => setNewRowNulls(p => ({ ...p, [col.name]: !p[col.name] }))}
-                              className={`text-[9px] px-1 py-0.5 rounded border leading-none ${newRowNulls[col.name] ? "border-blue-500 text-blue-400" : "border-border text-muted-foreground"}`}>
+                              className={`text-[9px] px-1 py-0.5 rounded border leading-none ${newRowNulls[col.name] ? "border-blue-500 text-blue-600 dark:text-blue-400" : "border-border text-muted-foreground"}`}>
                               NULL
                             </button>
                           )}
@@ -422,7 +422,7 @@ export default function DatabaseEditorPage() {
                       </div>
                     ))}
                   </div>
-                  {insertError && <p className="mt-2 text-[10px] text-red-400 font-mono">{insertError}</p>}
+                  {insertError && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400 font-mono">{insertError}</p>}
                   <div className="flex gap-1.5 mt-3">
                     <Button size="sm" className="h-6 px-3 text-[10px] gap-1" disabled={inserting} onClick={saveNewRow}>
                       {inserting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -475,7 +475,7 @@ export default function DatabaseEditorPage() {
                                     {renderEditInput(colIdx)}
                                     <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                                       <button onClick={() => setEditIsNull(n => !n)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded border leading-none ${editIsNull ? "border-blue-500 text-blue-400" : "border-border text-muted-foreground"}`}>
+                                        className={`text-[9px] px-1.5 py-0.5 rounded border leading-none ${editIsNull ? "border-blue-500 text-blue-600 dark:text-blue-400" : "border-border text-muted-foreground"}`}>
                                         NULL
                                       </button>
                                       <Button size="sm" className="h-5 px-2 text-[9px] gap-0.5" disabled={saving} onClick={saveEdit}>
@@ -503,7 +503,7 @@ export default function DatabaseEditorPage() {
                             <td className="px-1 py-1 w-8">
                               {hoveredRow === rowIdx && editCell?.rowIdx !== rowIdx && (
                                 <button onClick={() => deleteRow(rowIdx)} disabled={deletingRow === rowIdx}
-                                  className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors">
+                                  className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors">
                                   {deletingRow === rowIdx
                                     ? <Loader2 className="h-3 w-3 animate-spin" />
                                     : <Trash2 className="h-3 w-3" />}
@@ -545,10 +545,10 @@ export default function DatabaseEditorPage() {
                     {columns.map(c => (
                       <tr key={c.name} className="border-b border-border/20 hover:bg-accent/10">
                         <td className="px-3 py-1.5 font-mono font-medium">{c.name}</td>
-                        <td className="px-3 py-1.5 font-mono text-blue-400">{c.data_type}</td>
-                        <td className="px-3 py-1.5">{c.is_nullable === "YES" ? <span className="text-zinc-500">yes</span> : <span className="text-emerald-500">no</span>}</td>
-                        <td className="px-3 py-1.5 font-mono text-zinc-500 max-w-[200px] truncate">{c.column_default || "—"}</td>
-                        <td className="px-3 py-1.5">{c.is_primary_key ? <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50">PK</Badge> : ""}</td>
+                        <td className="px-3 py-1.5 font-mono text-blue-600 dark:text-blue-400">{c.data_type}</td>
+                        <td className="px-3 py-1.5">{c.is_nullable === "YES" ? <span className="text-muted-foreground">yes</span> : <span className="text-emerald-600 dark:text-emerald-400">no</span>}</td>
+                        <td className="px-3 py-1.5 font-mono text-muted-foreground max-w-[200px] truncate">{c.column_default || "—"}</td>
+                        <td className="px-3 py-1.5">{c.is_primary_key ? <Badge variant="outline" className="text-[9px] text-amber-600 dark:text-amber-400 border-amber-500/50">PK</Badge> : ""}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -580,7 +580,7 @@ export default function DatabaseEditorPage() {
               </div>
 
               {sqlError && (
-                <div className="mx-3 mb-2 rounded-md border border-red-500/50 bg-red-500/20 p-2.5 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all shrink-0">
+                <div className="mx-3 mb-2 rounded-md border border-red-500/50 bg-red-500/20 p-2.5 font-mono text-[10px] text-red-600 dark:text-red-400 whitespace-pre-wrap break-all shrink-0">
                   {sqlError}
                 </div>
               )}
@@ -592,7 +592,7 @@ export default function DatabaseEditorPage() {
                       <span>{sqlResult.rows.length} rows</span>
                       <span>{sqlResult.duration_ms}ms</span>
                       {sqlResult.rows_affected > 0 && <span>affected: {sqlResult.rows_affected}</span>}
-                      {sqlResult.truncated && <span className="text-amber-500">truncated to 1000</span>}
+                      {sqlResult.truncated && <span className="text-amber-600 dark:text-amber-400">truncated to 1000</span>}
                     </div>
                     <div className="rounded-md border border-border/30 bg-muted overflow-x-auto max-h-[400px]">
                       <table className="w-full text-[10px] font-mono">
@@ -621,7 +621,7 @@ export default function DatabaseEditorPage() {
                   </div>
                 )}
                 {sqlResult && sqlResult.columns.length === 0 && sqlResult.rows_affected >= 0 && (
-                  <div className="px-3 text-[11px] text-emerald-400">
+                  <div className="px-3 text-[11px] text-emerald-600 dark:text-emerald-400">
                     Query OK · {sqlResult.rows_affected} row(s) affected · {sqlResult.duration_ms}ms
                   </div>
                 )}

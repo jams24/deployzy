@@ -34,12 +34,12 @@ interface ExecResult {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  string: "bg-blue-500/20 text-blue-400 border-blue-500/50",
-  list:   "bg-purple-500/20 text-purple-400 border-purple-500/50",
-  set:    "bg-emerald-500/20 text-emerald-400 border-emerald-500/50",
-  hash:   "bg-orange-500/20 text-orange-400 border-orange-500/50",
-  zset:   "bg-pink-500/10 text-pink-400 border-pink-500/20",
-  stream: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  string: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50",
+  list:   "bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/40",
+  set:    "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50",
+  hash:   "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/50",
+  zset:   "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/30",
+  stream: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
 };
 
 function TypeBadge({ type }: { type: string }) {
@@ -52,10 +52,10 @@ function TypeBadge({ type }: { type: string }) {
 
 function TtlBadge({ ttl }: { ttl: number }) {
   if (ttl === -1) return <span className="text-[10px] text-muted-foreground">∞</span>;
-  if (ttl === -2) return <span className="text-[10px] text-red-500">gone</span>;
-  if (ttl < 60) return <span className="text-[10px] text-amber-400">{ttl}s</span>;
-  if (ttl < 3600) return <span className="text-[10px] text-zinc-400">{Math.round(ttl / 60)}m</span>;
-  return <span className="text-[10px] text-zinc-400">{Math.round(ttl / 3600)}h</span>;
+  if (ttl === -2) return <span className="text-[10px] text-red-600 dark:text-red-400">gone</span>;
+  if (ttl < 60) return <span className="text-[10px] text-amber-600 dark:text-amber-400">{ttl}s</span>;
+  if (ttl < 3600) return <span className="text-[10px] text-muted-foreground">{Math.round(ttl / 60)}m</span>;
+  return <span className="text-[10px] text-muted-foreground">{Math.round(ttl / 3600)}h</span>;
 }
 
 function renderValue(v: unknown, type: string): React.ReactNode {
@@ -68,7 +68,7 @@ function renderValue(v: unknown, type: string): React.ReactNode {
         <thead><tr><th className="text-left text-muted-foreground py-0.5 pr-4 font-medium w-1/3">field</th><th className="text-left text-muted-foreground py-0.5 font-medium">value</th></tr></thead>
         <tbody>{Object.entries(obj).map(([k, val]) => (
           <tr key={k} className="border-t border-border/20">
-            <td className="py-0.5 pr-4 text-orange-300 break-all">{k}</td>
+            <td className="py-0.5 pr-4 text-orange-600 dark:text-orange-300 break-all">{k}</td>
             <td className="py-0.5 text-foreground break-all">{val}</td>
           </tr>
         ))}</tbody>
@@ -82,7 +82,7 @@ function renderValue(v: unknown, type: string): React.ReactNode {
         <thead><tr><th className="text-left text-muted-foreground py-0.5 pr-4 font-medium w-1/4">score</th><th className="text-left text-muted-foreground py-0.5 font-medium">member</th></tr></thead>
         <tbody>{arr.map((z, i) => (
           <tr key={i} className="border-t border-border/20">
-            <td className="py-0.5 pr-4 text-pink-300">{z.score}</td>
+            <td className="py-0.5 pr-4 text-pink-600 dark:text-pink-300">{z.score}</td>
             <td className="py-0.5 text-foreground break-all">{z.member}</td>
           </tr>
         ))}</tbody>
@@ -95,7 +95,7 @@ function renderValue(v: unknown, type: string): React.ReactNode {
       <div className="space-y-1.5">
         {arr.map((msg) => (
           <div key={msg.id} className="rounded-md bg-muted/60 px-2 py-1.5 text-[11px] font-mono">
-            <div className="text-cyan-400 mb-1">{msg.id}</div>
+            <div className="text-cyan-600 dark:text-cyan-400 mb-1">{msg.id}</div>
             {Object.entries(msg.values).map(([k, val]) => (
               <div key={k}><span className="text-muted-foreground">{k}: </span><span className="text-foreground">{val}</span></div>
             ))}
@@ -273,12 +273,12 @@ export default function RedisEditorPage() {
   }
 
   function renderCLIResult(r: ExecResult) {
-    if (r.error) return <span className="text-red-400">(error) {r.error}</span>;
+    if (r.error) return <span className="text-red-600 dark:text-red-400">(error) {r.error}</span>;
     const v = r.result;
     if (v === null || v === undefined) return <span className="text-muted-foreground">(nil)</span>;
-    if (typeof v === "string") return <span className="text-emerald-400">"{v}"</span>;
-    if (typeof v === "number") return <span className="text-blue-400">(integer) {v}</span>;
-    if (typeof v === "boolean") return <span className="text-blue-400">{String(v)}</span>;
+    if (typeof v === "string") return <span className="text-emerald-600 dark:text-emerald-400">"{v}"</span>;
+    if (typeof v === "number") return <span className="text-blue-600 dark:text-blue-400">(integer) {v}</span>;
+    if (typeof v === "boolean") return <span className="text-blue-600 dark:text-blue-400">{String(v)}</span>;
     if (Array.isArray(v)) return (
       <div className="pl-2">
         {(v as unknown[]).map((item, i) => (
@@ -296,7 +296,7 @@ export default function RedisEditorPage() {
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-400">
+        <div className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-600 dark:text-red-400">
           <Database className="h-3.5 w-3.5" />
         </div>
         <span className="text-sm font-medium">Redis Browser</span>
@@ -329,7 +329,7 @@ export default function RedisEditorPage() {
               {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
               Scan
             </Button>
-            <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-400 border-emerald-500/30 hover:text-emerald-300" onClick={() => { setAddingKey(true); setInsertError(""); }}>
+            <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={() => { setAddingKey(true); setInsertError(""); }}>
               <Plus className="h-3 w-3" /> New Key
             </Button>
             <span className="text-[10px] text-muted-foreground ml-auto">{keys.length} key(s){!done && " · partial"}</span>
@@ -361,7 +361,7 @@ export default function RedisEditorPage() {
                   </Button>
                 </div>
               </div>
-              {insertError && <p className="mt-1.5 text-[10px] text-red-400 font-mono">{insertError}</p>}
+              {insertError && <p className="mt-1.5 text-[10px] text-red-600 dark:text-red-400 font-mono">{insertError}</p>}
             </div>
           )}
 
@@ -389,7 +389,7 @@ export default function RedisEditorPage() {
                   <div key={k.key} className="border-b border-border/20">
                     {/* Key row */}
                     <div
-                      className={`flex items-center px-4 py-2 cursor-pointer gap-3 transition-colors ${expandedKey === k.key ? "bg-white/[0.04]" : "hover:bg-white/[0.015]"}`}
+                      className={`flex items-center px-4 py-2 cursor-pointer gap-3 transition-colors ${expandedKey === k.key ? "bg-accent/60" : "hover:bg-accent/40"}`}
                       onClick={() => expandKey(k)}
                     >
                       <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -413,7 +413,7 @@ export default function RedisEditorPage() {
                           : (
                             <button
                               onClick={(e) => deleteKey(k.key, e)}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors"
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors"
                               style={{ opacity: deletingKey ? 0 : undefined }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -425,7 +425,7 @@ export default function RedisEditorPage() {
 
                     {/* Expanded detail */}
                     {expandedKey === k.key && (
-                      <div className="px-4 pb-4 pt-2 border-t border-border/20 bg-white/[0.01]">
+                      <div className="px-4 pb-4 pt-2 border-t border-border/20 bg-muted/30">
                         {loadingDetail ? (
                           <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                         ) : keyDetail ? (
@@ -440,7 +440,7 @@ export default function RedisEditorPage() {
                               {/* Edit (string only) */}
                               {keyDetail.type === "string" && editingKey !== k.key && (
                                 <button
-                                  className="ml-auto text-[10px] text-blue-400 hover:text-blue-300"
+                                  className="ml-auto text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300"
                                   onClick={() => {
                                     setEditingKey(k.key);
                                     setEditValue(String(keyDetail.value ?? ""));
@@ -517,7 +517,7 @@ export default function RedisEditorPage() {
             {cliHistory.map((h, i) => (
               <div key={i}>
                 <div className="flex items-start gap-2">
-                  <span className="text-red-400 shrink-0">›</span>
+                  <span className="text-red-600 dark:text-red-400 shrink-0">›</span>
                   <span className="text-foreground">{h.cmd}</span>
                   <span className="text-muted-foreground text-[10px] ml-auto shrink-0">{h.result.duration_ms}ms</span>
                 </div>
@@ -527,7 +527,7 @@ export default function RedisEditorPage() {
             <div ref={cliEndRef} />
           </div>
           <div className="border-t border-border/30 px-4 py-2 shrink-0 flex items-center gap-2">
-            <span className="text-red-400 font-mono text-sm shrink-0">›</span>
+            <span className="text-red-600 dark:text-red-400 font-mono text-sm shrink-0">›</span>
             <input
               type="text"
               value={cliInput}

@@ -52,9 +52,9 @@ function docIdFilter(doc: unknown): unknown {
 function JsonViewer({ value, indent = 0 }: { value: unknown; indent?: number }) {
   if (value === null) return <span className="text-muted-foreground">null</span>;
   if (value === undefined) return <span className="text-muted-foreground">undefined</span>;
-  if (typeof value === "boolean") return <span className="text-blue-400">{String(value)}</span>;
-  if (typeof value === "number") return <span className="text-blue-400">{value}</span>;
-  if (typeof value === "string") return <span className="text-emerald-400">"{value}"</span>;
+  if (typeof value === "boolean") return <span className="text-blue-600 dark:text-blue-400">{String(value)}</span>;
+  if (typeof value === "number") return <span className="text-blue-600 dark:text-blue-400">{value}</span>;
+  if (typeof value === "string") return <span className="text-emerald-600 dark:text-emerald-400">"{value}"</span>;
 
   if (typeof value === "object") {
     // ObjectID shorthand
@@ -62,13 +62,13 @@ function JsonViewer({ value, indent = 0 }: { value: unknown; indent?: number }) 
     if (obj["$oid"] && Object.keys(obj).length === 1) {
       return (
         <span className="inline-flex items-center gap-1">
-          <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 h-4 bg-purple-500/20 text-purple-400 border-purple-500/50">ObjectId</Badge>
-          <span className="text-purple-300 font-mono text-[11px]">{String(obj["$oid"])}</span>
+          <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 h-4 bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/40">ObjectId</Badge>
+          <span className="text-purple-600 dark:text-purple-300 font-mono text-[11px]">{String(obj["$oid"])}</span>
         </span>
       );
     }
     if (obj["$date"] && Object.keys(obj).length === 1) {
-      return <span className="text-amber-400 font-mono text-[11px]">{String((obj["$date"] as Record<string, unknown>)["$numberLong"] ? new Date(parseInt(String((obj["$date"] as Record<string, unknown>)["$numberLong"]))).toISOString() : obj["$date"])}</span>;
+      return <span className="text-amber-600 dark:text-amber-400 font-mono text-[11px]">{String((obj["$date"] as Record<string, unknown>)["$numberLong"] ? new Date(parseInt(String((obj["$date"] as Record<string, unknown>)["$numberLong"]))).toISOString() : obj["$date"])}</span>;
     }
 
     if (Array.isArray(value)) {
@@ -97,7 +97,7 @@ function JsonViewer({ value, indent = 0 }: { value: unknown; indent?: number }) 
         <div style={{ paddingLeft: (indent + 1) * 12 }}>
           {entries.map(([k, v], i) => (
             <div key={k} className="leading-5">
-              <span className="text-orange-300">"{k}"</span>
+              <span className="text-orange-600 dark:text-orange-300">"{k}"</span>
               <span className="text-muted-foreground">: </span>
               <JsonViewer value={v} indent={indent + 1} />
               {i < entries.length - 1 && <span className="text-muted-foreground">,</span>}
@@ -109,7 +109,7 @@ function JsonViewer({ value, indent = 0 }: { value: unknown; indent?: number }) 
     );
   }
 
-  return <span className="text-zinc-400">{String(value)}</span>;
+  return <span className="text-muted-foreground">{String(value)}</span>;
 }
 
 function CollapsibleDoc({
@@ -164,7 +164,7 @@ function CollapsibleDoc({
     <div className="border-b border-border/20">
       {/* Row */}
       <div
-        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${expanded ? "bg-white/[0.04]" : "hover:bg-white/[0.015]"}`}
+        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${expanded ? "bg-accent/60" : "hover:bg-accent/40"}`}
         onClick={() => { setExpanded(!expanded); setEditing(false); }}
       >
         {expanded
@@ -173,15 +173,15 @@ function CollapsibleDoc({
 
         {/* _id */}
         <div className="flex items-center gap-1.5 min-w-0 w-52 shrink-0">
-          <Badge variant="outline" className="text-[9px] font-mono px-1 h-4 bg-purple-500/20 text-purple-400 border-purple-500/50 shrink-0">_id</Badge>
-          <span className="font-mono text-[11px] text-purple-300 truncate">{id}</span>
+          <Badge variant="outline" className="text-[9px] font-mono px-1 h-4 bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/40 shrink-0">_id</Badge>
+          <span className="font-mono text-[11px] text-purple-600 dark:text-purple-300 truncate">{id}</span>
         </div>
 
         {/* Field preview */}
         <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
           {previewEntries.map(([k, v]) => (
             <span key={k} className="flex items-center gap-1 shrink-0 text-[11px] font-mono">
-              <span className="text-orange-300">{k}:</span>
+              <span className="text-orange-600 dark:text-orange-300">{k}:</span>
               <span className="text-muted-foreground max-w-[100px] truncate">{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
             </span>
           ))}
@@ -191,7 +191,7 @@ function CollapsibleDoc({
         </div>
 
         <button
-          className="shrink-0 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors"
+          className="shrink-0 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-600 dark:text-red-400 transition-colors"
           onClick={(e) => { e.stopPropagation(); onDelete(doc); }}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -200,7 +200,7 @@ function CollapsibleDoc({
 
       {/* Expanded */}
       {expanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-border/20 bg-white/[0.01]">
+        <div className="px-4 pb-4 pt-2 border-t border-border/20 bg-muted/30">
           {editing ? (
             <div className="space-y-2">
               <textarea
@@ -210,7 +210,7 @@ function CollapsibleDoc({
                 className="w-full rounded-md border border-blue-500/40 bg-muted p-3 font-mono text-[11px] text-foreground focus:outline-none resize-y"
                 spellCheck={false}
               />
-              {editError && <p className="text-[10px] text-red-400 font-mono">{editError}</p>}
+              {editError && <p className="text-[10px] text-red-600 dark:text-red-400 font-mono">{editError}</p>}
               <div className="flex gap-1.5">
                 <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={saving} onClick={handleSave}>
                   {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
@@ -226,7 +226,7 @@ function CollapsibleDoc({
                 <JsonViewer value={doc} />
               </div>
               <div className="flex justify-between items-center">
-                <button className="text-[10px] text-blue-400 hover:text-blue-300" onClick={startEdit}>
+                <button className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300" onClick={startEdit}>
                   Edit document
                 </button>
                 <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive gap-1" onClick={() => onDelete(doc)}>
@@ -396,12 +396,12 @@ export default function MongoEditorPage() {
         <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-green-500/10 text-green-400">
+        <div className="flex h-6 w-6 items-center justify-center rounded bg-green-500/10 text-green-600 dark:text-green-400">
           <Database className="h-3.5 w-3.5" />
         </div>
         <span className="text-sm font-medium">MongoDB Browser</span>
         {selectedCol && (
-          <Badge variant="outline" className="text-[10px] font-mono bg-green-500/10 text-green-400 border-green-500/20">
+          <Badge variant="outline" className="text-[10px] font-mono bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
             {selectedCol}
           </Badge>
         )}
@@ -421,7 +421,7 @@ export default function MongoEditorPage() {
         <div className="w-52 shrink-0 border-r border-border/30 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-border/20 shrink-0">
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Collections</span>
-            <button onClick={loadCollections} disabled={colLoading} className="p-0.5 rounded hover:bg-white/[0.05] text-muted-foreground">
+            <button onClick={loadCollections} disabled={colLoading} className="p-0.5 rounded hover:bg-accent text-muted-foreground">
               {colLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
             </button>
           </div>
@@ -433,10 +433,10 @@ export default function MongoEditorPage() {
               <button
                 key={col.name}
                 onClick={() => { setSelectedCol(col.name); setActiveTab("browse"); }}
-                className={`w-full flex items-center justify-between px-3 py-1.5 text-left text-[12px] transition-colors group ${selectedCol === col.name ? "bg-white/[0.08] text-foreground" : "text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"}`}
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-left text-[12px] transition-colors group ${selectedCol === col.name ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <Layers className="h-3 w-3 shrink-0 text-green-500/70" />
+                  <Layers className="h-3 w-3 shrink-0 text-green-600/70 dark:text-green-500/70" />
                   <span className="truncate font-mono">{col.name}</span>
                 </div>
                 <span className="text-[10px] text-muted-foreground shrink-0">{col.count.toLocaleString()}</span>
@@ -466,7 +466,7 @@ export default function MongoEditorPage() {
                   {docsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                   Filter
                 </Button>
-                <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-400 border-emerald-500/30 hover:text-emerald-300" onClick={() => { setInserting(true); setInsertError(""); }} disabled={!selectedCol}>
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={() => { setInserting(true); setInsertError(""); }} disabled={!selectedCol}>
                   <Plus className="h-3 w-3" /> Insert
                 </Button>
                 {page && (
@@ -487,7 +487,7 @@ export default function MongoEditorPage() {
                     className="w-full rounded-md border border-emerald-500/30 bg-muted p-2 font-mono text-[11px] text-foreground focus:outline-none resize-y mb-2"
                     spellCheck={false}
                   />
-                  {insertError && <p className="text-[10px] text-red-400 font-mono mb-2">{insertError}</p>}
+                  {insertError && <p className="text-[10px] text-red-600 dark:text-red-400 font-mono mb-2">{insertError}</p>}
                   <div className="flex gap-1.5">
                     <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={insertSaving} onClick={insertDoc}>
                       {insertSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Insert
@@ -574,13 +574,13 @@ export default function MongoEditorPage() {
                 {shellHistory.map((h, i) => (
                   <div key={i}>
                     <div className="flex items-start gap-2">
-                      <span className="text-green-400 shrink-0">›</span>
+                      <span className="text-green-600 dark:text-green-400 shrink-0">›</span>
                       <pre className="text-foreground text-[11px] whitespace-pre-wrap break-all flex-1">{h.cmd}</pre>
                       <span className="text-muted-foreground text-[10px] ml-auto shrink-0">{h.result.duration_ms}ms</span>
                     </div>
                     <div className="pl-4 mt-1 font-mono text-[11px]">
                       {h.result.error
-                        ? <span className="text-red-400">(error) {h.result.error}</span>
+                        ? <span className="text-red-600 dark:text-red-400">(error) {h.result.error}</span>
                         : <div className="rounded-md bg-muted/60 p-2 overflow-x-auto max-h-64 overflow-y-auto">
                             <JsonViewer value={h.result.result} />
                           </div>

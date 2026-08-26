@@ -88,7 +88,7 @@ export default function RootLayout({
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground overflow-x-hidden w-full max-w-[100vw]">
+      <body className="min-h-full flex flex-col bg-background text-foreground w-full max-w-[100vw]">
         {/* JSON-LD structured data — helps Google understand the product for
             rich results (SoftwareApplication + Organization + WebSite). */}
         <script

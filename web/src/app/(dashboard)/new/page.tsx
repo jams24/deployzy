@@ -33,13 +33,12 @@ const langColor: Record<string, string> = {
 };
 
 const options = [
-  { id: "ai", title: "Build with AI", desc: "Describe it — we generate & deploy it", icon: Sparkles, color: "text-fuchsia-400 bg-fuchsia-500/20", category: "deploy" },
-  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-400 bg-violet-500/20", category: "deploy" },
-  { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-400 bg-emerald-500/20", category: "infra" },
-  { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-400 bg-amber-500/20", category: "deploy" },
-  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-400 bg-blue-500/20", category: "deploy" },
-  { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-400 bg-pink-500/10", category: "infra" },
-  { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-400 bg-orange-500/20", category: "infra" },
+  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-600 dark:text-violet-400 bg-violet-500/10", category: "deploy" },
+  { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10", category: "infra" },
+  { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-600 dark:text-amber-400 bg-amber-500/10", category: "deploy" },
+  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-600 dark:text-blue-400 bg-blue-500/10", category: "deploy" },
+  { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-600 dark:text-pink-400 bg-pink-500/10", category: "infra" },
+  { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-600 dark:text-orange-400 bg-orange-500/10", category: "infra" },
 ];
 
 
@@ -606,7 +605,7 @@ function startDocker() {
       <div className="max-w-2xl mx-auto mt-6 flex flex-col h-[calc(100vh-150px)]">
         <BackButton />
         <div className="flex items-center gap-3 mb-3">
-          <div className="h-9 w-9 rounded-xl bg-fuchsia-500/20 text-fuchsia-400 grid place-items-center">
+          <div className="h-9 w-9 rounded-xl bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 grid place-items-center">
             <Sparkles className="h-4 w-4" />
           </div>
           <div>
@@ -620,7 +619,7 @@ function startDocker() {
             <button key={g.id} disabled={!g.ready || aiChat.length > 0}
               onClick={() => g.ready && setAiGenerator(g.id)}
               className={`h-7 px-3 rounded-full text-xs border transition-colors disabled:opacity-40 ${
-                aiGenerator === g.id ? "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/50"
+                aiGenerator === g.id ? "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-300 border-fuchsia-500/40"
                 : "border-border/60 text-muted-foreground hover:bg-accent/40"}`}>
               {g.label}
             </button>
@@ -703,7 +702,7 @@ function startDocker() {
                     <div className="flex gap-1.5 flex-wrap">
                       {["postgres", "redis", "mongodb", "mysql"].map((t) => (
                         <button key={t} onClick={() => setAiDbChoice(t)}
-                          className={`h-8 px-3 rounded-lg text-xs border capitalize ${aiDbChoice === t ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50" : "border-border/60 text-muted-foreground hover:bg-accent/40"}`}>
+                          className={`h-8 px-3 rounded-lg text-xs border capitalize ${aiDbChoice === t ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "border-border/60 text-muted-foreground hover:bg-accent/40"}`}>
                           {t === "postgres" ? "PostgreSQL" : t}
                         </button>
                       ))}
@@ -899,7 +898,7 @@ function startDocker() {
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/60 transition-colors"
             >
               <div className="flex items-center gap-2">
                 <Settings2 className="h-4 w-4 text-muted-foreground" />
@@ -992,10 +991,10 @@ function startDocker() {
           {(() => {
             const advancedAllowed = isAdmin || planLimits?.allow_advanced_databases !== false;
             const engines = [
-              { id: "postgres", label: "PostgreSQL 16", desc: "Relational SQL — managed instance.", bg: "bg-emerald-500/15", text: "text-emerald-500", locked: false },
-              { id: "redis",    label: "Redis 7",       desc: "In-memory key-value store for caching & pub/sub.", bg: "bg-red-500/15", text: "text-red-500", locked: !advancedAllowed },
-              { id: "mongodb",  label: "MongoDB 7",     desc: "Schema-free JSON document database.", bg: "bg-green-500/15", text: "text-green-500", locked: !advancedAllowed },
-              { id: "mysql",    label: "MySQL 8",       desc: "Popular relational database, broad ecosystem.", bg: "bg-orange-500/15", text: "text-orange-500", locked: !advancedAllowed },
+              { id: "postgres", label: "PostgreSQL 16", desc: "Relational SQL — managed instance.", bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", locked: false },
+              { id: "redis",    label: "Redis 7",       desc: "In-memory key-value store for caching & pub/sub.", bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400", locked: !advancedAllowed },
+              { id: "mongodb",  label: "MongoDB 7",     desc: "Schema-free JSON document database.", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400", locked: !advancedAllowed },
+              { id: "mysql",    label: "MySQL 8",       desc: "Popular relational database, broad ecosystem.", bg: "bg-orange-500/10", text: "text-orange-600 dark:text-orange-400", locked: !advancedAllowed },
             ];
             return (
               <div className="space-y-2">
@@ -1088,7 +1087,7 @@ function startDocker() {
                 {migJob && (
                   <div className={`rounded-md border px-3 py-2 text-xs ${
                     migJob.status === "success" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : migJob.status === "failed" ? "border-red-500/40 bg-red-500/10 text-red-500"
+                    : migJob.status === "failed" ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
                     : "border-border/60 bg-muted/30 text-muted-foreground"}`}>
                     {migJob.status === "running" && <span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Copying your data… this can take a few minutes. You can leave this page.</span>}
                     {migJob.status === "success" && "Migration complete — redirecting to your databases…"}
@@ -1287,9 +1286,9 @@ function startDocker() {
   }
 
   // ── Main Command Palette ──
-  return (
-    <div className="max-w-lg mx-auto mt-8">
-      <div className="rounded-xl border border-border/60 bg-card/50 overflow-hidden shadow-lg">
+   return (
+    <div className="max-w-lg mx-auto mt-8 animate-fade-in-up">
+      <div className="rounded-2xl border border-border/60 bg-card/70 dark:bg-[#0c0d0f]/60 overflow-hidden shadow-xl shadow-black/5 dark:shadow-black/40 backdrop-blur">
         <div className="relative border-b border-border/40">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input

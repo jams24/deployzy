@@ -4,23 +4,22 @@ import { useEffect, useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Eye, Trash2, Search } from "lucide-react";
 import { api, type Tunnel, type CapturedRequest } from "@/lib/api";
 
 const methodColors: Record<string, string> = {
-  GET: "text-blue-400",
-  POST: "text-green-400",
-  PUT: "text-yellow-400",
-  PATCH: "text-orange-400",
-  DELETE: "text-red-400",
+  GET: "text-sky-600 dark:text-sky-400",
+  POST: "text-emerald-600 dark:text-emerald-400",
+  PUT: "text-amber-600 dark:text-amber-400",
+  PATCH: "text-orange-600 dark:text-orange-400",
+  DELETE: "text-red-600 dark:text-red-400",
 };
 
 const statusColor = (code: number) => {
-  if (code < 300) return "bg-green-500/10 text-green-500 border-green-500/20";
-  if (code < 400) return "bg-yellow-500/20 text-yellow-500 border-yellow-500/50";
-  return "bg-red-500/20 text-red-500 border-red-500/40";
+  if (code < 300) return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30";
+  if (code < 400) return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30";
+  return "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30";
 };
 
 export default function InspectorPage() {
@@ -65,10 +64,11 @@ export default function InspectorPage() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)] animate-fade-in-up">
       <div className="flex items-center justify-between pb-4">
         <div>
-          <h1 className="text-2xl font-bold">Traffic Inspector</h1>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Network</p>
+          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Traffic Inspector</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             View and inspect requests flowing through your tunnels in real-time.
           </p>
@@ -119,18 +119,21 @@ export default function InspectorPage() {
       </div>
 
       {!selectedTunnel ? (
-        <Card className="flex-1">
-          <CardContent className="flex flex-col items-center justify-center h-full py-16">
-            <Eye className="h-12 w-12 text-muted-foreground/30" />
+        <div className="flex-1 relative rounded-2xl border border-dashed border-border overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
+          <div className="relative flex flex-col items-center justify-center h-full py-16">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+              <Eye className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
             <p className="mt-4 text-sm text-muted-foreground">
               Select an active tunnel to inspect traffic
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-1 gap-4 overflow-hidden">
           {/* Request List */}
-          <div className="w-[45%] overflow-y-auto rounded-lg border border-border bg-card">
+          <div className="w-[45%] overflow-y-auto rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Eye className="h-8 w-8 opacity-40" />
@@ -173,7 +176,7 @@ export default function InspectorPage() {
           </div>
 
           {/* Request Detail */}
-          <div className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4">
+          <div className="flex-1 overflow-y-auto rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
             {!selected ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Select a request to inspect

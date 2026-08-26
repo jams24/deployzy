@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -17,6 +16,11 @@ import {
   Plus,
   Mail,
 } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Teams — members, roles, invitations. Flow unchanged; presentation rebuilt
+// with the Deployzy 2.0 card language (both themes).
+// ─────────────────────────────────────────────────────────────────────────────
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -49,6 +53,18 @@ interface TeamDetail {
   role: string;
   members: Member[];
   invitations: Invitation[];
+}
+
+function Panel({ title, icon, children, className = "" }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden ${className}`}>
+      <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
+        {icon}
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{title}</p>
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
 }
 
 export default function TeamPage() {
@@ -162,51 +178,49 @@ export default function TeamPage() {
   };
 
   const roleColor = (role: string) => {
-    if (role === "owner") return "text-yellow-500 border-yellow-500/50";
-    if (role === "admin") return "text-blue-500 border-blue-500/50";
+    if (role === "owner") return "text-amber-600 dark:text-amber-400 border-amber-500/40";
+    if (role === "admin") return "text-blue-600 dark:text-blue-400 border-blue-500/40";
     return "text-muted-foreground";
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Teams</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Collaborate with your team on shared tunnels and resources.
-          </p>
+    <div className="animate-fade-in-up">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
+      <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Teams</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Collaborate with your team on shared tunnels and resources.
+      </p>
+
+      {/* Team selector */}
+      {teams.length > 0 && (
+        <div className="mt-6 flex gap-2 flex-wrap">
+          {teams.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => loadTeam(t.id)}
+              className={`rounded-full border px-4 py-1.5 text-[13px] font-medium transition-all ${
+                selectedTeam?.team.id === t.id
+                  ? "border-foreground/30 bg-accent text-foreground shadow-sm"
+                  : "border-border/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              {t.name}
+              <Badge variant="outline" className={`ml-2 text-[10px] ${roleColor(t.role)}`}>
+                {t.role}
+              </Badge>
+            </button>
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* Create team / Team selector */}
-      <div className="mt-6 flex flex-col sm:flex-row gap-3">
-        {teams.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
-            {teams.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => loadTeam(t.id)}
-                className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                  selectedTeam?.team.id === t.id
-                    ? "border-primary bg-primary/20 text-primary"
-                    : "border-border text-muted-foreground hover:bg-accent"
-                }`}
-              >
-                {t.name}
-                <Badge variant="outline" className={`ml-2 text-[10px] ${roleColor(t.role)}`}>
-                  {t.role}
-                </Badge>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Create team */}
+      {/* Create team — empty state */}
       {teams.length === 0 && !loading && (
-        <Card className="mt-6">
-          <CardContent className="flex flex-col items-center py-12">
-            <Users className="h-12 w-12 text-muted-foreground/30" />
+        <div className="relative mt-6 rounded-2xl border border-dashed border-border overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-violet-500/[0.07] blur-[80px] dark:bg-violet-400/[0.08]" />
+          <div className="relative flex flex-col items-center py-14 px-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+              <Users className="h-5 w-5 text-violet-500 dark:text-violet-400" />
+            </div>
             <h3 className="mt-4 font-semibold">No teams yet</h3>
             <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
               Create a team to collaborate on tunnels, domains, and API keys with your teammates.
@@ -218,13 +232,13 @@ export default function TeamPage() {
                 onChange={(e) => setNewTeamName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && createTeam()}
               />
-              <Button onClick={createTeam} className="shrink-0 gap-1">
+              <Button onClick={createTeam} className="btn-shine shrink-0 gap-1 rounded-lg">
                 <Plus className="h-4 w-4" />
                 Create
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {teams.length > 0 && (
@@ -236,7 +250,7 @@ export default function TeamPage() {
             onKeyDown={(e) => e.key === "Enter" && createTeam()}
             className="max-w-xs"
           />
-          <Button onClick={createTeam} size="sm" variant="outline" className="gap-1">
+          <Button onClick={createTeam} size="sm" variant="outline" className="gap-1 rounded-lg">
             <Plus className="h-3.5 w-3.5" />
             New Team
           </Button>
@@ -247,140 +261,133 @@ export default function TeamPage() {
       {selectedTeam && (
         <>
           {/* Members */}
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center justify-between">
-                <span>Members ({selectedTeam.members?.length || 0})</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {selectedTeam.members?.map((m) => (
-                  <div key={m.user_id} className="flex items-center justify-between rounded-lg border border-border/50 p-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarFallback className="bg-primary/20 text-primary text-xs">
-                          {m.name?.[0]?.toUpperCase() || m.email[0].toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{m.name || m.email}</p>
-                        <p className="text-xs text-muted-foreground">{m.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`gap-1 text-[10px] ${roleColor(m.role)}`}>
-                        {roleIcon(m.role)}
-                        {m.role}
-                      </Badge>
-                      {m.role !== "owner" && (selectedTeam.role === "owner" || selectedTeam.role === "admin") && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeMember(m.user_id)}
-                          className="text-destructive hover:text-destructive h-8 w-8 p-0"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
+          <Panel
+            title={`Members (${selectedTeam.members?.length || 0})`}
+            icon={<Users className="h-3.5 w-3.5 text-muted-foreground" />}
+            className="mt-6"
+          >
+            <div className="space-y-2">
+              {selectedTeam.members?.map((m) => (
+                <div key={m.user_id} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/50 p-3 transition-colors hover:border-foreground/20">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback className="bg-foreground text-background text-xs font-bold">
+                        {m.name?.[0]?.toUpperCase() || m.email[0].toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{m.name || m.email}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{m.email}</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="outline" className={`gap-1 text-[10px] ${roleColor(m.role)}`}>
+                      {roleIcon(m.role)}
+                      {m.role}
+                    </Badge>
+                    {m.role !== "owner" && (selectedTeam.role === "owner" || selectedTeam.role === "admin") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMember(m.user_id)}
+                        className="text-destructive hover:text-destructive h-8 w-8 p-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
 
           {/* Invite */}
           {(selectedTeam.role === "owner" || selectedTeam.role === "admin") && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <UserPlus className="h-4 w-4" />
-                  Invite Member
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <Input
-                    placeholder="teammate@example.com"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && inviteMember()}
-                    className="flex-1"
-                  />
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value)}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <Button onClick={inviteMember} className="gap-1 shrink-0">
-                    <Mail className="h-4 w-4" />
-                    Send Invite
-                  </Button>
-                </div>
+            <Panel
+              title="Invite Member"
+              icon={<UserPlus className="h-3.5 w-3.5 text-muted-foreground" />}
+              className="mt-4"
+            >
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  placeholder="teammate@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && inviteMember()}
+                  className="flex-1"
+                />
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <Button onClick={inviteMember} className="btn-shine gap-1 shrink-0 rounded-lg">
+                  <Mail className="h-4 w-4" />
+                  Send Invite
+                </Button>
+              </div>
 
-                {inviteURL && (
-                  <div className="mt-4 rounded-lg border border-green-500/20 bg-green-500/5 p-4">
-                    <p className="text-sm font-medium text-green-500 mb-2">Invitation created!</p>
-                    <p className="text-xs text-muted-foreground mb-2">Share this link with your teammate:</p>
-                    <div className="flex items-center gap-2 rounded-md bg-background p-2 font-mono text-xs">
-                      <code className="flex-1 truncate">{inviteURL}</code>
-                      <Button variant="ghost" size="sm" onClick={copyInvite}>
-                        {copied === "new" ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                    </div>
+              {inviteURL && (
+                <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-2">Invitation created!</p>
+                  <p className="text-xs text-muted-foreground mb-2">Share this link with your teammate:</p>
+                  <div className="flex items-center gap-2 rounded-lg bg-background border border-border/60 p-2 font-mono text-xs">
+                    <code className="flex-1 truncate">{inviteURL}</code>
+                    <Button variant="ghost" size="sm" onClick={copyInvite}>
+                      {copied === "new" ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Pending invitations */}
-                {selectedTeam.invitations && selectedTeam.invitations.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Pending Invitations</p>
-                    <div className="space-y-2">
-                      {selectedTeam.invitations.map((inv) => {
-                        const url = `https://deployzy.com/invite/${inv.token}`;
-                        return (
-                          <div key={inv.id} className="rounded-lg border border-border/50 p-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <span className="text-sm">{inv.email}</span>
-                                <Badge variant="outline" className="ml-2 text-[10px]">{inv.role}</Badge>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => copyLink(url, inv.id)}
-                                  className="h-7 px-2 text-xs gap-1"
-                                  title="Copy invite link"
-                                >
-                                  {copied === inv.id ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => cancelInvite(inv.id)}
-                                  className="h-7 px-2 text-destructive hover:text-destructive"
-                                  title="Cancel invitation"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
+              {/* Pending invitations */}
+              {selectedTeam.invitations && selectedTeam.invitations.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Pending Invitations</p>
+                  <div className="space-y-2">
+                    {selectedTeam.invitations.map((inv) => {
+                      const url = `https://deployzy.com/invite/${inv.token}`;
+                      return (
+                        <div key={inv.id} className="rounded-xl border border-border/60 bg-background/50 p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="min-w-0">
+                              <span className="text-sm truncate">{inv.email}</span>
+                              <Badge variant="outline" className="ml-2 text-[10px]">{inv.role}</Badge>
                             </div>
-                            <div className="mt-1.5 flex items-center gap-1 rounded bg-muted/30 px-2 py-1">
-                              <code className="text-[10px] text-muted-foreground truncate flex-1">{url}</code>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyLink(url, inv.id)}
+                                className="h-7 px-2 text-xs gap-1"
+                                title="Copy invite link"
+                              >
+                                {copied === inv.id ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => cancelInvite(inv.id)}
+                                className="h-7 px-2 text-destructive hover:text-destructive"
+                                title="Cancel invitation"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="mt-1.5 flex items-center gap-1 rounded bg-muted/50 px-2 py-1">
+                            <code className="text-[10px] text-muted-foreground truncate flex-1">{url}</code>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+            </Panel>
           )}
         </>
       )}
