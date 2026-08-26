@@ -47,6 +47,9 @@ interface BlogPost {
   category: string;
   tags: string[];
   author: string;
+  author_twitter: string;
+  author_role: string;
+  author_avatar: string;
   read_time: string;
   status: "draft" | "published";
   published_at: string | null;
@@ -262,6 +265,9 @@ export default function BlogPostEditorPage() {
     category: "General",
     tags: [],
     author: "Deployzy Team",
+    author_twitter: "",
+    author_role: "",
+    author_avatar: "",
     read_time: "5 min read",
     status: "draft",
   });
@@ -444,14 +450,14 @@ export default function BlogPostEditorPage() {
             variant="outline"
             className={
               post.status === "published"
-                ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                : "bg-amber-500/20 text-amber-500 border-amber-500/50"
+                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50"
             }
           >
             {post.status || "draft"}
           </Badge>
           {saveMsg && (
-            <span className={`text-xs ${saveMsg.startsWith("Error") ? "text-destructive" : "text-emerald-500"}`}>
+            <span className={`text-xs ${saveMsg.startsWith("Error") ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
               {saveMsg}
             </span>
           )}
@@ -669,6 +675,34 @@ export default function BlogPostEditorPage() {
                 />
               </div>
               <div>
+                <label className="text-[11px] font-medium text-muted-foreground">Author X / Twitter handle</label>
+                <Input
+                  value={post.author_twitter || ""}
+                  placeholder="itsjamsltn (no @)"
+                  className="mt-1 h-8 text-xs"
+                  onChange={(e) => updateField("author_twitter", e.target.value)}
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground/70">Drives the author avatar automatically. Leave the avatar field blank to use the X profile picture.</p>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground">Author role / title</label>
+                <Input
+                  value={post.author_role || ""}
+                  placeholder="Founder, Deployzy"
+                  className="mt-1 h-8 text-xs"
+                  onChange={(e) => updateField("author_role", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground">Author avatar URL (optional override)</label>
+                <Input
+                  value={post.author_avatar || ""}
+                  placeholder="https://… (leave blank to use X avatar)"
+                  className="mt-1 h-8 text-xs"
+                  onChange={(e) => updateField("author_avatar", e.target.value)}
+                />
+              </div>
+              <div>
                 <label className="text-[11px] font-medium text-muted-foreground">Read Time</label>
                 <Input
                   value={post.read_time || ""}
@@ -735,7 +769,7 @@ export default function BlogPostEditorPage() {
               {(post.title || post.description) && (
                 <div className="rounded-lg border border-border/40 p-3 space-y-1 bg-muted/10">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Google preview</p>
-                  <p className="text-[13px] font-medium text-blue-500 line-clamp-1">
+                  <p className="text-[13px] font-medium text-blue-600 dark:text-blue-400 line-clamp-1">
                     {post.title || "Post title"} | Deployzy
                   </p>
                   <p className="text-[11px] text-muted-foreground font-mono">

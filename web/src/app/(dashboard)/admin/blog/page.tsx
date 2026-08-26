@@ -135,18 +135,18 @@ export default function BlogAdminPage() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Published</span>
-              <Globe className="h-4 w-4 text-emerald-500" />
+              <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <p className="mt-1 text-xl font-bold text-emerald-500">{totalPublished}</p>
+            <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{totalPublished}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Drafts</span>
-              <Clock className="h-4 w-4 text-amber-500" />
+              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             </div>
-            <p className="mt-1 text-xl font-bold text-amber-500">{totalDraft}</p>
+            <p className="mt-1 text-xl font-bold text-amber-600 dark:text-amber-400">{totalDraft}</p>
           </CardContent>
         </Card>
       </div>
@@ -208,8 +208,8 @@ export default function BlogAdminPage() {
                         variant="outline"
                         className={
                           post.status === "published"
-                            ? "text-[10px] bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                            : "text-[10px] bg-amber-500/20 text-amber-500 border-amber-500/50"
+                            ? "text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                            : "text-[10px] bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50"
                         }
                       >
                         {post.status}
@@ -266,7 +266,7 @@ export default function BlogAdminPage() {
                       ) : post.status === "published" ? (
                         <EyeOff className="h-3.5 w-3.5" />
                       ) : (
-                        <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                        <Globe className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                       )}
                     </Button>
                     <Button

@@ -47,6 +47,9 @@ export const categories: DocCategory[] = [
       { slug: "api/domains", title: "Domains" },
       { slug: "api/keys", title: "API Keys" },
       { slug: "api/projects", title: "Projects & Deploys" },
+      { slug: "api/ai-builder", title: "AI Builder & Agent" },
+      { slug: "api/templates", title: "Templates" },
+      { slug: "api/databases", title: "Databases" },
       { slug: "api/inspection", title: "Inspection" },
     ],
   },
@@ -913,6 +916,202 @@ curl -s https://api.deployzy.com/api/v1/projects/$PID -H "X-API-Key: $KEY" | jq 
 
 > Prefer a client library? See the [JavaScript](/docs/sdks/javascript) and
 > [Python](/docs/sdks/python) SDKs, or the [\`deployzy deploy\`](/docs/cli/deploy) CLI.`,
+  },
+
+  "api/ai-builder": {
+    slug: "api/ai-builder",
+    title: "AI Builder & Agent",
+    description: "Generate, deploy, edit, and manage apps with natural language.",
+    category: "API Reference",
+    content: `Deployzy's AI builder turns a plain-English prompt into a real, deployed app,
+and the AI agent answers questions about your account and takes actions on it.
+All endpoints authenticate with a \`deploy\`-scoped API key
+(\`X-API-Key: sm_live_...\`) and require a verified email.
+
+## Build an app from a prompt
+
+\`\`\`
+POST /api/v1/ai/build
+\`\`\`
+
+\`\`\`json
+{ "generator": "web", "prompt": "an e-commerce store for handmade candles with an admin panel", "subdomain": "candles" }
+\`\`\`
+
+**Generators:**
+
+| Generator | What it builds |
+|-----------|----------------|
+| \`web\` | A full-stack website — served pages at \`/\` plus its API and an \`/admin\` panel |
+| \`api\` | A headless JSON API / microservice |
+| \`telegram-bot\` | A Telegram bot (long-polling) |
+| \`discord-bot\` | A Discord bot |
+| \`worker\` | A background / scheduled worker |
+| \`portfolio\`, \`landing\` | Schema-filled static sites |
+
+The code-gen generators write real TypeScript/Python, build via a Dockerfile,
+and **self-repair** from build logs. The response is \`202 Accepted\` with the
+project and live URL; if the app needs secrets or a database it returns a
+\`needs_setup\` payload listing them — supply them to \`/ai/deploy\`.
+
+## Finish a build that needs setup
+
+\`\`\`
+POST /api/v1/ai/deploy
+\`\`\`
+
+\`\`\`json
+{ "project_id": "...", "env": { "OPENAI_API_KEY": "sk-..." }, "database": "postgres" }
+\`\`\`
+
+## Edit an already-deployed AI project
+
+\`\`\`
+POST /api/v1/ai/edit
+\`\`\`
+
+\`\`\`json
+{ "project_id": "...", "instruction": "add a /health endpoint and a dark mode toggle" }
+\`\`\`
+
+Regenerates the changed files and redeploys with the same self-repair loop.
+
+## The agent (tool-calling)
+
+\`\`\`
+POST /api/v1/ai/agent
+\`\`\`
+
+\`\`\`json
+{ "messages": [ { "role": "user", "content": "which of my projects are failing and why?" } ] }
+\`\`\`
+
+The agent reasons in a loop and calls real tools scoped to your account —
+listing projects, reading deploy logs, checking account status, building &
+editing apps, deploying a **GitHub repo** or a **template**, managing env vars
+and databases, and searching the docs. The response is \`{ reply, steps[] }\`
+where \`steps\` is the full trace of tools it ran.
+
+## Streaming the agent (SSE)
+
+\`\`\`
+POST /api/v1/ai/agent/stream
+\`\`\`
+
+Same body as \`/ai/agent\`. Returns a \`text/event-stream\` with events:
+\`step\` / \`step_done\` (live tool calls), \`token\` (streamed reply),
+\`note\` (the agent narrating a fix), \`build_log\` + \`build_status\`
+(live build & self-repair output), and \`done\`.
+
+> Rate-limited per account. A single request builds exactly one project — the
+> agent won't spawn duplicates.`,
+  },
+
+  "api/templates": {
+    slug: "api/templates",
+    title: "Templates",
+    description: "Browse and one-click-deploy pre-built apps and services.",
+    category: "API Reference",
+    content: `Templates are pre-configured apps and services (databases, tools like n8n and
+WordPress, and starters) you can deploy in one call. Browsing is public;
+deploying needs a \`deploy\`-scoped API key and a verified email.
+
+## List templates
+
+\`\`\`
+GET /api/v1/templates?search=postgres&category=databases&sort=popular
+\`\`\`
+
+Returns \`{ templates, total }\`. Each template includes \`slug\`, \`name\`,
+\`category\`, \`tagline\`, \`env_vars\` (its schema), \`required_plan\`, and
+\`min_memory_mb\`.
+
+## List categories
+
+\`\`\`
+GET /api/v1/templates/categories
+\`\`\`
+
+## Get one template
+
+\`\`\`
+GET /api/v1/templates/:slug
+\`\`\`
+
+## Deploy a template
+
+\`\`\`
+POST /api/v1/templates/:slug/deploy
+\`\`\`
+
+\`\`\`json
+{ "name": "my-n8n", "subdomain": "n8n", "env_vars": { "N8N_ENCRYPTION_KEY": "..." } }
+\`\`\`
+
+Creates the project, merges your env vars with the template defaults, honours
+the template's memory requirement, wires GitHub auto-deploy for repo-backed
+templates, and kicks off the deploy. Required env vars declared by the template
+must be supplied or you'll get a \`400\`. Some templates require a paid plan
+(\`required_plan\`) and return \`402\` otherwise.
+
+> You can also deploy templates conversationally through the
+> [AI agent](/docs/api/ai-builder) ("deploy the n8n template").`,
+  },
+
+  "api/databases": {
+    slug: "api/databases",
+    title: "Databases",
+    description: "Provision managed Postgres, Redis, MongoDB, and MySQL, and browse their data.",
+    category: "API Reference",
+    content: `Attach a managed database to a project — Deployzy provisions it and injects the
+connection string (\`DATABASE_URL\`, or \`REDIS_URL\` for Redis) as an env var.
+Authenticate with a \`deploy\`-scoped API key (\`X-API-Key: sm_live_...\`).
+
+## Provision a database for a project
+
+\`\`\`
+POST /api/v1/projects/:id/database
+\`\`\`
+
+\`\`\`json
+{ "type": "postgres" }
+\`\`\`
+
+\`type\` is one of \`postgres\`, \`redis\`, \`mongodb\`, \`mysql\`. The connection
+URL is injected into the project's environment; redeploy for it to take effect.
+
+## Inspect the database attached to a project
+
+\`\`\`
+GET    /api/v1/projects/:id/database          # status + connection info
+DELETE /api/v1/projects/:id/database          # detach + destroy
+\`\`\`
+
+## Browse & query (Postgres)
+
+\`\`\`
+GET  /api/v1/projects/:id/database/tables
+GET  /api/v1/projects/:id/database/tables/:table/columns
+GET  /api/v1/projects/:id/database/tables/:table/rows
+POST /api/v1/projects/:id/database/query      # { "sql": "select * from users limit 10" }
+\`\`\`
+
+## Redis & MongoDB consoles
+
+\`\`\`
+GET/POST /api/v1/services/:serviceId/redis/keys | /value | /exec
+GET/POST /api/v1/services/:serviceId/mongo/collections | /documents | /shell
+\`\`\`
+
+## List all your databases
+
+\`\`\`
+GET /api/v1/databases
+\`\`\`
+
+> Your plan includes one PostgreSQL database; Redis, MongoDB, and MySQL are
+> available on paid plans. The AI agent can also attach a database for you
+> ("give this project a Postgres database").`,
   },
 
   "api/inspection": {

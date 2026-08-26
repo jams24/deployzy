@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, CreditCard, Crown, ExternalLink, Loader2, PartyPopper, Zap } from "lucide-react";
 import Link from "next/link";
 import { fetchPlanCards } from "@/lib/plans";
+import { AICreditsCard } from "@/components/ai-credits-card";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -484,10 +485,16 @@ export default function BillingPage() {
         </div>
       )}
 
-      <h1 className="text-xl sm:text-2xl font-bold">Billing</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage your subscription and payment history.
-      </p>
+      <div className="animate-fade-in-up">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
+        <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Billing</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage your subscription and payment history.
+        </p>
+      </div>
+
+      {/* AI builder credits (self-hides while credit metering is switched off). */}
+      <AICreditsCard />
 
       {/* Grace-period banner: subscription lapsed but paid features are still on
           until access_ends. Renewing before then avoids the drop to Free. */}
@@ -501,7 +508,7 @@ export default function BillingPage() {
       )}
 
       {checkoutError && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/5 px-4 py-3 text-sm text-red-600 dark:text-red-400">
           <span className="flex-1">{checkoutError}</span>
           <button onClick={() => setCheckoutError("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
         </div>
@@ -534,15 +541,15 @@ export default function BillingPage() {
                 {rows.map((r) => {
                   const isUnl = r.max < 0;
                   const p = isUnl ? 0 : pct(r.used, r.max);
-                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-emerald-500";
+                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 to-emerald-400";
                   return (
                     <div key={r.label} className="space-y-1">
                       <div className="flex items-baseline justify-between text-xs">
                         <span className="text-muted-foreground">{r.label}</span>
-                        <span className="font-mono">{r.used} / {fmt(r.max)}</span>
+                        <span className="font-mono tabular-nums">{r.used} / {fmt(r.max)}</span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                        <div className={`h-full ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
+                      <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                        <div className={`h-full rounded-full transition-all duration-700 ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
                       </div>
                     </div>
                   );
@@ -575,7 +582,7 @@ export default function BillingPage() {
                   ["TCP tunnels", usage.limits.allow_tcp_tunnels],
                   ["Live logs", usage.limits.allow_live_logs],
                 ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-muted-foreground"}`}>
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-muted-foreground"}`}>
                     {on ? "✓" : "✗"} {label}
                   </Badge>
                 ))}
@@ -592,17 +599,17 @@ export default function BillingPage() {
             <div>
               <div className="flex items-center gap-2">
                 {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
+                  <Badge className="gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Admin (Unlimited)
                   </Badge>
                 ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
+                  <Badge className="gap-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40">
                     <Crown className="h-3 w-3" />
                     Team
                   </Badge>
                 ) : currentPlan === "pro" ? (
-                  <Badge className="gap-1 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">
+                  <Badge className="gap-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/40">
                     <Zap className="h-3 w-3" />
                     Pro
                   </Badge>
@@ -658,13 +665,13 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setPayMethod("card")}
-              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
                 payMethod === "card"
-                  ? "border-primary bg-primary/5 ring-1 ring-primary"
-                  : "border-border/60 hover:border-border hover:bg-muted/40"
+                  ? "border-foreground/30 bg-accent shadow-sm"
+                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
               }`}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-500">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400">
                 <CreditCard className="h-5 w-5" />
               </div>
               <div className="min-w-0">
@@ -683,13 +690,13 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setPayMethod("crypto")}
-              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
                 payMethod === "crypto"
-                  ? "border-primary bg-primary/5 ring-1 ring-primary"
-                  : "border-border/60 hover:border-border hover:bg-muted/40"
+                  ? "border-foreground/30 bg-accent shadow-sm"
+                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
               }`}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500 font-bold">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold">
                 ₿
               </div>
               <div className="min-w-0">
@@ -738,7 +745,7 @@ export default function BillingPage() {
                     {plan.id === "team" && <Crown className="h-4 w-4 text-emerald-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
                 </CardTitle>
                 <p className="text-3xl font-bold tracking-tight">
                   {plan.price}
@@ -787,7 +794,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="space-y-2">
               {status.history.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-lg border border-border/50 p-3 text-sm">
+                <div key={s.id} className="flex items-center justify-between rounded-xl border border-border/60 p-3 text-sm transition-colors hover:border-foreground/20">
                   <div>
                     <span className="font-medium capitalize">{s.plan}</span>
                     <span className="ml-2 text-muted-foreground">
@@ -798,8 +805,8 @@ export default function BillingPage() {
                     <Badge
                       variant="outline"
                       className={`text-[10px] ${
-                        s.status === "active" ? "text-green-500 border-green-500/20" :
-                        s.status === "pending" ? "text-yellow-500 border-yellow-500/50" :
+                        s.status === "active" ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" :
+                        s.status === "pending" ? "text-amber-600 dark:text-amber-400 border-amber-500/40" :
                         "text-muted-foreground"
                       }`}
                     >
