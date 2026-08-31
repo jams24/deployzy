@@ -1359,7 +1359,7 @@ const client = new Deployzy({
     content: `## Install
 
 \`\`\`bash
-pip install serverme
+pip install deployzy
 \`\`\`
 
 Requires Python 3.9+ and aiohttp.
