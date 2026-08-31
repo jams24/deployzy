@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -75,10 +74,7 @@ func (s *SEOIngester) ingest(ctx context.Context) {
 		// Log not present yet (access logging not enabled, or no traffic) — quiet.
 		return
 	}
-	inode := int64(0)
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		inode = int64(st.Ino)
-	}
+	inode := statInode(fi) // platform-specific (Unix inode; 0 on Windows)
 	size := fi.Size()
 
 	state, err := s.db.GetSEOIngestState(ctx)
