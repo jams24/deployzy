@@ -834,6 +834,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		containerID = containerID[:12]
 	}
 
+	// Plan-gated outbound SMTP submission (465/587): punch a per-project allow
+	// for paid/BYOC/admin; free stays blocked by the host base DROP. Applied now
+	// (before health check) so a paid app can send mail as soon as it's up.
+	smtpOK := e.smtpAllowed(ctx, project, assignedServer)
+	e.applySMTPEgress(ctx, runner, project.ID[:8], newContainerName, smtpOK)
+	if !smtpOK {
+		e.logMsg(ctx, project.ID, "Outbound SMTP (ports 25/465/587) is blocked on the free/hobby plan. Send email via a transactional API over HTTPS (Resend, SendGrid, Mailgun, Postmark), or upgrade to Pro to use your own SMTP credentials.", "build")
+	}
+
 	// Health check: probe new container while old one keeps serving.
 	healthy := e.waitForHealthy(ctx, project, runner, newContainerName, hostPort)
 

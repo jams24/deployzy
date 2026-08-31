@@ -14,6 +14,8 @@ export type {
   BuildConfigInput,
   DeployLog,
   WaitForDeployOptions,
+  EmailVerifyResult,
+  EmailBatchResult,
 } from "./types";
 export {
   DeployzyError,

@@ -378,6 +378,11 @@ func main() {
 			// proxy can reject banned traffic with an in-memory lookup.
 			deployEngine.StartBanRefresher(context.Background())
 
+			// Install/enforce the plan-gated outbound-SMTP egress policy across the
+			// whole platform fleet (local + remote), and backfill paid allow-holes
+			// for running containers so nobody is stranded. Idempotent.
+			go deployEngine.EnsureEgressAllServers(context.Background())
+
 			// DB quota sweeper — enforces per-plan Postgres disk caps on
 			// standalone services. Revokes INSERT/UPDATE when over quota.
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)

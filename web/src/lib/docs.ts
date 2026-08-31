@@ -48,6 +48,7 @@ export const categories: DocCategory[] = [
       { slug: "api/keys", title: "API Keys" },
       { slug: "api/projects", title: "Projects & Deploys" },
       { slug: "api/ai-builder", title: "AI Builder & Agent" },
+      { slug: "api/email-verify", title: "Email Verification" },
       { slug: "api/templates", title: "Templates" },
       { slug: "api/databases", title: "Databases" },
       { slug: "api/inspection", title: "Inspection" },
@@ -738,6 +739,98 @@ POST /api/v1/domains/:id/verify
 \`\`\`
 DELETE /api/v1/domains/:id
 \`\`\``,
+  },
+
+  "api/email-verify": {
+    slug: "api/email-verify",
+    title: "Email Verification",
+    description: "Verify email deliverability — syntax, MX, disposable/role detection, typo suggestions, and live SMTP mailbox checks.",
+    category: "API Reference",
+    content: `Check whether an email address is real and deliverable before you rely on it. Runs layered checks — syntax, DNS/MX, disposable & role detection, free-provider flagging, "did-you-mean" typo suggestions — and, when enabled, a **live SMTP mailbox probe** that confirms the exact address exists (probed from an isolated, reputation-managed IP).
+
+Both endpoints require authentication (API key or JWT) and are metered by AI credits.
+
+## Verify one address
+
+\`\`\`
+POST /api/v1/email/verify
+\`\`\`
+
+\`\`\`json
+{ "email": "jane@example.com" }
+\`\`\`
+
+**Response** (200):
+
+\`\`\`json
+{
+  "email": "jane@example.com",
+  "normalized": "jane@example.com",
+  "domain": "example.com",
+  "score": "valid",
+  "reason": "mailbox_exists",
+  "syntax_valid": true,
+  "has_mx": true,
+  "disposable": false,
+  "role_based": false,
+  "free_provider": false,
+  "suggestion": "",
+  "mailbox_checked": true,
+  "catch_all": false
+}
+\`\`\`
+
+## Verify a batch
+
+Up to **100** addresses per call.
+
+\`\`\`
+POST /api/v1/email/verify/batch
+\`\`\`
+
+\`\`\`json
+{ "emails": ["a@x.com", "b@gmial.com", "info@stripe.com"] }
+\`\`\`
+
+**Response** (200):
+
+\`\`\`json
+{ "count": 3, "results": [ { "email": "a@x.com", "score": "valid", ... } ] }
+\`\`\`
+
+## Fields
+
+| Field | Meaning |
+|---|---|
+| \`score\` | \`valid\` · \`risky\` · \`invalid\` · \`unknown\` |
+| \`reason\` | \`ok\`, \`mailbox_exists\`, \`mailbox_not_found\`, \`catch_all\`, \`smtp_inconclusive\`, \`disposable\`, \`role_account\`, \`no_mail_server\`, \`invalid_syntax\` |
+| \`mailbox_checked\` | whether a live SMTP probe ran |
+| \`catch_all\` | domain accepts every address (result is inconclusive) |
+| \`suggestion\` | a likely-intended domain when a typo is detected (e.g. \`gmail.com\`) |
+
+## Scores explained
+
+- **valid** — deliverable (and, when \`mailbox_checked\`, the mailbox exists).
+- **risky** — real domain but a role/shared inbox, disposable, or catch-all.
+- **invalid** — bad syntax, no mail server, or the mailbox doesn't exist.
+- **unknown** — the mail server didn't give a clear answer (greylisting/timeout).
+
+## SDKs
+
+\`\`\`js
+const r = await client.email.verify("jane@example.com");
+const batch = await client.email.verifyBatch(["a@x.com", "b@y.com"]);
+\`\`\`
+
+\`\`\`python
+r = await client.email.verify("jane@example.com")
+batch = await client.email.verify_batch(["a@x.com", "b@y.com"])
+\`\`\`
+
+## Limits
+
+Each verification costs credits and counts toward your daily verification cap. Batch verification runs in parallel across domains while rate-limiting probes per mail domain to protect deliverability.
+`,
   },
 
   "api/keys": {

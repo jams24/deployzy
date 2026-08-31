@@ -429,7 +429,7 @@ func (s *Server) runDockerInstall(server *db.WorkerServer) {
 		"D=/usr/libexec/docker/cli-plugins; mkdir -p $D; " +
 		"curl -fsSL -o $D/docker-buildx https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-$A && chmod +x $D/docker-buildx; " +
 		"fi; true; "
-	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + ensureBuildx + dockerFirewallPrefix
+	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + ensureBuildx + dockerFirewallPrefix + deploy.EgressSetupScript
 	var cmd string
 	if server.SSHPassword != "" {
 		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1",

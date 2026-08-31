@@ -203,6 +203,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// AI credits (builder/agent metering + top-ups)
 			r.Get("/ai/credits", s.handleGetAICredits)
 			r.With(fullScope).Post("/ai/credits/topup", s.handleCreateCreditTopup)
+			// Email verification API (metered by credits)
+			r.Post("/email/verify", s.handleEmailVerify)
+			r.Post("/email/verify/batch", s.handleEmailVerifyBatch)
 			r.Get("/billing/status", s.handleBillingStatus)
 			r.Get("/billing/check", s.handleCheckPayment)
 

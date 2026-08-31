@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Rocket, Database, Waypoints, Server, BarChart3,
   Link2, Globe, Eye, Key, Bell, Users, CreditCard, Settings,
-  ShieldCheck, LogOut, Plus, ChevronDown, Check, LayoutTemplate, Sparkles,
+  ShieldCheck, LogOut, Plus, ChevronDown, Check, LayoutTemplate, Sparkles, MailCheck,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -41,6 +41,7 @@ const navGroups = [
       { href: "/subdomains", icon: Link2,     label: "Subdomains" },
       { href: "/domains",    icon: Globe,     label: "Domains" },
       { href: "/inspector",  icon: Eye,       label: "Inspector" },
+      { href: "/email-verify", icon: MailCheck, label: "Email Verify" },
     ],
   },
   {

@@ -93,6 +93,33 @@ func EnsureAICredits(ctx context.Context, database *db.DB, user *auth.Authentica
 	return nil
 }
 
+// ChargeAICredits debits a FLAT amount of credits (not token-based) for a metered
+// product action like an email verification. Pre-checks availability and returns a
+// *CreditError when the user can't afford it. No-op (nil) when metering is off or
+// the caller is an admin. Draws free allotment first, then wallet.
+func ChargeAICredits(ctx context.Context, database *db.DB, user *auth.AuthenticatedUser, amount float64, reason string) error {
+	if user == nil {
+		return fmt.Errorf("unauthenticated")
+	}
+	if amount <= 0 || !AICreditsEnabled(ctx, database) {
+		return nil
+	}
+	if isAdmin, _ := database.IsUserAdmin(ctx, user.ID); isAdmin {
+		return nil
+	}
+	limits, err := database.GetPlanLimits(ctx, currentPlan(ctx, database, user))
+	if err != nil || limits == nil {
+		return nil // fail open
+	}
+	if limits.MonthlyAICredits >= 0 {
+		st, err := database.GetAICreditStatus(ctx, user.ID, limits.MonthlyAICredits)
+		if err == nil && st.Available < amount {
+			return &CreditError{Plan: currentPlan(ctx, database, user), Available: st.Available}
+		}
+	}
+	return database.DebitAICredits(ctx, user.ID, amount, limits.MonthlyAICredits, reason, "", "", 0, 0)
+}
+
 // SettleAICredits charges the user for a completed AI call's token usage. No-op
 // when the feature is dark, the caller is an admin, or usage is empty. Draws from
 // the monthly free allotment first, then the wallet, and records the ledger row.

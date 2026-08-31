@@ -11,6 +11,7 @@ import aiohttp
 
 from deployzy.errors import ApiError, AuthError, NotFoundError, RateLimitError, DeployzyError
 from deployzy.types import (
+    EmailVerifyResult,
     ApiKey,
     CapturedRequest,
     DeployLog,
@@ -68,6 +69,7 @@ class Deployzy:
         self.domains = _DomainClient(self)
         self.projects = _ProjectClient(self)
         self.users = _UserClient(self)
+        self.email = _EmailClient(self)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -421,3 +423,37 @@ def _parse_captured_request(data: dict) -> CapturedRequest:
         response_size=data.get("response_size", 0),
         remote_addr=data.get("remote_addr", ""),
     )
+
+
+def _to_email_result(d: dict) -> EmailVerifyResult:
+    return EmailVerifyResult(
+        email=d.get("email", ""),
+        normalized=d.get("normalized", ""),
+        domain=d.get("domain", ""),
+        score=d.get("score", ""),
+        reason=d.get("reason", ""),
+        syntax_valid=d.get("syntax_valid", False),
+        has_mx=d.get("has_mx", False),
+        disposable=d.get("disposable", False),
+        role_based=d.get("role_based", False),
+        free_provider=d.get("free_provider", False),
+        suggestion=d.get("suggestion", ""),
+        mailbox_checked=d.get("mailbox_checked", False),
+        catch_all=d.get("catch_all", False),
+    )
+
+
+class _EmailClient:
+    def __init__(self, client: "Deployzy") -> None:
+        self._client = client
+
+    async def verify(self, email: str) -> EmailVerifyResult:
+        """Verify a single address: syntax, MX, disposable/role/free, typo, and
+        (when enabled) a live SMTP mailbox check."""
+        data = await self._client._request("POST", "/api/v1/email/verify", {"email": email})
+        return _to_email_result(data)
+
+    async def verify_batch(self, emails: list[str]) -> list[EmailVerifyResult]:
+        """Verify up to 100 addresses in one call."""
+        data = await self._client._request("POST", "/api/v1/email/verify/batch", {"emails": emails})
+        return [_to_email_result(r) for r in data.get("results", [])]
