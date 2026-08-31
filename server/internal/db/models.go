@@ -20,6 +20,9 @@ type User struct {
 	PasswordHash string     `json:"-"`
 	Plan         string     `json:"plan"` // effective plan (base, or "pro" while a referral reward is active)
 	ProUntil     *time.Time `json:"pro_until"`
+	// EmailVerified is false for password signups until they confirm the
+	// emailed code; Google OAuth users are verified on creation.
+	EmailVerified bool      `json:"email_verified"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
@@ -97,9 +100,9 @@ func (d *DB) CreateUser(ctx context.Context, email, name, password string) (*Use
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, plan, pro_until, created_at, updated_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, password_hash, plan, pro_until, COALESCE(email_verified, false), created_at, updated_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -114,9 +117,9 @@ func (d *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 func (d *DB) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := d.Pool.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, plan, pro_until, created_at, updated_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, password_hash, plan, pro_until, COALESCE(email_verified, false), created_at, updated_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Plan, &u.ProUntil, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

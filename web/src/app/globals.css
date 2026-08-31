@@ -158,8 +158,17 @@
   .text-\[13px\] { font-size: 14.5px; }
 }
 
-html, body {
-  overflow-x: hidden;
+/* Prevent horizontal scroll WITHOUT breaking position:sticky.
+   overflow-x:hidden on <html> turns it into a scroll container and disables
+   sticky relative to the viewport (that's why the blog "On this page" TOC
+   wouldn't stick). overflow-x:clip on <body> clips horizontal overflow without
+   creating a scroll container, so sticky keeps working; wide content
+   (pre/code/table) still scrolls internally via the rules below. */
+html {
+  max-width: 100vw;
+}
+body {
+  overflow-x: clip;
   max-width: 100vw;
 }
 
@@ -245,3 +254,201 @@ html:not(.dark) .sm-terminal {
 
 .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
 .reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Deployzy 2.0 — motion & visual system (additive; everything above untouched)
+   Figma-grade easings, aurora fields, animated beams, glow borders.
+   All animations respect prefers-reduced-motion via the block at the bottom.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.44, 1);
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+
+@keyframes dz-aurora-a {
+  0%, 100% { transform: translate3d(-8%, -4%, 0) rotate(-4deg) scale(1); }
+  50%      { transform: translate3d(6%, 5%, 0) rotate(5deg) scale(1.12); }
+}
+@keyframes dz-aurora-b {
+  0%, 100% { transform: translate3d(6%, 2%, 0) rotate(3deg) scale(1.05); }
+  50%      { transform: translate3d(-6%, -5%, 0) rotate(-5deg) scale(0.94); }
+}
+@keyframes dz-float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+@keyframes dz-caret {
+  0%, 45%  { opacity: 1; }
+  50%, 95% { opacity: 0; }
+}
+@keyframes dz-pulse-ring {
+  0%   { transform: scale(0.9); opacity: 0.7; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes dz-shine {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to   { transform: translateX(240%) skewX(-18deg); }
+}
+@keyframes dz-border-flow {
+  to { background-position: 300% 0; }
+}
+@keyframes dz-beam {
+  to { stroke-dashoffset: -28; }
+}
+@keyframes dz-ping-slow {
+  0%   { transform: scale(1); opacity: 0.6; }
+  80%, 100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes dz-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes dz-spark {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+@keyframes dz-rise-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.985); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes dz-grid-pan {
+  from { background-position: 0 0; }
+  to   { background-position: 56px 56px; }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────── */
+
+/* Gradient headline text */
+.text-gradient {
+  background: linear-gradient(100deg, #34d399 0%, #10b981 38%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.text-gradient-soft {
+  background: linear-gradient(100deg, oklch(0.92 0 0), oklch(0.62 0 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html:not(.dark) .text-gradient-soft {
+  background: linear-gradient(100deg, oklch(0.25 0 0), oklch(0.55 0 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Aurora blobs — position with inline styles / tailwind, animate with these */
+.animate-aurora-a { animation: dz-aurora-a 16s ease-in-out infinite; }
+.animate-aurora-b { animation: dz-aurora-b 19s ease-in-out infinite; }
+.animate-float-y  { animation: dz-float-y 6s ease-in-out infinite; }
+.animate-caret    { animation: dz-caret 1.1s steps(1) infinite; }
+.animate-orbit    { animation: dz-orbit 24s linear infinite; }
+.animate-orbit-slow { animation: dz-orbit 40s linear infinite; }
+.animate-rise-in  { animation: dz-rise-in 0.9s var(--ease-out-expo) both; }
+
+/* Backgrounds */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+.bg-grid-animated { animation: dz-grid-pan 14s linear infinite; }
+.bg-dots {
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Edge fades (mask) */
+.mask-fade-x {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+.mask-fade-b {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+.mask-radial-center {
+  -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 38%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 62% at 50% 38%, #000 45%, transparent 100%);
+}
+
+/* Button shine sweep — put on a relative overflow-hidden element,
+   the ::after is the sweeping highlight. */
+.btn-shine { position: relative; overflow: hidden; }
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+  pointer-events: none;
+}
+.btn-shine:hover::after { animation: dz-shine 0.9s var(--ease-out-expo); }
+html:not(.dark) .btn-shine::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+}
+
+/* Animated conic "gradient border" — wrapper technique:
+   parent has this class + p-px, child covers with its own bg. */
+.gradient-border {
+  position: relative;
+  background:
+    linear-gradient(var(--gb-bg, #0c0d0f), var(--gb-bg, #0c0d0f)) padding-box,
+    linear-gradient(120deg, rgba(52, 211, 153, 0.55), rgba(255, 255, 255, 0.08) 32%, rgba(34, 211, 238, 0.4) 66%, rgba(52, 211, 153, 0.55)) border-box;
+  background-size: 100% 100%, 300% 100%;
+  border: 1px solid transparent;
+  animation: dz-border-flow 9s linear infinite;
+}
+html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
+
+/* SVG beam (dashed stroke flowing along a path) */
+.beam { stroke-dasharray: 4 24; animation: dz-beam 1.2s linear infinite; }
+.beam-slow { stroke-dasharray: 3 18; animation: dz-beam 2.2s linear infinite; }
+
+/* Pulsing location ring (for maps / status dots) */
+.pulse-ring { position: relative; }
+.pulse-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: dz-ping-slow 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Spotlight card — glow follows the cursor via --mx/--my (set from JS) */
+.spotlight { position: relative; }
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(52, 211, 153, 0.09), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+.spotlight:hover::before { opacity: 1; }
+
+/* Glass panel */
+.glass {
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* Reduced motion — kill every decorative animation at once */
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-a, .animate-aurora-b, .animate-float-y, .animate-orbit,
+  .animate-orbit-slow, .bg-grid-animated, .beam, .beam-slow, .gradient-border,
+  .pulse-ring::before, .animate-rise-in { animation: none !important; }
+  .btn-shine::after { display: none; }
+}

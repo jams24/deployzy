@@ -42,9 +42,39 @@ type LimitError struct {
 	Current   int       // their current count
 }
 
+// dimensionLabel returns a human-readable name for a dimension so plan-limit
+// errors don't leak raw slugs like "byoc_server" into the upgrade dialog.
+func dimensionLabel(d Dimension) string {
+	switch d {
+	case DimBYOCServer:
+		return "your own server (BYOC)"
+	case DimProject:
+		return "projects"
+	case DimDatabase:
+		return "databases"
+	case DimService:
+		return "services"
+	case DimCustomDomain:
+		return "custom domains"
+	case DimCron:
+		return "cron jobs"
+	case DimPreviewDeploy:
+		return "preview deploys"
+	case DimSubdomain:
+		return "subdomains"
+	}
+	return string(d)
+}
+
 func (e *LimitError) Error() string {
+	label := dimensionLabel(e.Dimension)
+	// A cap of 0 is a feature gate, not a count cap — "0/0" reads as a bug.
+	if e.Limit == 0 {
+		return fmt.Sprintf("plan limit reached: %s is not available on the %s plan — upgrade to unlock it",
+			label, e.Plan)
+	}
 	return fmt.Sprintf("plan limit reached: %s (%d/%d on %s plan) — upgrade to add more",
-		e.Dimension, e.Current, e.Limit, e.Plan)
+		label, e.Current, e.Limit, e.Plan)
 }
 
 // EnsureCanCreate returns nil if the user is allowed to add one more of the
@@ -118,6 +148,10 @@ func IsFeatureAllowed(ctx context.Context, database *db.DB, user *auth.Authentic
 		return limits.AllowLiveLogs
 	case "telegram":
 		return limits.AllowTelegram
+	case "advanced_databases":
+		return limits.AllowAdvancedDatabases
+	case "db_migration":
+		return limits.AllowDBMigration
 	}
 	return false
 }

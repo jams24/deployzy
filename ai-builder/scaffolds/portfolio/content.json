@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "title": "Jamal Akinola — Backend Engineer",
+    "description": "Backend engineer building payment infra and developer tools. Co-founder of InventPay and Deployzy."
+  },
+  "theme": { "accent": "#34d399", "mode": "dark" },
+  "hero": {
+    "name": "Jamal Akinola",
+    "role": "Backend Engineer · Founder",
+    "tagline": "I build the boring infrastructure that lets other people ship fast — payments, deploy tooling, and everything in between.",
+    "avatar_initials": "JA"
+  },
+  "about": "I'm a backend and blockchain engineer from Nigeria. I like problems where reliability actually matters — money moving, apps deploying, systems that can't just fall over. Lately I've been building Deployzy, an open-source way to deploy apps, databases and tunnels from one place.",
+  "skills": ["Go", "Node.js", "PostgreSQL", "Docker", "Blockchain", "Payments", "System Design", "Next.js"],
+  "projects": [
+    { "name": "Deployzy", "description": "Open-source platform to deploy apps from GitHub, run managed databases, and tunnel localhost — bring your own VPS.", "url": "https://deployzy.com", "tags": ["Go", "Next.js", "Docker"] },
+    { "name": "InventPay", "description": "Crypto payment infrastructure — accept BTC, ETH and stablecoins with a clean API and SDKs.", "url": "https://inventpay.io", "tags": ["Payments", "API", "Crypto"] },
+    { "name": "CryptoSignal Bot", "description": "A Telegram bot that scans exchanges and on-chain data for trade signals in real time.", "tags": ["Python", "Telegram", "Trading"] }
+  ],
+  "experience": [
+    { "role": "Founder & Engineer", "org": "Deployzy", "period": "2026 — now", "detail": "Building the deploy + database + tunnel platform end to end." },
+    { "role": "Co-Founder", "org": "InventPay", "period": "2025 — now", "detail": "Crypto payment rails, API and SDKs for merchants." }
+  ],
+  "socials": [
+    { "label": "GitHub", "url": "https://github.com/jams24" },
+    { "label": "X / Twitter", "url": "https://x.com/itsjamsltn" },
+    { "label": "LinkedIn", "url": "https://linkedin.com" }
+  ],
+  "contact": {
+    "cta": "Let's build something reliable.",
+    "sub": "Open to collaborations and interesting infra problems.",
+    "email": "jamsakino404@gmail.com"
+  }
+}

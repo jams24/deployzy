@@ -12,6 +12,8 @@ import type {
   BuildConfigInput,
   DeployLog,
   WaitForDeployOptions,
+  EmailVerifyResult,
+  EmailBatchResult,
 } from "./types";
 import { DeployzyError, ApiError, AuthError, RateLimitError, NotFoundError } from "./errors";
 
@@ -54,6 +56,8 @@ export class Deployzy {
   public readonly projects: ProjectClient;
   /** User/account operations. */
   public readonly users: UserClient;
+  /** Email verification. */
+  public readonly email: EmailClient;
 
   constructor(options: DeployzyOptions) {
     if (!options.authtoken) {
@@ -71,6 +75,7 @@ export class Deployzy {
     this.domains = new DomainClient(request);
     this.projects = new ProjectClient(request);
     this.users = new UserClient(request);
+    this.email = new EmailClient(request);
   }
 
   /** Internal HTTP request method. */
@@ -384,5 +389,20 @@ class UserClient {
   /** Get the current user. */
   async me(): Promise<User> {
     return this.request("GET", "/api/v1/users/me");
+  }
+}
+
+class EmailClient {
+  constructor(private request: RequestFn) {}
+
+  /** Verify a single email address: syntax, MX, disposable/role/free detection,
+   * typo suggestion, and — when enabled — a live SMTP mailbox check. */
+  async verify(email: string): Promise<EmailVerifyResult> {
+    return this.request("POST", "/api/v1/email/verify", { email });
+  }
+
+  /** Verify up to 100 addresses in one call. */
+  async verifyBatch(emails: string[]): Promise<EmailBatchResult> {
+    return this.request("POST", "/api/v1/email/verify/batch", { emails });
   }
 }

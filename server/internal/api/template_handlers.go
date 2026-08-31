@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -108,6 +110,32 @@ func (s *Server) handleToggleTemplateStar(w http.ResponseWriter, r *http.Request
 
 var slugifyRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+// templatePlanRank orders subscription plans so template gating can compare a
+// user's plan against a template's required plan. "" / "free" = 0 (open to all).
+func templatePlanRank(plan string) int {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "hobby":
+		return 1
+	case "pro":
+		return 2
+	case "team", "enterprise":
+		return 3
+	default: // "", "free"
+		return 0
+	}
+}
+
+// templateWantsEnv reports whether a template declares an env var with the given
+// key — the signal that a template needs a Deployzy-side injected value.
+func templateWantsEnv(vars []db.EnvVarSchema, key string) bool {
+	for _, v := range vars {
+		if v.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func templateSubdomain(name string) string {
 	s := strings.ToLower(name)
 	s = strings.ReplaceAll(s, " ", "-")
@@ -144,6 +172,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Plan gate: some templates require a paid plan. Admins bypass.
+	if req := templatePlanRank(t.RequiredPlan); req > 0 {
+		if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+			user, _ := s.db.GetUserByID(r.Context(), u.ID)
+			cur := 0
+			if user != nil {
+				cur = templatePlanRank(user.Plan)
+			}
+			if cur < req {
+				writeError(w, http.StatusPaymentRequired,
+					fmt.Sprintf("This template requires the %s plan or higher — upgrade to deploy it.", t.RequiredPlan))
+				return
+			}
+		}
+	}
+
 	// Validate required env vars
 	for _, ev := range t.EnvVars {
 		if ev.Required && ev.Type != "auto" {
@@ -167,23 +211,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 
 	subdomain := req.Subdomain
 	if subdomain == "" {
-		subdomain = templateSubdomain(name)
+		subdomain = name
 	}
-
-	// Ensure subdomain is available; append a suffix if not
-	base := subdomain
-	for i := 1; i <= 10; i++ {
-		available, _ := s.db.CheckSubdomainAvailable(r.Context(), subdomain, u.ID)
-		if available {
-			break
-		}
-		subdomain = base + "-" + strconv.Itoa(i)
-	}
+	// Slugify + guarantee a free variant (shared with the main deploy path).
+	subdomain = s.uniqueSubdomain(r.Context(), subdomain, u.ID)
 
 	project, err := s.db.CreateProject(r.Context(), u.ID, name, subdomain, "docker")
 	if err != nil {
 		writeError(w, http.StatusConflict, "subdomain already taken")
 		return
+	}
+
+	// Honour the template's memory requirement — heavy apps (n8n, etc.) OOM at
+	// the 512 MB default. The deploy engine still clamps this to the user's plan
+	// ceiling, so gated templates should require a plan whose ceiling fits.
+	if t.MinMemoryMB > 0 {
+		s.db.SetProjectMemory(r.Context(), project.ID, t.MinMemoryMB)
 	}
 
 	// Merge user-supplied env vars with defaults from template schema
@@ -198,6 +241,22 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 			merged[k] = v
 		}
 	}
+
+	// VPN-panel hook: if the template declares a TUNNELTWEAK_API_KEY env var and
+	// the user didn't bring their own, mint a fresh isolated key for this panel
+	// and inject it (plus the base URL) so each deployment gets its own account.
+	if templateWantsEnv(t.EnvVars, "TUNNELTWEAK_API_KEY") && merged["TUNNELTWEAK_API_KEY"] == "" {
+		label := "deployzy-" + subdomain
+		if key, err := s.mintPanelKey(r.Context(), label); err != nil {
+			s.log.Error().Err(err).Str("project", project.ID).Msg("vpn panel key mint failed")
+		} else if key != "" {
+			merged["TUNNELTWEAK_API_KEY"] = key
+			if base := s.vpnBaseURL(r.Context()); base != "" && merged["TUNNELTWEAK_BASE_URL"] == "" {
+				merged["TUNNELTWEAK_BASE_URL"] = base
+			}
+		}
+	}
+
 	if len(merged) > 0 {
 		s.db.UpdateProjectEnvVars(r.Context(), project.ID, merged)
 		project.EnvVars = merged
@@ -215,6 +274,20 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 			s.db.UpdateProjectConfig(r.Context(), project.ID, *t.SourceRepo, "main", "", "", merged)
 			project.RepoURL = *t.SourceRepo
 			project.Branch = "main"
+			// Wire GitHub auto-deploy (CI/CD) for repo-backed templates, mirroring
+			// the normal import flow: link github_repo + register a push webhook.
+			// Without this, template-deployed projects never receive push events
+			// and stay pinned to the deploy-time commit (no auto-updates).
+			if repoFull := extractRepoFullName(*t.SourceRepo); repoFull != "" {
+				s.db.UpdateProjectGitHub(r.Context(), project.ID, repoFull, "main", true)
+				project.GitHubRepo = repoFull
+				if s.deployer != nil && s.deployer.GitHub != nil {
+					if token, ok := s.bestUserGitHubToken(r.Context(), u.ID); ok {
+						webhookURL := fmt.Sprintf("https://api.%s/api/v1/github/webhook", s.deployer.Domain)
+						s.deployer.GitHub.EnsureWebhook(token, repoFull, webhookURL)
+					}
+				}
+			}
 		}
 	}
 
@@ -229,11 +302,29 @@ func (s *Server) handleDeployFromTemplate(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Bump deploy counter asynchronously
-	go s.db.IncrementTemplateDeployCount(r.Context(), t.ID)
+	// Bump deploy counter asynchronously. Must NOT use r.Context(): that is
+	// cancelled the moment this handler returns, so the goroutine raced the
+	// response and the UPDATE was usually killed mid-flight — which is why
+	// every template still showed 0 deploys.
+	go s.db.IncrementTemplateDeployCount(context.Background(), t.ID)
+
+	// Kick off the actual deploy immediately. Deploying from a template used to
+	// only *create* the project (leaving it "never deployed"), forcing the user
+	// to click Deploy a second time in the Projects list. Trigger it here so a
+	// single click from the template gallery / new-project flow deploys straight
+	// through — same async path the manual Deploy button uses.
+	if s.deployer != nil {
+		toDeploy := *project
+		go func() {
+			if err := s.deployer.Deploy(context.Background(), &toDeploy); err != nil {
+				s.log.Error().Err(err).Str("project", toDeploy.ID).Msg("template deploy failed")
+			}
+		}()
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"project":     project,
 		"post_deploy": t.PostDeploy,
+		"deploying":   s.deployer != nil,
 	})
 }

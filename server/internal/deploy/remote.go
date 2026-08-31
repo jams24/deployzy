@@ -59,6 +59,25 @@ func (r *Runner) RunShell(ctx context.Context, cmd string) ([]byte, error) {
 	return r.sshExec(ctx, cmd)
 }
 
+// RunShellStreaming runs a shell command, forwarding combined stdout+stderr to
+// onLine for each complete line as it is produced (live streaming), and also
+// returns a capped tail of the full captured output for post-run inspection.
+// Works for both local and remote (SSH) runners.
+func (r *Runner) RunShellStreaming(ctx context.Context, cmd string, onLine func(string)) ([]byte, error) {
+	var execCmd *exec.Cmd
+	if r.server == nil {
+		execCmd = exec.CommandContext(ctx, "bash", "-c", cmd)
+	} else {
+		execCmd = r.sshStreamCmd(ctx, cmd)
+	}
+	sw := newStreamWriter(onLine)
+	execCmd.Stdout = sw
+	execCmd.Stderr = sw
+	err := execCmd.Run()
+	sw.flush()
+	return sw.captured(), err
+}
+
 // Exec runs a command without capturing output (fire and forget).
 func (r *Runner) Exec(ctx context.Context, name string, args ...string) error {
 	if r.server == nil {

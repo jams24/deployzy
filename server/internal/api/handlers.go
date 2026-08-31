@@ -68,6 +68,19 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject disposable/temp-mail domains and domains that can't receive mail.
+	if err := validateSignupEmail(r.Context(), req.Email); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Block signups from banned IPs.
+	ip, country := requestIP(r), requestCountry(r)
+	if s.db.IsIPBanned(r.Context(), ip) {
+		writeError(w, http.StatusForbidden, "signups from your network are not permitted")
+		return
+	}
+
 	// Check if email exists
 	existing, err := s.db.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
@@ -86,6 +99,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
+	s.db.SetUserSignupIP(r.Context(), user.ID, ip, country)
 
 	// Referral attribution: if a valid ref code was passed, link this signup.
 	if req.Ref != "" {
@@ -94,7 +108,39 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate JWT
+	// Password signups must confirm their address before the account becomes
+	// usable — no JWT and no API key are issued until then. (Google OAuth
+	// users skip this: Google already proved mailbox ownership.) If email
+	// isn't configured we can't deliver a code, so fall back to issuing
+	// credentials immediately rather than locking the user out.
+	if s.emailSvc != nil {
+		code, err := s.db.GenerateVerifyCode(r.Context(), user.ID)
+		if err != nil {
+			s.log.Error().Err(err).Msg("generate verify code")
+			writeError(w, http.StatusInternalServerError, "failed to start verification")
+			return
+		}
+		go func(email, name, code string) {
+			if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+				s.log.Warn().Err(err).Str("email", email).Msg("failed to send verification email")
+			}
+		}(user.Email, user.Name, code)
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"verification_required": true,
+			"email":                 user.Email,
+		})
+		return
+	}
+
+	s.db.MarkEmailVerified(r.Context(), user.ID)
+	s.issueCredentials(w, r, user, http.StatusCreated)
+}
+
+// issueCredentials mints the JWT + initial API key for a verified user and
+// writes the standard auth payload. Shared by the register fallback and the
+// email-verification endpoint so both return an identical shape.
+func (s *Server) issueCredentials(w http.ResponseWriter, r *http.Request, user *db.User, status int) {
 	token, err := s.jwt.Generate(user.ID, user.Email, user.Plan)
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate token")
@@ -102,7 +148,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate initial API key
 	fullToken, apiKey, err := s.db.GenerateAPIKey(r.Context(), user.ID, "default", "full")
 	if err != nil {
 		s.log.Error().Err(err).Msg("generate api key")
@@ -110,19 +155,107 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Send welcome email asynchronously so it never blocks the response.
 	if s.emailSvc != nil {
-		go func() {
-			if err := s.emailSvc.SendOne(user.Email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(user.Name)); err != nil {
-				s.log.Warn().Err(err).Str("email", user.Email).Msg("failed to send welcome email")
+		go func(email, name string) {
+			if err := s.emailSvc.SendOne(email, "Welcome to Deployzy 🚀", notify.WelcomeEmail(name)); err != nil {
+				s.log.Warn().Err(err).Str("email", email).Msg("failed to send welcome email")
 			}
-		}()
+		}(user.Email, user.Name)
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"user":    user,
-		"token":   token,
-		"api_key": fullToken,
+	writeJSON(w, status, map[string]interface{}{
+		"user":         user,
+		"token":        token,
+		"api_key":      fullToken,
 		"api_key_info": apiKey,
 	})
+}
+
+type verifyEmailRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// handleVerifyEmail confirms a signup code and, on success, issues the JWT +
+// API key the register call withheld.
+func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req verifyEmailRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Code == "" {
+		writeError(w, http.StatusBadRequest, "email and code required")
+		return
+	}
+
+	user, err := s.db.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		s.log.Error().Err(err).Msg("verify: get user")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// Same generic message whether the address is unknown or the code is
+	// wrong — don't let this endpoint enumerate registered emails.
+	if user == nil {
+		writeError(w, http.StatusBadRequest, "invalid or expired code")
+		return
+	}
+
+	result, err := s.db.CheckVerifyCode(r.Context(), user.ID, strings.TrimSpace(req.Code))
+	if err != nil {
+		s.log.Error().Err(err).Msg("verify: check code")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	switch result {
+	case db.VerifyOK, db.VerifyAlreadyVerified:
+		user.EmailVerified = true
+		s.issueCredentials(w, r, user, http.StatusOK)
+	case db.VerifyExpired, db.VerifyNoCode:
+		writeError(w, http.StatusBadRequest, "code expired — request a new one")
+	case db.VerifyTooManyAttempts:
+		writeError(w, http.StatusTooManyRequests, "too many attempts — request a new code")
+	default:
+		writeError(w, http.StatusBadRequest, "invalid or expired code")
+	}
+}
+
+// handleResendVerification issues a fresh code, rate-limited to one per
+// minute. Always reports success so it can't be used to probe for accounts.
+func (s *Server) handleResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &req); err != nil || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email required")
+		return
+	}
+
+	ok := map[string]string{"status": "sent"}
+	user, err := s.db.GetUserByEmail(r.Context(), req.Email)
+	if err != nil || user == nil || user.EmailVerified || s.emailSvc == nil {
+		writeJSON(w, http.StatusOK, ok)
+		return
+	}
+	if allowed, _ := s.db.CanResendVerifyCode(r.Context(), user.ID); !allowed {
+		writeError(w, http.StatusTooManyRequests, "please wait a minute before requesting another code")
+		return
+	}
+
+	code, err := s.db.GenerateVerifyCode(r.Context(), user.ID)
+	if err != nil {
+		s.log.Error().Err(err).Msg("resend: generate code")
+		writeJSON(w, http.StatusOK, ok)
+		return
+	}
+	go func(email, name, code string) {
+		if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+			s.log.Warn().Err(err).Str("email", email).Msg("failed to resend verification email")
+		}
+	}(user.Email, user.Name, code)
+
+	writeJSON(w, http.StatusOK, ok)
 }
 
 type loginRequest struct {
@@ -145,6 +278,41 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if user == nil || !user.CheckPassword(req.Password) {
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+
+	// Suspended accounts can't sign in.
+	if s.db.IsUserBlocked(r.Context(), user.ID) {
+		writeError(w, http.StatusForbidden, "This account has been suspended. Contact support@deployzy.com if you believe this is a mistake.")
+		return
+	}
+
+	// Record where this sign-in came from (and block banned IPs).
+	ip, country := requestIP(r), requestCountry(r)
+	if s.db.IsIPBanned(r.Context(), ip) {
+		writeError(w, http.StatusForbidden, "access from your network is not permitted")
+		return
+	}
+	s.db.TouchUserLogin(r.Context(), user.ID, ip, country)
+
+	// Unverified password signup: send a fresh code and tell the client to
+	// show the verification step instead of logging in. Flagged distinctly so
+	// the frontend can route rather than just print an error.
+	if !user.EmailVerified && s.emailSvc != nil {
+		if allowed, _ := s.db.CanResendVerifyCode(r.Context(), user.ID); allowed {
+			if code, err := s.db.GenerateVerifyCode(r.Context(), user.ID); err == nil {
+				go func(email, name, code string) {
+					if err := s.emailSvc.SendOne(email, "Your Deployzy verification code", notify.VerifyCodeEmail(name, code)); err != nil {
+						s.log.Warn().Err(err).Str("email", email).Msg("failed to send verification email")
+					}
+				}(user.Email, user.Name, code)
+			}
+		}
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"error":                 "Please confirm your email to continue — we've sent you a code.",
+			"verification_required": true,
+			"email":                 user.Email,
+		})
 		return
 	}
 
@@ -174,6 +342,10 @@ func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
+
+	// Tear down running containers/volumes first — deleting the row only
+	// cascades DB records and would leave their apps running forever.
+	s.purgeUserResources(r.Context(), u.ID)
 
 	if err := s.db.DeleteUser(r.Context(), u.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete account")
@@ -438,13 +610,60 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 			"method":   method,
 		})
 	} else {
+		// Most common failure: the CNAME is proxied through Cloudflare (orange
+		// cloud), so the domain resolves to Cloudflare's IPs and the real
+		// target (cname.deployzy.com → our origin) is hidden. Detect that and
+		// tell the user exactly what to change, since the generic "check your
+		// record" message sends them looking in the wrong place.
+		hint := "Set your CNAME to cname.deployzy.com and wait for it to propagate (can take a few minutes)."
+		if domainIsCloudflareProxied(targetDomain.Domain) {
+			hint = "Your CNAME is proxied through Cloudflare (orange cloud), which hides it from verification. In Cloudflare, click the orange cloud next to this record to switch it to grey (DNS only), wait ~1 minute, then verify again."
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"verified": false,
 			"found":    cnames,
-			"expected": "cname.deployzy.com",
-			"hint":     "Set your CNAME to point to cname.deployzy.com (not deployzy.com) to bypass Cloudflare's proxy",
+			"expected": expected,
+			"hint":     hint,
 		})
 	}
+}
+
+// cloudflareCIDRs are Cloudflare's published IPv4 ranges. A custom domain that
+// resolves into one of these is proxied (orange cloud) — its real CNAME target
+// is masked, so DNS verification can't see cname.deployzy.com behind it.
+var cloudflareCIDRs = func() []*net.IPNet {
+	raw := []string{
+		"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+		"141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+		"197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+		"104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+	}
+	nets := make([]*net.IPNet, 0, len(raw))
+	for _, c := range raw {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
+}()
+
+func domainIsCloudflareProxied(domain string) bool {
+	ips, err := net.LookupHost(domain)
+	if err != nil {
+		return false
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		for _, n := range cloudflareCIDRs {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {

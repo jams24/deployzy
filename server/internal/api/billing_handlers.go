@@ -7,6 +7,7 @@ import (
 
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // planPricing is the single source of truth for what each plan costs.
@@ -110,16 +111,41 @@ func (s *Server) handleCreateCheckout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBillingStatus returns the user's subscription status.
+// subscriptionGraceDays mirrors the --subscription-grace-days flag so the
+// billing status can compute when grace-period access ends. Set from main.
+var subscriptionGraceDays = 3
+
+// SetSubscriptionGraceDays wires the configured grace window into the billing
+// status handler (avoids threading it through NewRouter's long signature).
+func SetSubscriptionGraceDays(n int) {
+	if n >= 0 {
+		subscriptionGraceDays = n
+	}
+}
+
 func (s *Server) handleBillingStatus(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	sub, _ := s.db.GetActiveSubscription(r.Context(), u.ID)
 	subs, _ := s.db.ListSubscriptions(r.Context(), u.ID)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"active_subscription": sub,
 		"history":             subs,
-	})
+	}
+
+	// If there's no active sub but the user is in the grace window, surface it
+	// so the billing page can show "grace period — renew by X" instead of
+	// looking like they have nothing (they still keep their paid features).
+	if sub == nil {
+		if grace, _ := s.db.GetGraceSubscription(r.Context(), u.ID); grace != nil && grace.PeriodEnd != nil {
+			resp["grace"] = map[string]interface{}{
+				"plan":        grace.Plan,
+				"access_ends": grace.PeriodEnd.AddDate(0, 0, subscriptionGraceDays),
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleBillingWebhook processes InventPay payment webhooks.
@@ -226,20 +252,70 @@ func (s *Server) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 // upgrades the user (idempotent — replayed webhooks are no-ops), then fires
 // the Telegram notification if the user connected one.
 func (s *Server) activatePaidSubscription(r *http.Request, paymentID string) {
-	if err := s.db.ActivateSubscription(r.Context(), paymentID); err != nil {
+	// A payment id is either a plan subscription OR an AI credit-pack purchase.
+	// Try credits first; a match short-circuits (and stays idempotent via the
+	// status flip), otherwise we fall through to plan-subscription activation.
+	if uid, credits, ok, _ := s.db.ActivateCreditPurchase(r.Context(), paymentID); ok {
+		if err := s.db.GrantAICredits(r.Context(), uid, credits, "topup"); err != nil {
+			s.log.Error().Err(err).Str("payment_id", paymentID).Msg("failed to grant AI credits")
+			return
+		}
+		s.log.Info().Str("payment_id", paymentID).Float64("credits", credits).Str("user", uid).Msg("AI credits topped up")
+		return
+	}
+
+	res, err := s.db.ActivateSubscriptionDetailed(r.Context(), paymentID)
+	if err != nil {
 		s.log.Error().Err(err).Str("payment_id", paymentID).Msg("failed to activate subscription")
 		return
 	}
-	s.log.Info().Str("payment_id", paymentID).Msg("subscription activated")
+	if res == nil || !res.Activated {
+		// Replayed webhook or unknown payment — nothing to do, and crucially
+		// no duplicate confirmation email.
+		return
+	}
+	s.log.Info().
+		Str("payment_id", paymentID).
+		Str("plan", res.Plan).
+		Str("kind", res.Kind).
+		Msg("subscription activated")
+
+	sub, _ := s.db.GetSubscriptionByPaymentID(r.Context(), paymentID)
+	user, _ := s.db.GetUserByID(r.Context(), res.UserID)
+
+	// Billing confirmation email — new purchase, upgrade, or renewal.
+	if s.emailSvc != nil && user != nil {
+		amount, currency := 0.0, "USD"
+		if sub != nil {
+			amount, currency = sub.Amount, sub.Currency
+		}
+		subject := "Your Deployzy " + res.Plan + " subscription is active"
+		switch res.Kind {
+		case "upgrade":
+			subject = "Upgraded to Deployzy " + res.Plan + " 🚀"
+		case "renewal":
+			subject = "Your Deployzy " + res.Plan + " subscription renewed"
+		}
+		body := notify.SubscriptionEmail(user.Name, res.Plan, res.Kind, amount, currency,
+			res.PeriodEnd.Format("2 January 2006"))
+		go func(email, subject, body string) {
+			if err := s.emailSvc.SendOne(email, subject, body); err != nil {
+				s.log.Warn().Err(err).Str("email", email).Msg("failed to send subscription email")
+			}
+		}(user.Email, subject, body)
+	}
 
 	if s.telegram != nil {
-		sub, _ := s.db.GetSubscriptionByPaymentID(r.Context(), paymentID)
-		if sub != nil {
-			tc, _ := s.db.GetTelegramConnection(r.Context(), sub.UserID)
-			if tc != nil {
-				s.telegram.SendMarkdown(tc.ChatID,
-					"🎉 *Upgrade Activated!*\n\nYour Deployzy "+sub.Plan+" subscription is now active. Enjoy!")
+		tc, _ := s.db.GetTelegramConnection(r.Context(), res.UserID)
+		if tc != nil {
+			verb := "activated"
+			if res.Kind == "renewal" {
+				verb = "renewed"
+			} else if res.Kind == "upgrade" {
+				verb = "upgraded"
 			}
+			s.telegram.SendMarkdown(tc.ChatID,
+				"🎉 *Subscription "+verb+"!*\n\nYour Deployzy "+res.Plan+" plan is now active. Enjoy!")
 		}
 	}
 }

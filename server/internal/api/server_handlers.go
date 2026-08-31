@@ -130,11 +130,25 @@ func (s *Server) handleAdminAddServer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminDeleteServer(w http.ResponseWriter, r *http.Request) {
 	serverID := chi.URLParam(r, "serverId")
+
+	// The admin path previously deleted the row with no host cleanup at all,
+	// orphaning every container on that machine. Mirror the user path.
+	server, _ := s.db.GetWorkerServer(r.Context(), serverID)
+	var purgeErr error
+	if server != nil {
+		purgeErr = s.purgeServerResources(r.Context(), server)
+	}
+
 	if err := s.db.DeleteWorkerServer(r.Context(), serverID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete server")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	resp := map[string]string{"status": "deleted"}
+	if purgeErr != nil && server != nil {
+		resp["warning"] = leftoverWarning(server, server.CurrentProjects)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminUpdateServerStatus(w http.ResponseWriter, r *http.Request) {
@@ -296,27 +310,22 @@ func (s *Server) handleDeleteUserServer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Best-effort remote cleanup: kill every sm-* container and its data
-	// volume on the user's VPS BEFORE we drop the DB row. If the server is
-	// already unreachable we still want to finish the DB delete, hence the
-	// ignored error. Runs in a goroutine with a short timeout so a slow or
-	// dead VPS doesn't hang the UI — the DB cleanup is what the user sees
-	// and that's synchronous below.
-	go func(srv *db.WorkerServer) {
-		// `sm-*` covers both project containers (sm-<8-char-id>) and BYOC
-		// service containers (sm-svc-<random>). Separate steps so partial
-		// failures still progress.
-		runRemoteSSH(srv,
-			`docker ps -aq --filter "name=^sm-" | xargs -r docker rm -f; `+
-				`docker volume ls -q --filter "name=^sm-svc-" | xargs -r docker volume rm`,
-			1*time.Minute)
-	}(server)
+	// Clean the host BEFORE dropping the row, and report the outcome. This
+	// used to be fire-and-forget, so an unreachable VPS silently kept running
+	// containers while the UI said "deleted" — leaving the owner with no
+	// record of what to clean up on a machine we no longer track.
+	purgeErr := s.purgeServerResources(r.Context(), server)
 
 	if err := s.db.DeleteWorkerServer(r.Context(), serverID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete server: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	resp := map[string]string{"status": "deleted"}
+	if purgeErr != nil {
+		resp["warning"] = leftoverWarning(server, server.CurrentProjects)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Helpers ---
@@ -407,7 +416,20 @@ func (s *Server) handleInstallDocker(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runDockerInstall(server *db.WorkerServer) {
 	// get.docker.com is the official bootstrap. Idempotent — safe to re-run.
-	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker"
+	// Also open the Docker->host firewall on UFW-hardened boxes right away, so a
+	// co-located app can reach a DB container's published port on this server even
+	// before its first database is provisioned (see dockerFirewallPrefix).
+	// get.docker.com installs the buildx plugin on most distros, but not all — so
+	// ensure it explicitly: if `docker buildx` is missing after install, drop the
+	// official binary into the CLI-plugins dir. BuildKit (buildx) is what gives new
+	// servers fast, cached builds; without it the engine falls back to the slower
+	// legacy builder. Best-effort (|| true) so a buildx hiccup never fails Docker setup.
+	ensureBuildx := "if ! docker buildx version >/dev/null 2>&1; then " +
+		"A=$(uname -m); case $A in x86_64) A=amd64;; aarch64|arm64) A=arm64;; esac; " +
+		"D=/usr/libexec/docker/cli-plugins; mkdir -p $D; " +
+		"curl -fsSL -o $D/docker-buildx https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-$A && chmod +x $D/docker-buildx; " +
+		"fi; true; "
+	install := "curl -fsSL https://get.docker.com | sh && systemctl enable --now docker; " + ensureBuildx + dockerFirewallPrefix + deploy.EgressSetupScript
 	var cmd string
 	if server.SSHPassword != "" {
 		cmd = fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 %s@%s -p %d %q 2>&1",
@@ -475,4 +497,76 @@ func sanitizeLabel(label string) string {
 		s = s[:40]
 	}
 	return s
+}
+
+// handleListSelectableServers returns the platform regions (and the user's own
+// BYOC servers) a user may deploy to. Powers the region picker in the project
+// create flow — no more silent auto-assignment.
+func (s *Server) handleListSelectableServers(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	servers, err := s.db.ListSelectableServers(r.Context(), u.ID)
+	if err != nil {
+		s.log.Error().Err(err).Msg("list selectable servers")
+		writeError(w, http.StatusInternalServerError, "failed to list servers")
+		return
+	}
+	writeJSON(w, http.StatusOK, servers)
+}
+
+// handleAdminSetServerSelectable toggles whether a platform server is offered
+// in the user region picker — independent of active/draining status, so an
+// admin can hide a server from self-serve without taking it out of rotation.
+func (s *Server) handleAdminSetServerSelectable(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Selectable bool `json:"selectable"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.SetServerUserSelectable(r.Context(), serverID, req.Selectable); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"user_selectable": req.Selectable})
+}
+
+// handleAdminSetServerBackups enables/disables scheduled database backups for
+// every database hosted on a given platform/BYOC server.
+func (s *Server) handleAdminSetServerBackups(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.SetServerBackups(r.Context(), serverID, req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server backups")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"backups_enabled": req.Enabled})
+}
+
+
+// handleAdminUpdateServer renames a server and sets its region slug. The region
+// drives the flag + friendly name shown in the user region picker.
+func (s *Server) handleAdminUpdateServer(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "serverId")
+	var req struct {
+		Label  string `json:"label"`
+		Region string `json:"region"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := s.db.UpdateWorkerServerMeta(r.Context(), serverID, req.Label, req.Region); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update server: "+err.Error())
+		return
+	}
+	updated, _ := s.db.GetWorkerServer(r.Context(), serverID)
+	writeJSON(w, http.StatusOK, updated)
 }

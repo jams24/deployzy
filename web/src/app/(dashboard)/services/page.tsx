@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X } from "lucide-react";
+import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X, Server } from "lucide-react";
+import { regionName, regionFlag } from "@/lib/regions";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -144,6 +144,56 @@ export default function ServicesPage() {
     } catch {}
   }
 
+  // Move a standalone database to another server (Hobby+).
+  const [moveOpen, setMoveOpen] = useState<string | null>(null);
+  const [moveServers, setMoveServers] = useState<{ id: string; label: string; region: string; is_byoc: boolean; full: boolean }[]>([]);
+  const [moving, setMoving] = useState(false);
+  async function openMove(id: string) {
+    if (moveOpen === id) { setMoveOpen(null); return; }
+    setMoveOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/servers/selectable`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  }
+  async function moveDatabase(id: string, name: string, serverId: string, label: string) {
+    if (!confirm(`Migrate "${name}" to ${label}?\n\nThis copies the data to a new instance there. Your original stays untouched — repoint your app to the new connection string, then delete the source once verified.`)) return;
+    setMoving(true);
+    try {
+      const res = await fetch(`${API}/api/v1/services/${id}/move`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ worker_server_id: serverId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) { setMoveOpen(null); alert(`Migrating "${name}" to ${label} — copying data now. Your original is untouched. Once done, the copy appears in this list; repoint your app, then delete the source.`); }
+      else alert(data.error || "Move failed");
+    } catch { alert("Move failed"); }
+    setMoving(false);
+  }
+
+  async function downloadServiceBackup(id: string, name: string) {
+    setBackingUp(id);
+    try {
+      const res = await fetch(`${API}/api/v1/services/${id}/backup`, { headers: headers() });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Backup failed");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}-${new Date().toISOString().slice(0, 10)}.sql.gz`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { alert("Backup failed"); }
+    finally { setBackingUp(null); }
+  }
+
   async function createBackup(projectId: string) {
     setBackingUp(projectId);
     try {
@@ -200,11 +250,11 @@ export default function ServicesPage() {
 
   const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
   const typeColors = (t: string): { icon: string; badge: string } => ({
-    postgres: { icon: "bg-emerald-500/20 text-emerald-400", badge: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" },
-    redis:    { icon: "bg-red-500/20 text-red-400",         badge: "bg-red-500/20 text-red-400 border-red-500/40" },
-    mongodb:  { icon: "bg-green-500/10 text-green-400",     badge: "bg-green-500/10 text-green-400 border-green-500/20" },
-    mysql:    { icon: "bg-orange-500/20 text-orange-400",   badge: "bg-orange-500/20 text-orange-400 border-orange-500/50" },
-  }[t] ?? { icon: "bg-zinc-500/10 text-zinc-400", badge: "bg-zinc-500/10 text-muted-foreground border-zinc-500/20" });
+    postgres: { icon: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20", badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40" },
+    redis:    { icon: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",               badge: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/40" },
+    mongodb:  { icon: "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20",       badge: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30" },
+    mysql:    { icon: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20",   badge: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/40" },
+  }[t] ?? { icon: "bg-zinc-500/10 text-muted-foreground border border-zinc-500/20", badge: "bg-zinc-500/10 text-muted-foreground border-zinc-500/20" });
   const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
   const isSQL = (t: string) => t === "postgres" || t === "mysql";
 
@@ -276,38 +326,42 @@ export default function ServicesPage() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Databases</h1>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Deploy</p>
+          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Databases</h1>
           <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" onClick={load} className="h-8 w-8 p-0" title="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" className="gap-1 h-8 px-2.5 sm:px-3" nativeButton={false} render={<Link href="/new?type=database" />}>
+          <Button variant="outline" size="sm" onClick={load} className="h-8 w-8 p-0 rounded-lg" title="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg" nativeButton={false} render={<Link href="/new?type=database" />}>
             <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> New Database</span>
           </Button>
         </div>
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground animate-pulse">Loading databases…</p>
       ) : rows.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center py-12">
-            <Database className="h-10 w-10 text-muted-foreground/30 mb-4" />
-            <h3 className="font-semibold">No databases yet</h3>
-            <p className="mt-1 text-sm text-muted-foreground text-center max-w-sm">
+        <div className="relative rounded-2xl border border-dashed border-border overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
+          <div className="relative flex flex-col items-center py-16 px-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+              <Database className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h3 className="mt-4 font-semibold">No databases yet</h3>
+            <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
               Create a standalone PostgreSQL, Redis, MongoDB, or MySQL database — or attach one automatically when deploying a project.
             </p>
-            <Button className="mt-5 gap-2" nativeButton={false} render={<Link href="/new?type=database" />}>
+            <Button className="btn-shine mt-5 gap-2 rounded-full px-5" nativeButton={false} render={<Link href="/new?type=database" />}>
               <Database className="h-4 w-4" /> Create Database
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <div className="rounded-xl border border-border/40 divide-y divide-border/40 overflow-hidden bg-card/20">
+        <div className="rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40">
           {/* table header */}
-          <div className="hidden md:flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-white/[0.02]">
+          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 bg-muted/40">
             <span className="flex-1">Database</span>
             <span className="w-28 text-right pr-2">Actions</span>
           </div>
@@ -316,26 +370,26 @@ export default function ServicesPage() {
             const rowBackups = isProj && s.project_id ? (backups[s.project_id] || []) : [];
             const isOpen = !!expanded[s.id];
             return (
-              <div key={s.id} className={`transition-colors ${isOpen ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
-                <div className="px-4 py-2.5 space-y-3">
+              <div key={s.id} className={`transition-colors ${isOpen ? "bg-accent/50" : "hover:bg-accent/40"}`}>
+                <div className="px-4 py-3 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
                     <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${isProj ? "bg-blue-500/20 text-blue-400" : typeColors(s.type).icon}`}>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${isProj ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20" : typeColors(s.type).icon}`}>
                         <Database className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold truncate">{s.name}</span>
-                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">{s.status}</Badge>
+                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40">{s.status}</Badge>
                           <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
                           {isProj && s.project_subdomain && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 gap-1 hidden sm:inline-flex">
+                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-600 dark:text-blue-400 border-blue-500/40 gap-1 hidden sm:inline-flex">
                               <Rocket className="h-2.5 w-2.5" />
                               {s.project_name}
                             </Badge>
                           )}
                           {typeof s.size_mb === "number" && (
-                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/20 text-amber-500 border-amber-500/50" : "text-zinc-400"}`}>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/40" : "text-muted-foreground"}`}>
                               {s.size_mb} MB{s.over_quota ? " · over quota" : ""}
                             </Badge>
                           )}
@@ -361,11 +415,36 @@ export default function ServicesPage() {
                           </Button>
                         </Link>
                       )}
+                      {!isProj && (s.type === "postgres" || s.type === "mysql") && (
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" title="Download a backup (dump)" onClick={() => downloadServiceBackup(s.id, s.name)} disabled={backingUp === s.id}>
+                          {backingUp === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        </Button>
+                      )}
+                      {!isProj && s.type !== "redis" && (
+                        <Button variant="ghost" size="sm" className={`h-8 w-8 p-0 ${moveOpen === s.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} title="Move to another server" onClick={() => openMove(s.id)}>
+                          <Server className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-8 w-8 p-0" title="Delete" onClick={() => promptDelete(s)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
+
+                  {moveOpen === s.id && (
+                    <div className="rounded-lg border border-border/60 bg-muted/50 px-3 py-3">
+                      <p className="text-[11px] text-muted-foreground mb-2">Migrate <span className="font-medium text-foreground">{s.name}</span> to another server. It copies the data to a new instance — your <span className="font-medium">original stays untouched</span> (repoint your app, then delete the source once verified).</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {moveServers.filter(sv => !sv.full).map(sv => (
+                          <button key={sv.id} onClick={() => moveDatabase(s.id, s.name, sv.id, sv.is_byoc ? sv.label : regionName(sv.region, sv.label))} disabled={moving}
+                            className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                            <span>{sv.is_byoc ? "🔧" : regionFlag(sv.region)}</span>{sv.is_byoc ? `${sv.label} (your server)` : regionName(sv.region, sv.label)}
+                          </button>
+                        ))}
+                        {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                      </div>
+                    </div>
+                  )}
 
                   {isOpen && (
                     <>
@@ -462,7 +541,7 @@ export default function ServicesPage() {
                             </div>
 
                             {sqlError[s.id] && (
-                              <div className="rounded-md border border-red-500/50 bg-red-500/20 p-2 font-mono text-[10px] text-red-400 whitespace-pre-wrap break-all">
+                              <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 font-mono text-[10px] text-red-600 dark:text-red-400 whitespace-pre-wrap break-all">
                                 {sqlError[s.id]}
                               </div>
                             )}
@@ -473,7 +552,7 @@ export default function ServicesPage() {
                                   <span>{sqlResult[s.id]!.rows.length} rows</span>
                                   <span>{sqlResult[s.id]!.duration_ms}ms</span>
                                   {sqlResult[s.id]!.rows_affected > 0 && <span>affected: {sqlResult[s.id]!.rows_affected}</span>}
-                                  {sqlResult[s.id]!.truncated && <span className="text-amber-500">truncated</span>}
+                                  {sqlResult[s.id]!.truncated && <span className="text-amber-600 dark:text-amber-400">truncated</span>}
                                 </div>
                                 {sqlResult[s.id]!.columns.length > 0 && (
                                   <div className="rounded-md border border-border/30 bg-muted overflow-x-auto max-h-80">
@@ -490,7 +569,7 @@ export default function ServicesPage() {
                                       </thead>
                                       <tbody>
                                         {sqlResult[s.id]!.rows.map((r, i) => (
-                                          <tr key={i} className={i % 2 ? "bg-white/[0.02]" : ""}>
+                                          <tr key={i} className={i % 2 ? "bg-muted/60" : ""}>
                                             {r.map((v, j) => (
                                               <td key={j} className="px-2 py-1 text-foreground whitespace-nowrap max-w-xs truncate" title={v === null ? "NULL" : String(v)}>
                                                 {v === null ? <span className="text-muted-foreground">NULL</span> : typeof v === "object" ? JSON.stringify(v) : String(v)}
@@ -553,14 +632,14 @@ export default function ServicesPage() {
                             <div className="space-y-1">
                               {rowBackups.map((b) => (
                                 <div key={b.id} className="flex items-center justify-between rounded-md bg-muted px-2.5 py-1.5 text-[10px]">
-                                  <div className="flex items-center gap-2 font-mono text-zinc-400">
+                                  <div className="flex items-center gap-2 font-mono text-muted-foreground">
                                     <Database className="h-3 w-3 text-muted-foreground" />
                                     <span>{new Date(b.created_at).toLocaleString()}</span>
-                                    <span className="text-muted-foreground">{(b.file_size / 1024).toFixed(1)} KB</span>
+                                    <span className="text-muted-foreground/70">{(b.file_size / 1024).toFixed(1)} KB</span>
                                   </div>
                                   <div className="flex gap-1">
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1" onClick={() => downloadBackup(s.project_id!, b)}><Download className="h-2.5 w-2.5" /> Download</Button>
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1 text-blue-400" onClick={() => restoreBackup(s.project_id!, b.id)}><Upload className="h-2.5 w-2.5" /> Restore</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1 text-blue-600 dark:text-blue-400" onClick={() => restoreBackup(s.project_id!, b.id)}><Upload className="h-2.5 w-2.5" /> Restore</Button>
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-destructive" onClick={() => deleteBackup(s.project_id!, b.id)}>Delete</Button>
                                   </div>
                                 </div>

@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LandingContent",
+  "description": "The ONLY thing the AI fills for a product/SaaS landing page. Merged into the landing scaffold as content.json. The AI never writes code. Omit optional sections (pricing, testimonials, faq, metrics) if the prompt doesn't warrant them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "theme", "brand", "hero", "features", "cta"],
+  "properties": {
+    "meta": {
+      "type": "object", "additionalProperties": false, "required": ["title", "description"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 70 },
+        "description": { "type": "string", "maxLength": 160 }
+      }
+    },
+    "theme": {
+      "type": "object", "additionalProperties": false, "required": ["accent", "mode"],
+      "properties": {
+        "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Hex accent matching the product's vibe" },
+        "mode": { "type": "string", "enum": ["dark", "light"] }
+      }
+    },
+    "brand": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 30 },
+        "nav_links": { "type": "array", "maxItems": 5, "items": { "type": "string", "maxLength": 20 } }
+      }
+    },
+    "hero": {
+      "type": "object", "additionalProperties": false, "required": ["headline", "subheadline", "cta_primary"],
+      "properties": {
+        "badge": { "type": "string", "maxLength": 40, "description": "Small pill above the headline, e.g. 'Now in public beta'" },
+        "headline": { "type": "string", "maxLength": 80, "description": "Big, punchy, benefit-driven" },
+        "subheadline": { "type": "string", "maxLength": 200 },
+        "cta_primary": {
+          "type": "object", "additionalProperties": false, "required": ["label"],
+          "properties": { "label": { "type": "string", "maxLength": 30 }, "url": { "type": "string" } }
+        },
+        "cta_secondary": {
+          "type": "object", "additionalProperties": false, "required": ["label"],
+          "properties": { "label": { "type": "string", "maxLength": 30 }, "url": { "type": "string" } }
+        }
+      }
+    },
+    "features": {
+      "type": "array", "minItems": 3, "maxItems": 6,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["title", "description"],
+        "properties": {
+          "emoji": { "type": "string", "maxLength": 4 },
+          "title": { "type": "string", "maxLength": 40 },
+          "description": { "type": "string", "maxLength": 160 }
+        }
+      }
+    },
+    "metrics": {
+      "type": "array", "maxItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["value", "label"],
+        "properties": {
+          "value": { "type": "string", "maxLength": 12 },
+          "label": { "type": "string", "maxLength": 30 }
+        }
+      }
+    },
+    "pricing": {
+      "type": "array", "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "price", "features"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 20 },
+          "price": { "type": "string", "maxLength": 12 },
+          "period": { "type": "string", "maxLength": 14 },
+          "features": { "type": "array", "maxItems": 7, "items": { "type": "string", "maxLength": 50 } },
+          "cta": { "type": "string", "maxLength": 24 },
+          "highlighted": { "type": "boolean" }
+        }
+      }
+    },
+    "testimonials": {
+      "type": "array", "maxItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["quote", "author"],
+        "properties": {
+          "quote": { "type": "string", "maxLength": 220 },
+          "author": { "type": "string", "maxLength": 40 },
+          "role": { "type": "string", "maxLength": 50 }
+        }
+      }
+    },
+    "faq": {
+      "type": "array", "maxItems": 6,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["q", "a"],
+        "properties": {
+          "q": { "type": "string", "maxLength": 100 },
+          "a": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "cta": {
+      "type": "object", "additionalProperties": false, "required": ["headline", "button"],
+      "properties": {
+        "headline": { "type": "string", "maxLength": 70 },
+        "sub": { "type": "string", "maxLength": 140 },
+        "button": {
+          "type": "object", "additionalProperties": false, "required": ["label"],
+          "properties": { "label": { "type": "string", "maxLength": 30 }, "url": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

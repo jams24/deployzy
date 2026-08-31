@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/db"
 )
 
 const backupDir = "/opt/serverme/backups"
@@ -248,4 +250,83 @@ func (s *Server) handleUpdateBackupSchedule(w http.ResponseWriter, r *http.Reque
 
 	s.db.UpdateBackupSchedule(r.Context(), projectID, req.Enabled, req.Schedule, req.Time, req.Retention)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// handleServiceBackup streams an on-demand dump of a standalone database
+// (postgres/mysql) to the user as a gzipped download. It's read-only: nothing
+// is stored server-side and the source database is never touched. Works for
+// both central-Postgres and container-backed databases because it dumps via the
+// service's own external connection URL. Redis/Mongo aren't supported here.
+func (s *Server) handleServiceBackup(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	svcID := chi.URLParam(r, "serviceId")
+
+	svc, err := s.db.GetService(r.Context(), svcID)
+	if err != nil || svc == nil || svc.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if svc.Type != "postgres" && svc.Type != "mysql" {
+		writeError(w, http.StatusBadRequest, "On-demand backup is available for PostgreSQL and MySQL databases.")
+		return
+	}
+
+	connURL := svc.ExternalConnectionURL(s.resolveServicePublicHost())
+	ts := time.Now().UTC().Format("20060102-150405")
+	tmp := filepath.Join(os.TempDir(), fmt.Sprintf("dbdump-%s-%s.sql.gz", svc.ID, ts))
+	defer os.Remove(tmp)
+
+	var dumpCmd string
+	switch svc.Type {
+	case "postgres":
+		dumpCmd = fmt.Sprintf("pg_dump --no-owner --no-acl %s | gzip > %s", shellQuote(connURL), shellQuote(tmp))
+	case "mysql":
+		// mysql://user:pass@host:port/db → mysqldump flags
+		dumpCmd = fmt.Sprintf("mysqldump --result-file=/dev/stdout --databases %s --host=%s --port=%d --user=%s -p%s | gzip > %s",
+			shellQuote(strv(svc.DBName)), shellQuote(svcHost(svc)), svcPort(svc),
+			shellQuote(strv(svc.DBUser)), shellQuote(strv(svc.DBPassword)), shellQuote(tmp))
+	}
+
+	if out, err := exec.Command("bash", "-c", dumpCmd).CombinedOutput(); err != nil {
+		s.log.Error().Err(err).Str("service", svc.ID).Str("out", trimForLog(string(out))).Msg("service backup dump failed")
+		writeError(w, http.StatusInternalServerError, "backup failed — please try again or contact support@deployzy.com")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.sql.gz"`, svc.Name, ts))
+	http.ServeFile(w, r, tmp)
+}
+
+// shellQuote wraps a value in single quotes for safe use in a bash -c command,
+// escaping any embedded single quotes.
+func shellQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+func svcHost(svc *db.Service) string {
+	if svc.PublicHost != nil && *svc.PublicHost != "" {
+		return *svc.PublicHost
+	}
+	if svc.Host != "" {
+		return svc.Host
+	}
+	return "localhost"
+}
+
+func svcPort(svc *db.Service) int {
+	if svc.PublicPort != nil && *svc.PublicPort > 0 {
+		return *svc.PublicPort
+	}
+	if svc.Port > 0 {
+		return svc.Port
+	}
+	return 3306
+}
+
+func strv(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

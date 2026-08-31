@@ -94,11 +94,21 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		_ = req
 	}
 
-	// Check subdomain availability
+	// Check subdomain availability. A plain collision (the name is taken by
+	// another user's project/reservation) shouldn't dead-end the deploy —
+	// names often come straight from a repo or template ("app", "web", "api")
+	// and would otherwise 409. Auto-pick the next free variant instead. The
+	// user's own existing subdomain still reports available (see
+	// CheckSubdomainAvailable) so idempotent redeploys keep reusing it; and
+	// plan-limit reasons still surface as an error rather than being bypassed.
 	available, reason := s.db.CheckSubdomainAvailable(r.Context(), req.Subdomain, u.ID)
 	if !available {
-		writeError(w, http.StatusConflict, reason)
-		return
+		if reason == "subdomain already taken" {
+			req.Subdomain = s.uniqueSubdomain(r.Context(), req.Subdomain, u.ID)
+		} else {
+			writeError(w, http.StatusConflict, reason)
+			return
+		}
 	}
 
 	project, err := s.db.CreateProject(r.Context(), u.ID, req.Name, req.Subdomain, req.Framework)
@@ -146,6 +156,20 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		if ws.UserID != nil && *ws.UserID != u.ID {
 			writeError(w, http.StatusForbidden, "you don't own that worker server")
 			return
+		}
+		// Platform target: must be one the user is actually allowed to pick.
+		// Admins bypass so they can place a project anywhere for support.
+		if ws.UserID == nil {
+			if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+				if ws.Status != "active" || !ws.UserSelectable {
+					writeError(w, http.StatusBadRequest, "that region isn't available for new projects")
+					return
+				}
+				if ws.MaxProjects > 0 && ws.CurrentProjects >= ws.MaxProjects {
+					writeError(w, http.StatusConflict, "that region is at capacity — pick another")
+					return
+				}
+			}
 		}
 		s.db.AssignProjectServer(r.Context(), project.ID, req.WorkerServerID)
 		project.WorkerServerID = req.WorkerServerID
@@ -365,6 +389,24 @@ func (s *Server) handleUpdateBuildConfig(w http.ResponseWriter, r *http.Request)
 	if req.CPUs < 0 || req.CPUs > 8 {
 		writeError(w, http.StatusBadRequest, "cpus must be 0-8")
 		return
+	}
+	// Enforce the user's PLAN ceiling up front: a project can't request more
+	// memory/CPU than the plan allows. Admins (unlimited) bypass. 0 = "use
+	// default" is always fine. The deploy engine also clamps, but rejecting here
+	// with a clear message beats silently shrinking the value at deploy time.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		if usr, _ := s.db.GetUserByID(r.Context(), u.ID); usr != nil {
+			if lim, _ := s.db.GetPlanLimits(r.Context(), usr.Plan); lim != nil {
+				if req.MemoryMB > 0 && !db.Unlimited(lim.MaxMemoryMB) && req.MemoryMB > lim.MaxMemoryMB {
+					writeError(w, http.StatusForbidden, fmt.Sprintf("Memory %d MB exceeds your plan limit of %d MB. Upgrade your plan for more.", req.MemoryMB, lim.MaxMemoryMB))
+					return
+				}
+				if req.CPUs > 0 && lim.MaxCPUs > 0 && req.CPUs > lim.MaxCPUs {
+					writeError(w, http.StatusForbidden, fmt.Sprintf("%.2f vCPU exceeds your plan limit of %.2f vCPU. Upgrade your plan for more.", req.CPUs, lim.MaxCPUs))
+					return
+				}
+			}
+		}
 	}
 	// Only allow a small allowlist of node versions so users can't pass "; rm -rf /" as a tag
 	if req.NodeVersion != "" {
@@ -715,14 +757,18 @@ func (s *Server) handleMoveProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate a BYOC target belongs to the user and is active. Empty = platform.
+	// Validate the target: either a platform server (region) or the user's own
+	// BYOC box. Empty = shared platform. Mirrors the create-time region picker so
+	// move offers the same set of destinations (e.g. a France region + own BYOC).
 	if target != "" {
 		srv, err := s.db.GetWorkerServer(r.Context(), target)
 		if err != nil || srv == nil {
 			writeError(w, http.StatusBadRequest, "target server not found")
 			return
 		}
-		if srv.UserID == nil || *srv.UserID != u.ID {
+		isPlatform := srv.UserID == nil
+		isOwnBYOC := srv.UserID != nil && *srv.UserID == u.ID
+		if !isPlatform && !isOwnBYOC {
 			writeError(w, http.StatusForbidden, "you don't own that server")
 			return
 		}
@@ -832,9 +878,15 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	subdomain := project.Subdomain
 
-	// Stop and remove container
+	// Stop and remove container. On a remote (BYOC) host this can fail if the
+	// server is unreachable — the DB row is still removed, but the container may
+	// linger as an orphan, so we surface a warning rather than a clean success.
+	var teardownWarning string
 	if s.deployer != nil {
-		s.deployer.Delete(r.Context(), project)
+		if err := s.deployer.Delete(r.Context(), project); err != nil {
+			s.log.Warn().Err(err).Str("project", projectID).Msg("project container teardown could not be confirmed on delete")
+			teardownWarning = "Project removed, but we couldn't reach the server to confirm the container was stopped. It may still be running — verify on your server."
+		}
 	}
 
 	serverID := project.WorkerServerID
@@ -857,7 +909,11 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		s.db.ReconcileServerAllocation(r.Context(), serverID)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	resp := map[string]string{"status": "deleted"}
+	if teardownWarning != "" {
+		resp["warning"] = teardownWarning
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetDeployLogs(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
+import { regionName } from "@/lib/regions";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -105,13 +106,37 @@ interface GitHubRepo {
   html_url: string; updated_at: string;
 }
 
+// Solid dot per status — a coloured dot next to the name reads faster than a
+// pill badge, and frees the header row for the project name.
+const statusDot: Record<string, string> = {
+  running: "bg-emerald-500",
+  building: "bg-amber-500 animate-pulse",
+  stopped: "bg-zinc-500",
+  failed: "bg-red-500",
+  crashed: "bg-red-500",
+  created: "bg-blue-500",
+};
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never deployed";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 const statusColor: Record<string, string> = {
-  running: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
-  building: "bg-amber-500/20 text-amber-500 border-amber-500/50",
+  running: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+  building: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
   stopped: "bg-zinc-500/10 text-muted-foreground border-zinc-500/20",
-  failed: "bg-red-500/20 text-red-500 border-red-500/40",
-  crashed: "bg-red-500/20 text-red-500 border-red-500/40",
-  created: "bg-blue-500/20 text-blue-400 border-blue-500/50",
+  failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30",
+  crashed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30",
+  created: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
 };
 
 const langColor: Record<string, string> = {
@@ -126,13 +151,13 @@ function previewSubdomainExample(parent: string): string {
   const suffix = "-pr-123";
   const max = 63 - suffix.length;
   const p = parent.length > max ? parent.slice(0, max) : parent;
-  return `${p}${suffix}.deployzy.com`;
+  return `${p}${suffix}.deployzy.app`;
 }
 
 // Sparkline renders a tiny inline SVG line chart. Keeps us free of a heavy
 // charting dep for the dashboard — one file, zero deps.
 function Sparkline({ values, color, height = 32 }: { values: number[]; color: string; height?: number }) {
-  if (!values.length) return <div style={{ height }} className="w-full rounded bg-white/[0.02]" />;
+  if (!values.length) return <div style={{ height }} className="w-full rounded bg-muted" />;
   const w = 160;
   const max = Math.max(...values, 0.0001);
   const min = Math.min(...values, 0);
@@ -161,8 +186,8 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
   return (
     <div className="space-y-4">
       {services.map((svc, i) => (
-        <div key={i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4 space-y-3 relative">
-          <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="absolute right-3 top-3 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-white/5">
+        <div key={i} className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3 relative">
+          <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="absolute right-3 top-3 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-accent">
             <X className="h-3.5 w-3.5" />
           </button>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -178,7 +203,7 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
               <label className="text-[10px] text-muted-foreground">Base Directory</label>
               <div className="relative">
                 <input type="text" placeholder="apps/api" value={svc.root_dir} onChange={(e) => update(i, { root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                <button type="button" title="Browse repository directories" disabled={!repoConnected} onClick={() => onBrowse(i)} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                 <button type="button" title="Browse repository directories" disabled={!repoConnected} onClick={() => onBrowse(i)} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
                   <Folder className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -187,15 +212,15 @@ function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, 
               <label className="text-[10px] text-muted-foreground">Detected Stack</label>
               <div className="relative">
                 <input type="text" readOnly placeholder="auto" value={svc.framework} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-muted-foreground focus:outline-none" />
-                <button type="button" title="Re-detect stack" disabled={!repoConnected} onClick={async () => update(i, { framework: await detectStack(svc.root_dir) })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                 <button type="button" title="Re-detect stack" disabled={!repoConnected} onClick={async () => update(i, { framework: await detectStack(svc.root_dir) })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
           </div>
-          <div className="rounded-md border border-white/10 bg-black/30 px-3 py-2">
+          <div className="rounded-md border border-border/60 bg-background px-3 py-2">
             <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Public URL</p>
-            <p className="text-xs font-mono text-foreground truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.com</p>
+            <p className="text-xs font-mono text-foreground truncate">{(subdomain || "your-app")}{svc.name ? `-${svc.name}` : ""}.deployzy.app</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1">
@@ -242,6 +267,7 @@ function ProjectsContent() {
   const [envText, setEnvText] = useState("");
   const [projectDetail, setProjectDetail] = useState<Project | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteText, setDeleteText] = useState("");
   const [importRepo, setImportRepo] = useState<GitHubRepo | null>(null);
   const [importName, setImportName] = useState("");
@@ -249,6 +275,9 @@ function ProjectsContent() {
   const [importing, setImporting] = useState(false);
   const [importEnvText, setImportEnvText] = useState("");
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string }[]>([]);
+  // Valid "Move to…" destinations — platform regions the user can deploy to +
+  // their own BYOC servers (same set as the create-time region picker).
+  const [moveTargets, setMoveTargets] = useState<{ id: string; label: string; region: string; is_byoc: boolean; full: boolean }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
   const [togglingAutoDeploy, setTogglingAutoDeploy] = useState<string | null>(null);
   const [editingBuild, setEditingBuild] = useState<string | null>(null);
@@ -287,6 +316,11 @@ function ProjectsContent() {
   const [liveMin, setLiveMin] = useState<Record<string, boolean>>({});   // minimized (header only)
   const [liveAutoscroll, setLiveAutoscroll] = useState<Record<string, boolean>>({});
   const wsRef = useRef<Record<string, WebSocket>>({});
+  const deployLogRef = useRef<HTMLDivElement>(null);
+  // Whether the Deploy Logs pane is scrolled to the bottom. We only auto-pin to
+  // the newest line when the user is already at the bottom, so scrolling up to
+  // read old logs isn't yanked back down on every poll.
+  const deployAtBottomRef = useRef(true);
   const liveScrollRef = useRef<Record<string, HTMLDivElement | null>>({});
   // Panel collapse states (metrics + crons + analytics) — default collapsed so
   // opening a project doesn't blast the user with every panel at once.
@@ -539,6 +573,10 @@ function ProjectsContent() {
     setDeploying(id);
     // Optimistically mark as building so the polling useEffect kicks in immediately.
     setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "building" } : p));
+    // Open the project's Deploy Logs panel so build output streams into view live
+    // (the log poll is keyed on selectedProject — without this the build streams
+    // to the DB but the user sees nothing until they manually expand the project).
+    setSelectedProject(id);
     await fetch(`${API}/api/v1/projects/${id}/deploy`, { method: "POST", headers: headers() });
     loadLogs(id);
     setTimeout(() => setDeploying(null), 3000);
@@ -570,11 +608,28 @@ function ProjectsContent() {
   }
 
   async function remove(id: string) {
-    await fetch(`${API}/api/v1/projects/${id}`, { method: "DELETE", headers: headers() });
-    setSelectedProject(null);
-    setConfirmDelete(null);
-    setDeleteText("");
-    load();
+    // Tearing down the container can take several seconds — show progress on the
+    // button (spinner + "Deleting…") and disable it so it's clearly working
+    // instead of appearing frozen.
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${id}`, { method: "DELETE", headers: headers() });
+      setSelectedProject(null);
+      setConfirmDelete(null);
+      setDeleteText("");
+      // The delete succeeds even if the container teardown couldn't be confirmed
+      // (e.g. a BYOC server was unreachable) — surface that so the user knows to
+      // check for an orphaned container rather than assuming it's fully gone.
+      try {
+        const data = await res.json();
+        if (data?.warning) alert(data.warning);
+      } catch {}
+      // Optimistically drop it from the list right away, then reconcile.
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      await load();
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   async function loadLogs(id: string) {
@@ -641,10 +696,14 @@ function ProjectsContent() {
 
   async function deployCommit(projectId: string, sha: string) {
     setDeploying(projectId);
+    // Mark building + open the log panel so build output streams into view live.
+    setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, status: "building" } : p));
+    setSelectedProject(projectId);
     await fetch(`${API}/api/v1/projects/${projectId}/deploy`, {
       method: "POST", headers: headers(),
       body: JSON.stringify({ commit_sha: sha }),
     });
+    loadLogs(projectId);
     setTimeout(() => { setDeploying(null); load(); }, 3000);
   }
 
@@ -830,7 +889,7 @@ function ProjectsContent() {
     try {
       const [oRes, ...topReses] = await Promise.all([
         fetch(`${API}/api/v1/projects/${projectId}/analytics?range=${range}`, { headers: headers() }),
-        ...["path", "referrer", "country", "browser", "device"].map((f) =>
+        ...["path", "referrer", "country", "browser", "os", "device"].map((f) =>
           fetch(`${API}/api/v1/projects/${projectId}/analytics/top?field=${f}&range=${range}`, { headers: headers() }),
         ),
       ]);
@@ -840,7 +899,7 @@ function ProjectsContent() {
         setSiteRange((prev) => ({ ...prev, [projectId]: range }));
       }
       const topByField: Record<string, SiteTopRow[]> = {};
-      const fields = ["path", "referrer", "country", "browser", "device"];
+      const fields = ["path", "referrer", "country", "browser", "os", "device"];
       for (let i = 0; i < topReses.length; i++) {
         if (topReses[i].ok) {
           const rows = await topReses[i].json();
@@ -929,6 +988,12 @@ function ProjectsContent() {
       .then(r => r.ok ? r.json() : [])
       .then(data => setUserServers(Array.isArray(data) ? data : []))
       .catch(() => {});
+    // Selectable destinations for "Move to…" (platform regions + own BYOC,
+    // proper names, no raw IPs, excludes hidden servers like the primary).
+    fetch(`${API}/api/v1/servers/selectable`, { headers: headers() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setMoveTargets(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }
 
   useEffect(() => { load(); loadGHStatus(); loadDomains(); loadServers(); }, []);
@@ -965,6 +1030,30 @@ function ProjectsContent() {
     return () => { clearInterval(t); clearInterval(m); clearInterval(a); };
   }, [selectedProject]);
 
+  // Keep the Deploy Logs panel pinned to the newest line as logs stream in
+  // (they render oldest→newest, so the latest output is at the bottom) — but
+  // ONLY when the user is already at the bottom, so scrolling up to read old
+  // logs isn't fought by the 5s poll.
+  useEffect(() => {
+    const el = deployLogRef.current;
+    if (el && deployAtBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [logs]);
+
+  // Opening a different project resets the pane to "pinned to newest".
+  useEffect(() => {
+    deployAtBottomRef.current = true;
+  }, [selectedProject]);
+
+  // While the open project is actively building, poll its deploy logs faster (2s)
+  // so streamed build output feels live instead of arriving in 5s jumps.
+  useEffect(() => {
+    if (!selectedProject) return;
+    const building = projects.some(p => p.id === selectedProject && p.status === "building");
+    if (!building) return;
+    const t = setInterval(() => loadLogs(selectedProject), 2000);
+    return () => clearInterval(t);
+  }, [selectedProject, projects]);
+
   const filteredRepos = (ghRepos || []).filter((r) =>
     !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
@@ -972,32 +1061,33 @@ function ProjectsContent() {
   const importPh = getBuildPlaceholders(importRepo ? detectFramework(importRepo.language) : "node");
 
   return (
-    <div>
+    <div className="animate-fade-in-up">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Projects</h1>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Deploy</p>
+          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Projects</h1>
           <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Deploy apps from your GitHub repos.</p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Grid / list view toggle */}
-          <div className="flex items-center rounded-md border border-border/40 p-0.5">
-            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded ${viewMode === "grid" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <div className="flex items-center rounded-lg border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-0.5">
+            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === "grid" ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
-            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded ${viewMode === "list" ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === "list" ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               <List className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-8 w-8 p-0 sm:w-auto sm:px-3 gap-1">
+          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-8 w-8 p-0 sm:w-auto sm:px-3 gap-1 rounded-lg">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           {ghConnected ? (
-            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="gap-1 h-8 px-2.5 sm:px-3">
+            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg">
               <Plus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Import Repo</span>
             </Button>
           ) : (
-            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="gap-1 h-8 px-2.5 sm:px-3">
+            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg">
               <GitBranch className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Connect GitHub</span>
             </Button>
@@ -1007,12 +1097,12 @@ function ProjectsContent() {
 
       {/* GitHub status */}
       {ghConnected && (
-        <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/30 px-4 py-2.5">
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm min-w-0">
             <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
             <span className="font-medium truncate">@{ghUsername}</span>
-            <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/50 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
+            <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={disconnectGH} className="text-xs text-muted-foreground">Disconnect</Button>
         </div>
@@ -1038,7 +1128,7 @@ function ProjectsContent() {
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-1">
                 {filteredRepos.map((repo) => (
-                  <div key={repo.id} className="flex items-center justify-between rounded-lg border border-border/30 p-3 hover:bg-accent/20 transition-colors">
+                  <div key={repo.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 hover:bg-accent/60 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       {repo.language && (
                         <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${langColor[repo.language] || "bg-gray-400"}`} />
@@ -1073,7 +1163,7 @@ function ProjectsContent() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 rounded-lg border border-border/30 p-3 bg-accent/10">
+            <div className="flex items-center gap-3 rounded-lg border border-border/60 p-3 bg-muted/50">
               {importRepo.language && (
                 <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${langColor[importRepo.language] || "bg-gray-400"}`} />
               )}
@@ -1142,7 +1232,7 @@ function ProjectsContent() {
             </div>
 
             {/* Multiple Services */}
-            <div className="rounded-lg border border-border/40 overflow-hidden">
+            <div className="rounded-lg border border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-start gap-2">
                   <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -1160,7 +1250,7 @@ function ProjectsContent() {
                     setImportMultiService(next);
                     if (next && importServices.length === 0) setImportServices([makeService(0)]);
                   }}
-                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${importMultiService ? "bg-violet-600" : "bg-zinc-700"}`}
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${importMultiService ? "bg-violet-600" : "bg-zinc-300 dark:bg-zinc-700"}`}
                 >
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${importMultiService ? "left-[18px]" : "left-0.5"}`} />
                 </button>
@@ -1180,8 +1270,8 @@ function ProjectsContent() {
             </div>
 
             {/* Advanced Build & Runtime Settings */}
-            <div className="rounded-lg border border-border/40 overflow-hidden">
-              <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors">
+            <div className="rounded-lg border border-border overflow-hidden">
+              <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/60 transition-colors">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4 text-muted-foreground" />
                   <span className="text-xs font-medium">Advanced Build &amp; Runtime Settings</span>
@@ -1196,7 +1286,7 @@ function ProjectsContent() {
                       <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-muted-foreground">(monorepos)</span></label>
                       <div className="relative">
                         <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                        <button type="button" title="Browse repository directories" disabled={!importRepo?.full_name} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                        <button type="button" title="Browse repository directories" disabled={!importRepo?.full_name} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
                           <Folder className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -1230,13 +1320,13 @@ function ProjectsContent() {
                       <label className="text-[10px] text-muted-foreground">
                         Memory MB <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                       </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={importBuildCfg.memory_mb || ""} onChange={(e) => { const v = parseInt(e.target.value) || 0; const cap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : Infinity; setImportBuildCfg({ ...importBuildCfg, memory_mb: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-muted-foreground">
                         CPUs <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
                       </label>
-                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                      <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={importBuildCfg.cpus || ""} onChange={(e) => { const v = parseFloat(e.target.value) || 0; const cap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : Infinity; setImportBuildCfg({ ...importBuildCfg, cpus: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-muted-foreground">(e.g. /health; empty = skip)</span></label>
@@ -1270,24 +1360,27 @@ function ProjectsContent() {
 
       {/* Projects list */}
       {loading ? (
-        <p className="mt-8 text-sm text-muted-foreground">Loading...</p>
+        <p className="mt-8 text-sm text-muted-foreground animate-pulse">Loading projects…</p>
       ) : projects.length === 0 && !showRepoPicker ? (
-        <Card className="mt-8">
-          <CardContent className="flex flex-col items-center py-16">
-            <Rocket className="h-12 w-12 text-muted-foreground/30" />
+        <div className="relative mt-8 rounded-2xl border border-dashed border-border overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
+          <div className="relative flex flex-col items-center py-16 px-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+              <Rocket className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
             <h3 className="mt-4 font-semibold">No projects yet</h3>
             <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
               {ghConnected ? "Import a repo from GitHub to deploy your first app." : "Connect your GitHub account to import and deploy repos."}
             </p>
             {ghConnected ? (
-              <Button onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="mt-4 gap-1"><Plus className="h-4 w-4" /> Import Repo</Button>
+              <Button onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="btn-shine mt-5 gap-1 rounded-full px-5"><Plus className="h-4 w-4" /> Import Repo</Button>
             ) : (
-              <Button nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="mt-4 gap-1">
+              <Button nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="btn-shine mt-5 gap-1 rounded-full px-5">
                 <GitBranch className="h-4 w-4" /> Connect GitHub
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <div className="mt-6 space-y-3">
           {/* Label filter bar — only show once there are any labels across projects */}
@@ -1297,19 +1390,19 @@ function ProjectsContent() {
             return (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] text-muted-foreground">Filter:</span>
-                <button onClick={() => setLabelFilter("")} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === "" ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground"}`}>All</button>
+                <button onClick={() => setLabelFilter("")} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${labelFilter === "" ? "border-foreground/30 bg-accent text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>All</button>
                 {allLabels.map((l) => (
-                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-400" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>{l}</button>
                 ))}
               </div>
             );
           })()}
           <div className={viewMode === "grid"
             ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
-            : "rounded-xl border border-border/40 divide-y divide-border/40 overflow-hidden bg-card/20"}>
+            : "rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40"}>
             {/* table header (list view only) */}
             {viewMode === "list" && (
-              <div className="hidden md:flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-white/[0.02]">
+              <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 bg-muted/40">
                 <span className="flex-1">Project</span>
                 <span className="w-44 text-right pr-2">Actions</span>
               </div>
@@ -1320,36 +1413,67 @@ function ProjectsContent() {
             const isSel = selectedProject === p.id;
             return (
             <div key={p.id} id={`project-row-${p.id}`} className={isGrid
-              ? `rounded-xl border bg-card/20 overflow-hidden transition-colors ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/20" : "border-border/40 hover:border-foreground/20"}`
-              : `transition-colors ${isSel ? "bg-white/[0.03]" : "hover:bg-white/[0.015]"}`}>
-              <div className={isGrid ? "p-4" : "px-4 py-2.5"}>
+              ? `rounded-2xl border bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden transition-all duration-300 ${isSel ? "sm:col-span-2 xl:col-span-3 border-foreground/30 shadow-[0_16px_48px_-24px_rgba(0,0,0,0.3)]" : "border-border/60 hover:border-foreground/25 hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.25)]"}`
+              : `transition-colors ${isSel ? "bg-accent/50" : "hover:bg-accent/40"}`}>
+              <div className={isGrid ? "p-5" : "px-4 py-2.5"}>
                 <div className={isGrid && !isSel ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
-                  <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedProject(selectedProject === p.id ? null : p.id)}>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/20 text-primary shrink-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => {
+                    const opening = selectedProject !== p.id;
+                    setSelectedProject(opening ? p.id : null);
+                    // Expanding a lower project reflows the layout (its row/card
+                    // grows); keep the clicked project in view instead of letting
+                    // it scroll away toward the top.
+                    if (opening) setTimeout(() => {
+                      document.getElementById(`project-row-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    }, 60);
+                  }}>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground shrink-0">
                       <Rocket className="h-4 w-4" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{p.name}</span>
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
-                        <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">{p.framework}</Badge>
+                        <span className="relative flex h-1.5 w-1.5 shrink-0" title={p.status}>
+                          {p.status === "running" && <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+                          <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${statusDot[p.status] || "bg-zinc-500"}`} />
+                        </span>
+                        <span className="text-[15px] font-medium truncate">{p.name}</span>
+                        {isGrid && (
+                          <span className="text-[11px] text-muted-foreground shrink-0 capitalize">{p.status}</span>
+                        )}
+                        {!isGrid && (
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColor[p.status] || ""}`}>{p.status}</Badge>
+                        )}
                         {(p.labels || []).map((l) => (
-                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-400 border-blue-500/50 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
+                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-600 dark:text-blue-400 border-blue-500/40 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
                         ))}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground font-mono min-w-0">
+
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono min-w-0">
                         <Globe className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{p.subdomain}.deployzy.com</span>
+                        <span className="truncate">{p.subdomain}.deployzy.app</span>
+                      </div>
+
+                      {/* Metadata line — stack, repo and last deploy. None of
+                          this was visible before, so every card looked alike. */}
+                      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground min-w-0 flex-wrap">
+                        <span className="capitalize">{p.framework || "custom"}</span>
                         {p.github_repo && (
                           <>
-                            <GitBranch className="h-3 w-3 ml-1 shrink-0 hidden sm:inline" />
-                            <span className="truncate hidden sm:inline">{p.github_repo}</span>
+                            <span className="text-border">·</span>
+                            <span className="inline-flex items-center gap-1 min-w-0">
+                              <GitBranch className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{p.github_repo}</span>
+                            </span>
                           </>
                         )}
+                        <span className="text-border">·</span>
+                        <span className="whitespace-nowrap">{timeAgo(p.last_deploy_at)}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-wrap shrink-0">
+                  <div className={isGrid && !isSel
+                    ? "flex items-center gap-1.5 flex-wrap pt-3 border-t border-border/70"
+                    : "flex items-center gap-1 flex-wrap shrink-0"}>
                     {p.status !== "running" && p.status !== "building" && (
                       <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                         {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -1358,8 +1482,8 @@ function ProjectsContent() {
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
-                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline"> Visit</span>
+                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
+                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
                         </Button>
                         <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                           {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -1369,21 +1493,24 @@ function ProjectsContent() {
                           <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>
                         </Button>
                         {(() => {
-                          const otherServers = userServers.filter(s => s.status === "active" && s.id !== p.worker_server_id);
-                          const showPlatform = !!p.worker_server_id;
-                          if (!showPlatform && otherServers.length === 0) return null;
+                          // Destinations = selectable platform regions + own BYOC,
+                          // minus wherever this project already lives and any full box.
+                          const targets = moveTargets.filter(s => !s.full && s.id !== p.worker_server_id);
+                          if (targets.length === 0) return null;
+                          // Hidden on collapsed grid cards — it was the widest
+                          // control on the row for an action taken rarely.
+                          if (isGrid && !isSel) return null;
                           return (
                             <select
                               className="h-8 max-w-[110px] sm:max-w-none rounded-md border border-input bg-background px-2 text-xs"
                               value=""
                               disabled={deploying === p.id}
                               title="Move this project to another server (Pro)"
-                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v === "platform" ? "" : v); }}
+                              onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(p.id, v); }}
                             >
                               <option value="">Move to…</option>
-                              {showPlatform && <option value="platform">Platform (shared)</option>}
-                              {otherServers.map(s => (
-                                <option key={s.id} value={s.id}>{s.label} ({s.host})</option>
+                              {targets.map(s => (
+                                <option key={s.id} value={s.id}>{s.is_byoc ? s.label : regionName(s.region, s.label)}</option>
                               ))}
                             </select>
                           );
@@ -1391,8 +1518,8 @@ function ProjectsContent() {
                       </>
                     )}
                     {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" title="Delete project" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <Button variant="ghost" size="sm" disabled={deletingId === p.id} className={`h-8 px-2 text-destructive hover:text-destructive ${isGrid && !isSel ? "ml-auto" : ""}`} title="Delete project" onClick={() => { setConfirmDelete(p.id); setDeleteText(""); }}>
+                      {deletingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                 </div>
@@ -1423,12 +1550,14 @@ function ProjectsContent() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs border-red-500/50 text-red-500 hover:bg-red-500/20 hover:text-red-500"
-                        disabled={deleteText.trim() !== p.name.trim()}
+                        disabled={deleteText.trim() !== p.name.trim() || deletingId === p.id}
                         onClick={() => remove(p.id)}
                       >
-                        <Trash2 className="h-3 w-3 mr-1" /> Delete Forever
+                        {deletingId === p.id
+                          ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Deleting…</>
+                          : <><Trash2 className="h-3 w-3 mr-1" /> Delete Forever</>}
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setConfirmDelete(null); setDeleteText(""); }}>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={deletingId === p.id} onClick={() => { setConfirmDelete(null); setDeleteText(""); }}>
                         Cancel
                       </Button>
                     </div>
@@ -1437,7 +1566,7 @@ function ProjectsContent() {
 
                 {/* Auto-Deploy Toggle */}
                 {selectedProject === p.id && p.github_repo && (
-                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border/40 bg-card/30 px-4 py-3">
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card/30 px-4 py-3">
                     <div className="flex items-center gap-3">
                       <RefreshCw className="h-4 w-4 text-muted-foreground" />
                       <div>
@@ -1451,7 +1580,7 @@ function ProjectsContent() {
                       onClick={() => toggleAutoDeploy(p.id, !p.auto_deploy)}
                       disabled={togglingAutoDeploy === p.id}
                       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${
-                        p.auto_deploy ? "bg-emerald-500" : "bg-zinc-700"
+                        p.auto_deploy ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"
                       } ${togglingAutoDeploy === p.id ? "opacity-50" : ""}`}
                     >
                       <span
@@ -1467,7 +1596,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-4">
                     {editingLabels === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="rounded-lg border border-border p-3 space-y-2">
                         <label className="text-[10px] text-muted-foreground">Labels <span className="text-muted-foreground">(comma-separated, max 10)</span></label>
                         <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                         <div className="flex gap-2">
@@ -1486,7 +1615,7 @@ function ProjectsContent() {
 
                 {/* Custom Domains (inline) */}
                 {selectedProject === p.id && (
-                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs font-medium">Custom Domains</span>
@@ -1496,9 +1625,9 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2 min-w-0">
                           <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="font-mono text-foreground hover:text-foreground truncate">{d.domain}</a>
                           {d.verified ? (
-                            <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">verified</Badge>
+                            <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">verified</Badge>
                           ) : (
-                            <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50">needs CNAME</Badge>
+                            <Badge variant="outline" className="text-[9px] text-amber-600 dark:text-amber-400 border-amber-500/40">needs CNAME</Badge>
                           )}
                         </div>
                         <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive hover:text-destructive" onClick={() => unbindDomain(d.id)}>Unbind</Button>
@@ -1507,7 +1636,7 @@ function ProjectsContent() {
                     {/* Unverified domains owned by user, not yet bound — show as options to verify */}
                     {allDomains.filter((d) => !d.verified && !d.target_subdomain).length > 0 && (
                       <div className="text-[10px] text-muted-foreground">
-                        <span>Pending verification — set CNAME, then verify at <a href="/domains" className="text-blue-400 hover:underline">/domains</a></span>
+                        <span>Pending verification — set CNAME, then verify at <a href="/domains" className="text-blue-600 dark:text-blue-400 hover:underline">/domains</a></span>
                       </div>
                     )}
                     <div className="flex gap-1">
@@ -1527,7 +1656,7 @@ function ProjectsContent() {
 
                 {/* Preview Deployments (inline) — only for projects linked to GitHub */}
                 {selectedProject === p.id && p.github_repo && (
-                  <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1556,14 +1685,14 @@ function ProjectsContent() {
                         {(previews[p.id] || []).map((pv) => (
                           <div key={pv.id} className="flex items-center justify-between rounded-md bg-muted px-2.5 py-1.5 text-[11px] gap-2">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <Badge variant="outline" className="text-[9px] text-blue-400 border-blue-500/50 shrink-0">#{pv.pr_number}</Badge>
+                              <Badge variant="outline" className="text-[9px] text-blue-600 dark:text-blue-400 border-blue-500/40 shrink-0">#{pv.pr_number}</Badge>
                               <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColor[pv.status] || ""}`}>{pv.status}</Badge>
                               <span className="truncate text-foreground">{pv.pr_title || pv.branch}</span>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                               {pv.commit_sha && <code className="text-[9px] text-muted-foreground font-mono">{pv.commit_sha.slice(0, 7)}</code>}
                               {pv.status === "running" && (
-                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.com`} target="_blank" rel="noopener" />}>
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                                   <ExternalLink className="h-2.5 w-2.5" /> Visit
                                 </Button>
                               )}
@@ -1579,7 +1708,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-4">
                     {editingEnv === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                      <div className="rounded-lg border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium">Environment Variables</span>
                           <div className="flex items-center gap-3">
@@ -1621,7 +1750,7 @@ function ProjectsContent() {
                 {selectedProject === p.id && (
                   <div className="mt-3">
                     {editingBuild === p.id ? (
-                      <div className="rounded-lg border border-border/40 p-4 space-y-3">
+                      <div className="rounded-lg border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Build &amp; Runtime Settings</span>
                           <span className="text-[10px] text-muted-foreground">Leave blank to use defaults</span>
@@ -1632,7 +1761,7 @@ function ProjectsContent() {
                             <label className="text-[10px] text-muted-foreground">Root Directory <span className="text-muted-foreground">(monorepos)</span></label>
                             <div className="relative">
                               <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                              <button type="button" title="Browse repository directories" disabled={!p.github_repo} onClick={() => setDirPicker({ kind: "edit-root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-400 hover:bg-white/5 disabled:opacity-40">
+                              <button type="button" title="Browse repository directories" disabled={!p.github_repo} onClick={() => setDirPicker({ kind: "edit-root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
                                 <Folder className="h-3.5 w-3.5" />
                               </button>
                             </div>
@@ -1666,13 +1795,13 @@ function ProjectsContent() {
                             <label className="text-[10px] text-muted-foreground">
                               Memory MB <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
                             </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => setBuildCfg({ ...buildCfg, memory_mb: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => { const v = parseInt(e.target.value) || 0; const cap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : Infinity; setBuildCfg({ ...buildCfg, memory_mb: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">
                               CPUs <span className="text-muted-foreground">(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
                             </label>
-                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => setBuildCfg({ ...buildCfg, cpus: parseFloat(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => { const v = parseFloat(e.target.value) || 0; const cap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : Infinity; setBuildCfg({ ...buildCfg, cpus: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1 md:col-span-2">
                             <label className="text-[10px] text-muted-foreground">Health Check Path <span className="text-muted-foreground">(e.g. /health; empty = skip)</span></label>
@@ -1696,7 +1825,7 @@ function ProjectsContent() {
                         </div>
 
                         {/* Multiple Services */}
-                        <div className="rounded-lg border border-border/40 overflow-hidden">
+                        <div className="rounded-lg border border-border overflow-hidden">
                           <div className="flex items-center justify-between px-3 py-2.5">
                             <div className="flex items-start gap-2">
                               <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -1714,7 +1843,7 @@ function ProjectsContent() {
                                 setEditMultiService(next);
                                 if (next && editServices.length === 0) setEditServices([makeService(0)]);
                               }}
-                              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${editMultiService ? "bg-violet-600" : "bg-zinc-700"}`}
+                              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${editMultiService ? "bg-violet-600" : "bg-zinc-300 dark:bg-zinc-700"}`}
                             >
                               <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${editMultiService ? "left-[18px]" : "left-0.5"}`} />
                             </button>
@@ -1747,7 +1876,7 @@ function ProjectsContent() {
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => openBuildConfig(p)}>
                           <Settings2 className="h-3 w-3" /> Build &amp; Runtime
                           {(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd || p.dockerfile_path) ? (
-                            <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/50">customized</Badge>
+                            <Badge variant="outline" className="ml-1 text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">customized</Badge>
                           ) : null}
                         </Button>
                         {p.github_repo && (
@@ -1762,7 +1891,7 @@ function ProjectsContent() {
                           </span>
                         )}
                         {p.github_repo && commits[p.id]?.[0] && p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
-                          <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/50" title={`Latest on ${p.github_branch || p.branch || "main"} is ${commits[p.id][0].sha.slice(0, 7)}`}>
+                          <Badge variant="outline" className="text-[9px] text-amber-600 dark:text-amber-400 border-amber-500/40" title={`Latest on ${p.github_branch || p.branch || "main"} is ${commits[p.id][0].sha.slice(0, 7)}`}>
                             behind {p.github_branch || p.branch || "main"}
                           </Badge>
                         )}
@@ -1771,25 +1900,25 @@ function ProjectsContent() {
 
                     {/* Commits dropdown (rollback / pinned deploy) */}
                     {selectedProject === p.id && commits[p.id] && commits[p.id].length > 0 && editingBuild !== p.id && (
-                      <div className="mt-2 rounded-lg border border-border/40 p-3 space-y-2">
+                      <div className="mt-2 rounded-lg border border-border p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium">Recent commits on {p.github_branch || p.branch || "main"}</span>
                           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setCommits((prev) => { const n = { ...prev }; delete n[p.id]; return n; })}>Close</Button>
                         </div>
                         {p.commit_sha && p.commit_sha !== commits[p.id][0].sha && (
-                          <div className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-500/90">
+                          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-600 dark:text-amber-400/90">
                             Currently deployed <code className="font-mono">{p.commit_sha.slice(0, 7)}</code> is behind — latest on {p.github_branch || p.branch || "main"} is <code className="font-mono">{commits[p.id][0].sha.slice(0, 7)}</code>.
                           </div>
                         )}
                         <div className="space-y-1 max-h-64 overflow-y-auto">
                           {commits[p.id].map((c, i) => (
-                            <label key={c.sha} className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-white/[0.03] ${selectedCommit[p.id] === c.sha ? "bg-white/[0.05]" : ""}`}>
+                            <label key={c.sha} className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-accent/60 transition-colors ${selectedCommit[p.id] === c.sha ? "bg-accent" : ""}`}>
                               <input type="radio" name={`commit-${p.id}`} checked={selectedCommit[p.id] === c.sha} onChange={() => setSelectedCommit((prev) => ({ ...prev, [p.id]: c.sha }))} className="accent-emerald-500" />
                               <code className="text-[10px] text-emerald-500">{c.sha.slice(0, 7)}</code>
                               <span className="flex-1 truncate">{c.message}</span>
                               <span className="text-[10px] text-muted-foreground hidden md:inline">{c.author}</span>
                               {i === 0 && <Badge variant="outline" className="text-[9px] text-sky-500 border-sky-500/30">latest</Badge>}
-                              {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">current</Badge>}
+                              {p.commit_sha === c.sha && <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">current</Badge>}
                             </label>
                           ))}
                         </div>
@@ -1840,7 +1969,7 @@ function ProjectsContent() {
                   const netOutArr = samples.map((s) => s.net_tx_bytes);
                   const fmtBytes = (n: number) => n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} kB` : `${n} B`;
                   return (
-                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                    <div className="mt-4 rounded-lg border border-border p-3 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Activity className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1850,7 +1979,7 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2">
                           <div className="flex gap-1">
                             {(["1h", "6h", "24h", "7d"] as const).map((r) => (
-                              <button key={r} onClick={() => loadMetrics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{r}</button>
+                              <button key={r} onClick={() => loadMetrics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/30 bg-accent text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>{r}</button>
                             ))}
                           </div>
                           <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => setShowMetrics((prev) => ({ ...prev, [p.id]: false }))} title="Close">
@@ -1896,7 +2025,7 @@ function ProjectsContent() {
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setShowAnalytics((prev) => ({ ...prev, [p.id]: true }))}>
                       <BarChart3 className="h-3 w-3" /> Website Analytics
                       {siteData[p.id]?.realtime?.visitors ? (
-                        <Badge variant="outline" className="ml-1 text-[9px] text-emerald-500 border-emerald-500/50">
+                        <Badge variant="outline" className="ml-1 text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
                           <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1" />
                           {siteData[p.id].realtime.visitors} live
                         </Badge>
@@ -1913,7 +2042,7 @@ function ProjectsContent() {
                   const vArr = tsPoints.map((t) => t.visitors);
                   const fmtNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
                   return (
-                    <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-3">
+                    <div className="mt-4 rounded-lg border border-border p-3 space-y-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                           <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1928,7 +2057,7 @@ function ProjectsContent() {
                         <div className="flex items-center gap-2">
                           <div className="flex gap-1">
                             {(["24h", "7d", "30d"] as const).map((r) => (
-                              <button key={r} onClick={() => loadSiteAnalytics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/40 bg-white/[0.05]" : "border-border/40 text-muted-foreground hover:text-foreground"}`}>{r}</button>
+                              <button key={r} onClick={() => loadSiteAnalytics(p.id, r)} className={`text-[10px] px-2 py-0.5 rounded-full border ${range === r ? "border-foreground/30 bg-accent text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>{r}</button>
                             ))}
                           </div>
                           <Button variant="ghost" size="sm" className="h-5 w-5 p-0 hover:text-destructive" onClick={() => setShowAnalytics((prev) => ({ ...prev, [p.id]: false }))} title="Close">
@@ -1970,6 +2099,7 @@ function ProjectsContent() {
                           { field: "referrer", label: "Top referrers" },
                           { field: "country", label: "Top countries" },
                           { field: "browser", label: "Browsers" },
+                          { field: "os", label: "Operating systems" },
                           { field: "device", label: "Devices" },
                         ].map(({ field, label }) => {
                           const rows = top[field] || [];
@@ -1996,7 +2126,7 @@ function ProjectsContent() {
                       {/* Optional JS snippet for SPA route changes + custom events */}
                       <details className="text-[10px] text-zinc-500">
                         <summary className="cursor-pointer hover:text-foreground py-1">Track SPA routes &amp; custom events (optional JS snippet)</summary>
-                        <div className="mt-1 space-y-2 pl-2 border-l border-zinc-800">
+                        <div className="mt-1 space-y-2 pl-2 border-l border-border">
                           <p>Server-side capture covers every HTTP request automatically. For client-side routing (SPAs) and custom events, add this tag to your site:</p>
                           <code className="block rounded bg-black px-2 py-1.5 font-mono text-[10px] text-muted-foreground break-all">
                             &lt;script defer src=&quot;/__sm/analytics.js&quot;&gt;&lt;/script&gt;
@@ -2024,7 +2154,7 @@ function ProjectsContent() {
                   };
                   const barColor = bw.exceeded ? "bg-red-500" : bw.pct >= 80 ? "bg-yellow-500" : "bg-emerald-500";
                   return (
-                    <div className="mt-3 rounded-lg border border-border/40 p-3 space-y-2">
+                    <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>
@@ -2071,7 +2201,7 @@ function ProjectsContent() {
                   </div>
                 )}
                 {selectedProject === p.id && showCrons[p.id] && (
-                  <div className="mt-4 rounded-lg border border-border/40 p-3 space-y-2">
+                  <div className="mt-4 rounded-lg border border-border p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -2091,10 +2221,10 @@ function ProjectsContent() {
                       <div key={c.id} className="rounded-md bg-muted px-2.5 py-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/20 text-emerald-500" : "bg-zinc-700/30 text-zinc-500"}`}>{c.enabled ? "on" : "off"}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-zinc-500/10 text-muted-foreground"}`}>{c.enabled ? "on" : "off"}</span>
                             <span className="text-xs font-medium truncate">{c.name}</span>
                             <code className="text-[10px] text-blue-400 font-mono">{c.schedule}</code>
-                            {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/50">success</Badge>}
+                            {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">success</Badge>}
                             {c.last_status === "failed" && <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/40">failed</Badge>}
                           </div>
                           <div className="flex gap-1 shrink-0">
@@ -2113,16 +2243,16 @@ function ProjectsContent() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Name</label>
-                            <input type="text" placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground">Schedule <span className="text-muted-foreground">(cron: min hour day month dow)</span></label>
-                            <input type="text" placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                            <input type="text" placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                           </div>
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-muted-foreground">Command</label>
-                          <input type="text" placeholder="node scripts/cleanup.js" value={cronForm.command} onChange={(e) => setCronForm({ ...cronForm, command: e.target.value })} className="w-full h-7 rounded-md border border-input bg-black px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
+                          <input type="text" placeholder="node scripts/cleanup.js" value={cronForm.command} onChange={(e) => setCronForm({ ...cronForm, command: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                         </div>
                         <div className="flex gap-2">
                           <Button size="sm" className="h-7 text-xs" onClick={() => addCron(p.id)}>Create</Button>
@@ -2202,13 +2332,20 @@ function ProjectsContent() {
                     kept 14 days, so older projects show an empty state instead
                     of the panel silently vanishing. */}
                 {selectedProject === p.id && (
-                  <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-52 sm:max-h-64 overflow-y-auto">
+                  <div ref={deployLogRef}
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      deployAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+                    }}
+                    className="mt-4 rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden max-h-52 sm:max-h-64 overflow-y-auto">
                     <div className="border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] text-muted-foreground font-mono flex items-center gap-2 sticky top-0">
                       <Terminal className="h-3 w-3 text-[#58a6ff]" /> <span className="text-[#c9d1d9]">Deploy Logs</span>
                     </div>
                     {logs.length > 0 ? (
                       <div className="p-2 font-mono text-[11px] space-y-0.5">
-                        {logs.map((l, i) => (
+                        {/* API returns newest-first; render oldest→newest so the
+                            build reads top-to-bottom like a terminal. */}
+                        {[...logs].reverse().map((l, i) => (
                           <div key={i} className={`px-2 py-0.5 rounded hover:bg-white/[0.03] ${
                             l.level === "error"  ? "text-[#f85149]" :
                             l.level === "build"  ? "text-[#d29922]" :

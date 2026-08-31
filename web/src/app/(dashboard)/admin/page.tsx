@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { REGION_PRESETS } from "@/lib/regions";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,11 +14,30 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
+  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "users" | "projects" | "sessions" | "infra" | "backups" | "broadcast";
+type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse";
+
+interface DensityServer {
+  id: string; label: string; region: string; is_local: boolean; status: string;
+  total_memory_mb: number; allocated_memory_mb: number; used_memory_mb: number;
+  load_avg: number; current_projects: number; max_projects: number;
+  reserved_pct: number; used_pct: number; reclaimable_mb: number; sleeping_count: number;
+}
+interface SleepingProject {
+  id: string; subdomain: string; email: string; memory_mb: number;
+  slept_at: string | null; last_request_at: string | null;
+}
+interface DensityStats {
+  servers: DensityServer[];
+  sleeping_count: number; sleeping_memory_mb: number; eligible_awake: number; total_running: number;
+  sleeping_projects: SleepingProject[];
+  total_memory_mb: number; allocated_memory_mb: number; used_memory_mb: number;
+  reserved_pct: number; used_pct: number;
+}
 
 interface Stats {
   total_users: number; total_keys: number; total_domains: number;
@@ -35,6 +55,20 @@ interface AdminUser {
   id: string; email: string; name: string; plan: string; is_admin: boolean;
   created_at: string; key_count: number; tunnel_requests: number;
   project_count?: number;
+  signup_ip?: string; signup_country?: string; last_login_ip?: string; last_country?: string;
+  blocked?: boolean;
+}
+interface IPBan { ip: string; reason: string; created_by: string; created_at: string; }
+interface AbuseReport {
+  id: string; target_url: string; category: string; details: string;
+  reporter_email: string; reporter_ip: string; status: string; created_at: string;
+}
+
+// Turn a 2-letter ISO country code into its flag emoji (regional indicators).
+function countryFlag(code?: string): string {
+  if (!code || code.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + code.charCodeAt(0) - 65, A + code.charCodeAt(1) - 65);
 }
 
 interface AdminProject {
@@ -43,13 +77,102 @@ interface AdminProject {
   status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
 }
 
+interface AdminDatabase {
+  service: {
+    id: string; user_id: string; name: string; type: string; status: string;
+    size_mb: number; over_quota: boolean; worker_server_id: string | null;
+    public_host: string | null; public_port: number | null; created_at: string;
+  };
+  user_email: string;
+  server_label: string | null;
+  connection_url: string;
+  external_connection_url: string;
+}
+
+interface SEONameCount { name: string; channel: string; hits: number; recent: number; }
+interface SEOInsight {
+  days: number;
+  has_data: boolean;
+  crawlers: SEONameCount[];
+  referrals: SEONameCount[];
+  totals: {
+    crawler_hits: number; referral_hits: number;
+    ai_crawler_hits: number; search_crawler_hits: number;
+    llm_referral_hits: number; search_referral_hits: number;
+  };
+  tips: { tone: string; text: string }[];
+}
+
+interface OrphanContainer {
+  server_id: string; server_label: string; host: string; is_local: boolean;
+  name: string; state: string; status: string; created_at: string;
+}
+interface OrphanScan {
+  orphans: OrphanContainer[];
+  unreachable_hosts: string[];
+  hosts_scanned: number;
+  scanned_at: string;
+}
+
+interface PlanLimitRow {
+  plan: string;
+  max_subdomains: number; max_tunnels: number; max_rate: number;
+  max_projects: number; max_custom_domains: number; max_databases: number;
+  max_services: number; max_crons: number; max_byoc_servers: number;
+  max_preview_deploys: number; max_memory_mb: number; max_cpus: number;
+  max_bandwidth_gb: number; max_build_minutes_monthly: number; monthly_ai_credits: number;
+  max_build_memory_mb: number;
+  max_db_size_mb: number;
+  analytics_retention_days: number; metrics_retention_days: number;
+  deploy_log_retention_days: number; backup_retention_days: number;
+  allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
+  allow_private_repos: boolean; allow_tcp_tunnels: boolean; allow_custom_events: boolean;
+  allow_live_logs: boolean; allow_telegram: boolean; allow_advanced_databases: boolean;
+  allow_db_migration: boolean;
+}
+
+interface PlatformAnalytics {
+  period: string;
+  overview: {
+    pageviews: number; visitors: number; bot_hits: number;
+    bytes_served: number; error_hits: number; active_sites: number;
+  };
+  timeseries: { ts: string; pageviews: number; visitors: number; bot_hits: number }[];
+  top: Record<string, { key: string; count: number }[]>;
+  crawlers: { name: string; category: string; hits: number; sites: number }[];
+  source: string;
+  visitors_exact: boolean;
+  projects: {
+    project_id: string; name: string; subdomain: string; owner_email: string;
+    pageviews: number; visitors: number; bot_hits: number; bytes: number; error_hits: number;
+  }[];
+  retention_note: string;
+}
+
+interface ProjectDiagnostics {
+  project: {
+    id: string; name: string; subdomain: string; status: string; framework: string;
+    repo_url: string; branch: string; memory_mb: number; cpus: number;
+    container_port: number; last_deploy_at: string | null;
+    owner_email: string; owner_id: string;
+  };
+  container: {
+    container_name: string; host: string; state: string; health: string;
+    exit_code: number; oom_killed: boolean; restart_count: number;
+    started_at: string; finished_at: string;
+    memory_usage_mb: number; memory_limit_mb: number; cpu_percent: string;
+    logs: string; error: string;
+  };
+  deploy_logs: { id?: string; message: string; stage?: string; created_at: string }[];
+}
+
 interface WorkerServer {
   id: string; label: string; host: string; region: string;
   total_cpu: number; total_memory_mb: number; allocated_cpu: number;
   allocated_memory_mb: number; max_projects: number; current_projects: number;
   used_memory_mb: number; load_avg: number;
   user_id: string | null;
-  status: string; docker_installed: boolean; priority?: number; is_local?: boolean;
+  status: string; docker_installed: boolean; priority?: number; is_local?: boolean; user_selectable?: boolean; backups_enabled?: boolean;
 }
 
 interface SessionTunnel { url: string; protocol: string; local_addr: string; name: string; inspect: boolean; }
@@ -64,17 +187,17 @@ interface BackupRun {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  running:  "bg-emerald-500/20 text-emerald-500 border-emerald-500/50",
-  building: "bg-sky-500/20 text-sky-500 border-sky-500/50",
+  running:  "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50",
+  building: "bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/50",
   stopped:  "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
-  failed:   "bg-red-500/20 text-red-500 border-red-500/40",
-  created:  "bg-amber-500/20 text-amber-500 border-amber-500/50",
+  failed:   "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/40",
+  created:  "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50",
 };
 
 const PLAN_COLORS: Record<string, string> = {
   free: "bg-zinc-500/20 text-muted-foreground border-zinc-500/30",
-  pro:  "bg-blue-500/20 text-blue-400 border-blue-500/50",
-  team: "bg-violet-500/20 text-violet-400 border-violet-500/50",
+  pro:  "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50",
+  team: "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/50",
 };
 
 function formatBytes(n: number) {
@@ -114,8 +237,43 @@ export default function AdminPage() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectStatus, setProjectStatus] = useState("all");
+  const [databases, setDatabases] = useState<AdminDatabase[]>([]);
+  const [databasesTotal, setDatabasesTotal] = useState(0);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
+  const [dbSearch, setDbSearch] = useState("");
+  const [dbType, setDbType] = useState("all");
+  const [dbReveal, setDbReveal] = useState<string | null>(null);
+  const [orphanScan, setOrphanScan] = useState<OrphanScan | null>(null);
+  const [orphanLoading, setOrphanLoading] = useState(false);
+  const [reaping, setReaping] = useState<string | null>(null);
+  const [seo, setSeo] = useState<SEOInsight | null>(null);
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [density, setDensity] = useState<DensityStats | null>(null);
+  const [densityLoading, setDensityLoading] = useState(false);
+  const [ipBans, setIpBans] = useState<IPBan[]>([]);
+  const [banForm, setBanForm] = useState({ ip: "", reason: "" });
+  const [abuseReports, setAbuseReports] = useState<AbuseReport[]>([]);
+  const [abuseLoading, setAbuseLoading] = useState(false);
+  const [abuseFilter, setAbuseFilter] = useState<"open" | "actioned" | "dismissed" | "all">("open");
   const projectSentinelRef = useRef<HTMLDivElement>(null);
   const [redeploying, setRedeploying] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [analytics, setAnalytics] = useState<PlatformAnalytics | null>(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("week");
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [plans, setPlans] = useState<PlanLimitRow[]>([]);
+  const [planDraft, setPlanDraft] = useState<Record<string, PlanLimitRow>>({});
+  const [planSaving, setPlanSaving] = useState<string | null>(null);
+  const [planSaved, setPlanSaved] = useState<string | null>(null);
+  const [diagOpen, setDiagOpen] = useState<string | null>(null);
+  // Move-project-to-server
+  interface MoveServer { id: string; label: string; host: string; region: string; status: string; is_local: boolean; user_id?: string | null; current_projects: number; max_projects: number; docker_installed?: boolean; }
+  const [moveOpen, setMoveOpen] = useState<string | null>(null);
+  const [moveServers, setMoveServers] = useState<MoveServer[]>([]);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveDbOpen, setMoveDbOpen] = useState<string | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diag, setDiag] = useState<ProjectDiagnostics | null>(null);
   const [redeployResult, setRedeployResult] = useState<{ queued: number; total: number; skipped: number } | null>(null);
 
   // Sessions state
@@ -147,6 +305,34 @@ export default function AdminPage() {
   const [bcSending, setBcSending] = useState(false);
   const [bcResult, setBcResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
   const [bcError, setBcError] = useState("");
+
+  // ── VPN panel (TuTBot reseller) config ────────────────────────────────────
+  interface VpnCfg { base_url: string; api_key_set: boolean; api_key_preview: string; master_key_set: boolean; master_key_preview: string; shared_server_id: string; free_days: string; free_max_logins: string; }
+  const [vpnCfg, setVpnCfg] = useState<VpnCfg | null>(null);
+  const [vpnForm, setVpnForm] = useState({ base_url: "", api_key: "", master_key: "", shared_server_id: "", free_days: "", free_max_logins: "" });
+  const [vpnSaving, setVpnSaving] = useState(false);
+  const [vpnTest, setVpnTest] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // ── AI model provider config ───────────────────────────────────────────────
+  interface AiPreset { id: string; label: string; base_url: string; model: string; key_hint: string; }
+  interface AiCfg {
+    provider: string; base_url: string; model: string; api_key_set: boolean; api_key_preview: string;
+    credits_enabled: boolean; price_in_per_m: string; price_out_per_m: string;
+    card_configured?: boolean;
+    polar_credits_product?: string;
+    effective: { provider: string; base_url: string; model: string; key_configured: boolean; using_env_fallback: boolean };
+    presets: AiPreset[];
+  }
+  const [aiCfg, setAiCfg] = useState<AiCfg | null>(null);
+  const [aiForm, setAiForm] = useState({ provider: "deepseek", base_url: "", model: "", api_key: "", credits_enabled: false, price_in_per_m: "", price_out_per_m: "", polar_credits_product: "" });
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // ── Platform build concurrency ────────────────────────────────────────────
+  const [buildConc, setBuildConc] = useState<number | null>(null);
+  const [buildConcInput, setBuildConcInput] = useState("1");
+  const [buildConcSaving, setBuildConcSaving] = useState(false);
 
   const headers = useCallback(() => {
     const token = localStorage.getItem("sm_token");
@@ -204,19 +390,51 @@ export default function AdminPage() {
     obs.observe(el); return () => obs.disconnect();
   }, [usersHasMore, usersLoading, usersOffset, userSearch, userPlanFilter, fetchUsers]);
 
-  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean }) => {
-    await fetch(`${API}/api/v1/admin/users/${userId}`, {
-      method: "PUT", headers: headers(), body: JSON.stringify(updates),
-    });
-    resetUsers(userSearch, userPlanFilter);
-    loadStats();
+  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean; blocked?: boolean; blocked_reason?: string }) => {
+    if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, {
+      method: "PUT", body: JSON.stringify(updates),
+    }, "Updating user")) {
+      resetUsers(userSearch, userPlanFilter);
+      loadStats();
+    }
   };
 
   const deleteUser = async (userId: string, email: string) => {
     if (!confirm(`Delete ${email}? This cannot be undone.`)) return;
-    await fetch(`${API}/api/v1/admin/users/${userId}`, { method: "DELETE", headers: headers() });
-    resetUsers(userSearch, userPlanFilter);
-    loadStats();
+    if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, { method: "DELETE" }, "Deleting user")) {
+      resetUsers(userSearch, userPlanFilter);
+      loadStats();
+    }
+  };
+
+  // ── Per-user AI credits (admin view + manual adjust) ─────────────────────────
+  interface UserCreditData {
+    user_id: string; plan: string; free_allotment: number; credits_enabled: boolean;
+    status: { free_used: number; free_remaining: number; wallet: number; available: number; unlimited: boolean };
+    ledger: { delta: number; reason: string; source: string; model: string; tokens_in: number; tokens_out: number; created_at: string }[];
+  }
+  const [creditUser, setCreditUser] = useState<{ id: string; email: string } | null>(null);
+  const [creditData, setCreditData] = useState<UserCreditData | null>(null);
+  const [creditGrant, setCreditGrant] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+
+  const openUserCredits = async (userId: string, email: string) => {
+    setCreditUser({ id: userId, email }); setCreditData(null); setCreditGrant("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/users/${userId}/credits`, { headers: headers() });
+      if (res.ok) setCreditData(await res.json());
+    } catch {}
+  };
+  const adjustUserCredits = async (delta: number) => {
+    if (!creditUser || !delta) return;
+    setCreditBusy(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/users/${creditUser.id}/credits`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ credits: delta, reason: "admin adjustment" }),
+      });
+      if (res.ok) { setCreditGrant(""); await openUserCredits(creditUser.id, creditUser.email); }
+    } catch {}
+    setCreditBusy(false);
   };
 
   // ── Projects ───────────────────────────────────────────────────────────────
@@ -259,21 +477,446 @@ export default function AdminPage() {
     obs.observe(el); return () => obs.disconnect();
   }, [projectsHasMore, projectsLoading, projectsOffset, projectSearch, projectStatus, fetchProjects]);
 
+  // ── Databases (standalone services) ────────────────────────────────────────
+  const loadDatabases = useCallback(async (search: string, typ: string) => {
+    setDatabasesLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: "200" });
+      if (search) q.set("search", search);
+      if (typ && typ !== "all") q.set("type", typ);
+      const res = await fetch(`${API}/api/v1/admin/databases?${q}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setDatabases(data.databases || []);
+        setDatabasesTotal(data.total || 0);
+      }
+    } catch {}
+    setDatabasesLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab !== "databases") return;
+    const t = setTimeout(() => loadDatabases(dbSearch, dbType), 300);
+    return () => clearTimeout(t);
+  }, [tab, dbSearch, dbType, loadDatabases]);
+
+  // ── Orphan containers ──────────────────────────────────────────────────────
+  const scanOrphans = useCallback(async () => {
+    setOrphanLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/orphans`, { headers: headers() });
+      if (res.ok) setOrphanScan(await res.json());
+    } catch {}
+    setOrphanLoading(false);
+  }, [headers]);
+
+  // Auto-scan on first open of the tab (the scan SSHes to every host, so we
+  // don't re-run it on every re-render — only when there's no result yet).
+  useEffect(() => {
+    if (tab === "orphans" && !orphanScan && !orphanLoading) scanOrphans();
+  }, [tab, orphanScan, orphanLoading, scanOrphans]);
+
+  // ── SEO & LLM insight ──────────────────────────────────────────────────────
+  const loadSEO = useCallback(async () => {
+    setSeoLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/seo?days=30`, { headers: headers() });
+      if (res.ok) setSeo(await res.json());
+    } catch {}
+    setSeoLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "seo" && !seo && !seoLoading) loadSEO();
+  }, [tab, seo, seoLoading, loadSEO]);
+
+  // ── Density / idle-sleep analytics ─────────────────────────────────────────
+  const loadDensity = useCallback(async () => {
+    setDensityLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/density`, { headers: headers() });
+      if (res.ok) setDensity(await res.json());
+    } catch {}
+    setDensityLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "density") loadDensity();
+  }, [tab, loadDensity]);
+
+  // ── IP bans ────────────────────────────────────────────────────────────────
+  const loadIPBans = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setIpBans(Array.isArray(d.bans) ? d.bans : []); }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "bans") loadIPBans();
+  }, [tab, loadIPBans]);
+
+  async function banIP(ip: string, reason: string) {
+    if (!confirm(`Ban ${ip}?\n\nThey'll be blocked from signing up, signing in, and all proxied traffic. Use a trailing dot (e.g. "203.0.113.") to ban a range.`)) return;
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ ip, reason }),
+      });
+      if (res.ok) { setActionError(""); loadIPBans(); }
+      else { const d = await res.json().catch(() => ({})); setActionError(d.error || "Ban failed"); }
+    } catch { setActionError("Ban failed"); }
+  }
+
+  async function unbanIP(ip: string) {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ip-bans/${encodeURIComponent(ip)}`, { method: "DELETE", headers: headers() });
+      if (res.ok) loadIPBans();
+    } catch {}
+  }
+
+  // ── Abuse reports ────────────────────────────────────────────────────────────
+  // Load the full set (status=all) once and filter client-side, so the tab badge
+  // can show an accurate open count regardless of the on-screen filter.
+  const loadAbuseReports = useCallback(async () => {
+    setAbuseLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/abuse-reports?status=all`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setAbuseReports(Array.isArray(d.reports) ? d.reports : []); }
+    } catch {}
+    setAbuseLoading(false);
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "abuse") loadAbuseReports();
+  }, [tab, loadAbuseReports]);
+
+  // Load once on mount too, so the "Abuse Reports" tab badge reflects pending
+  // open reports without the operator having to open the tab first.
+  useEffect(() => { loadAbuseReports(); }, [loadAbuseReports]);
+
+  async function setAbuseStatus(id: string, status: "open" | "actioned" | "dismissed") {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/abuse-reports/${id}/status`, {
+        method: "POST", headers: headers(), body: JSON.stringify({ status }),
+      });
+      if (res.ok) { setActionError(""); loadAbuseReports(); }
+      else { const d = await res.json().catch(() => ({})); setActionError(d.error || "Update failed"); }
+    } catch { setActionError("Update failed"); }
+  }
+
+  // ── VPN panel config ───────────────────────────────────────────────────────
+  const loadVpn = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/vpn/config`, { headers: headers() });
+      if (res.ok) {
+        const c: VpnCfg = await res.json();
+        setVpnCfg(c);
+        setVpnForm({ base_url: c.base_url || "", api_key: "", master_key: "", shared_server_id: c.shared_server_id || "", free_days: c.free_days || "", free_max_logins: c.free_max_logins || "" });
+      }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "vpn" && !vpnCfg) loadVpn();
+  }, [tab, vpnCfg, loadVpn]);
+
+  const saveVpn = async () => {
+    setVpnSaving(true); setVpnTest(null);
+    try {
+      const body: Record<string, string> = {
+        base_url: vpnForm.base_url, shared_server_id: vpnForm.shared_server_id,
+        free_days: vpnForm.free_days, free_max_logins: vpnForm.free_max_logins,
+      };
+      if (vpnForm.api_key.trim()) body.api_key = vpnForm.api_key.trim();
+      if (vpnForm.master_key.trim()) body.master_key = vpnForm.master_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/vpn/config`, { method: "PUT", headers: headers(), body: JSON.stringify(body) });
+      if (res.ok) { setVpnCfg(null); await loadVpn(); }
+    } catch {}
+    setVpnSaving(false);
+  };
+
+  const testVpn = async () => {
+    setVpnTest(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/vpn/test`, { method: "POST", headers: headers() });
+      const d = await res.json();
+      setVpnTest(d.ok ? { ok: true, msg: `Connected — upstream user #${d.upstream_user_id}` } : { ok: false, msg: d.error || "Connection failed" });
+    } catch { setVpnTest({ ok: false, msg: "Network error" }); }
+  };
+
+  // ── AI model provider (pluggable LLM for the AI builder / agent) ─────────────
+  const loadAi = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/ai/config`, { headers: headers() });
+      if (res.ok) {
+        const c: AiCfg = await res.json();
+        setAiCfg(c);
+        setAiForm({ provider: c.provider || "deepseek", base_url: c.base_url || "", model: c.model || "", api_key: "", credits_enabled: !!c.credits_enabled, price_in_per_m: c.price_in_per_m || "", price_out_per_m: c.price_out_per_m || "", polar_credits_product: c.polar_credits_product || "" });
+      }
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "ai" && !aiCfg) loadAi();
+  }, [tab, aiCfg, loadAi]);
+
+  const applyPreset = (id: string) => {
+    const p = aiCfg?.presets.find((x) => x.id === id);
+    setAiForm((f) => ({
+      ...f,
+      provider: id,
+      // Keep custom's existing values; otherwise auto-fill from the preset.
+      base_url: id === "custom" ? f.base_url : (p?.base_url ?? f.base_url),
+      model: id === "custom" ? f.model : (p?.model ?? f.model),
+    }));
+    setAiTest(null);
+  };
+
+  const saveAi = async () => {
+    setAiSaving(true); setAiTest(null);
+    try {
+      const body: Record<string, unknown> = {
+        provider: aiForm.provider, base_url: aiForm.base_url.trim(), model: aiForm.model.trim(),
+        credits_enabled: aiForm.credits_enabled,
+        price_in_per_m: aiForm.price_in_per_m.trim(), price_out_per_m: aiForm.price_out_per_m.trim(),
+        polar_credits_product: aiForm.polar_credits_product.trim(),
+      };
+      if (aiForm.api_key.trim()) body.api_key = aiForm.api_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/ai/config`, { method: "PUT", headers: headers(), body: JSON.stringify(body) });
+      if (res.ok) { setAiCfg(null); await loadAi(); }
+    } catch {}
+    setAiSaving(false);
+  };
+
+  const testAi = async () => {
+    setAiTesting(true); setAiTest(null);
+    try {
+      // Send current form values so the admin can test BEFORE saving.
+      const body: Record<string, string> = { base_url: aiForm.base_url.trim(), model: aiForm.model.trim() };
+      if (aiForm.api_key.trim()) body.api_key = aiForm.api_key.trim();
+      const res = await fetch(`${API}/api/v1/admin/ai/test`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+      const d = await res.json();
+      setAiTest(d.ok ? { ok: true, msg: `Works — responded as "${d.model}"` } : { ok: false, msg: d.error || "Request failed" });
+    } catch { setAiTest({ ok: false, msg: "Network error" }); }
+    setAiTesting(false);
+  };
+
+  // Every admin mutation goes through this so a failing request surfaces
+  // instead of looking like a dead button (the old code ignored res.ok).
+  const adminFetch = async (url: string, init: RequestInit, action: string): Promise<boolean> => {
+    setActionError("");
+    try {
+      const res = await fetch(url, { ...init, headers: headers() });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`${action} failed: ${msg}`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      setActionError(`${action} failed: ${e instanceof Error ? e.message : "network error"}`);
+      return false;
+    }
+  };
+
+  // ── Plan limits ────────────────────────────────────────────────────────────
+  const loadPlans = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/plans`, { headers: headers() });
+      if (res.ok) {
+        const rows: PlanLimitRow[] = await res.json();
+        setPlans(rows);
+        setPlanDraft(Object.fromEntries(rows.map(r => [r.plan, { ...r }])));
+      } else setActionError(`Loading plans failed: HTTP ${res.status}`);
+    } catch (e) {
+      setActionError(`Loading plans failed: ${e instanceof Error ? e.message : "network error"}`);
+    }
+  }, [headers]);
+
+  useEffect(() => { if (tab === "plans") loadPlans(); }, [tab, loadPlans]);
+
+  const loadBuildConc = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/build-config`, { headers: headers() });
+      if (res.ok) { const d = await res.json(); setBuildConc(d.max_concurrent_builds); setBuildConcInput(String(d.max_concurrent_builds)); }
+    } catch {}
+  }, [headers]);
+  useEffect(() => { if (tab === "plans" && buildConc === null) loadBuildConc(); }, [tab, buildConc, loadBuildConc]);
+
+  const saveBuildConc = async () => {
+    setBuildConcSaving(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/build-config`, {
+        method: "PUT", headers: headers(),
+        body: JSON.stringify({ max_concurrent_builds: parseInt(buildConcInput) || 1 }),
+      });
+      if (res.ok) { const d = await res.json(); setBuildConc(d.max_concurrent_builds); setBuildConcInput(String(d.max_concurrent_builds)); }
+    } catch {}
+    setBuildConcSaving(false);
+  };
+
+  const savePlan = async (plan: string) => {
+    const draft = planDraft[plan];
+    if (!draft) return;
+    setPlanSaving(plan);
+    setPlanSaved(null);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/plans/${plan}`, {
+        method: "PUT", headers: headers(), body: JSON.stringify(draft),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Saving ${plan} failed: ${msg}`);
+        return;
+      }
+      setPlanSaved(plan);
+      setTimeout(() => setPlanSaved(null), 2500);
+      loadPlans();
+    } catch (e) {
+      setActionError(`Saving ${plan} failed: ${e instanceof Error ? e.message : "network error"}`);
+    } finally {
+      setPlanSaving(null);
+    }
+  };
+
+  // ── Platform analytics ─────────────────────────────────────────────────────
+  const loadAnalytics = useCallback(async (period: string) => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/v1/admin/analytics?period=${period}`, { headers: headers() });
+      if (res.ok) setAnalytics(await res.json());
+      else setActionError(`Analytics failed: HTTP ${res.status}`);
+    } catch (e) {
+      setActionError(`Analytics failed: ${e instanceof Error ? e.message : "network error"}`);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [headers]);
+
+  useEffect(() => {
+    if (tab === "analytics") loadAnalytics(analyticsPeriod);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, analyticsPeriod]);
+
+  // ── Project diagnostics ────────────────────────────────────────────────────
+  // Answers "why did this user's project die?" without SSHing into the host.
+  const loadDiagnostics = async (projectId: string) => {
+    if (diagOpen === projectId) { setDiagOpen(null); return; }
+    setDiagOpen(projectId);
+    setDiag(null);
+    setDiagLoading(true);
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/projects/${projectId}/diagnostics`, { headers: headers() });
+      if (res.ok) setDiag(await res.json());
+      else {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Diagnostics failed: ${msg}`);
+        setDiagOpen(null);
+      }
+    } catch (e) {
+      setActionError(`Diagnostics failed: ${e instanceof Error ? e.message : "network error"}`);
+      setDiagOpen(null);
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
   const stopProject = async (id: string, name: string) => {
     if (!confirm(`Stop "${name}"?`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST", headers: headers() });
-    resetProjects(projectSearch, projectStatus);
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST" }, `Stopping ${name}`))
+      resetProjects(projectSearch, projectStatus);
   };
   const redeployProject = async (id: string, name: string) => {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST", headers: headers() });
-    setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST" }, `Redeploying ${name}`))
+      setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+  };
+  const sleepProject = async (id: string, name: string) => {
+    if (!confirm(`Sleep "${name}" now?\n\nStops its container to free resources; it wakes automatically on the next HTTP request. Platform-local projects only.`)) return;
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/sleep`, { method: "POST" }, `Sleeping ${name}`))
+      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
+  };
+  const wakeProject = async (id: string, name: string) => {
+    if (await adminFetch(`${API}/api/v1/admin/projects/${id}/wake`, { method: "POST" }, `Waking ${name}`))
+      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
+  };
+  const openMove = async (id: string) => {
+    if (moveOpen === id) { setMoveOpen(null); return; }
+    setMoveOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/admin/servers`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  };
+  const moveProject = async (id: string, name: string, serverId: string, label: string) => {
+    if (!confirm(`Move "${name}" to ${label}? It rebuilds on the new server — expect a brief downtime window while it does.`)) return;
+    setMoveBusy(true);
+    const ok = await adminFetch(`${API}/api/v1/admin/projects/${id}/move`, {
+      method: "POST", body: JSON.stringify({ worker_server_id: serverId }),
+    }, `Moving ${name} to ${label}`);
+    setMoveBusy(false);
+    if (ok) { setMoveOpen(null); setTimeout(() => resetProjects(projectSearch, projectStatus), 1500); }
+  };
+  const openMoveDb = async (id: string) => {
+    if (moveDbOpen === id) { setMoveDbOpen(null); return; }
+    setMoveDbOpen(id);
+    if (moveServers.length === 0) {
+      try {
+        const res = await fetch(`${API}/api/v1/admin/servers`, { headers: headers() });
+        if (res.ok) setMoveServers(await res.json());
+      } catch {}
+    }
+  };
+  const migrateDatabase = async (id: string, name: string, serverId: string, label: string) => {
+    if (!confirm(`Migrate a copy of "${name}" to ${label}?\n\nThis provisions the database on ${label} and copies the data. Your ORIGINAL is left untouched — repoint your app to the new connection string, then delete the source once verified.`)) return;
+    setMoveBusy(true);
+    const ok = await adminFetch(`${API}/api/v1/admin/databases/${id}/move`, {
+      method: "POST", body: JSON.stringify({ worker_server_id: serverId }),
+    }, `Migrating ${name} to ${label}`);
+    setMoveBusy(false);
+    if (ok) { setMoveDbOpen(null); setActionError(`Migrating "${name}" to ${label} — copying data now. The original is untouched; find the new copy in this list once it finishes, repoint your app, then delete the source.`); }
   };
   const deleteProject = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? Cannot be undone.`)) return;
-    await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
-    resetProjects(projectSearch, projectStatus);
-    loadStats();
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/projects/${id}`, { method: "DELETE", headers: headers() });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json()).error || msg; } catch {}
+        setActionError(`Deleting ${name} failed: ${msg}`);
+        return;
+      }
+      // Delete still succeeded, but the container teardown may be unconfirmed
+      // (unreachable BYOC host) — surface that so the admin can check.
+      try { const d = await res.json(); if (d?.warning) alert(d.warning); } catch {}
+      resetProjects(projectSearch, projectStatus);
+      loadStats();
+    } catch (e) {
+      setActionError(`Deleting ${name} failed: ${e instanceof Error ? e.message : "network error"}`);
+    }
+  };
+  const deleteDatabase = async (id: string, name: string, email: string) => {
+    if (!confirm(`Delete database "${name}" owned by ${email || "unknown"}?\n\nThis drops the database and its data permanently. Cannot be undone.`)) return;
+    if (await adminFetch(`${API}/api/v1/admin/databases/${id}`, { method: "DELETE" }, `Deleting ${name}`)) {
+      loadDatabases(dbSearch, dbType);
+      loadStats();
+    }
+  };
+  const reapOrphan = async (o: OrphanContainer) => {
+    if (!confirm(`Force-remove orphan container "${o.name}" on ${o.server_label}?\n\nThis runs docker rm -f. Only do this if you're sure it has no owner.`)) return;
+    setReaping(o.name);
+    const ok = await adminFetch(`${API}/api/v1/admin/orphans/reap`,
+      { method: "POST", body: JSON.stringify({ server_id: o.server_id, name: o.name }) },
+      `Reaping ${o.name}`);
+    setReaping(null);
+    if (ok) { scanOrphans(); loadStats(); }
   };
   const redeployAll = async (statusFilter?: string) => {
     const msg = statusFilter
@@ -302,14 +945,14 @@ export default function AdminPage() {
 
   const killSession = async (clientId: string) => {
     if (!confirm("Force-disconnect this client?")) return;
-    await fetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE", headers: headers() });
-    loadSessions();
+    if (await adminFetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE" }, "Disconnect"))
+      loadSessions();
   };
   const killTunnel = async (url: string) => {
     if (!confirm(`Remove tunnel ${url}?`)) return;
     const enc = btoa(url).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-    await fetch(`${API}/api/v1/admin/tunnels/${enc}`, { method: "DELETE", headers: headers() });
-    loadSessions();
+    if (await adminFetch(`${API}/api/v1/admin/tunnels/${enc}`, { method: "DELETE" }, "Remove tunnel"))
+      loadSessions();
   };
 
   // ── Infrastructure ─────────────────────────────────────────────────────────
@@ -334,17 +977,56 @@ export default function AdminPage() {
     else { const e = await res.json().catch(() => ({})); alert(e.error || "Failed"); }
   };
 
+  const [editingServer, setEditingServer] = useState<string | null>(null);
+  const [srvLabel, setSrvLabel] = useState("");
+  const [srvRegion, setSrvRegion] = useState("");
+
+  const saveServerMeta = async (id: string) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}`, {
+      method: "PUT", body: JSON.stringify({ label: srvLabel, region: srvRegion }),
+    }, "Renaming server")) {
+      setEditingServer(null);
+      loadServers();
+    }
+  };
+
+  const setSelectable = async (id: string, selectable: boolean) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/selectable`, {
+      method: "PUT", body: JSON.stringify({ selectable }),
+    }, "Updating server visibility"))
+      loadServers();
+  };
+
+  const toggleServerBackups = async (id: string, enabled: boolean) => {
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/backups`, {
+      method: "PUT", body: JSON.stringify({ enabled }),
+    }, "Updating server backups"))
+      loadServers();
+  };
+
   const setServerStatus = async (id: string, status: string) => {
-    await fetch(`${API}/api/v1/admin/servers/${id}/status`, {
-      method: "PUT", headers: headers(), body: JSON.stringify({ status }),
-    });
-    loadServers();
+    if (await adminFetch(`${API}/api/v1/admin/servers/${id}/status`, {
+      method: "PUT", body: JSON.stringify({ status }),
+    }, `Setting server ${status}`))
+      loadServers();
   };
 
   const removeServer = async (id: string) => {
     if (!confirm("Remove this server?")) return;
-    await fetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE", headers: headers() });
-    loadServers();
+    setActionError("");
+    try {
+      const res = await fetch(`${API}/api/v1/admin/servers/${id}`, { method: "DELETE", headers: headers() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(`Removing server failed: ${data.error || `HTTP ${res.status}`}`);
+        return;
+      }
+      // Host was unreachable — say so rather than implying a clean teardown.
+      if (data.warning) setActionError(data.warning);
+      loadServers();
+    } catch (e) {
+      setActionError(`Removing server failed: ${e instanceof Error ? e.message : "network error"}`);
+    }
   };
 
   // ── Backups ────────────────────────────────────────────────────────────────
@@ -447,21 +1129,32 @@ export default function AdminPage() {
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Overview" },
+    { id: "analytics", label: "Analytics" },
+    { id: "density", label: "Density" },
+    { id: "seo", label: "SEO & LLM" },
+    { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
+    { id: "bans", label: "IP Bans", badge: ipBans.length || undefined },
+    { id: "abuse", label: "Abuse Reports", badge: abuseReports.filter(r => r.status === "open").length || undefined },
     { id: "projects", label: "Projects", badge: projectsTotal },
+    { id: "databases", label: "Databases" },
+    { id: "orphans", label: "Orphans", badge: orphanScan?.orphans.length || undefined },
     { id: "sessions", label: "Live Sessions", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
     { id: "broadcast", label: "Broadcast" },
+    { id: "vpn", label: "VPN Panel" },
+    { id: "ai", label: "AI Model" },
   ];
 
   return (
     <div>
       {/* Page Header */}
-      <div className="flex items-start justify-between gap-3 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" />
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">System</p>
+          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em] flex items-center gap-2">
+            <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             Admin Console
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -477,7 +1170,7 @@ export default function AdminPage() {
           <Button
             size="sm"
             variant="outline"
-            className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-500" : ""}`}
+            className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
             onClick={() => setAutoRefresh(v => !v)}
           >
             <Radio className={`h-3 w-3 ${autoRefresh ? "animate-pulse" : ""}`} />
@@ -499,6 +1192,17 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Action errors — mutations used to fail silently, which read as
+          "the button does nothing". */}
+      {actionError && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          <span className="flex-1">{actionError}</span>
+          <button onClick={() => setActionError("")} className="text-xs text-muted-foreground hover:text-foreground">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div className="flex gap-1 mb-6 overflow-x-auto pb-1 border-b border-border/50">
         {TABS.map(t => (
@@ -507,7 +1211,7 @@ export default function AdminPage() {
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t whitespace-nowrap transition-colors ${
               tab === t.id
-                ? "text-foreground border-b-2 border-primary -mb-px"
+                ? "text-foreground border-b-2 border-emerald-500 -mb-px"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -515,7 +1219,7 @@ export default function AdminPage() {
             {t.badge !== undefined && t.badge > 0 && (
               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                 t.id === "sessions" && t.badge > 0
-                  ? "bg-emerald-500/20 text-emerald-500"
+                  ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                   : "bg-muted text-muted-foreground"
               }`}>
                 {t.badge}
@@ -534,32 +1238,32 @@ export default function AdminPage() {
               <KpiCard
                 label="Total Users" value={stats.total_users}
                 sub={`+${stats.users_today} today`} trend="up"
-                icon={<Users className="h-4 w-4" />} color="text-blue-400 bg-blue-500/20"
+                icon={<Users className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20"
               />
               <KpiCard
                 label="New This Week" value={stats.users_this_week}
                 sub={`${stats.users_this_month} this month`}
-                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-400 bg-emerald-500/20"
+                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20"
               />
               <KpiCard
                 label="Projects" value={stats.projects_total}
                 sub={`${runningCount} running`}
-                icon={<Rocket className="h-4 w-4" />} color="text-violet-400 bg-violet-500/20"
+                icon={<Rocket className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20"
               />
               <KpiCard
                 label="Deploys Today" value={stats.deploys_today}
                 sub={`${stats.deploys_this_week} this week`}
-                icon={<Zap className="h-4 w-4" />} color="text-amber-400 bg-amber-500/20"
+                icon={<Zap className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20"
               />
               <KpiCard
                 label="Databases" value={stats.services_total}
                 sub={`${stats.tunnels_total} tunnels`}
-                icon={<Database className="h-4 w-4" />} color="text-cyan-400 bg-cyan-500/20"
+                icon={<Database className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20"
               />
               <KpiCard
                 label="API Keys" value={stats.total_keys}
                 sub={`${stats.total_domains} domains`}
-                icon={<Key className="h-4 w-4" />} color="text-pink-400 bg-pink-500/20"
+                icon={<Key className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20"
               />
             </div>
           ) : (
@@ -586,7 +1290,7 @@ export default function AdminPage() {
                     <div>
                       <div className="flex justify-between text-xs mb-1.5">
                         <span className="text-muted-foreground">Deploy success rate</span>
-                        <span className={`font-mono font-medium ${deploySuccessRate >= 90 ? "text-emerald-500" : deploySuccessRate >= 70 ? "text-amber-500" : "text-red-500"}`}>
+                        <span className={`font-mono font-medium ${deploySuccessRate >= 90 ? "text-emerald-600 dark:text-emerald-400" : deploySuccessRate >= 70 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
                           {deploySuccessRate}%
                         </span>
                       </div>
@@ -601,10 +1305,10 @@ export default function AdminPage() {
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {[
-                      { label: "Running", count: runningCount, cls: "text-emerald-500" },
-                      { label: "Building", count: buildingCount, cls: "text-sky-500" },
-                      { label: "Failed", count: failedCount, cls: "text-red-500" },
-                      { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-zinc-400" },
+                      { label: "Running", count: runningCount, cls: "text-emerald-600 dark:text-emerald-400" },
+                      { label: "Building", count: buildingCount, cls: "text-sky-600 dark:text-sky-400" },
+                      { label: "Failed", count: failedCount, cls: "text-red-600 dark:text-red-400" },
+                      { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-muted-foreground" },
                     ].map(({ label, count, cls }) => (
                       <div key={label} className="flex items-center justify-between rounded-md bg-muted/20 px-2.5 py-1.5">
                         <span className="text-muted-foreground">{label}</span>
@@ -616,7 +1320,7 @@ export default function AdminPage() {
                   {sessions.length > 0 && (
                     <div className="flex items-center gap-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-xs text-emerald-500 font-medium">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                         {sessions.length} active tunnel session{sessions.length !== 1 ? "s" : ""}
                       </span>
                     </div>
@@ -669,12 +1373,12 @@ export default function AdminPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{s.label}</span>
                           <Badge variant="outline" className={`text-[9px] ${
-                            s.status === "active" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                            : s.status === "draining" ? "bg-amber-500/20 text-amber-500"
-                            : "bg-red-500/20 text-red-500"
+                            s.status === "active" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                            : s.status === "draining" ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                            : "bg-red-500/20 text-red-600 dark:text-red-400"
                           }`}>{s.status}</Badge>
                           {s.is_local && <Badge variant="outline" className="text-[9px]">primary</Badge>}
-                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-400 border-violet-500/30">BYOC</Badge>}
+                          {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-600 dark:text-violet-400 border-violet-500/30">BYOC</Badge>}
                         </div>
                         <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
                       </div>
@@ -736,6 +1440,7 @@ export default function AdminPage() {
             >
               <option value="all">All plans</option>
               <option value="free">Free</option>
+              <option value="hobby">Hobby</option>
               <option value="pro">Pro</option>
               <option value="team">Team</option>
             </select>
@@ -759,17 +1464,28 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{u.name || u.email}</span>
                         {u.is_admin && (
-                          <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-500 border-yellow-500/50">
+                          <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/50">
                             <Crown className="h-2.5 w-2.5" /> Admin
                           </Badge>
                         )}
                         <Badge variant="outline" className={`text-[10px] ${PLAN_COLORS[u.plan] || ""}`}>{u.plan}</Badge>
+                        {u.blocked && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-600 dark:text-red-400">suspended</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{u.email}</p>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
                         <span className="flex items-center gap-1"><Key className="h-2.5 w-2.5" />{u.key_count} keys</span>
                         <span className="flex items-center gap-1"><Activity className="h-2.5 w-2.5" />{u.tunnel_requests.toLocaleString()} requests</span>
                         <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Joined {new Date(u.created_at).toLocaleDateString()}</span>
+                        {u.signup_ip && (
+                          <span className="flex items-center gap-1 font-mono" title={`signup IP${u.signup_country ? ` · ${u.signup_country}` : ""}`}>
+                            {countryFlag(u.signup_country)} {u.signup_ip}
+                          </span>
+                        )}
+                        {u.last_login_ip && u.last_login_ip !== u.signup_ip && (
+                          <span className="flex items-center gap-1 font-mono" title="last login IP">
+                            ↻ {countryFlag(u.last_country)} {u.last_login_ip}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -779,13 +1495,35 @@ export default function AdminPage() {
                         className="h-7 rounded border border-input bg-background px-2 text-[11px]"
                       >
                         <option value="free">Free</option>
+                        <option value="hobby">Hobby</option>
                         <option value="pro">Pro</option>
                         <option value="team">Team</option>
                       </select>
                       <Button variant="ghost" size="sm" className="h-7 px-2"
                         onClick={() => updateUser(u.id, { is_admin: !u.is_admin })}
                         title={u.is_admin ? "Remove admin" : "Make admin"}>
-                        <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-500" : "text-muted-foreground"}`} />
+                        <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground"}`} />
+                      </Button>
+                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-600 dark:text-emerald-400 hover:text-emerald-600" : "text-amber-600 dark:text-amber-400 hover:text-amber-600"}`}
+                        title={u.blocked ? "Unsuspend account" : "Suspend account (block login + deploys)"}
+                        onClick={() => {
+                          if (u.blocked) { updateUser(u.id, { blocked: false }); return; }
+                          const reason = prompt(`Suspend ${u.email}?\n\nThey won't be able to sign in or deploy. Optional reason:`, "abuse");
+                          if (reason !== null) updateUser(u.id, { blocked: true, blocked_reason: reason });
+                        }}>
+                        {u.blocked ? <UserCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                      </Button>
+                      {u.signup_ip && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-600 dark:text-orange-400 hover:text-orange-600"
+                          title={`Ban IP ${u.signup_ip}`}
+                          onClick={() => banIP(u.signup_ip!, `abuse — user ${u.email}`)}>
+                          <WifiOff className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground"
+                        title="AI credits & usage"
+                        onClick={() => openUserCredits(u.id, u.email)}>
+                        <Sparkles className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                         onClick={() => deleteUser(u.id, u.email)}>
@@ -844,7 +1582,7 @@ export default function AdminPage() {
           </div>
 
           {redeployResult && (
-            <p className="text-[11px] text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-3 py-2">
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-3 py-2">
               Queued {redeployResult.queued} of {redeployResult.total} projects
               {redeployResult.skipped > 0 ? ` (skipped ${redeployResult.skipped})` : ""}
               {" "}— deploys staggered 2s apart.
@@ -864,7 +1602,8 @@ export default function AdminPage() {
             <>
               <div className="space-y-1.5">
                 {projects.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 rounded-lg border border-border/50 px-3 py-2.5">
+                  <div key={p.id} className="rounded-lg border border-border/50">
+                  <div className="flex items-center gap-3 px-3 py-2.5">
                     <div className="flex-1 min-w-0 space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{p.name}</span>
@@ -875,7 +1614,7 @@ export default function AdminPage() {
                         {p.framework && <Badge variant="outline" className="text-[9px] shrink-0">{p.framework}</Badge>}
                       </div>
                       <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
-                        <span className="font-mono">{p.subdomain}.deployzy.com</span>
+                        <span className="font-mono">{p.subdomain}.deployzy.app</span>
                         <span className="text-muted-foreground/80">{p.user_email || p.user_id.slice(0, 8)}</span>
                         {p.repo_url && (
                           <span className="flex items-center gap-1">
@@ -893,8 +1632,19 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 shrink-0">
+                      <Button variant="ghost" size="sm"
+                        className={`h-7 px-2 ${diagOpen === p.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => loadDiagnostics(p.id)} title="Logs & diagnostics">
+                        <Activity className="h-3.5 w-3.5" />
+                      </Button>
                       {p.status === "running" && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-500 hover:text-amber-500"
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-indigo-500 hover:text-indigo-500"
+                          onClick={() => sleepProject(p.id, p.name)} title="Sleep now (frees resources; wakes on next request — platform-local only)">
+                          <Moon className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {p.status === "running" && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-amber-600 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-600 dark:text-amber-400"
                           onClick={() => stopProject(p.id, p.name)} title="Stop">
                           <Square className="h-3.5 w-3.5" />
                         </Button>
@@ -903,11 +1653,123 @@ export default function AdminPage() {
                         onClick={() => redeployProject(p.id, p.name)} title="Redeploy">
                         <RotateCcw className="h-3.5 w-3.5" />
                       </Button>
+                      <Button variant="ghost" size="sm"
+                        className={`h-7 px-2 ${moveOpen === p.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => openMove(p.id)} title="Move to another server">
+                        <Server className="h-3.5 w-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
                         onClick={() => deleteProject(p.id, p.name)} title="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Move-to-server panel */}
+                  {moveOpen === p.id && (
+                    <div className="border-t border-border/50 bg-muted/20 px-3 py-3">
+                      <p className="text-[11px] text-muted-foreground mb-2">Move <span className="font-medium text-foreground">{p.name}</span> to another server. It rebuilds on the target (brief downtime while it does).</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button onClick={() => moveProject(p.id, p.name, "auto", "auto-select")} disabled={moveBusy}
+                          className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50">
+                          Auto-select
+                        </button>
+                        {moveServers.filter(s => s.status === "active").map(s => (
+                          <button key={s.id} onClick={() => moveProject(p.id, p.name, s.id, s.label)} disabled={moveBusy}
+                            className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                            <span>{s.is_local ? "🖥️" : s.user_id ? "🔧" : "☁️"}</span>
+                            {s.label} <span className="text-muted-foreground">({s.current_projects}/{s.max_projects})</span>
+                          </button>
+                        ))}
+                        {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Diagnostics panel */}
+                  {diagOpen === p.id && (
+                    <div className="border-t border-border/50 bg-muted/20 px-3 py-3 space-y-3">
+                      {diagLoading && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground py-4 justify-center">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Probing container on host…
+                        </div>
+                      )}
+                      {!diagLoading && diag && diag.project.id === p.id && (
+                        <>
+                          {/* Container state */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <DiagStat label="Container" value={diag.container.state}
+                              tone={diag.container.state === "running" ? "good"
+                                : diag.container.state === "missing" ? "bad"
+                                : diag.container.state === "restarting" ? "warn" : "bad"} />
+                            <DiagStat label="Host" value={diag.container.host} />
+                            <DiagStat label="Restarts" value={String(diag.container.restart_count)}
+                              tone={diag.container.restart_count > 5 ? "warn" : undefined} />
+                            <DiagStat label="Exit code"
+                              value={diag.container.state === "running" ? "—" : String(diag.container.exit_code)}
+                              tone={diag.container.exit_code !== 0 && diag.container.state !== "running" ? "bad" : undefined} />
+                          </div>
+
+                          {/* Why it died — only shown when there's something to say */}
+                          {(diag.container.oom_killed || diag.container.error ||
+                            (diag.container.state !== "running" && diag.container.state !== "missing")) && (
+                            <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                              {diag.container.oom_killed
+                                ? `Killed by the kernel for exceeding its memory limit (${diag.container.memory_limit_mb} MB). The app needs more RAM than its plan allows.`
+                                : diag.container.error
+                                  ? diag.container.error
+                                  : `Container ${diag.container.state} with exit code ${diag.container.exit_code}${
+                                      diag.container.finished_at ? ` at ${new Date(diag.container.finished_at).toLocaleString()}` : ""
+                                    }.`}
+                            </div>
+                          )}
+
+                          {diag.container.state === "running" && (
+                            <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                              {diag.container.health && <span>health: <span className="text-foreground">{diag.container.health}</span></span>}
+                              {diag.container.cpu_percent && <span>cpu: <span className="text-foreground">{diag.container.cpu_percent}</span></span>}
+                              {diag.container.memory_limit_mb > 0 && (
+                                <span>mem: <span className="text-foreground">
+                                  {diag.container.memory_usage_mb}/{diag.container.memory_limit_mb} MB
+                                </span></span>
+                              )}
+                              {diag.container.started_at && (
+                                <span>up since <span className="text-foreground">{new Date(diag.container.started_at).toLocaleString()}</span></span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Container output */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Container logs</span>
+                              <button onClick={() => { setDiagOpen(null); loadDiagnostics(p.id); }}
+                                className="text-[10px] text-muted-foreground hover:text-foreground">refresh</button>
+                            </div>
+                            <pre className="max-h-64 overflow-auto rounded-md bg-[#0d1117] p-3 text-[11px] leading-relaxed text-[#e6edf3] font-mono whitespace-pre-wrap break-all">
+                              {diag.container.logs || "(no output)"}
+                            </pre>
+                          </div>
+
+                          {/* Deploy history */}
+                          {diag.deploy_logs.length > 0 && (
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Recent deploy log</span>
+                              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[#0d1117] p-3 text-[11px] leading-relaxed text-[#e6edf3] font-mono whitespace-pre-wrap break-all">
+                                {diag.deploy_logs.map(l =>
+                                  `${new Date(l.created_at).toLocaleTimeString()}  ${l.message}`).join("\n")}
+                              </pre>
+                            </div>
+                          )}
+
+                          <div className="text-[10px] text-muted-foreground">
+                            owner: <span className="text-foreground">{diag.project.owner_email}</span>
+                            {" · "}limits: {diag.project.memory_mb || 512} MB / {diag.project.cpus || 0.5} vCPU
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   </div>
                 ))}
               </div>
@@ -916,6 +1778,552 @@ export default function AdminPage() {
                 {!projectsHasMore && projects.length > 0 && <p className="text-[11px] text-muted-foreground">All {projectsTotal} projects loaded</p>}
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── IP BANS TAB ──────────────────────────────────────────────────── */}
+      {tab === "bans" && (
+        <div className="space-y-5 max-w-3xl">
+          <div>
+            <h2 className="text-lg font-semibold">IP Bans</h2>
+            <p className="text-sm text-muted-foreground">Blocked IPs can&apos;t sign up, sign in, or reach any deployed app through the proxy. Use a trailing dot to ban a range (e.g. <span className="font-mono">203.0.113.</span>).</p>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <input
+              value={banForm.ip}
+              onChange={(e) => setBanForm((f) => ({ ...f, ip: e.target.value }))}
+              placeholder="IP or prefix (203.0.113.45 or 203.0.113.)"
+              className="h-9 flex-1 min-w-[220px] rounded-md border border-input bg-background px-3 text-sm font-mono"
+            />
+            <input
+              value={banForm.reason}
+              onChange={(e) => setBanForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder="reason (optional)"
+              className="h-9 flex-1 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button size="sm" className="h-9 gap-1.5" disabled={!banForm.ip.trim()}
+              onClick={() => { const ip = banForm.ip.trim(); banIP(ip, banForm.reason.trim()); setBanForm({ ip: "", reason: "" }); }}>
+              <Ban className="h-3.5 w-3.5" /> Ban
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-border/60 overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/50 bg-muted/30 flex items-center justify-between">
+              <p className="text-sm font-medium">Banned ({ipBans.length})</p>
+              <Button variant="ghost" size="sm" onClick={loadIPBans} className="h-7 gap-1 text-xs"><RefreshCw className="h-3 w-3" /> Refresh</Button>
+            </div>
+            {ipBans.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">No IPs are banned.</p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {ipBans.map((b) => (
+                  <div key={b.ip} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <span className="text-sm font-mono font-medium">{b.ip}</span>
+                      {b.reason && <span className="text-[11px] text-muted-foreground ml-2">{b.reason}</span>}
+                      <div className="text-[10px] text-muted-foreground">by {b.created_by || "—"} · {new Date(b.created_at).toLocaleString()}</div>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-600 text-xs" onClick={() => unbanIP(b.ip)}>
+                      Unban
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ABUSE REPORTS TAB ────────────────────────────────────────────── */}
+      {tab === "abuse" && (() => {
+        const catColor: Record<string, string> = {
+          phishing: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
+          illegal:  "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
+          malware:  "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/40",
+          spam:     "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40",
+          other:    "bg-zinc-500/15 text-muted-foreground border-zinc-500/40",
+        };
+        const statusColor: Record<string, string> = {
+          open:      "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40",
+          actioned:  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+          dismissed: "bg-zinc-500/15 text-muted-foreground border-zinc-500/40",
+        };
+        const shown = abuseReports.filter(r => abuseFilter === "all" || r.status === abuseFilter);
+        const openCount = abuseReports.filter(r => r.status === "open").length;
+        return (
+        <div className="space-y-5 max-w-3xl">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2"><Flag className="h-4 w-4 text-red-600 dark:text-red-400" /> Abuse Reports</h2>
+              <p className="text-sm text-muted-foreground">Public reports of phishing, malware, spam, or illegal content on deployed apps and tunnels. Submitted via <span className="font-mono">/report</span>.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadAbuseReports} disabled={abuseLoading} className="gap-1.5">
+              {abuseLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh
+            </Button>
+          </div>
+
+          <div className="flex gap-1.5 flex-wrap">
+            {(["open", "actioned", "dismissed", "all"] as const).map((f) => (
+              <button key={f} onClick={() => setAbuseFilter(f)}
+                className={`h-7 px-3 rounded-full text-xs capitalize border transition-colors ${
+                  abuseFilter === f ? "bg-primary text-primary-foreground border-primary" : "border-border/60 text-muted-foreground hover:bg-muted/40"
+                }`}>
+                {f}{f === "open" && openCount > 0 ? ` (${openCount})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {abuseLoading && abuseReports.length === 0 ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : shown.length === 0 ? (
+            <div className="rounded-xl border border-border/60 px-4 py-12 text-center text-sm text-muted-foreground">
+              {abuseFilter === "open" ? "No open reports. 🎉" : `No ${abuseFilter} reports.`}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {shown.map((r) => (
+                <div key={r.id} className="rounded-xl border border-border/60 p-4 space-y-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className={`text-[10px] capitalize ${catColor[r.category] || catColor.other}`}>{r.category}</Badge>
+                    <Badge variant="outline" className={`text-[10px] capitalize ${statusColor[r.status] || statusColor.open}`}>{r.status}</Badge>
+                    <span className="text-[11px] text-muted-foreground ml-auto">{new Date(r.created_at).toLocaleString()}</span>
+                  </div>
+                  {/* Reported URL is shown as plain selectable text, never a link —
+                      it may point to a live phishing/malware page. */}
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Reported URL</p>
+                    <p className="text-sm font-mono break-all select-all">{r.target_url || "—"}</p>
+                  </div>
+                  {r.details && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Details</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{r.details}</p>
+                    </div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground">
+                    Reporter: {r.reporter_email || "anonymous"}{r.reporter_ip ? <> · <span className="font-mono">{r.reporter_ip}</span></> : null}
+                  </div>
+                  <div className="flex gap-2 flex-wrap pt-1">
+                    {r.status !== "actioned" && (
+                      <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "actioned")}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Mark actioned
+                      </Button>
+                    )}
+                    {r.status !== "dismissed" && (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "dismissed")}>
+                        <X className="h-3.5 w-3.5" /> Dismiss
+                      </Button>
+                    )}
+                    {r.status !== "open" && (
+                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "open")}>
+                        <RotateCcw className="h-3.5 w-3.5" /> Reopen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        );
+      })()}
+
+      {/* ── DENSITY TAB ──────────────────────────────────────────────────── */}
+      {tab === "density" && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold">Density &amp; Idle Sleep</h2>
+              <p className="text-sm text-muted-foreground">Real vs reserved memory per box, and idle sleep/wake activity.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadDensity} disabled={densityLoading} className="gap-1.5">
+              {densityLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh
+            </Button>
+          </div>
+
+          {!density ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(() => {
+                  const savedGB = (density.sleeping_memory_mb / 1024).toFixed(1);
+                  const cards = [
+                    { label: "Sleeping now", value: density.sleeping_count, sub: `${savedGB} GB reserved freed`, accent: "text-indigo-500" },
+                    { label: "Reserved (platform)", value: `${density.reserved_pct}%`, sub: `${(density.allocated_memory_mb/1024).toFixed(1)} / ${(density.total_memory_mb/1024).toFixed(1)} GB`, accent: density.reserved_pct > 90 ? "text-amber-600 dark:text-amber-400" : "text-foreground" },
+                    { label: "Actually used", value: `${density.used_pct}%`, sub: `${(density.used_memory_mb/1024).toFixed(1)} GB real RAM`, accent: density.used_pct > 80 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Idle & awake", value: density.eligible_awake, sub: "free/local, >30m idle", accent: "text-muted-foreground" },
+                  ];
+                  return cards.map((c) => (
+                    <div key={c.label} className="rounded-xl border border-border/60 bg-card/40 p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{c.label}</p>
+                      <p className={`mt-1 text-2xl font-semibold ${c.accent}`}>{c.value}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{c.sub}</p>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* Per-server memory: reserved vs actually used */}
+              <div className="rounded-xl border border-border/60 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border/50 bg-muted/30">
+                  <p className="text-sm font-medium">Memory: reserved vs actually used</p>
+                  <p className="text-[11px] text-muted-foreground">The gap (grey→green) is idle headroom the usage-aware scheduler can pack into.</p>
+                </div>
+                <div className="divide-y divide-border/40">
+                  {density.servers.map((s) => (
+                    <div key={s.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Server className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-sm font-medium truncate">{s.label}</span>
+                          {s.is_local && <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">primary</span>}
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded ${s.status === "active" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>{s.status}</span>
+                          {s.sleeping_count > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-500">{s.sleeping_count} asleep</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground font-mono">
+                          {s.current_projects}/{s.max_projects || "∞"} proj · load {s.load_avg.toFixed(2)}
+                        </div>
+                      </div>
+                      {/* stacked bar: used (green) within reserved (grey) within total */}
+                      <div className="relative h-3 w-full rounded-full bg-muted/50 overflow-hidden">
+                        <div className="absolute inset-y-0 left-0 bg-muted-foreground/25" style={{ width: `${Math.min(100, s.reserved_pct)}%` }} title={`reserved ${s.reserved_pct}%`} />
+                        <div className={`absolute inset-y-0 left-0 ${s.used_pct > 80 ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, s.used_pct)}%` }} title={`used ${s.used_pct}%`} />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span><span className="text-emerald-600 dark:text-emerald-400 font-medium">{s.used_pct}%</span> used · <span className="text-foreground">{s.reserved_pct}%</span> reserved</span>
+                        <span>{(s.reclaimable_mb/1024).toFixed(1)} GB reserved-but-idle · {(s.total_memory_mb/1024).toFixed(1)} GB total</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sleeping projects */}
+              <div className="rounded-xl border border-border/60 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border/50 bg-muted/30 flex items-center justify-between">
+                  <p className="text-sm font-medium">Currently sleeping ({density.sleeping_count})</p>
+                  <p className="text-[11px] text-muted-foreground">Wakes on next request</p>
+                </div>
+                {density.sleeping_projects.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">No projects are asleep right now.</p>
+                ) : (
+                  <div className="divide-y divide-border/40">
+                    {density.sleeping_projects.map((p) => (
+                      <div key={p.id} className="px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium">{p.subdomain}</span>
+                          <span className="text-[11px] text-muted-foreground ml-2">{p.email}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {p.memory_mb} MB freed · slept {p.slept_at ? new Date(p.slept_at).toLocaleString() : "—"}
+                          </span>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-600 text-xs gap-1"
+                            onClick={() => wakeProject(p.id, p.subdomain)} title="Wake now">
+                            <Zap className="h-3 w-3" /> Wake
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── SEO & LLM TAB ────────────────────────────────────────────────── */}
+      {tab === "seo" && (
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              How <span className="font-medium text-foreground">deployzy.com</span> is doing on search engines and with AI
+              assistants — which crawlers fetch us (Google, GPTBot, ClaudeBot…) and where our human visitors come from
+              (Google, ChatGPT, Perplexity…). Collected live from the web server access log. Last 30 days.
+            </p>
+            <Button size="sm" variant="outline" className="h-9 text-xs gap-1 shrink-0"
+              onClick={loadSEO} disabled={seoLoading}>
+              {seoLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Refresh
+            </Button>
+          </div>
+
+          {seoLoading && !seo ? (
+            <p className="text-sm text-muted-foreground py-10 text-center">Loading…</p>
+          ) : !seo ? null : !seo.has_data ? (
+            <div className="flex flex-col items-center py-12 text-center">
+              <Globe className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground max-w-md">No data yet. Tracking just started — crawler hits and
+                referrals will appear here as traffic comes in (usually within a day).</p>
+            </div>
+          ) : (
+            <>
+              {/* Headline cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { label: "AI crawler hits", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-600 dark:text-violet-400 bg-violet-500/15" },
+                  { label: "Search crawler hits", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-600 dark:text-sky-400 bg-sky-500/15" },
+                  { label: "LLM referrals", value: seo.totals.llm_referral_hits, hint: "clicks from AI answers", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15" },
+                  { label: "Search referrals", value: seo.totals.search_referral_hits, hint: "organic search clicks", color: "text-amber-600 dark:text-amber-400 bg-amber-500/15" },
+                ].map(c => (
+                  <div key={c.label} className="rounded-xl border border-border/60 p-4">
+                    <div className={`inline-flex h-7 w-7 items-center justify-center rounded-lg mb-2 ${c.color}`}>
+                      <TrendingUp className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="text-2xl font-bold">{c.value.toLocaleString()}</div>
+                    <div className="text-xs font-medium mt-0.5">{c.label}</div>
+                    <div className="text-[10px] text-muted-foreground">{c.hint}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tips */}
+              {seo.tips.length > 0 && (
+                <div className="space-y-1.5">
+                  {seo.tips.map((t, i) => {
+                    const tone = t.tone === "good" ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300"
+                      : t.tone === "warn" ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-700 dark:text-amber-300"
+                      : "border-border/60 bg-muted/30 text-muted-foreground";
+                    const Icon = t.tone === "good" ? CheckCircle2 : t.tone === "warn" ? AlertCircle : Zap;
+                    return (
+                      <div key={i} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${tone}`}>
+                        <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>{t.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Two columns: crawlers + referrals */}
+              <div className="grid md:grid-cols-2 gap-4">
+                {[
+                  { title: "Crawlers fetching us", rows: seo.crawlers, empty: "No crawlers recorded yet." },
+                  { title: "Traffic sources (humans)", rows: seo.referrals, empty: "No referral traffic recorded yet." },
+                ].map(col => (
+                  <div key={col.title} className="rounded-xl border border-border/60 overflow-hidden">
+                    <div className="px-3 py-2.5 border-b border-border/60 text-xs font-semibold">{col.title}</div>
+                    {col.rows.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-xs text-muted-foreground">{col.empty}</p>
+                    ) : (
+                      <div className="divide-y divide-border/40">
+                        {col.rows.map(row => (
+                          <div key={row.name} className="flex items-center gap-2 px-3 py-2">
+                            <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-medium shrink-0 ${
+                              row.channel === "ai" || row.channel === "llm" ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                              : row.channel === "search" ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                              : row.channel === "social" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              : "bg-muted text-muted-foreground"}`}>
+                              {row.channel === "llm" ? "AI" : row.channel}
+                            </span>
+                            <span className="text-sm flex-1 min-w-0 truncate">{row.name}</span>
+                            {row.recent > 0 && <span className="text-[10px] text-emerald-600 dark:text-emerald-400" title="last 7 days">+{row.recent.toLocaleString()} · 7d</span>}
+                            <span className="text-sm font-medium tabular-nums">{row.hits.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── DATABASES TAB ────────────────────────────────────────────────── */}
+      {tab === "databases" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, type, owner email..."
+                className="pl-9 h-9 text-sm"
+                value={dbSearch}
+                onChange={e => setDbSearch(e.target.value)}
+              />
+            </div>
+            <select
+              value={dbType}
+              onChange={e => setDbType(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="all">All engines</option>
+              <option value="postgres">PostgreSQL</option>
+              <option value="redis">Redis</option>
+              <option value="mongodb">MongoDB</option>
+              <option value="mysql">MySQL</option>
+            </select>
+          </div>
+
+          <div className="text-xs text-muted-foreground">{databasesTotal} databases total</div>
+
+          {databasesLoading && databases.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>
+          ) : databases.length === 0 ? (
+            <div className="flex flex-col items-center py-12">
+              <Database className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm text-muted-foreground">No databases found.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {databases.map(d => {
+                const svc = d.service;
+                const location = d.server_label
+                  ? d.server_label
+                  : svc.worker_server_id ? "BYOC server" : "Deployzy platform";
+                const revealed = dbReveal === svc.id;
+                return (
+                  <div key={svc.id} className="rounded-lg border border-border/50">
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{svc.name}</span>
+                          <Badge variant="outline" className="text-[9px] shrink-0 uppercase">{svc.type}</Badge>
+                          <Badge variant="outline" className={`text-[9px] shrink-0 ${STATUS_COLORS[svc.status] || "bg-muted text-muted-foreground"}`}>
+                            {svc.status}
+                          </Badge>
+                          {svc.over_quota && <Badge variant="outline" className="text-[9px] shrink-0 bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30">over quota</Badge>}
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
+                          <span className="text-muted-foreground/80">{d.user_email || svc.user_id.slice(0, 8)}</span>
+                          <span className="flex items-center gap-1"><Server className="h-2.5 w-2.5" />{location}</span>
+                          <span className="flex items-center gap-1"><HardDrive className="h-2.5 w-2.5" />{svc.size_mb} MB</span>
+                          <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{new Date(svc.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Button variant="ghost" size="sm"
+                          className={`h-7 px-2 ${revealed ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                          onClick={() => setDbReveal(revealed ? null : svc.id)}
+                          title={revealed ? "Hide connection string" : "Reveal connection string"}>
+                          {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </Button>
+                        {svc.type !== "redis" && (
+                          <Button variant="ghost" size="sm"
+                            className={`h-7 px-2 ${moveDbOpen === svc.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                            onClick={() => openMoveDb(svc.id)} title="Migrate to another server">
+                            <Server className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
+                          onClick={() => deleteDatabase(svc.id, svc.name, d.user_email)} title="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {moveDbOpen === svc.id && (
+                      <div className="border-t border-border/50 bg-muted/20 px-3 py-3">
+                        <p className="text-[11px] text-muted-foreground mb-2">Migrate <span className="font-medium text-foreground">{svc.name}</span> to another server. It provisions the DB there and copies the data — your <span className="font-medium">original stays untouched</span> (repoint your app, then delete the source when verified).</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {moveServers.filter(s => s.status === "active" && s.docker_installed !== false).map(s => (
+                            <button key={s.id} onClick={() => migrateDatabase(svc.id, svc.name, s.id, s.label)} disabled={moveBusy}
+                              className="text-[11px] px-2.5 py-1 rounded-md border border-input hover:border-foreground/30 disabled:opacity-50 flex items-center gap-1.5">
+                              <span>{s.is_local ? "🖥️" : s.user_id ? "🔧" : "☁️"}</span>{s.label}
+                            </button>
+                          ))}
+                          {moveServers.length === 0 && <span className="text-[11px] text-muted-foreground">Loading servers…</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {revealed && (
+                      <div className="border-t border-border/50 bg-muted/20 px-3 py-2.5 space-y-1.5">
+                        {[["Internal", d.connection_url], ["External", d.external_connection_url]].map(([label, url]) => (
+                          <div key={label} className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground w-14 shrink-0">{label}</span>
+                            <code className="flex-1 min-w-0 truncate text-[11px] font-mono bg-background rounded px-2 py-1 border border-border/50">{url || "—"}</code>
+                            {url && (
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-muted-foreground hover:text-foreground"
+                                onClick={() => navigator.clipboard.writeText(url)} title="Copy">
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ORPHANS TAB ──────────────────────────────────────────────────── */}
+      {tab === "orphans" && (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground max-w-2xl">
+              Containers named <code className="font-mono">sm-*</code> that exist on a host but have no owning
+              project or database in the database — usually left behind when something was deleted while its
+              server was unreachable. They quietly consume resources until removed here.
+            </p>
+            <Button size="sm" variant="outline" className="h-9 text-xs gap-1 shrink-0"
+              onClick={scanOrphans} disabled={orphanLoading}>
+              {orphanLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Rescan hosts
+            </Button>
+          </div>
+
+          {orphanScan && (
+            <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
+              <span>{orphanScan.hosts_scanned} host{orphanScan.hosts_scanned === 1 ? "" : "s"} scanned</span>
+              {orphanScan.scanned_at && <span>· {new Date(orphanScan.scanned_at).toLocaleTimeString()}</span>}
+              {orphanScan.unreachable_hosts.length > 0 && (
+                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                  <AlertCircle className="h-3 w-3" />
+                  Unreachable: {orphanScan.unreachable_hosts.join(", ")} (scan may be incomplete)
+                </span>
+              )}
+            </div>
+          )}
+
+          {orphanLoading && !orphanScan ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" /> Scanning every host for orphan containers…
+            </div>
+          ) : !orphanScan || orphanScan.orphans.length === 0 ? (
+            <div className="flex flex-col items-center py-12">
+              <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400/50 mb-2" />
+              <p className="text-sm text-muted-foreground">No orphan containers found. Every running container has an owner.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {orphanScan.orphans.map(o => (
+                <div key={`${o.server_id}-${o.name}`} className="rounded-lg border border-amber-500/30 bg-amber-500/[0.04]">
+                  <div className="flex items-center gap-3 px-3 py-2.5">
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <code className="text-sm font-mono font-medium">{o.name}</code>
+                        <Badge variant="outline" className={`text-[9px] shrink-0 ${o.state === "running" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" : "bg-muted text-muted-foreground"}`}>
+                          {o.state || "unknown"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
+                        <span className="flex items-center gap-1"><Server className="h-2.5 w-2.5" />{o.server_label}</span>
+                        {o.status && <span>{o.status}</span>}
+                        {o.created_at && <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{o.created_at}</span>}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive shrink-0"
+                      onClick={() => reapOrphan(o)} disabled={reaping === o.name} title="Force remove">
+                      {reaping === o.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -945,7 +2353,7 @@ export default function AdminPage() {
               {sessions.length} active session{sessions.length !== 1 ? "s" : ""}
             </span>
             {sessionsRefresh && <span>· last refreshed {sessionsRefresh.toLocaleTimeString()}</span>}
-            {autoRefresh && <span className="text-emerald-500/70">· auto-refresh every 15s</span>}
+            {autoRefresh && <span className="text-emerald-600 dark:text-emerald-400/70">· auto-refresh every 15s</span>}
           </div>
 
           {filteredSessions.length === 0 ? (
@@ -962,7 +2370,7 @@ export default function AdminPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 rounded px-1.5 py-0.5 font-medium">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/50 rounded px-1.5 py-0.5 font-medium">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           connected
                         </span>
@@ -989,9 +2397,9 @@ export default function AdminPage() {
                         <div key={t.url} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <Badge variant="outline" className={`text-[9px] shrink-0 ${
-                              t.protocol === "http"  ? "bg-blue-500/20 text-blue-400 border-blue-500/50" :
-                              t.protocol === "tcp"   ? "bg-amber-500/20 text-amber-400 border-amber-500/50" :
-                              "bg-violet-500/20 text-violet-400 border-violet-500/50"
+                              t.protocol === "http"  ? "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50" :
+                              t.protocol === "tcp"   ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50" :
+                              "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/50"
                             }`}>
                               {t.protocol.toUpperCase()}
                             </Badge>
@@ -1077,19 +2485,19 @@ export default function AdminPage() {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3 mb-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400 text-xs font-mono shrink-0">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-mono shrink-0">
                             {s.region.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium">{s.label}</span>
                               <Badge variant="outline" className={`text-[9px] ${
-                                s.status === "active" ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50"
-                                : s.status === "draining" ? "bg-amber-500/20 text-amber-500 border-amber-500/50"
-                                : "bg-red-500/20 text-red-500"
+                                s.status === "active" ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
+                                : s.status === "draining" ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50"
+                                : "bg-red-500/20 text-red-600 dark:text-red-400"
                               }`}>{s.status}</Badge>
-                              {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-400 border-blue-500/30">primary · local</Badge>}
-                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-400 border-violet-500/30">BYOC</Badge>}
+                              {s.is_local && <Badge variant="outline" className="text-[9px] bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">primary · local</Badge>}
+                              {s.user_id && <Badge variant="outline" className="text-[9px] bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30">BYOC</Badge>}
                               {s.docker_installed && <Badge variant="outline" className="text-[9px]">Docker</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.host}</p>
@@ -1106,6 +2514,39 @@ export default function AdminPage() {
                               Activate
                             </Button>
                           )}
+                          {!s.user_id && (
+                            <Button
+                              variant="outline" size="sm" className="h-7 text-xs"
+                              title="Rename & set region"
+                              onClick={() => {
+                                setEditingServer(editingServer === s.id ? null : s.id);
+                                setSrvLabel(s.label || "");
+                                setSrvRegion(s.region || "");
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {!s.user_id && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={`h-7 text-xs ${s.user_selectable ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-muted-foreground"}`}
+                              title={s.user_selectable ? "Shown in the user region picker — click to hide" : "Hidden from the user region picker — click to offer"}
+                              onClick={() => setSelectable(s.id, !s.user_selectable)}
+                            >
+                              {s.user_selectable ? "Offered" : "Hidden"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={`h-7 text-xs ${s.backups_enabled !== false ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-amber-600 dark:text-amber-400 border-amber-500/40"}`}
+                            title={s.backups_enabled !== false ? "Nightly backups ON for databases on this server — click to disable" : "Backups DISABLED for this server — click to enable"}
+                            onClick={() => toggleServerBackups(s.id, s.backups_enabled === false)}
+                          >
+                            {s.backups_enabled !== false ? "Backups on" : "Backups off"}
+                          </Button>
                           {!s.is_local && (
                             <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => removeServer(s.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1113,6 +2554,38 @@ export default function AdminPage() {
                           )}
                         </div>
                       </div>
+                      {editingServer === s.id && (
+                        <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="mb-1 block text-[11px] text-muted-foreground">Display name</label>
+                              <input
+                                value={srvLabel}
+                                onChange={(e) => setSrvLabel(e.target.value)}
+                                placeholder="e.g. Deployzy Cloud"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] text-muted-foreground">Region (flag shown to users)</label>
+                              <select
+                                value={srvRegion}
+                                onChange={(e) => setSrvRegion(e.target.value)}
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                              >
+                                <option value="">— none —</option>
+                                {REGION_PRESETS.map((rp) => (
+                                  <option key={rp.slug} value={rp.slug}>{rp.flag} {rp.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-7 text-xs" onClick={() => saveServerMeta(s.id)}>Save</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingServer(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-3">
                         <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" large />
                         <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" large />
@@ -1139,7 +2612,7 @@ export default function AdminPage() {
                 Nightly Postgres dump + project data tarball. Local 7-day retention.
               </p>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className={backups?.timer_active ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" : "bg-red-500/20 text-red-500 border-red-500/40"}>
+                <Badge variant="outline" className={backups?.timer_active ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50" : "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/40"}>
                   Timer: {backups?.timer_active ? "active" : "inactive"}
                 </Badge>
                 <Badge variant="outline">Last: {backups?.last_run ? formatTs(backups.last_run) : "never"}</Badge>
@@ -1164,7 +2637,7 @@ export default function AdminPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono">{formatTs(run.timestamp)}</span>
-                      <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-500 border-emerald-500/50">
+                      <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50">
                         {formatBytes(run.total_bytes)}
                       </Badge>
                     </div>
@@ -1188,6 +2661,373 @@ export default function AdminPage() {
         </div>
       )}
       {/* ── BROADCAST TAB ───────────────────────────────────────────────────── */}
+      {/* ── PLANS TAB ─────────────────────────────────────────────────────── */}
+      {tab === "plans" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Edit what each plan allows. Changes apply on the next check — no restart or
+            redeploy needed. Use <span className="font-mono text-foreground">-1</span> for unlimited.
+          </p>
+
+          <div className="rounded-xl border border-border/60 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Concurrent builds (platform-wide)</p>
+              <p className="text-xs text-muted-foreground">How many Docker builds run at once across all users. Keep at <span className="font-mono">1</span> on a single-core VPS so builds don&apos;t starve live apps. Raise it after moving to a bigger server.</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <input type="number" min={1} max={16} value={buildConcInput}
+                onChange={e => setBuildConcInput(e.target.value)}
+                className="w-16 h-9 rounded-lg border border-input bg-background px-3 text-sm text-center outline-none focus:border-foreground/30" />
+              <button onClick={saveBuildConc} disabled={buildConcSaving || buildConcInput === String(buildConc)}
+                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+                {buildConcSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+
+          {plans.length === 0 && (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading plans…
+            </div>
+          )}
+
+          {plans.map((p) => {
+            const d = planDraft[p.plan];
+            if (!d) return null;
+            const isAdminPlan = p.plan === "admin";
+            const setField = (k: keyof PlanLimitRow, v: number | boolean) =>
+              setPlanDraft(prev => ({ ...prev, [p.plan]: { ...prev[p.plan], [k]: v } }));
+            const dirty = JSON.stringify(d) !== JSON.stringify(p);
+
+            const numField = (label: string, key: keyof PlanLimitRow, hint?: string, step = 1) => (
+              <div key={key}>
+                <label className="block text-[11px] text-muted-foreground mb-1">{label}</label>
+                <input
+                  type="number" step={step}
+                  disabled={isAdminPlan}
+                  value={d[key] as number}
+                  onChange={(e) => setField(key, parseFloat(e.target.value))}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs font-mono disabled:opacity-50"
+                />
+                {hint && <p className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</p>}
+              </div>
+            );
+
+            return (
+              <Card key={p.plan}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <span className="capitalize">{p.plan}</span>
+                      {isAdminPlan && (
+                        <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                          unlimited by design — read only
+                        </Badge>
+                      )}
+                    </span>
+                    {!isAdminPlan && (
+                      <span className="flex items-center gap-2">
+                        {planSaved === p.plan && (
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Saved</span>
+                        )}
+                        <Button size="sm" className="h-7 text-xs" disabled={!dirty || planSaving === p.plan}
+                          onClick={() => savePlan(p.plan)}>
+                          {planSaving === p.plan ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                        </Button>
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Build + runtime resources — the levers that actually cost money */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Build &amp; runtime
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Runtime RAM (MB)", "max_memory_mb")}
+                      {numField("Runtime vCPU", "max_cpus", undefined, 0.25)}
+                      {numField("Build memory (MB)", "max_build_memory_mb", "Ceiling — still clamped to free host RAM")}
+                      {numField("Build minutes / mo", "max_build_minutes_monthly", "Counts failed builds too")}
+                      {numField("AI credits / mo", "monthly_ai_credits", "Free AI-builder credits; -1 = unlimited")}
+                    </div>
+                  </div>
+
+                  {/* Quotas */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Quotas</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Projects", "max_projects")}
+                      {numField("Databases", "max_databases")}
+                      {numField("DB storage (MB)", "max_db_size_mb", "Per-database size cap; -1 = unlimited")}
+                      {numField("Services", "max_services")}
+                      {numField("BYOC servers", "max_byoc_servers")}
+                      {numField("Subdomains", "max_subdomains")}
+                      {numField("Tunnels", "max_tunnels")}
+                      {numField("Custom domains", "max_custom_domains")}
+                      {numField("Cron jobs", "max_crons")}
+                      {numField("PR previews", "max_preview_deploys")}
+                      {numField("Bandwidth (GB)", "max_bandwidth_gb")}
+                      {numField("Rate limit (req/s)", "max_rate")}
+                    </div>
+                  </div>
+
+                  {/* Retention */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Retention (days)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {numField("Analytics", "analytics_retention_days")}
+                      {numField("Deploy logs", "deploy_log_retention_days")}
+                      {numField("Metrics", "metrics_retention_days")}
+                      {numField("Backups", "backup_retention_days")}
+                    </div>
+                  </div>
+
+                  {/* Feature flags */}
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Features</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {([
+                        ["allow_previews", "PR previews"],
+                        ["allow_release_cmd", "Release cmds"],
+                        ["allow_health_checks", "Health checks"],
+                        ["allow_private_repos", "Private repos"],
+                        ["allow_tcp_tunnels", "TCP tunnels"],
+                        ["allow_live_logs", "Live logs"],
+                        ["allow_custom_events", "Custom events"],
+                        ["allow_telegram", "Telegram"],
+                        ["allow_advanced_databases", "Redis/Mongo/MySQL"],
+                        ["allow_db_migration", "DB migration"],
+                      ] as [keyof PlanLimitRow, string][]).map(([key, label]) => (
+                        <button
+                          key={key}
+                          disabled={isAdminPlan}
+                          onClick={() => setField(key, !d[key])}
+                          className={`rounded-md border px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                            d[key]
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "border-border text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {d[key] ? "✓" : "✕"} {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
+      {tab === "analytics" && (
+        <div className="space-y-4">
+          {/* Period selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">Period</span>
+            <div className="flex rounded-md border border-border overflow-hidden">
+              {["day", "week", "month", "year", "all"].map(pd => (
+                <button key={pd} onClick={() => setAnalyticsPeriod(pd)}
+                  className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                    analyticsPeriod === pd ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}>{pd === "all" ? "All time" : pd}</button>
+              ))}
+            </div>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs ml-auto"
+              onClick={() => loadAnalytics(analyticsPeriod)} disabled={analyticsLoading}>
+              <RefreshCw className={`h-3.5 w-3.5 ${analyticsLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+
+          {analyticsLoading && !analytics && (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Aggregating traffic…
+            </div>
+          )}
+
+          {analytics && (() => {
+            const o = analytics.overview;
+            const totalHits = o.pageviews + o.bot_hits;
+            const botPct = totalHits > 0 ? (o.bot_hits / totalHits) * 100 : 0;
+            const fmtBytes = (b: number) =>
+              b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e3).toFixed(0)} KB`;
+            const fmtNum = (n: number) =>
+              n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
+            const peak = Math.max(1, ...analytics.timeseries.map(t => t.pageviews + t.bot_hits));
+
+            return (
+              <>
+                {/* Headline tiles */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <StatTile label="Pageviews" value={fmtNum(o.pageviews)}
+                    sub={analytics.visitors_exact
+                      ? `${fmtNum(o.visitors)} unique visitors`
+                      : `${fmtNum(o.visitors)} visits (daily uniques summed)`} />
+                  <StatTile label="Bot traffic" value={`${botPct.toFixed(1)}%`} sub={`${fmtNum(o.bot_hits)} crawler hits`}
+                    tone={botPct > 60 ? "warn" : undefined} />
+                  <StatTile label="Bandwidth served" value={fmtBytes(o.bytes_served)} sub={`${o.active_sites} sites with traffic`} />
+                  <StatTile label="Errors" value={fmtNum(o.error_hits)}
+                    sub={totalHits > 0 ? `${((o.error_hits / totalHits) * 100).toFixed(1)}% of requests` : "—"}
+                    tone={o.error_hits > 0 && totalHits > 0 && (o.error_hits / totalHits) > 0.05 ? "bad" : undefined} />
+                </div>
+
+                {/* Traffic chart — human vs bot, stacked bars (no chart lib, matches
+                    the hand-rolled SVG style used elsewhere) */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center justify-between">
+                      <span>Traffic over time</span>
+                      <span className="flex items-center gap-3 text-[10px] font-normal text-muted-foreground">
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500" />humans</span>
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-500/70" />bots</span>
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analytics.timeseries.length === 0 ? (
+                      <p className="py-10 text-center text-xs text-muted-foreground">No traffic in this period.</p>
+                    ) : (
+                      <div className="flex items-end gap-[2px] h-40">
+                        {analytics.timeseries.map((pt, i) => {
+                          const total = pt.pageviews + pt.bot_hits;
+                          const h = (total / peak) * 100;
+                          const botShare = total > 0 ? (pt.bot_hits / total) * 100 : 0;
+                          return (
+                            <div key={i} className="flex-1 flex flex-col justify-end group relative" style={{ height: "100%" }}>
+                              <div className="w-full rounded-t-sm overflow-hidden flex flex-col justify-end" style={{ height: `${h}%` }}>
+                                <div className="w-full bg-amber-500/70" style={{ height: `${botShare}%` }} />
+                                <div className="w-full bg-emerald-500" style={{ height: `${100 - botShare}%` }} />
+                              </div>
+                              <div className="pointer-events-none absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-10 whitespace-nowrap rounded bg-popover border border-border px-2 py-1 text-[10px] shadow">
+                                <div className="font-medium">{new Date(pt.ts).toLocaleString()}</div>
+                                <div className="text-emerald-600 dark:text-emerald-400">{pt.pageviews} views · {pt.visitors} visitors</div>
+                                <div className="text-amber-600 dark:text-amber-400">{pt.bot_hits} bot hits</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Crawler identity — who is actually hitting these sites */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center justify-between">
+                      <span>Crawlers &amp; bots</span>
+                      <span className="text-[10px] font-normal text-muted-foreground">
+                        {fmtNum(o.bot_hits)} bot hits · {botPct.toFixed(1)}% of all traffic
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(analytics.crawlers || []).length === 0 ? (
+                      <p className="py-6 text-center text-xs text-muted-foreground">No bot traffic in this period.</p>
+                    ) : (() => {
+                      const rows = analytics.crawlers;
+                      const max = Math.max(1, ...rows.map(c => c.hits));
+                      const tone: Record<string, string> = {
+                        ai: "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/40",
+                        search: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+                        social: "bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/40",
+                        seo: "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40",
+                        monitoring: "bg-zinc-500/20 text-muted-foreground border-zinc-500/40",
+                      };
+                      return (
+                        <div className="space-y-1.5">
+                          {rows.map(c => (
+                            <div key={c.name} className="relative">
+                              <div className="absolute inset-y-0 left-0 rounded bg-amber-500/10"
+                                style={{ width: `${(c.hits / max) * 100}%` }} />
+                              <div className="relative flex items-center gap-2 px-2 py-1.5 text-[11px]">
+                                <span className="font-medium truncate">{c.name}</span>
+                                <Badge variant="outline"
+                                  className={`text-[9px] shrink-0 ${tone[c.category] || "text-muted-foreground"}`}>
+                                  {c.category}
+                                </Badge>
+                                <span className="ml-auto shrink-0 text-muted-foreground">
+                                  {c.sites} site{c.sites !== 1 ? "s" : ""}
+                                </span>
+                                <span className="shrink-0 font-mono w-16 text-right">{c.hits.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          ))}
+                          {rows.some(c => c.name === "Unclassified") && (
+                            <p className="pt-1 text-[10px] text-muted-foreground">
+                              &ldquo;Unclassified&rdquo; is traffic recorded before crawler identification shipped —
+                              user agents aren&apos;t stored, so it can&apos;t be labelled retroactively.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+
+                {/* Breakdowns */}
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  <TopList title="Traffic sources" rows={analytics.top.referrers} empty="No referrers — traffic is direct." />
+                  <TopList title="Top pages" rows={analytics.top.paths} />
+                  <TopList title="Countries" rows={analytics.top.countries} />
+                  <TopList title="Devices" rows={analytics.top.devices} />
+                  <TopList title="Browsers" rows={analytics.top.browsers} />
+                </div>
+
+                {/* Busiest projects */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Busiest projects</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analytics.projects.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-muted-foreground">No traffic recorded in this period.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-muted-foreground border-b border-border/50">
+                              <th className="text-left font-medium py-1.5">Project</th>
+                              <th className="text-right font-medium">Views</th>
+                              <th className="text-right font-medium">Visitors</th>
+                              <th className="text-right font-medium">Bots</th>
+                              <th className="text-right font-medium">Bandwidth</th>
+                              <th className="text-right font-medium">Errors</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analytics.projects.map(pr => (
+                              <tr key={pr.project_id} className="border-b border-border/30 last:border-0">
+                                <td className="py-1.5">
+                                  <div className="font-medium">{pr.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{pr.owner_email || "—"}</div>
+                                </td>
+                                <td className="text-right font-mono">{fmtNum(pr.pageviews)}</td>
+                                <td className="text-right font-mono">{fmtNum(pr.visitors)}</td>
+                                <td className="text-right font-mono text-amber-600 dark:text-amber-400">{fmtNum(pr.bot_hits)}</td>
+                                <td className="text-right font-mono">{fmtBytes(pr.bytes)}</td>
+                                <td className={`text-right font-mono ${pr.error_hits > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{fmtNum(pr.error_hits)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <p className="text-[10px] text-muted-foreground">
+                  {analytics.retention_note}
+                  {analytics.source === "rollup" && " Breakdown lists below the chart cover the last 30 days only."}
+                </p>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {tab === "broadcast" && (
         <div className="max-w-2xl space-y-6">
           <div>
@@ -1198,10 +3038,10 @@ export default function AdminPage() {
           {bcResult && (
             <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
-                <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                <svg className="h-4 w-4 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-emerald-500">Broadcast sent</p>
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Broadcast sent</p>
                 <p className="text-xs text-muted-foreground">{bcResult.sent} delivered · {bcResult.failed} failed · {bcResult.total} total recipients</p>
               </div>
               <button onClick={() => setBcResult(null)} className="ml-auto text-muted-foreground hover:text-foreground text-xs">Dismiss</button>
@@ -1209,21 +3049,21 @@ export default function AdminPage() {
           )}
 
           {bcError && (
-            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">{bcError}</div>
+            <div className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">{bcError}</div>
           )}
 
           {/* Audience */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Audience</label>
             <div className="flex gap-2">
-              {(["all", "free", "pro"] as const).map(a => (
+              {(["all", "free", "hobby", "pro", "team"] as const).map(a => (
                 <button key={a} onClick={() => { setBcAudience(a); loadBroadcastPreview(a); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors capitalize ${
                     bcAudience === a
                       ? "bg-primary text-primary-foreground border-primary"
                       : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                   }`}>
-                  {a === "all" ? "All users" : a === "free" ? "Free plan" : "Pro plan"}
+                  {a === "all" ? "All users" : `${a} plan`}
                 </button>
               ))}
               {bcPreviewCount !== null && (
@@ -1279,6 +3119,272 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === "vpn" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">VPN Panel — TunnelTweak API</h3>
+            <p className="text-xs text-muted-foreground">
+              Deployzy resells the TunnelTweak (TuTBot) installer as a white-label VPN panel. Paste the reseller
+              API key here — it authenticates every VPN install and SSH/V2Ray account created on the site.
+            </p>
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border/60 p-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">API Base URL</label>
+              <input value={vpnForm.base_url} onChange={e => setVpnForm(f => ({ ...f, base_url: e.target.value }))}
+                placeholder="https://tunneltweak.deployzy.com"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Reseller API Key {vpnCfg?.api_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({vpnCfg.api_key_preview})</span>}
+              </label>
+              <input type="password" value={vpnForm.api_key} onChange={e => setVpnForm(f => ({ ...f, api_key: e.target.value }))}
+                placeholder={vpnCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : "ttk_…"}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Reseller Master Key {vpnCfg?.master_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({vpnCfg.master_key_preview})</span>}
+              </label>
+              <input type="password" value={vpnForm.master_key} onChange={e => setVpnForm(f => ({ ...f, master_key: e.target.value }))}
+                placeholder={vpnCfg?.master_key_set ? "•••••••• (leave blank to keep current)" : "dzy_master_…"}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+              <p className="text-[11px] text-muted-foreground">Used to auto-mint a fresh TunnelTweak key for each deployed VPN Panel template. This is the <code className="font-mono">RESELLER_MASTER_KEY</code> set on the TunnelTweak bot.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Shared server ID</label>
+                <input value={vpnForm.shared_server_id} onChange={e => setVpnForm(f => ({ ...f, shared_server_id: e.target.value }))}
+                  placeholder="e.g. 12" title="TuTBot server_id used for the free public account pool"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Free acct days</label>
+                <input value={vpnForm.free_days} onChange={e => setVpnForm(f => ({ ...f, free_days: e.target.value }))}
+                  placeholder="7"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Free max logins</label>
+                <input value={vpnForm.free_max_logins} onChange={e => setVpnForm(f => ({ ...f, free_max_logins: e.target.value }))}
+                  placeholder="1"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30" />
+              </div>
+            </div>
+
+            {vpnTest && (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${vpnTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"}`}>
+                {vpnTest.msg}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={saveVpn} disabled={vpnSaving}>
+                {vpnSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={testVpn} disabled={!vpnCfg?.api_key_set && !vpnForm.api_key}>
+                Test connection
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Get the key from the TuTBot Telegram bot with <code className="font-mono">/apikey</code>, or from its admin panel.
+              Save first, then Test — the test uses the stored key.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === "ai" && (
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">AI Model — Builder &amp; Agent</h3>
+            <p className="text-xs text-muted-foreground">
+              The AI builder and agent talk to any OpenAI-compatible provider. Pick a provider, paste its API key,
+              and choose a model — this replaces the default DeepSeek model everywhere the AI generates or edits code.
+            </p>
+          </div>
+
+          {aiCfg?.effective && (
+            <div className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+              Currently active:{" "}
+              <span className="font-medium text-foreground">{aiCfg.effective.provider}</span>
+              {" · "}<span className="font-mono">{aiCfg.effective.model}</span>
+              {aiCfg.effective.using_env_fallback && <span className="text-amber-600 dark:text-amber-400"> · using DEEPSEEK_API_KEY env fallback</span>}
+              {!aiCfg.effective.key_configured && <span className="text-red-600 dark:text-red-400"> · no API key set — AI is disabled</span>}
+            </div>
+          )}
+
+          <div className="space-y-4 rounded-xl border border-border/60 p-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Provider</label>
+              <select value={aiForm.provider} onChange={e => applyPreset(e.target.value)}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30">
+                {(aiCfg?.presets || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">API Base URL</label>
+              <input value={aiForm.base_url} onChange={e => setAiForm(f => ({ ...f, base_url: e.target.value }))}
+                placeholder="https://api.deepseek.com"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+              <p className="text-[11px] text-muted-foreground">The OpenAI-compatible root, without <code className="font-mono">/chat/completions</code>.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Model</label>
+              <input value={aiForm.model} onChange={e => setAiForm(f => ({ ...f, model: e.target.value }))}
+                placeholder="deepseek-chat"
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                API Key {aiCfg?.api_key_set && <span className="text-emerald-600 dark:text-emerald-400">· currently set ({aiCfg.api_key_preview})</span>}
+              </label>
+              <input type="password" value={aiForm.api_key} onChange={e => setAiForm(f => ({ ...f, api_key: e.target.value }))}
+                placeholder={aiCfg?.api_key_set ? "•••••••• (leave blank to keep current)" : (aiCfg?.presets.find(p => p.id === aiForm.provider)?.key_hint || "bearer token")}
+                className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+            </div>
+
+            {aiTest && (
+              <div className={`rounded-lg border px-3 py-2 text-xs ${aiTest.ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"}`}>
+                {aiTest.msg}
+              </div>
+            )}
+
+            <div className="border-t border-border/60 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold">Credit metering</div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    When ON, AI builder/agent usage spends credits (free monthly allotment → top-up wallet).
+                    When OFF, AI is unlimited for everyone. Admins are always unlimited.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setAiForm(f => ({ ...f, credits_enabled: !f.credits_enabled }))}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${aiForm.credits_enabled ? "bg-foreground" : "bg-input"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background transition-transform ${aiForm.credits_enabled ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Input price ($/1M tokens)</label>
+                  <input value={aiForm.price_in_per_m} onChange={e => setAiForm(f => ({ ...f, price_in_per_m: e.target.value }))}
+                    placeholder="0.30" inputMode="decimal"
+                    className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Output price ($/1M tokens)</label>
+                  <input value={aiForm.price_out_per_m} onChange={e => setAiForm(f => ({ ...f, price_out_per_m: e.target.value }))}
+                    placeholder="1.20" inputMode="decimal"
+                    className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Set these to the current model&apos;s real rates (e.g. Claude Opus ≈ 5 / 25, DeepSeek ≈ 0.30 / 1.20).
+                1 credit = $0.01 of usage. Blank = defaults ($0.30 / $1.20). Per-plan free allotments are on the Plans tab.
+              </p>
+
+              <div className="pt-2 space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Polar credits product ID (card top-ups)</label>
+                <input value={aiForm.polar_credits_product} onChange={e => setAiForm(f => ({ ...f, polar_credits_product: e.target.value }))}
+                  placeholder="prod_…"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                <p className="text-[11px] text-muted-foreground">
+                  Create ONE <span className="font-medium">&quot;pay what you want&quot;</span> product in Polar (e.g. &quot;AI Credits&quot;) and paste its ID here to
+                  enable card top-ups for any amount. Leave blank to keep top-ups crypto-only (USDT).
+                  {aiCfg && aiCfg.card_configured === false && <span className="text-amber-600 dark:text-amber-400"> Polar isn&apos;t configured on this server.</span>}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={saveAi} disabled={aiSaving}>
+                {aiSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : "Save"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={testAi} disabled={aiTesting || (!aiCfg?.api_key_set && !aiForm.api_key)}>
+                {aiTesting ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testing…</> : "Test model"}
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Test sends a 1-token request using the values above (no need to save first). If a provider rejects
+              JSON mode or tool calls, the builder may error — pick another model. Anthropic uses its OpenAI-compatible endpoint.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Per-user AI credits modal */}
+      {creditUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4"
+          onClick={() => setCreditUser(null)}>
+          <Card className="w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-base">
+                <span className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> AI Credits — {creditUser.email}</span>
+                <button onClick={() => setCreditUser(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!creditData ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="rounded-full border border-border/60 px-2 py-0.5 capitalize">{creditData.plan} plan</span>
+                    <span className={`rounded-full px-2 py-0.5 ${creditData.credits_enabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                      metering {creditData.credits_enabled ? "ON" : "OFF"}
+                    </span>
+                    {creditData.status.unlimited && <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">unlimited</span>}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { l: "Free/mo", v: creditData.free_allotment < 0 ? "∞" : String(creditData.free_allotment) },
+                      { l: "Used", v: (Math.round(creditData.status.free_used * 100) / 100).toString() },
+                      { l: "Wallet", v: (Math.round(creditData.status.wallet * 100) / 100).toString() },
+                      { l: "Available", v: creditData.status.unlimited ? "∞" : (Math.round(creditData.status.available * 100) / 100).toString() },
+                    ].map(s => (
+                      <div key={s.l} className="rounded-lg border border-border/60 p-2 text-center">
+                        <div className="text-[10px] text-muted-foreground">{s.l}</div>
+                        <div className="text-lg font-semibold tracking-tight">{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[11px] text-muted-foreground">Adjust wallet (credits; negative to deduct)</label>
+                      <input value={creditGrant} onChange={e => setCreditGrant(e.target.value)} inputMode="numeric"
+                        placeholder="e.g. 500 or -100"
+                        className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
+                    </div>
+                    <Button size="sm" disabled={creditBusy || !creditGrant.trim()} onClick={() => adjustUserCredits(Number(creditGrant))}>
+                      {creditBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Apply"}
+                    </Button>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-medium text-muted-foreground mb-1">History ({creditData.ledger.length})</div>
+                    <div className="max-h-56 overflow-y-auto rounded-lg border border-border/60 divide-y divide-border/40">
+                      {creditData.ledger.length === 0 && <div className="px-3 py-4 text-xs text-muted-foreground text-center">No activity yet</div>}
+                      {creditData.ledger.map((row, i) => (
+                        <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                          <span className="text-muted-foreground truncate">
+                            <span className="capitalize">{row.reason}</span>{row.model ? ` · ${row.model}` : ""}
+                            {(row.tokens_in > 0 || row.tokens_out > 0) ? ` · ${row.tokens_in}/${row.tokens_out} tok` : ""}
+                          </span>
+                          <span className={row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-foreground"}>
+                            {row.delta >= 0 ? "+" : ""}{Math.round(row.delta * 100) / 100}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -1295,7 +3401,7 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
         <div className="flex items-center justify-between mb-2">
           <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}>{icon}</span>
           {trend && (
-            <span className={`text-[10px] flex items-center gap-0.5 ${trend === "up" ? "text-emerald-500" : "text-red-500"}`}>
+            <span className={`text-[10px] flex items-center gap-0.5 ${trend === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
               {trend === "up" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </span>
           )}
@@ -1305,6 +3411,57 @@ function KpiCard({ icon, label, value, sub, trend, color }: {
         {sub && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "bad" }) {
+  const color = tone === "warn" ? "text-amber-600 dark:text-amber-400" : tone === "bad" ? "text-red-600 dark:text-red-400" : "text-foreground";
+  return (
+    <div className="rounded-lg border border-border/60 p-3">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 text-2xl font-semibold tracking-tight ${color}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[10px] text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function TopList({ title, rows, empty }: { title: string; rows?: { key: string; count: number }[]; empty?: string }) {
+  const data = rows || [];
+  const max = Math.max(1, ...data.map(r => r.count));
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">{title}</CardTitle></CardHeader>
+      <CardContent>
+        {data.length === 0 ? (
+          <p className="py-4 text-center text-[11px] text-muted-foreground">{empty || "No data yet."}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {data.map(r => (
+              <div key={r.key} className="relative">
+                <div className="absolute inset-y-0 left-0 rounded bg-primary/10" style={{ width: `${(r.count / max) * 100}%` }} />
+                <div className="relative flex justify-between px-2 py-1 text-[11px]">
+                  <span className="truncate pr-2" title={r.key}>{r.key}</span>
+                  <span className="font-mono text-muted-foreground shrink-0">{r.count.toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DiagStat({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" | "bad" }) {
+  const color = tone === "good" ? "text-emerald-600 dark:text-emerald-400"
+    : tone === "warn" ? "text-amber-600 dark:text-amber-400"
+    : tone === "bad" ? "text-red-600 dark:text-red-400"
+    : "text-foreground";
+  return (
+    <div className="rounded-md bg-background/60 border border-border/50 px-2.5 py-1.5">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={`text-xs font-medium font-mono ${color}`}>{value}</div>
+    </div>
   );
 }
 
@@ -1321,7 +3478,7 @@ function UtilBar({ label, used, total, pct, unit, large }: {
       <div className={`rounded-full bg-muted/40 overflow-hidden ${large ? "h-2" : "h-1.5"}`}>
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <p className={`text-[10px] mt-0.5 ${pct > 85 ? "text-red-500" : pct > 65 ? "text-amber-500" : "text-muted-foreground/60"}`}>
+      <p className={`text-[10px] mt-0.5 ${pct > 85 ? "text-red-600 dark:text-red-400" : pct > 65 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/60"}`}>
         {Math.round(pct)}%
       </p>
     </div>

@@ -71,20 +71,33 @@ GOOS=linux GOARCH=amd64 go build -o /tmp/deployzysrv ./cmd/servermesrv/
 
 # 2. Upload (rsync is more reliable than scp on flaky connections)
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15" \
-  /tmp/deployzysrv root@163.245.208.218:/usr/local/bin/deployzysrv.new
+  /tmp/deployzysrv root@169.58.235.86:/usr/local/bin/deployzysrv.new
 
 # 3. Stop → swap → start ALL THREE services (never restart just one)
-sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
+#    NOTE: use `restart` for deployzy-web, NOT `start`. See warning below.
+sshpass -p 'PASSWORD' ssh root@169.58.235.86 '
   systemctl stop deployzy deployzy-texis &&
   cp /usr/local/bin/deployzysrv.new /usr/local/bin/deployzysrv &&
   cp /usr/local/bin/deployzysrv /usr/local/bin/servermesrv &&
-  systemctl start deployzy deployzy-texis deployzy-web
+  systemctl start deployzy deployzy-texis &&
+  systemctl restart deployzy-web
 '
 ```
 
 **Never restart only `deployzy` or only `deployzy-texis`.**
 `deployzy-texis` has `Requires=deployzy`, so restarting texis restarts deployzy.
 Restart all 3 in one shot to avoid cascading failures.
+
+**`systemctl start` on an already-running unit is a NO-OP.** In a combined
+server+web deploy you only `stop` deployzy + deployzy-texis (for the binary
+swap) — deployzy-web keeps running. If you then `start deployzy-web`, systemd
+does nothing and the OLD Node process keeps serving the OLD `.next` even though
+the new build is already on disk. The new UI silently never appears (this cost
+a debugging session on 2026-07-23 — the Orphans tab was on disk but invisible).
+**Always use `systemctl restart deployzy-web` after swapping the web dir**, and
+verify the served bundle, not just the files on disk:
+`curl -s https://deployzy.com/admin | grep -o '/_next/static/chunks/[^"]*\.js'`
+then curl one of those chunks and grep for a string from your change.
 
 ## Deploying the Web Frontend to VPS
 
@@ -103,14 +116,14 @@ NODE_ENV=production npm run build
 #    Rsyncing only .next/ deletes server.js and takes the whole site DOWN
 #    (this happened 2026-07-19).
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/.next/standalone/ root@163.245.208.218:/opt/deployzy-web-next/
+  web/.next/standalone/ root@169.58.235.86:/opt/deployzy-web-next/
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/.next/static/ root@163.245.208.218:/opt/deployzy-web-next/.next/static/
+  web/.next/static/ root@169.58.235.86:/opt/deployzy-web-next/.next/static/
 rsync -az -e "sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30" \
-  web/public/ root@163.245.208.218:/opt/deployzy-web-next/public/
+  web/public/ root@169.58.235.86:/opt/deployzy-web-next/public/
 
 # 3. Verify server.js exists, then atomic swap
-sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
+sshpass -p 'PASSWORD' ssh root@169.58.235.86 '
   test -f /opt/deployzy-web-next/server.js &&
   mv /opt/deployzy-web /opt/deployzy-web-old &&
   mv /opt/deployzy-web-next /opt/deployzy-web &&
@@ -127,7 +140,7 @@ sshpass -p 'PASSWORD' ssh root@163.245.208.218 '
 
 | Item | Value |
 |------|-------|
-| IP | `163.245.208.218` |
+| IP | `169.58.235.86` |
 | SSH user | `root` |
 | Go binary path | `/usr/local/bin/deployzysrv` (also symlinked as `servermesrv`) |
 | Web app path | `/opt/deployzy-web` |
@@ -208,6 +221,7 @@ Use this in all user-facing content (footer, billing page, landing page Team CTA
 - **Don't publish npm/PyPI/Homebrew manually** — use the tag-based CI pipeline.
 - **Don't use `tar` to deploy the web build** — `--strip-components` silently drops `.next/` on Linux. Use `rsync`.
 - **Don't restart only one service** — always restart all 3 (`deployzy`, `deployzy-texis`, `deployzy-web`).
+- **Don't `systemctl start` deployzy-web after a deploy — use `restart`.** `start` on a running unit is a no-op; the old Node process keeps serving the old `.next`. Verify the served bundle, not the files on disk.
 - **Don't use `deployzy.com:8443`** as the tunnel endpoint — it goes through Cloudflare proxy.
 - **Don't add Co-Authored-By Claude trailer** to commits in this project.
 - **Don't run `prisma migrate`** — use `prisma db push`.

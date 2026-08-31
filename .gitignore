@@ -69,3 +69,19 @@ serverme-linux
 servermesrv-new
 cli/dist/
 web/--no-xattrs
+
+# Build artifacts and deps that slipped through the per-directory rules above.
+# node_modules was only ignored for web/ and sdk-js/, so video/ was leaking
+# ~7000 files into `git status`; the compiled server binary (38MB) was untracked
+# too, so a `git add .` would have committed it.
+node_modules/
+server/servermesrv
+server/deployzysrv
+video/out/
+video/node_modules/.remotion/
+
+# texis-bot is a separate project that merely lives in this directory. It holds
+# live Telegram bot tokens hardcoded in source (bot.py, module/ActionMode.py),
+# a .env, user records and ~200 payment receipts. It must not enter this repo's
+# history — give it its own repository.
+texis-bot/

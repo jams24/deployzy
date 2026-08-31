@@ -11,6 +11,7 @@ from deployzy.types import (
     TunnelOptions,
     Project,
     DeployLog,
+    EmailVerifyResult,
 )
 from deployzy.errors import (
     DeployzyError,
@@ -32,6 +33,7 @@ __all__ = [
     "TunnelOptions",
     "Project",
     "DeployLog",
+    "EmailVerifyResult",
     "DeployzyError",
     "AuthError",
     "ApiError",

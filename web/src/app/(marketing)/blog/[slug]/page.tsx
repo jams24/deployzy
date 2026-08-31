@@ -1,11 +1,41 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Clock, Tag, ArrowRight } from "lucide-react";
+import { ArrowLeft, Clock, Tag, ArrowRight, ChevronRight } from "lucide-react";
+import { BlogToc, type Heading } from "./blog-toc";
+import { DiscussRail, BlogShare } from "./blog-share";
 
 export const revalidate = 60;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+
+// A URL-safe slug for heading anchors + TOC ids.
+function slugifyHeading(text: string, i: number): string {
+  const base = (text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 60);
+  return base ? `${base}-${i}` : `section-${i}`;
+}
+
+// Author avatar: an explicit override wins, else derive it from the Twitter/X
+// handle via unavatar.io (no API key, auto-falls back to a generated avatar),
+// else null → render initials.
+function authorAvatar(post: BlogPost): string | null {
+  if (post.author_avatar) return post.author_avatar;
+  const handle = (post.author_twitter || "").replace(/^@/, "").replace(/^https?:\/\/(x|twitter)\.com\//i, "").split(/[/?]/)[0];
+  return handle ? `https://unavatar.io/twitter/${handle}` : null;
+}
+
+function twitterHandle(post: BlogPost): string {
+  return (post.author_twitter || "").replace(/^@/, "").replace(/^https?:\/\/(x|twitter)\.com\//i, "").split(/[/?]/)[0];
+}
+
+function initials(name: string): string {
+  return (name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
 
 type SectionType = "h2" | "h3" | "p" | "ul" | "ol" | "code" | "callout" | "cta";
 
@@ -30,6 +60,9 @@ interface BlogPost {
   category: string;
   tags: string[];
   author: string;
+  author_twitter?: string;
+  author_role?: string;
+  author_avatar?: string;
   read_time: string;
   status: string;
   published_at: string | null;
@@ -73,9 +106,12 @@ export async function generateMetadata({
   const post = await getPost(slug);
   if (!post) return {};
 
-  const ogImageUrl = post.cover_image
+  // When the post has an explicit cover image, use it. Otherwise omit images
+  // here and let the co-located opengraph-image.tsx generate a branded card with
+  // the post's title (previously this pointed at og-blog.png, which 404s).
+  const coverUrl = post.cover_image
     ? post.cover_image.startsWith("/api") ? `${API_URL}${post.cover_image}` : post.cover_image
-    : "https://deployzy.com/og-blog.png";
+    : null;
 
   return {
     title: `${post.title} | Deployzy Blog`,
@@ -91,13 +127,15 @@ export async function generateMetadata({
       modifiedTime: post.updated_at,
       authors: [post.author],
       tags: post.tags,
-      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: post.title }],
+      ...(coverUrl ? { images: [{ url: coverUrl, width: 1200, height: 630, alt: post.title }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
+      site: "@itsjamsltn",
+      creator: "@itsjamsltn",
       title: post.title,
       description: post.description,
-      images: [ogImageUrl],
+      ...(coverUrl ? { images: [coverUrl] } : {}),
     },
   };
 }
@@ -116,17 +154,19 @@ const CALLOUT_STYLES = {
   tip:     { border: "border-emerald-500/30 bg-emerald-500/5", icon: "✅", text: "text-emerald-300" },
 };
 
-function renderSection(section: Section, i: number) {
+function renderSection(section: Section, i: number, anchorId?: string) {
   switch (section.type) {
     case "h2":
       return (
-        <h2 key={i} className="mt-10 mb-4 text-2xl font-bold tracking-tight text-foreground scroll-mt-20">
-          {section.content}
+        <h2 key={i} id={anchorId} className="group mt-12 mb-4 scroll-mt-24 text-2xl font-bold tracking-tight text-foreground">
+          <a href={anchorId ? `#${anchorId}` : undefined} className="no-underline">
+            {section.content}
+          </a>
         </h2>
       );
     case "h3":
       return (
-        <h3 key={i} className="mt-7 mb-3 text-xl font-semibold text-foreground">
+        <h3 key={i} id={anchorId} className="mt-8 mb-3 scroll-mt-24 text-xl font-semibold text-foreground">
           {section.content}
         </h3>
       );
@@ -237,63 +277,111 @@ export default async function BlogPostPage({
     image: ogImage,
   };
 
+  // Build the "On this page" heading list from h2/h3 sections, and a parallel
+  // map so we render matching ids on the headings themselves.
+  const anchorIds: (string | undefined)[] = [];
+  const headings: Heading[] = [];
+  (post.content || []).forEach((s, i) => {
+    if (s.type === "h2" || s.type === "h3") {
+      const id = slugifyHeading(s.content || "", i);
+      anchorIds[i] = id;
+      headings.push({ id, text: s.content || "", level: s.type === "h2" ? 2 : 3 });
+    } else {
+      anchorIds[i] = undefined;
+    }
+  });
+
+  const avatar = authorAvatar(post);
+  const handle = twitterHandle(post);
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      <div className="mx-auto max-w-6xl px-6 py-16">
-        <div className="flex gap-12 lg:gap-16">
+      <div className="mx-auto max-w-7xl px-6 py-14">
+        {/* Breadcrumb */}
+        <div className="mb-8 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+          <Link href="/blog" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+            <ArrowLeft className="h-3 w-3" /> Blog
+          </Link>
+          <ChevronRight className="h-3 w-3 opacity-50" />
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${CATEGORY_COLORS[post.category] ?? "bg-zinc-500/10 text-zinc-400"}`}>
+            <Tag className="h-2.5 w-2.5" /> {post.category}
+          </span>
+        </div>
+
+        <div className="flex gap-10 lg:gap-14">
+          {/* Left share rail (sticky) */}
+          <aside className="hidden xl:block w-32 shrink-0">
+            <div className="sticky top-28">
+              <DiscussRail title={post.title} />
+            </div>
+          </aside>
+
           {/* Main content */}
           <article className="flex-1 min-w-0">
-            {/* Back link */}
-            <Link
-              href="/blog"
-              className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> All posts
-            </Link>
+            {/* Date */}
+            <time dateTime={post.published_at || ""} className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {formatDate(post.published_at)}
+            </time>
+
+            {/* Title */}
+            <h1 className="mt-3 text-3xl sm:text-[2.6rem] font-bold leading-[1.1] tracking-tight">
+              {post.title}
+            </h1>
+
+            {/* Author byline: avatar + name, read time, share */}
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3">
+              <div className="flex items-center gap-3">
+                {avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatar} alt={post.author} className="h-9 w-9 rounded-full object-cover ring-1 ring-border/60" />
+                ) : (
+                  <span className="grid h-9 w-9 place-items-center rounded-full bg-muted text-[12px] font-bold text-foreground ring-1 ring-border/60">
+                    {initials(post.author)}
+                  </span>
+                )}
+                <div className="leading-tight">
+                  {handle ? (
+                    <a href={`https://x.com/${handle}`} target="_blank" rel="noopener" className="text-sm font-semibold hover:underline">
+                      {post.author}
+                    </a>
+                  ) : (
+                    <span className="text-sm font-semibold">{post.author}</span>
+                  )}
+                  <p className="text-[12px] text-muted-foreground">
+                    {post.author_role || (handle ? `@${handle}` : "Deployzy")}
+                  </p>
+                </div>
+              </div>
+              <span className="hidden sm:inline text-border">·</span>
+              <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" /> {post.read_time}
+              </span>
+              <span className="hidden sm:inline text-border">·</span>
+              <BlogShare title={post.title} />
+            </div>
 
             {/* Cover image */}
             {post.cover_image && (
-              <div className="mb-8 rounded-2xl overflow-hidden border border-border/40">
+              <div className="mt-8 rounded-2xl overflow-hidden border border-border/40">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={post.cover_image.startsWith("/api") ? `${API_URL}${post.cover_image}` : post.cover_image}
                   alt={post.title}
-                  className="w-full h-64 object-cover"
+                  className="w-full max-h-[420px] object-cover"
                 />
               </div>
             )}
 
-            {/* Meta */}
-            <div className="mb-6 flex flex-wrap items-center gap-3">
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${CATEGORY_COLORS[post.category] ?? "bg-zinc-500/10 text-zinc-400"}`}>
-                <Tag className="h-2.5 w-2.5" /> {post.category}
-              </span>
-              <span className="text-[12px] text-muted-foreground flex items-center gap-1">
-                <Clock className="h-3 w-3" /> {post.read_time}
-              </span>
-              <time dateTime={post.published_at || ""} className="text-[12px] text-muted-foreground">
-                {formatDate(post.published_at)}
-              </time>
-              <span className="text-[12px] text-muted-foreground">by {post.author}</span>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-3xl sm:text-4xl font-bold leading-tight tracking-tight mb-6">
-              {post.title}
-            </h1>
-
             {/* Lead */}
-            <p className="text-lg text-muted-foreground leading-relaxed border-l-4 border-primary/40 pl-4 mb-8">
+            <p className="mt-8 border-l-2 border-foreground/30 pl-4 text-lg leading-relaxed text-muted-foreground">
               {post.excerpt || post.description}
             </p>
 
-            {/* Divider */}
-            <hr className="border-border/40 mb-8" />
-
             {/* Body */}
-            <div>
-              {(post.content || []).map((s, i) => renderSection(s, i))}
+            <div className="mt-8">
+              {(post.content || []).map((s, i) => renderSection(s, i, anchorIds[i]))}
               {post.content.length === 0 && (
                 <p className="text-muted-foreground italic">This post has no content yet.</p>
               )}
@@ -309,13 +397,37 @@ export default async function BlogPostPage({
                 ))}
               </div>
             )}
+
+            {/* Author card footer */}
+            <div className="mt-10 flex items-center gap-4 rounded-2xl border border-border/40 bg-card/40 p-5">
+              {avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatar} alt={post.author} className="h-12 w-12 rounded-full object-cover ring-1 ring-border/60" />
+              ) : (
+                <span className="grid h-12 w-12 place-items-center rounded-full bg-muted text-sm font-bold text-foreground ring-1 ring-border/60">
+                  {initials(post.author)}
+                </span>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{post.author}</p>
+                <p className="text-[12px] text-muted-foreground">{post.author_role || "Deployzy"}</p>
+              </div>
+              {handle && (
+                <a href={`https://x.com/${handle}`} target="_blank" rel="noopener" className="ml-auto rounded-lg border border-border/60 px-3 py-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors">
+                  Follow @{handle}
+                </a>
+              )}
+            </div>
           </article>
 
-          {/* Sidebar */}
-          <aside className="hidden lg:flex flex-col gap-6 w-64 shrink-0">
-            <div className="sticky top-24 space-y-5">
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
+          {/* Sidebar: sticky TOC (stays pinned + auto-highlights) + CTA + related */}
+          <aside className="hidden lg:block w-64 shrink-0">
+            <div className="sticky top-24 space-y-7">
+              {headings.length > 0 && <BlogToc headings={headings} />}
+
+              <div className="rounded-xl border border-border/60 bg-card/40 p-5">
                 <div className="flex items-center gap-2 mb-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/logo-mark.png" alt="Deployzy" className="h-7 w-7 rounded-md" />
                   <span className="font-bold text-sm">Deployzy</span>
                 </div>
@@ -324,7 +436,7 @@ export default async function BlogPostPage({
                 </p>
                 <Link
                   href="/sign-up"
-                  className="block w-full text-center rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                  className="block w-full text-center rounded-lg bg-foreground px-4 py-2 text-[13px] font-semibold text-background hover:bg-foreground/90 transition-colors"
                 >
                   Get started free →
                 </Link>
@@ -332,11 +444,11 @@ export default async function BlogPostPage({
 
               {related.length > 0 && (
                 <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Related articles</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Related articles</p>
                   {related.map((p) => (
                     <Link key={p.slug} href={`/blog/${p.slug}`} className="group block rounded-lg border border-border/40 p-3 hover:bg-card/60 transition-colors">
                       <span className={`inline-block rounded-full border px-1.5 py-0.5 text-[9px] font-semibold mb-1.5 ${CATEGORY_COLORS[p.category] ?? ""}`}>{p.category}</span>
-                      <p className="text-[12px] font-medium leading-snug group-hover:text-primary transition-colors">{p.title}</p>
+                      <p className="text-[12px] font-medium leading-snug group-hover:text-foreground transition-colors">{p.title}</p>
                       <p className="text-[11px] text-muted-foreground mt-1">{p.read_time}</p>
                     </Link>
                   ))}

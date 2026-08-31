@@ -18,6 +18,9 @@ type BlogPost struct {
 	Category    string          `json:"category"`
 	Tags        []string        `json:"tags"`
 	Author      string          `json:"author"`
+	AuthorTwitter string        `json:"author_twitter"`
+	AuthorRole  string          `json:"author_role"`
+	AuthorAvatar string         `json:"author_avatar"`
 	ReadTime    string          `json:"read_time"`
 	Status      string          `json:"status"`
 	PublishedAt *time.Time      `json:"published_at"`
@@ -29,7 +32,7 @@ type BlogPost struct {
 func (d *DB) ListPublishedBlogPosts(ctx context.Context) ([]BlogPost, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT id, slug, title, description, excerpt, content, cover_image,
-		       category, tags, author, read_time, status, published_at, created_at, updated_at
+		       category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at
 		FROM blog_posts
 		WHERE status = 'published'
 		ORDER BY published_at DESC, created_at DESC`)
@@ -44,7 +47,7 @@ func (d *DB) ListPublishedBlogPosts(ctx context.Context) ([]BlogPost, error) {
 func (d *DB) ListAllBlogPosts(ctx context.Context) ([]BlogPost, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT id, slug, title, description, excerpt, content, cover_image,
-		       category, tags, author, read_time, status, published_at, created_at, updated_at
+		       category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at
 		FROM blog_posts
 		ORDER BY updated_at DESC`)
 	if err != nil {
@@ -58,7 +61,7 @@ func (d *DB) ListAllBlogPosts(ctx context.Context) ([]BlogPost, error) {
 func (d *DB) GetBlogPostBySlug(ctx context.Context, slug string) (*BlogPost, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT id, slug, title, description, excerpt, content, cover_image,
-		       category, tags, author, read_time, status, published_at, created_at, updated_at
+		       category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at
 		FROM blog_posts WHERE slug = $1`, slug)
 	if err != nil {
 		return nil, err
@@ -75,7 +78,7 @@ func (d *DB) GetBlogPostBySlug(ctx context.Context, slug string) (*BlogPost, err
 func (d *DB) GetBlogPostByID(ctx context.Context, id string) (*BlogPost, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT id, slug, title, description, excerpt, content, cover_image,
-		       category, tags, author, read_time, status, published_at, created_at, updated_at
+		       category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at
 		FROM blog_posts WHERE id = $1`, id)
 	if err != nil {
 		return nil, err
@@ -96,12 +99,12 @@ func (d *DB) CreateBlogPost(ctx context.Context, p BlogPost) (*BlogPost, error) 
 	}
 	rows, err := d.Pool.Query(ctx, `
 		INSERT INTO blog_posts (slug, title, description, excerpt, content, cover_image,
-		                        category, tags, author, read_time, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		                        category, tags, author, author_twitter, author_role, author_avatar, read_time, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING id, slug, title, description, excerpt, content, cover_image,
-		          category, tags, author, read_time, status, published_at, created_at, updated_at`,
+		          category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at`,
 		p.Slug, p.Title, p.Description, p.Excerpt, content, p.CoverImage,
-		p.Category, p.Tags, p.Author, p.ReadTime, p.Status)
+		p.Category, p.Tags, p.Author, p.AuthorTwitter, p.AuthorRole, p.AuthorAvatar, p.ReadTime, p.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -123,12 +126,14 @@ func (d *DB) UpdateBlogPost(ctx context.Context, p BlogPost) (*BlogPost, error) 
 		UPDATE blog_posts SET
 		    slug=$2, title=$3, description=$4, excerpt=$5, content=$6,
 		    cover_image=$7, category=$8, tags=$9, author=$10, read_time=$11,
+		    author_twitter=$12, author_role=$13, author_avatar=$14,
 		    updated_at=NOW()
 		WHERE id=$1
 		RETURNING id, slug, title, description, excerpt, content, cover_image,
-		          category, tags, author, read_time, status, published_at, created_at, updated_at`,
+		          category, tags, author, author_twitter, author_role, author_avatar, read_time, status, published_at, created_at, updated_at`,
 		p.ID, p.Slug, p.Title, p.Description, p.Excerpt, content,
-		p.CoverImage, p.Category, p.Tags, p.Author, p.ReadTime)
+		p.CoverImage, p.Category, p.Tags, p.Author, p.ReadTime,
+		p.AuthorTwitter, p.AuthorRole, p.AuthorAvatar)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +177,8 @@ func scanBlogPosts(rows interface {
 		var tagsRaw []string
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Title, &p.Description, &p.Excerpt, &p.Content,
-			&p.CoverImage, &p.Category, &tagsRaw, &p.Author, &p.ReadTime,
+			&p.CoverImage, &p.Category, &tagsRaw, &p.Author,
+			&p.AuthorTwitter, &p.AuthorRole, &p.AuthorAvatar, &p.ReadTime,
 			&p.Status, &p.PublishedAt, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err

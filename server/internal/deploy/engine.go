@@ -24,25 +24,34 @@ import (
 type Engine struct {
 	db          *db.DB
 	Domain      string
+	AppDomain   string // user-facing domain for deployed app URLs (e.g. deployzy.app), isolated from the brand Domain (deployzy.com). Falls back to Domain.
 	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
 	GitHub      *GitHubApp
 	emailSvc    notify.Mailer
-	log         zerolog.Logger
-	deployLocks sync.Map // per-project mutex to prevent concurrent deploys
+	log          zerolog.Logger
+	deployLocks  sync.Map // per-project mutex to prevent concurrent deploys
+	buildLimiter *buildLimiter // caps platform-wide concurrent docker builds
+	idle         *idleManager  // idle sleep/wake tracker for free-tier apps
 }
 
 // NewEngine creates a new deploy engine.
-func NewEngine(database *db.DB, domain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
+func NewEngine(database *db.DB, domain, appDomain, serviceHost string, github *GitHubApp, emailSvc notify.Mailer, log zerolog.Logger) *Engine {
 	if serviceHost == "" {
 		serviceHost = domain
 	}
+	if appDomain == "" {
+		appDomain = domain
+	}
 	return &Engine{
-		db:          database,
-		Domain:      domain,
-		ServiceHost: serviceHost,
-		GitHub:      github,
-		emailSvc:    emailSvc,
-		log:         log.With().Str("component", "deploy").Logger(),
+		db:           database,
+		Domain:       domain,
+		AppDomain:    appDomain,
+		ServiceHost:  serviceHost,
+		GitHub:       github,
+		emailSvc:     emailSvc,
+		log:          log.With().Str("component", "deploy").Logger(),
+		buildLimiter: newBuildLimiter(settingBuildLimit(database)),
+		idle:         newIdleManager(),
 	}
 }
 
@@ -121,13 +130,26 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to %s (local Docker)", assignedServer.Label), "deploy")
 		} else {
 			runner = NewRemoteRunner(assignedServer)
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s (%s)", assignedServer.Label, assignedServer.Host), "deploy")
+			// Never surface the raw host IP in user-visible logs — show the
+			// friendly server label / region only.
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Deploying to server: %s", assignedServer.Label), "deploy")
 		}
 	} else {
 		runner = NewLocalRunner()
 		if project.WorkerServerID != "" {
 			e.logMsg(ctx, project.ID, "Assigned server unavailable — building on the primary (local) host as a fallback.", "deploy")
 		}
+	}
+
+	// Overlapping deploys (e.g. two GitHub pushes seconds apart) each carry their
+	// own project snapshot and serialize on the deploy lock above. Re-read the
+	// CURRENT serving container/port here, under the lock, so the blue-green
+	// preservation below points at the container that is actually live right now
+	// — not a stale port that an earlier deploy in the chain has already retired
+	// (which left the proxy routing to a dead port and 502'd the site mid-build).
+	if fresh, ferr := e.db.GetProject(ctx, project.ID); ferr == nil && fresh != nil {
+		project.ContainerID = fresh.ContainerID
+		project.ContainerPort = fresh.ContainerPort
 	}
 
 	// Always mark "building" so the UI shows the correct state during a redeploy.
@@ -174,14 +196,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// Build context: clone a repo, untar an upload, or (image) leave it empty.
 	buildCtx := buildDir
 	if uploadSource {
-		// Local-directory upload: the API host staged a tarball; untar it as the
-		// build context. Remote-worker uploads aren't wired yet (the tar lives on
-		// the API host, not the worker).
-		if runner.IsRemote() {
-			e.logMsg(ctx, project.ID, "Upload deploys aren't supported on custom/remote servers yet — use a platform server.", "error")
-			restoreOldState()
-			return fmt.Errorf("upload deploy on remote worker")
-		}
+		// Upload deploy: the API host staged the build context as a tarball. For a
+		// LOCAL worker we untar it directly; for a REMOTE worker we SCP the tarball
+		// over first (it lives on the API host, not the worker), then extract there.
 		tarPath := fmt.Sprintf("/tmp/serverme-uploads/%s.tar.gz", project.ID)
 		if !fileExists(tarPath) {
 			e.logMsg(ctx, project.ID, "No uploaded build context found — upload your directory before deploying.", "error")
@@ -191,7 +208,24 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		cloneDir := buildDir + "/app"
 		runner.Exec(ctx, "mkdir", "-p", cloneDir)
 		e.logMsg(ctx, project.ID, "Extracting uploaded build context...", "build")
-		if out, err := runner.Run(ctx, "tar", "xzf", tarPath, "-C", cloneDir); err != nil {
+
+		extractTar := tarPath
+		if runner.IsRemote() {
+			// Ship the tarball to the worker, then extract from there.
+			remoteTar := fmt.Sprintf("/tmp/sm-upload-%s.tar.gz", project.ID)
+			workerLabel := "the worker"
+			if assignedServer != nil {
+				workerLabel = assignedServer.Label
+			}
+			if err := runner.SCPTo(ctx, tarPath, remoteTar); err != nil {
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Failed to transfer build context to %s: %v", workerLabel, err), "error")
+				restoreOldState()
+				return fmt.Errorf("scp upload to remote: %w", err)
+			}
+			defer runner.Exec(context.Background(), "rm", "-f", remoteTar)
+			extractTar = remoteTar
+		}
+		if out, err := runner.Run(ctx, "tar", "xzf", extractTar, "-C", cloneDir); err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Extract failed: %s", trimLogs(string(out), 1000)), "error")
 			restoreOldState()
 			return fmt.Errorf("untar upload: %w", err)
@@ -226,9 +260,19 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			}
 			out, err := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.CommitSHA))
 			if err != nil {
-				e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out)), "error")
-				restoreOldState()
-				return fmt.Errorf("git checkout: %w", err)
+				// The pinned commit can vanish upstream — a force-push or a
+				// rebase makes it unreachable ("reference is not a tree") even
+				// though the clone succeeded. Failing here would leave the app
+				// permanently down, so fall back to the branch tip. This builds
+				// NEWER code than was pinned, so say so loudly in the log.
+				e.logMsg(ctx, project.ID, fmt.Sprintf("Commit %s is no longer in the repository (force-push or rebase upstream) — falling back to the tip of %s", project.CommitSHA[:min(8, len(project.CommitSHA))], project.Branch), "error")
+				e.log.Warn().Str("project", project.ID).Str("commit", project.CommitSHA).Str("branch", project.Branch).
+					Str("out", trimLogs(string(out), 200)).Msg("pinned commit unreachable — building branch tip instead")
+				if out2, err2 := runner.RunShell(ctx, fmt.Sprintf("cd %s && git checkout %s", cloneDir, project.Branch)); err2 != nil {
+					e.logMsg(ctx, project.ID, fmt.Sprintf("Checkout failed: %s", string(out2)), "error")
+					restoreOldState()
+					return fmt.Errorf("git checkout: %w", err2)
+				}
 			}
 		}
 
@@ -439,9 +483,31 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// whether the build ran on the primary or the BYOC server.
 	buildHost := "the primary server"
 	if runner.IsRemote() {
-		buildHost = "BYOC server " + runner.Host()
+		// Name the server by its friendly label/region — never the raw IP.
+		buildHost = "your server"
+		if assignedServer != nil && assignedServer.Label != "" {
+			buildHost = assignedServer.Label
+		}
 	}
+
+	// Build-minute quota. Checked here rather than at request time so it also
+	// covers auto-deploys from GitHub pushes, not just manual clicks.
+	if usage, err := e.db.GetBuildUsage(ctx, project.UserID); err == nil && usage.Exceeded {
+		e.logMsg(ctx, project.ID, fmt.Sprintf(
+			"Build blocked — you've used %d of %d build minutes this month. The allowance resets on the 1st; upgrade for more.",
+			usage.MinutesUsed, usage.MinutesLimit), "error")
+		restoreOldState()
+		return fmt.Errorf("build minutes exhausted: %d/%d used this month",
+			usage.MinutesUsed, usage.MinutesLimit)
+	}
+	// Start from the plan's build-memory ceiling (0 = unlimited/admin), then
+	// clamp to what the host can actually spare. The plan is a ceiling, never
+	// a reservation: promising a Team user 4 GB on a host with 1 GB free would
+	// just OOM their build and everything co-located with it.
 	buildMemMB := 2048
+	if planCap := e.planBuildMemoryMB(ctx, project.UserID); planCap > 0 {
+		buildMemMB = planCap
+	}
 	if availMB := availableMemoryMB(ctx, runner); availMB > 0 {
 		if availMB-512 < buildMemMB { // leave a 512 MB host reserve
 			buildMemMB = availMB - 512
@@ -460,20 +526,114 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// silently ignores --memory, letting an unbounded build exhaust the host
 	// and trigger the OOM killer against co-located containers (e.g. the
 	// previously-running version of this very project).
-	buildShellCmd := fmt.Sprintf(
-		"DOCKER_BUILDKIT=0 docker build --no-cache --memory=%dm -f %s -t %s %s",
-		buildMemMB,
-		shellQuote(buildCtx+"/"+effectiveDockerfile),
-		shellQuote(imageName),
-		shellQuote(buildCtx),
-	)
-	output, err := runner.RunShell(buildCtx2, buildShellCmd)
+	// Global build-concurrency gate: only N builds run platform-wide at once
+	// (default 1) so simultaneous from-scratch builds can't wear out the host.
+	// Queues here — the old container keeps serving while this deploy waits.
+	if e.buildLimiter != nil {
+		e.logMsg(ctx, project.ID, "Queued for a build slot...", "build")
+		if !e.buildLimiter.Acquire(buildCtx2) {
+			cancelBuild()
+			restoreOldState()
+			return fmt.Errorf("build cancelled while queued")
+		}
+		defer e.buildLimiter.Release()
+	}
+
+	// Only throttle build CPU when a previous version is actually serving — the
+	// throttle protects the LIVE container, so a first deploy (nothing to
+	// protect) should build at full speed instead of being needlessly slowed.
+	cpuFlags := ""
+	if oldContainerID != "" {
+		cpuFlags = buildCPUFlags(hostCPUs(ctx, runner))
+		if cpuFlags != "" {
+			e.logMsg(ctx, project.ID, "Throttling build CPU so the live version stays responsive during the rebuild.", "build")
+		}
+	}
+	// Prefer BuildKit (a persistent, memory-capped container builder) when the
+	// worker has buildx: it adds cache mounts + parallel stages on top of layer
+	// caching, so even clean builds reuse the npm/pip download cache. Falls back
+	// to the legacy cached `docker build` where buildx isn't available.
+	//
+	// Either way, layer cache is ON (no --no-cache): unchanged steps — base image,
+	// apt/npm/pip installs — are reused, so a rebuild that only changes source
+	// code skips dependency installation entirely. Cache-friendly Dockerfiles
+	// (COPY manifest → install → COPY source) get near-instant rebuilds.
+	var buildShellCmd string
+	if builder := e.ensureBuildx(buildCtx2, runner, buildMemMB); builder != "" {
+		e.logMsg(ctx, project.ID, "Building with BuildKit (cached) for a faster build…", "build")
+		buildShellCmd = fmt.Sprintf(
+			"docker buildx build --builder %s --load --progress=plain -f %s -t %s %s",
+			builder,
+			shellQuote(buildCtx+"/"+effectiveDockerfile),
+			shellQuote(imageName),
+			shellQuote(buildCtx),
+		)
+	} else {
+		buildShellCmd = fmt.Sprintf(
+			"DOCKER_BUILDKIT=0 docker build %s--memory=%dm -f %s -t %s %s",
+			cpuFlags,
+			buildMemMB,
+			shellQuote(buildCtx+"/"+effectiveDockerfile),
+			shellQuote(imageName),
+			shellQuote(buildCtx),
+		)
+	}
+	buildStart := time.Now()
+	// Stream the build output live into deploy_logs (the dashboard polls it), so
+	// users watch progress and see the real failure as it happens — not just a
+	// grep-guess after the fact. RunShellStreaming also returns a capped tail of
+	// the raw output for the post-build error summary below.
+	buildLog := e.newBuildLogStreamer(project.ID)
+	output, err := runner.RunShellStreaming(buildCtx2, buildShellCmd, buildLog.line)
+	buildLog.stop() // final flush of any buffered lines
+
+	// Auto-recover from a build killed during layer export — the OOM killer (the
+	// --memory cap is tight for a heavy image) or a racy containerd ingest leaves
+	// the content store unable to commit the layer: "failed to commit: rename
+	// ingest→blobs: no such file", "mount callback failed", "failed to export
+	// layer". Retrying at the same cap would just OOM again, so prune the build
+	// cache and retry ONCE with a higher memory cap (bounded by host free memory).
+	if err != nil && isContainerdCorruption(string(output)) {
+		hi := buildMemMB * 2
+		// Never exceed the plan's build-memory ceiling (0 = admin/unlimited). This
+		// keeps the retry within plan limits: capped plans retry at the SAME cap
+		// (a prune still fixes the racy-ingest case; a genuine OOM will report that
+		// the image needs more build memory than the plan allows), while
+		// unlimited/admin builds get the extra headroom the host can spare.
+		if planCap := e.planBuildMemoryMB(ctx, project.UserID); planCap > 0 && hi > planCap {
+			hi = planCap
+		}
+		if avail := availableMemoryMB(buildCtx2, runner); avail > 0 && hi > avail-512 {
+			hi = avail - 512
+		}
+		if hi < buildMemMB {
+			hi = buildMemMB
+		}
+		e.logMsg(ctx, project.ID, fmt.Sprintf("⚠️ Build host storage/OOM hiccup — clearing build cache and retrying with %d MB…", hi), "build")
+		runner.RunShell(buildCtx2, "docker builder prune -f >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; true")
+		retryCmd := strings.Replace(buildShellCmd, fmt.Sprintf("--memory=%dm", buildMemMB), fmt.Sprintf("--memory=%dm", hi), 1)
+		retryLog := e.newBuildLogStreamer(project.ID)
+		output, err = runner.RunShellStreaming(buildCtx2, retryCmd, retryLog.line)
+		retryLog.stop()
+	}
+	// Recorded on success AND failure: a broken Dockerfile burns the same CPU
+	// as a working one, so not counting failures would leave a free way to
+	// hammer the build host. context.Background() because ctx may already be
+	// cancelled if the build timed out.
+	if project.UserID != "" {
+		if rerr := e.db.RecordBuildTime(context.Background(), project.UserID, time.Since(buildStart)); rerr != nil {
+			e.log.Warn().Err(rerr).Str("project", project.Name).Msg("failed to record build time")
+		}
+	}
 	cancelBuild()
 	if err != nil {
 		errMsg := extractBuildError(string(output))
 		if buildCtx2.Err() == context.DeadlineExceeded {
 			errMsg = "build timed out after 20 minutes"
 		}
+		// The full build output already streamed live above (buildLog), so we
+		// only add a concise headline here. extractBuildError is best-effort; if
+		// it whiffs, the streamed output above still shows the real cause.
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Build failed: %s", errMsg), "error")
 		restoreOldState()
 		return fmt.Errorf("docker build: %w", err)
@@ -608,9 +768,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// broken deploys once drove a 1-core host to load 24 and starved every
 	// build on the box (2026-07-20). The crash sweeper marks these projects
 	// 'crashed' so the dashboard shows what happened.
+	// CPU: weighted shares (priority when busy) + a generous burst ceiling
+	// (use idle cores when quiet), clamped to the host's core count so Docker
+	// won't reject `--cpus` on a small (e.g. 1-core) BYOC box. RAM stays a hard
+	// cap — never overcommitted.
+	cpuShares, cpuBurst := runtimeCPUPolicy(cpus, project.CPUs > 0, hostCPUs(ctx, runner))
 	args = append(args, "--restart", "on-failure:5",
 		"--memory", fmt.Sprintf("%dm", memMB),
-		"--cpus", strconv.FormatFloat(cpus, 'f', -1, 64),
+		"--cpus", strconv.FormatFloat(cpuBurst, 'f', -1, 64),
+		"--cpu-shares", strconv.Itoa(cpuShares),
 		// Container hardening — prevents privilege escalation and raw-socket
 		// based attacks (ARP spoof, port scanning tricks) while staying
 		// compatible with the overwhelming majority of user apps.
@@ -668,6 +834,15 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		containerID = containerID[:12]
 	}
 
+	// Plan-gated outbound SMTP submission (465/587): punch a per-project allow
+	// for paid/BYOC/admin; free stays blocked by the host base DROP. Applied now
+	// (before health check) so a paid app can send mail as soon as it's up.
+	smtpOK := e.smtpAllowed(ctx, project, assignedServer)
+	e.applySMTPEgress(ctx, runner, project.ID[:8], newContainerName, smtpOK)
+	if !smtpOK {
+		e.logMsg(ctx, project.ID, "Outbound SMTP (ports 25/465/587) is blocked on the free/hobby plan. Send email via a transactional API over HTTPS (Resend, SendGrid, Mailgun, Postmark), or upgrade to Pro to use your own SMTP credentials.", "build")
+	}
+
 	// Health check: probe new container while old one keeps serving.
 	healthy := e.waitForHealthy(ctx, project, runner, newContainerName, hostPort)
 
@@ -675,7 +850,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		// Atomic route swap: proxy reads container_port on every request; this
 		// single UPDATE makes it immediately start routing to the new container.
 		e.db.UpdateProjectStatus(ctx, project.ID, "running", containerID, hostPort)
-		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.Domain, hostPort), "deploy")
+		// A fresh deploy recreates the container, so it's awake now — clear any
+		// lingering sleep state and start the idle clock from this moment.
+		if e.idle != nil {
+			e.idle.setSleeping(project.ID, false)
+			e.db.SetProjectSleeping(ctx, project.ID, false)
+			e.NoteRequest(project.ID)
+		}
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Deployed at https://%s.%s (port: %d)", project.Subdomain, e.AppDomain, hostPort), "deploy")
 
 		// Publish sibling-subdomain routes for any extra services. Replace the
 		// whole set (ports are freshly allocated each deploy). On a single-service
@@ -684,7 +866,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			e.log.Error().Err(err).Str("project", project.ID).Msg("failed to publish service routes")
 		}
 		for _, rt := range serviceRoutes {
-			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.Domain), "deploy")
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Service '%s' at https://%s.%s", rt.ServiceName, rt.Subdomain, e.AppDomain), "deploy")
 		}
 
 		// Old container is still running — stop it now that the new one is confirmed healthy.
@@ -713,7 +895,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		restoreOldState()
 
 		go e.fireWebhooks(project, "deploy.failed", "failed")
-		go e.sendDeployFailedEmail(project, crashLogs)
+		go e.sendDeployFailedEmail(project, crashLogs, fmt.Sprintf("Deploy failed — %s", project.Name))
 	}
 	// Recompute the server's resource allocation from the actual set of
 	// running projects. Works for both platform + BYOC servers.
@@ -743,15 +925,49 @@ func (e *Engine) Stop(ctx context.Context, project *db.Project) error {
 		local.Exec(ctx, "docker", "rm", "-f", containerName)
 	}
 	e.db.UpdateProjectStatus(ctx, project.ID, "stopped", "", 0)
+	// Clear any idle-sleep state — a stopped project isn't "sleeping", and the
+	// container is gone so there's nothing to wake.
+	if e.idle != nil {
+		e.idle.setSleeping(project.ID, false)
+		e.db.SetProjectSleeping(ctx, project.ID, false)
+	}
 	// Drop sibling-subdomain routes — the container (and all its services) is gone.
 	e.db.DeleteServiceRoutes(ctx, project.ID)
 	e.logMsg(ctx, project.ID, "Project stopped", "deploy")
+
+	// For remote (BYOC) hosts the teardown above is fire-and-forget: if the box
+	// was unreachable, the container may still be running as an orphan while the
+	// caller thinks it's gone. Verify it's actually removed and surface an error
+	// if we can't confirm, so callers (delete) can warn the user instead of
+	// silently reporting success.
+	if runner.IsRemote() {
+		if err := verifyContainerGone(ctx, runner, containerName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyContainerGone confirms a container no longer exists on the runner's
+// host. Returns an error if the host is unreachable OR the container is still
+// present. Uses `docker ps -aq` (exit 0 + empty output when the name is
+// absent), so a benign "no such container" never produces a false alarm.
+func verifyContainerGone(ctx context.Context, runner *Runner, containerName string) error {
+	out, err := runner.Run(ctx, "docker", "ps", "-aq", "--filter", "name=^/"+containerName+"$")
+	if err != nil {
+		return fmt.Errorf("could not reach %s to confirm container teardown: %w", runner.Host(), err)
+	}
+	if len(strings.TrimSpace(string(out))) > 0 {
+		return fmt.Errorf("container %s still present on %s after removal", containerName, runner.Host())
+	}
 	return nil
 }
 
 // Delete stops and removes a project completely.
 func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
-	e.Stop(ctx, project)
+	// Capture the stop result: on a remote (BYOC) host this tells us whether the
+	// container was actually torn down or may be orphaned (host unreachable).
+	stopErr := e.Stop(ctx, project)
 	runner := e.getRunner(ctx, project)
 	// Force-remove the named image; ignore error (image may not exist)
 	runner.Exec(ctx, "docker", "rmi", "-f", fmt.Sprintf("sm-project-%s", project.ID[:8]))
@@ -759,7 +975,7 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	runner.RunShell(ctx, "docker image prune -f")
 	// Remove any leftover exited containers from failed builds
 	runner.RunShell(ctx, "docker container prune -f")
-	return nil
+	return stopErr
 }
 
 // getRunner returns a local or remote runner based on the project's worker
@@ -796,6 +1012,124 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 	return NewLocalRunner()
 }
 
+// ContainerDiagnostics is a live snapshot of a project's container, read from
+// whichever host actually runs it. Everything is best-effort: a field stays
+// zero when the host or container can't be reached.
+type ContainerDiagnostics struct {
+	ContainerName string `json:"container_name"`
+	Host          string `json:"host"`           // "platform" or the worker label
+	State         string `json:"state"`          // running | exited | restarting | dead | missing
+	Health        string `json:"health"`         // healthy | unhealthy | starting | ""
+	ExitCode      int    `json:"exit_code"`
+	OOMKilled     bool   `json:"oom_killed"`
+	RestartCount  int    `json:"restart_count"`
+	StartedAt     string `json:"started_at"`
+	FinishedAt    string `json:"finished_at"`
+	MemoryUsageMB int    `json:"memory_usage_mb"`
+	MemoryLimitMB int    `json:"memory_limit_mb"`
+	CPUPercent    string `json:"cpu_percent"`
+	Logs          string `json:"logs"` // tail of container output
+	Error         string `json:"error"`
+}
+
+// Diagnose gathers container state + recent output for a project. Used by the
+// admin console to answer "why did this user's project die?" without SSHing
+// into the box by hand.
+func (e *Engine) Diagnose(ctx context.Context, project *db.Project, logLines int) *ContainerDiagnostics {
+	if logLines <= 0 || logLines > 500 {
+		logLines = 200
+	}
+	name := fmt.Sprintf("sm-%s", project.ID[:8])
+	d := &ContainerDiagnostics{ContainerName: name, Host: "platform", State: "missing"}
+
+	if project.WorkerServerID != "" {
+		if srv, _ := e.db.GetWorkerServer(ctx, project.WorkerServerID); srv != nil {
+			d.Host = srv.Label
+		}
+	}
+
+	runner := e.getRunner(ctx, project)
+
+	// One inspect call, tab-separated, so a flaky link costs a single round trip.
+	format := `{{.State.Status}}	{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}	{{.State.ExitCode}}	{{.State.OOMKilled}}	{{.RestartCount}}	{{.State.StartedAt}}	{{.State.FinishedAt}}	{{.HostConfig.Memory}}`
+	// docker inspect exits non-zero for a missing container, so inspect the
+	// output before treating the error as a connectivity failure — otherwise
+	// "container was never created" is misreported as "host unreachable".
+	out, err := runner.RunShell(ctx, fmt.Sprintf("docker inspect --format '%s' %s 2>&1", format, name))
+	line := strings.TrimSpace(string(out))
+	lower := strings.ToLower(line)
+	switch {
+	case strings.Contains(lower, "no such object"), strings.Contains(lower, "no such container"):
+		d.State = "missing"
+		d.Error = "container does not exist on " + d.Host + " — it was never started, or has been removed"
+		return d
+	case err != nil && line == "":
+		d.Error = "host unreachable: " + err.Error()
+		return d
+	}
+	if parts := strings.Split(line, "\t"); len(parts) >= 8 {
+		d.State = strings.TrimSpace(parts[0])
+		if h := strings.TrimSpace(parts[1]); h != "-" {
+			d.Health = h
+		}
+		d.ExitCode, _ = strconv.Atoi(strings.TrimSpace(parts[2]))
+		d.OOMKilled = strings.TrimSpace(parts[3]) == "true"
+		d.RestartCount, _ = strconv.Atoi(strings.TrimSpace(parts[4]))
+		d.StartedAt = strings.TrimSpace(parts[5])
+		d.FinishedAt = strings.TrimSpace(parts[6])
+		if limit, err := strconv.ParseInt(strings.TrimSpace(parts[7]), 10, 64); err == nil && limit > 0 {
+			d.MemoryLimitMB = int(limit / 1024 / 1024)
+		}
+	} else {
+		d.Error = "unexpected inspect output: " + truncateStr(line, 200)
+	}
+
+	// Live resource usage only exists while the container is up.
+	if d.State == "running" {
+		if statOut, err := runner.RunShell(ctx,
+			fmt.Sprintf(`docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}' %s 2>/dev/null`, name)); err == nil {
+			if sp := strings.Split(strings.TrimSpace(string(statOut)), "\t"); len(sp) >= 2 {
+				d.CPUPercent = strings.TrimSpace(sp[0])
+				// "123.4MiB / 512MiB" → used MB
+				if used := strings.TrimSpace(strings.Split(sp[1], "/")[0]); used != "" {
+					d.MemoryUsageMB = parseDockerSizeMB(used)
+				}
+			}
+		}
+	}
+
+	if logOut, err := runner.RunShell(ctx,
+		fmt.Sprintf("docker logs --tail %d --timestamps %s 2>&1", logLines, name)); err == nil {
+		d.Logs = strings.TrimSpace(string(logOut))
+	}
+	return d
+}
+
+// parseDockerSizeMB converts docker's human sizes ("123.4MiB", "1.2GiB") to MB.
+func parseDockerSizeMB(s string) int {
+	s = strings.TrimSpace(s)
+	mult := 1.0
+	switch {
+	case strings.HasSuffix(s, "GiB"), strings.HasSuffix(s, "GB"):
+		mult = 1024
+	case strings.HasSuffix(s, "KiB"), strings.HasSuffix(s, "kB"):
+		mult = 1.0 / 1024
+	}
+	num := strings.TrimRight(s, "aAbBGgiIkKmMtT")
+	v, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0
+	}
+	return int(v * mult)
+}
+
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // SweepCrashedContainers finds projects marked 'running' whose containers
 // have given up (exited after exhausting their on-failure restart budget, or
 // dead) and flips their status to 'crashed' so the dashboard tells the truth
@@ -808,6 +1142,11 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 	}
 	for i := range projects {
 		p := &projects[i]
+		// A container we deliberately stopped for idleness is 'exited' but NOT
+		// crashed — skip it so sleep/wake doesn't trip the crash detector.
+		if e.idle != nil && e.idle.isSleeping(p.ID) {
+			continue
+		}
 		containerName := fmt.Sprintf("sm-%s", p.ID[:8])
 		runner := e.getRunner(ctx, p)
 		out, err := runner.RunShell(ctx,
@@ -824,6 +1163,9 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 			e.db.UpdateProjectStatus(ctx, p.ID, "crashed", p.ContainerID, p.ContainerPort)
 			e.logMsg(ctx, p.ID, "Container crashed and exhausted its restart budget (5 failed starts). Marked as crashed — check logs and redeploy after fixing. Last output:\n"+logs, "deploy")
 			e.log.Warn().Str("project", p.Name).Str("container", containerName).Msg("crash sweep: marked project crashed")
+			// Notify the owner (Railway-style). Fires once: the project leaves
+			// the 'running' set after this, so the sweep won't re-email it.
+			go e.sendDeployFailedEmail(p, logs, fmt.Sprintf("Your app crashed — %s is offline", p.Name))
 		}
 	}
 }
@@ -920,7 +1262,7 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 			"id":        project.ID,
 			"name":      project.Name,
 			"subdomain": project.Subdomain,
-			"url":       fmt.Sprintf("https://%s.%s", project.Subdomain, e.Domain),
+			"url":       fmt.Sprintf("https://%s.%s", project.Subdomain, e.AppDomain),
 			"status":    status,
 		},
 	}
@@ -932,7 +1274,7 @@ func (e *Engine) fireWebhooks(project *db.Project, event, status string) {
 
 // sendDeployFailedEmail emails the project owner when a new container fails to
 // pass the health check. Best-effort; must be called in a goroutine.
-func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
+func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs, subject string) {
 	if e.emailSvc == nil {
 		return
 	}
@@ -945,7 +1287,6 @@ func (e *Engine) sendDeployFailedEmail(project *db.Project, crashLogs string) {
 	projectURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s", project.ID)
 	logsURL := fmt.Sprintf("https://deployzy.com/dashboard/projects/%s/logs", project.ID)
 	body := notify.DeployFailedEmail(project.Name, projectURL, logsURL, crashLogs)
-	subject := fmt.Sprintf("Deploy failed — %s", project.Name)
 	if err := e.emailSvc.SendOne(user.Email, subject, body); err != nil {
 		e.log.Warn().Err(err).Str("to", user.Email).Str("project", project.ID).Msg("deploy-failed email send failed")
 	}
@@ -1053,7 +1394,65 @@ func getContainerLogs(name string, lines int) string {
 }
 
 // extractBuildError extracts the meaningful error from Docker build output.
+// ensureBuildx returns the name of a persistent, memory-limited BuildKit builder
+// on the given runner (creating it once if missing), or "" if buildx isn't
+// available — in which case the caller falls back to the legacy `docker build`.
+//
+// Why a docker-container builder: BuildKit gives us cache mounts (persistent
+// npm/pip download caches → fast even on clean builds) and parallel stages, but
+// the default docker driver ignores --memory. A container-driver builder can be
+// memory-capped at creation, and because only one build runs platform-wide at a
+// time (buildLimiter), that cap IS the effective per-build ceiling — so we keep
+// host protection while gaining BuildKit's speed. The builder persists so its
+// layer + mount caches survive across builds.
+func (e *Engine) ensureBuildx(ctx context.Context, runner *Runner, minMB int) string {
+	const name = "deployzy-bk"
+	out, err := runner.RunShell(ctx, "docker buildx version >/dev/null 2>&1 && echo OK || echo NO")
+	if err != nil || !strings.Contains(string(out), "OK") {
+		return "" // no buildx → legacy build
+	}
+	// Already created?
+	if chk, _ := runner.RunShell(ctx, "docker buildx inspect "+name+" >/dev/null 2>&1 && echo EXISTS || echo NO"); strings.Contains(string(chk), "EXISTS") {
+		return name
+	}
+	// Size the builder generously but leave a host reserve. A too-tight cap is
+	// what OOM-killed heavy image exports before.
+	memMB := minMB
+	if memMB < 4096 {
+		memMB = 4096
+	}
+	if avail := availableMemoryMB(ctx, runner); avail > 0 && memMB > avail-1024 {
+		memMB = avail - 1024
+	}
+	if memMB < 2048 {
+		return "" // not enough headroom for a container builder; use legacy
+	}
+	create := fmt.Sprintf(
+		"docker buildx create --name %s --driver docker-container --driver-opt memory=%dm --driver-opt memory-swap=%dm >/dev/null 2>&1 && docker buildx inspect --bootstrap %s >/dev/null 2>&1 && echo CREATED || echo FAIL",
+		name, memMB, memMB, name)
+	res, err := runner.RunShell(ctx, create)
+	if err != nil || !strings.Contains(string(res), "CREATED") {
+		return "" // creation failed → legacy build
+	}
+	return name
+}
+
+// isContainerdCorruption reports whether a build failure is the containerd
+// content-store commit error that follows an OOM-killed / racy layer export —
+// an infrastructure hiccup that a prune + higher-memory retry recovers from,
+// not a code bug the self-repair loop should try to "fix".
+func isContainerdCorruption(output string) bool {
+	low := strings.ToLower(output)
+	return (strings.Contains(low, "failed to commit") && strings.Contains(low, "no such file or directory")) ||
+		strings.Contains(low, "failed to export layer") ||
+		strings.Contains(low, "mount callback failed") ||
+		strings.Contains(low, "creatediff")
+}
+
 func extractBuildError(output string) string {
+	// Strip ANSI colour codes first — the raw captured tail retains them, and we
+	// don't want escape sequences leaking into the "Build failed:" headline.
+	output = ansiRE.ReplaceAllString(output, "")
 	lines := strings.Split(output, "\n")
 	// Find lines with "error", "ERROR", "failed", "FAILED"
 	var errorLines []string
@@ -1089,6 +1488,88 @@ func availableMemoryMB(ctx context.Context, runner *Runner) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
 	return n
+}
+
+// hostCPUs returns the number of CPU cores on the build host (0 if unknown).
+func hostCPUs(ctx context.Context, runner *Runner) int {
+	out, err := runner.RunShell(ctx, "nproc")
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
+}
+
+// buildCPUFlags returns docker-build CPU-limit flags that leave headroom so a
+// from-scratch build can't pin the host and starve the still-running old
+// container + proxy (which would 502 the live site during a redeploy). On a
+// multi-core host it leaves one full core free; on a 1-core host it shares the
+// core (build ~60%, serving ~40%). --cpu-shares further deprioritises the build
+// under contention. Empty when the core count is unknown.
+func buildCPUFlags(cores int) string {
+	if cores <= 0 {
+		return ""
+	}
+	quota := (cores - 1) * 100000 // leave one whole core for serving
+	if cores <= 1 {
+		quota = 60000 // single-core host: 60% to the build, 40% stays for serving
+	}
+	return fmt.Sprintf("--cpu-period=100000 --cpu-quota=%d --cpu-shares=512 ", quota)
+}
+
+// runtimeCPUPolicy converts a steady CPU allocation into a burst-friendly
+// runtime policy for the app container.
+//
+// The old behaviour set a hard `--cpus` quota, which forbade an app from ever
+// touching idle cores — wasteful, since idle apps use ~0 CPU and the cores just
+// sat empty. Instead we return:
+//   - shares: a `--cpu-shares` *priority weight* proportional to the allocation.
+//     It only matters under contention, and it makes higher-tier (more-CPU)
+//     apps win when the box is busy — so paid customers keep their edge.
+//   - burst: a generous `--cpus` *ceiling* an app may reach when cores are idle.
+//     A 0.25-vCPU free app can grab a whole core at quiet times, then yield when
+//     neighbours wake up. Bounded so one app can't monopolise a big host.
+//
+// When the user pinned an explicit CPU size (advanced settings) we honour it as
+// a hard cap — no surprise bursting. RAM is never affected; it stays a hard cap.
+//
+// hostCores is the number of cores on the target host (from nproc); the burst
+// ceiling is clamped to it because Docker rejects a `--cpus` value greater than
+// the machine's core count ("range of CPUs is from 0.01 to N"). 0 means unknown,
+// in which case we assume a single core to stay safe.
+func runtimeCPUPolicy(cpus float64, userPinned bool, hostCores int) (shares int, burst float64) {
+	if cpus <= 0 {
+		cpus = 0.5
+	}
+	shares = int(cpus * 1024) // 1 vCPU == the docker default weight of 1024
+	if shares < 128 {
+		shares = 128
+	}
+	// The most a container may ever be granted on this host.
+	maxOnHost := float64(hostCores)
+	if hostCores <= 0 {
+		maxOnHost = 1.0 // unknown → be conservative, never exceed one core
+	}
+	if userPinned {
+		if cpus > maxOnHost {
+			cpus = maxOnHost // even an explicit size can't exceed the host
+		}
+		return shares, cpus // explicit size chosen by the user — respect it
+	}
+	burst = cpus * 4 // let apps burst to ~4x their steady share into idle cores
+	if burst < 1.0 {
+		burst = 1.0 // even a 0.25 free app can use a whole core when it's quiet
+	}
+	if burst > 4.0 {
+		burst = 4.0 // but never let a single app swallow a large host
+	}
+	if burst > maxOnHost {
+		burst = maxOnHost // ...and never exceed what the host physically has
+	}
+	if burst < cpus && cpus <= maxOnHost {
+		burst = cpus
+	}
+	return shares, burst
 }
 
 // planResourceCeiling returns (max_memory_mb, max_cpus) for a user's plan, or
@@ -1622,4 +2103,25 @@ func (e *Engine) writeBuildFile(ctx context.Context, runner *Runner, dir, name, 
 	} else {
 		os.WriteFile(dir+"/"+name, []byte(content), 0644)
 	}
+}
+
+// planBuildMemoryMB returns the plan's build-memory ceiling in MB, or 0 for
+// "no plan limit" (admin, unlimited, or a lookup failure — fail open rather
+// than blocking a deploy on a bad read).
+func (e *Engine) planBuildMemoryMB(ctx context.Context, userID string) int {
+	if userID == "" {
+		return 0
+	}
+	if isAdmin, _ := e.db.IsUserAdmin(ctx, userID); isAdmin {
+		return 0
+	}
+	user, err := e.db.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return 0
+	}
+	limits, err := e.db.GetPlanLimits(ctx, user.Plan)
+	if err != nil || limits == nil || db.Unlimited(limits.MaxBuildMemoryMB) {
+		return 0
+	}
+	return limits.MaxBuildMemoryMB
 }

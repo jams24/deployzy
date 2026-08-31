@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Template, EnvVarSchema } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logos";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,7 +27,7 @@ const EMPTY_TEMPLATE: Partial<Template> = {
   slug: "", name: "", tagline: "", description: "", category: "other",
   tags: [], icon: "📦", color: "#6366f1", source_repo: "", docker_image: "",
   env_vars: [], ports: [], min_memory_mb: 256, post_deploy: "",
-  is_official: false, is_featured: false, is_active: true,
+  is_official: false, is_featured: false, is_active: true, required_plan: "",
 };
 
 const EMPTY_ENV_VAR: EnvVarSchema = {
@@ -50,14 +51,14 @@ function EnvVarRow({
     onChange(idx, { ...ev, [field]: val });
 
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+    <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2.5">
       <div className="flex items-center gap-2">
         <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
         <div className="flex-1 grid grid-cols-2 gap-2">
           <div>
             <Label className="text-[10px] text-muted-foreground mb-1 block">KEY</Label>
             <Input
-              className="h-7 font-mono text-xs"
+              className="h-8 font-mono text-xs"
               value={ev.key}
               onChange={(e) => set("key", e.target.value.toUpperCase())}
               placeholder="MY_ENV_VAR"
@@ -66,7 +67,7 @@ function EnvVarRow({
           <div>
             <Label className="text-[10px] text-muted-foreground mb-1 block">LABEL</Label>
             <Input
-              className="h-7 text-xs"
+              className="h-8 text-xs"
               value={ev.label}
               onChange={(e) => set("label", e.target.value)}
               placeholder="Human label"
@@ -81,18 +82,21 @@ function EnvVarRow({
         </button>
       </div>
 
-      <Input
-        className="h-7 text-xs"
-        value={ev.description}
-        onChange={(e) => set("description", e.target.value)}
-        placeholder="Description shown to user"
-      />
+      <div>
+        <Label className="text-[10px] text-muted-foreground mb-1 block">DESCRIPTION</Label>
+        <Input
+          className="h-8 text-xs"
+          value={ev.description}
+          onChange={(e) => set("description", e.target.value)}
+          placeholder="Shown to the user under the field"
+        />
+      </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">TYPE</Label>
           <select
-            className="w-full h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
             value={ev.type}
             onChange={(e) => set("type", e.target.value)}
           >
@@ -102,7 +106,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">DEFAULT</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={ev.default}
             onChange={(e) => set("default", e.target.value)}
             placeholder="(optional)"
@@ -111,7 +115,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">PLACEHOLDER</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={ev.placeholder}
             onChange={(e) => set("placeholder", e.target.value)}
             placeholder="e.g. 1234:abc…"
@@ -123,7 +127,7 @@ function EnvVarRow({
         <div>
           <Label className="text-[10px] text-muted-foreground mb-1 block">OPTIONS (comma-separated)</Label>
           <Input
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             value={(ev.options ?? []).join(",")}
             onChange={(e) => set("options", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
             placeholder="option1,option2,option3"
@@ -250,6 +254,18 @@ function TemplateFormModal({
               <Label className="text-xs mb-1.5 block">Icon (emoji)</Label>
               <Input className="text-2xl text-center" value={form.icon ?? "📦"} onChange={(e) => set("icon", e.target.value)} maxLength={8} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Brand logo</Label>
+              <Input
+                placeholder="e.g. ghost, n8n, discord"
+                value={form.logo_slug ?? ""}
+                onChange={(e) => set("logo_slug", e.target.value.trim().toLowerCase())}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Simple Icons slug (simpleicons.org). Renders the real brand mark
+                instead of the emoji. Leave empty to show a lettermark.
+              </p>
+            </div>
             <div>
               <Label className="text-xs mb-1.5 block">Brand color</Label>
               <div className="flex gap-2 items-center">
@@ -327,11 +343,40 @@ function TemplateFormModal({
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Min memory (MB)</Label>
-              <Input
-                type="number"
+              {/* Standard memory tiers — a plain number input stepped by 1, which
+                  produced odd values like 1029. A select keeps sizes on the
+                  conventional grid while still showing any pre-existing custom value. */}
+              <select
                 value={form.min_memory_mb ?? 256}
                 onChange={(e) => set("min_memory_mb", parseInt(e.target.value) || 256)}
-              />
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {(() => {
+                  const tiers = [128, 256, 512, 1024, 1536, 2048, 4096, 8192];
+                  const cur = form.min_memory_mb ?? 256;
+                  const opts = tiers.includes(cur) ? tiers : [cur, ...tiers].sort((a, b) => a - b);
+                  return opts.map((mb) => (
+                    <option key={mb} value={mb}>
+                      {mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB (${mb} MB)` : `${mb} MB`}
+                      {!tiers.includes(mb) ? " — custom" : ""}
+                    </option>
+                  ));
+                })()}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Required plan</Label>
+              <select
+                value={form.required_plan || ""}
+                onChange={(e) => set("required_plan", e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Free — anyone can deploy</option>
+                <option value="hobby">Hobby or higher</option>
+                <option value="pro">Pro or higher</option>
+                <option value="team">Team / Enterprise</option>
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">Users below this plan see an upgrade prompt instead of deploy.</p>
             </div>
           </div>
         </section>
@@ -367,7 +412,7 @@ function TemplateFormModal({
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Post-deploy instructions</p>
           <textarea
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-            rows={4}
+            rows={8}
             value={form.post_deploy ?? ""}
             onChange={(e) => set("post_deploy", e.target.value)}
             placeholder={"1. Set your webhook URL in Telegram BotFather\n2. Add the bot to a group…"}
@@ -377,24 +422,37 @@ function TemplateFormModal({
         {/* Flags */}
         <section className="space-y-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Flags</p>
-          <div className="flex flex-wrap gap-4">
+          <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
             {(
               [
-                { field: "is_active", label: "Active (visible to users)" },
-                { field: "is_official", label: "Official" },
-                { field: "is_featured", label: "Featured" },
+                { field: "is_active", label: "Active", hint: "Visible to users in the template gallery" },
+                { field: "is_official", label: "Official", hint: "Maintained by Deployzy — shows the verified badge" },
+                { field: "is_featured", label: "Featured", hint: "Pinned to the top of the gallery" },
               ] as const
-            ).map(({ field, label }) => (
-              <label key={field} className="flex items-center gap-2 cursor-pointer">
-                <button
-                  type="button"
-                  onClick={() => set(field, !form[field])}
-                  className={`w-9 h-5 rounded-full transition-colors relative ${form[field] ? "bg-primary" : "bg-muted-foreground/30"}`}
+            ).map(({ field, label, hint }) => (
+              <button
+                key={field}
+                type="button"
+                onClick={() => set(field, !form[field])}
+                aria-pressed={!!form[field]}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{hint}</span>
+                </span>
+                <span
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    form[field] ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
                 >
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${form[field] ? "translate-x-4" : "translate-x-0.5"}`} />
-                </button>
-                <span className="text-sm text-foreground">{label}</span>
-              </label>
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                      form[field] ? "translate-x-[18px]" : "translate-x-0.5"
+                    }`}
+                  />
+                </span>
+              </button>
             ))}
           </div>
         </section>
@@ -405,7 +463,7 @@ function TemplateFormModal({
           </div>
         )}
 
-        <div className="flex gap-3 pt-2">
+        <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-3 border-t border-border bg-background/95 px-6 py-4 backdrop-blur">
           <Button className="flex-1" onClick={handleSave} disabled={saving || !form.name || !form.slug}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Create template"}
           </Button>
@@ -506,14 +564,14 @@ export default function AdminTemplatesPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-xl border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="border-b border-border bg-muted/30">
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Template</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Category</th>
               <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">Source</th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Stats</th>
+              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden lg:table-cell">Stats</th>
               <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
               <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Actions</th>
             </tr>
@@ -541,16 +599,16 @@ export default function AdminTemplatesPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-base shrink-0"
-                      style={{ background: t.color + "20", border: `1px solid ${t.color}30` }}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: t.color + "14", border: `1px solid ${t.color}33` }}
                     >
-                      {t.icon}
+                      <BrandLogo logoSlug={t.logo_slug} slug={t.slug} name={t.name} color={t.color} className="h-4 w-4" />
                     </div>
                     <div>
                       <div className="font-medium text-foreground flex items-center gap-1.5">
                         {t.name}
                         {t.is_featured && (
-                          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">FEATURED</span>
+                          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">FEATURED</span>
                         )}
                         {t.is_official && (
                           <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">OFFICIAL</span>
@@ -580,7 +638,7 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Stats */}
-                <td className="px-4 py-3 text-center">
+                <td className="px-4 py-3 text-center hidden lg:table-cell">
                   <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Download className="h-3 w-3" />{t.deploy_count}
@@ -597,7 +655,7 @@ export default function AdminTemplatesPage() {
                     onClick={() => toggleActive(t)}
                     className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
                       t.is_active
-                        ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >

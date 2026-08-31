@@ -179,6 +179,105 @@ func (d *DB) UpdateProjectStatus(ctx context.Context, projectID, status, contain
 	return err
 }
 
+// SleepCandidate is a minimal projection for the idle sweeper — just what it
+// needs to decide and act, without loading the full project row.
+type SleepCandidate struct {
+	ID            string
+	ContainerName string // "sm-" + id[:8]
+	ContainerPort int
+	NeverVisited  bool // no last_request_at — must pass an HTTP probe before sleeping
+}
+
+// ListSleepEligibleProjects returns free-tier, platform-local, HTTP-serving
+// projects that have been idle (no forwarded request) for at least idleMinutes
+// and aren't already asleep. Eligibility rules, all required:
+//   - status 'running' with a real container port
+//   - lives on a platform-local host (no BYOC/remote — we only manage local docker)
+//   - owner is on the free plan (paid apps are never slept)
+//   - sleep_enabled (per-project opt-out is off)
+//   - EITHER it has served HTTP before (last_request_at set) and gone idle past
+//     the window — the safe, proven-HTTP case; OR it has never received HTTP
+//     (last_request_at NULL) but was deployed long ago (>6h). The never-visited
+//     case is flagged so the caller can HTTP-probe it before sleeping — that
+//     probe is what protects workers/bots (which don't answer HTTP) from being
+//     slept. A project can always opt out via sleep_enabled = false.
+func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]SleepCandidate, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT p.id, p.container_port, (p.last_request_at IS NULL) AS never_visited
+		   FROM projects p
+		   JOIN users u ON u.id = p.user_id
+		   LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
+		  WHERE p.status = 'running'
+		    AND p.container_port > 0
+		    AND p.sleeping = false
+		    AND p.sleep_enabled = true
+		    AND (p.worker_server_id IS NULL OR COALESCE(ws.is_local, false) = true)
+		    AND COALESCE(u.plan, 'free') IN ('', 'free')
+		    AND u.is_admin = false
+		    AND p.parent_project_id IS NULL
+		    AND (
+		      (p.last_request_at IS NOT NULL AND p.last_request_at < now() - make_interval(mins => $1))
+		      OR (p.last_request_at IS NULL AND p.created_at < now() - interval '24 hours')
+		    )`,
+		idleMinutes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SleepCandidate
+	for rows.Next() {
+		var c SleepCandidate
+		if err := rows.Scan(&c.ID, &c.ContainerPort, &c.NeverVisited); err != nil {
+			return nil, err
+		}
+		if len(c.ID) >= 8 {
+			c.ContainerName = "sm-" + c.ID[:8]
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ListSleepingProjectIDs returns ids of projects currently marked asleep, so the
+// engine can rehydrate its in-memory sleeping set after a restart.
+func (d *DB) ListSleepingProjectIDs(ctx context.Context) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `SELECT id FROM projects WHERE sleeping = true`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SetProjectSleeping flips the sleeping flag (and slept_at when going to sleep).
+func (d *DB) SetProjectSleeping(ctx context.Context, projectID string, sleeping bool) error {
+	if sleeping {
+		_, err := d.Pool.Exec(ctx,
+			`UPDATE projects SET sleeping = true, slept_at = now(), updated_at = now() WHERE id = $1`, projectID)
+		return err
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET sleeping = false, updated_at = now() WHERE id = $1`, projectID)
+	return err
+}
+
+// TouchProjectRequest records that a request was just forwarded to a project.
+// Called throttled (not per-request) from the proxy's activity tracker.
+func (d *DB) TouchProjectRequest(ctx context.Context, projectID string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE projects SET last_request_at = now() WHERE id = $1`, projectID)
+	return err
+}
+
 // ListRunningProjects returns every project currently in 'running' status.
 // Used by the metrics scraper to know which containers to poll. Separate from
 // the user-scoped ListProjects because the scraper runs as a system process.
@@ -295,6 +394,17 @@ func (d *DB) UpdateProjectBuildConfig(ctx context.Context, projectID string, cfg
 		cfg.HealthCheckPath, cfg.ReleaseCmd, cfg.BuildMode, cfg.DockerfilePath,
 		servicesJSON,
 	)
+	return err
+}
+
+// SetProjectMemory sets the per-container memory ceiling (MB) for a project.
+// Used by template deploys to honour a template's min_memory_mb (the deploy
+// engine still clamps this to the user's plan ceiling).
+func (d *DB) SetProjectMemory(ctx context.Context, projectID string, memMB int) error {
+	if memMB <= 0 {
+		return nil
+	}
+	_, err := d.Pool.Exec(ctx, `UPDATE projects SET memory_mb = $2, updated_at = now() WHERE id = $1`, projectID, memMB)
 	return err
 }
 

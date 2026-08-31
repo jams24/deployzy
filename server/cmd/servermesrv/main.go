@@ -17,14 +17,14 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/serverme/serverme/proto"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/api"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/billing"
 	cf "github.com/serverme/serverme/server/internal/cloudflare"
 	"github.com/serverme/serverme/server/internal/control"
 	"github.com/serverme/serverme/server/internal/db"
-	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/deploy"
-	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/notify"
 	"github.com/serverme/serverme/server/internal/policy"
@@ -35,7 +35,8 @@ import (
 
 func main() {
 	// Flags
-	domain := flag.String("domain", "localhost", "Base domain for tunnels (e.g., serverme.dev)")
+	domain := flag.String("domain", "localhost", "Brand base domain (dashboard/API/control, e.g. deployzy.com)")
+	appDomain := flag.String("app-domain", "", "User-facing domain for deployed apps + tunnels (e.g. deployzy.app). Isolates user content from the brand domain. Defaults to --domain.")
 	controlAddr := flag.String("addr", ":8443", "Control/tunnel listener address (TLS)")
 	httpAddr := flag.String("http-addr", ":8080", "HTTP proxy listener address")
 	apiAddr := flag.String("api-addr", ":8081", "REST API listener address")
@@ -43,6 +44,7 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "TLS private key file")
 	authToken := flag.String("auth-token", "dev-token", "Required auth token for clients (legacy, use DB auth in production)")
 	jwtSecret := flag.String("jwt-secret", "serverme-dev-secret-change-me", "JWT signing secret")
+	subscriptionGraceDays := flag.Int("subscription-grace-days", 3, "Days a lapsed paid plan keeps its features before downgrade to free")
 	databaseURL := flag.String("database-url", "", "PostgreSQL connection URL (optional, enables user auth)")
 	googleClientID := flag.String("google-client-id", "", "Google OAuth Client ID")
 	googleClientSecret := flag.String("google-client-secret", "", "Google OAuth Client Secret")
@@ -68,6 +70,12 @@ func main() {
 	cfToken := flag.String("cloudflare-token", "", "Cloudflare API token (DNS edit permission) for auto-creating DNS records when servers are added")
 	cfZoneID := flag.String("cloudflare-zone-id", "", "Cloudflare Zone ID for the base domain")
 	flag.Parse()
+
+	// User-facing app/tunnel domain defaults to the brand domain when unset.
+	if *appDomain == "" {
+		*appDomain = *domain
+	}
+	api.SetSubscriptionGraceDays(*subscriptionGraceDays)
 
 	// Logger
 	level, _ := zerolog.ParseLevel(*logLevel)
@@ -134,12 +142,20 @@ func main() {
 		run := func() {
 			ctx := context.Background()
 			now := time.Now()
-			// Site analytics + deploy logs: retention comes from each
-			// owner's plan (plan_limits.analytics_retention_days /
-			// deploy_log_retention_days), so paid tiers actually get the
-			// longer windows the pricing page sells. Admins are exempt.
-			if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
-				log.Warn().Err(err).Msg("prune site_events failed")
+			// Roll up analytics BEFORE pruning. Raw events are deleted per
+			// the owner's plan (free = 7 days); once they're gone the history
+			// is unrecoverable, so aggregates must be written first. 3 days of
+			// overlap so a missed cycle self-heals.
+			if err := database.RollupSiteEvents(ctx, 3); err != nil {
+				log.Warn().Err(err).Msg("analytics rollup failed — skipping prune to avoid losing history")
+			} else {
+				// Site analytics + deploy logs: retention comes from each
+				// owner's plan (plan_limits.analytics_retention_days /
+				// deploy_log_retention_days), so paid tiers actually get the
+				// longer windows the pricing page sells. Admins are exempt.
+				if err := database.PruneSiteEventsPerPlan(ctx); err != nil {
+					log.Warn().Err(err).Msg("prune site_events failed")
+				}
 			}
 			if n, err := database.PruneDeployLogsPerPlan(ctx); err != nil {
 				log.Warn().Err(err).Msg("prune deploy_logs failed")
@@ -153,15 +169,15 @@ func main() {
 			} else if n > 0 {
 				log.Debug().Int64("rows", n).Msg("pruned captured_requests")
 			}
-			// Lapsed subscriptions: mark expired and downgrade users whose
-			// paid period ended back to free. Only touches users whose plan
-			// came from a subscription — admin grants and referral rewards
-			// are untouched.
-			if n, err := database.SweepExpiredSubscriptions(ctx); err != nil {
-				log.Warn().Err(err).Msg("subscription expiry sweep failed")
+			// Abandoned signups: password accounts that never confirmed their
+			// email within 7 days are removed so they don't squat the address.
+			if n, err := database.DeleteUnverifiedStaleUsers(ctx, 7*24*time.Hour); err != nil {
+				log.Warn().Err(err).Msg("prune unverified signups failed")
 			} else if n > 0 {
-				log.Info().Int64("users", n).Msg("downgraded users with expired subscriptions")
+				log.Info().Int64("users", n).Msg("removed abandoned unverified signups")
 			}
+			// (Subscription dunning runs in its own goroutine below — it needs
+			// the mailer, which is initialised after this loop starts.)
 			// Abandoned build dirs — cleaned on successful deploy, but a
 			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
 			// behind. Remove anything older than 24h on the control plane
@@ -244,6 +260,47 @@ func main() {
 			log.Info().Msg("Brevo email service enabled")
 		}
 
+		// Subscription dunning: grace period + reminder/lapse/downgrade emails.
+		// Runs hourly (needs emailSvc, hence started here rather than in the
+		// early retention loop). graceDays keeps paid features live past
+		// period_end before the user is downgraded to free.
+		go func() {
+			graceDays := *subscriptionGraceDays
+			runDunning := func() {
+				res, err := database.SweepExpiredSubscriptions(context.Background(), graceDays)
+				if err != nil {
+					log.Warn().Err(err).Msg("subscription dunning sweep failed")
+					return
+				}
+				if res.Downgraded > 0 {
+					log.Info().Int("users", res.Downgraded).Msg("downgraded users past grace period")
+				}
+				for _, n := range res.Notices {
+					if emailSvc == nil || n.Email == "" {
+						continue
+					}
+					subj := map[string]string{
+						"reminder": "Your Deployzy plan renews soon",
+						"grace":    "Your Deployzy plan has expired — renew to keep your features",
+						"expired":  "You've been moved to the Deployzy Free plan",
+					}[n.Kind]
+					if subj == "" {
+						subj = "Your Deployzy subscription"
+					}
+					body := notify.SubscriptionEmail(n.Name, n.Plan, n.Kind, n.Amount, n.Currency, n.Date)
+					if err := emailSvc.SendOne(n.Email, subj, body); err != nil {
+						log.Warn().Err(err).Str("to", n.Email).Str("kind", n.Kind).Msg("dunning email failed")
+					}
+				}
+			}
+			runDunning()
+			t := time.NewTicker(1 * time.Hour)
+			defer t.Stop()
+			for range t.C {
+				runDunning()
+			}
+		}()
+
 		// Billing
 		var billingClient *billing.InventPay
 		if *inventpayKey != "" {
@@ -281,10 +338,10 @@ func main() {
 				}
 			}
 			svcHost := *serviceHost
-		if svcHost == "" {
-			svcHost = *domain
-		}
-		deployEngine = deploy.NewEngine(database, *domain, svcHost, githubApp, emailSvc, log)
+			if svcHost == "" {
+				svcHost = *domain
+			}
+			deployEngine = deploy.NewEngine(database, *domain, *appDomain, svcHost, githubApp, emailSvc, log)
 			// Reset any projects stuck in "building" from a previous process that was
 			// killed mid-deploy — otherwise they'd show as building forever.
 			if n, err := database.ResetStuckBuilds(context.Background()); err != nil {
@@ -313,10 +370,35 @@ func main() {
 			metricsScraper := deploy.NewMetricsScraper(database, deployEngine, log)
 			go metricsScraper.Start(context.Background())
 
+			// Idle sleep/wake sweeper — stops idle free-tier app containers to
+			// free real CPU/RAM; the proxy wakes them on the next request.
+			deployEngine.StartIdleSweeper(context.Background())
+
+			// Banned-IP cache — loads the ban list and keeps it fresh so the
+			// proxy can reject banned traffic with an in-memory lookup.
+			deployEngine.StartBanRefresher(context.Background())
+
+			// Install/enforce the plan-gated outbound-SMTP egress policy across the
+			// whole platform fleet (local + remote), and backfill paid allow-holes
+			// for running containers so nobody is stranded. Idempotent.
+			go deployEngine.EnsureEgressAllServers(context.Background())
+
 			// DB quota sweeper — enforces per-plan Postgres disk caps on
 			// standalone services. Revokes INSERT/UPDATE when over quota.
 			dbQuotaSweeper := deploy.NewDBQuotaSweeper(database, log)
 			go dbQuotaSweeper.Start(context.Background())
+
+			// Fail any DB migration jobs left 'running' by a restart so they
+			// don't hang forever (the dump process is gone with the old binary).
+			if err := database.FailStuckDBMigrations(context.Background()); err != nil {
+				log.Warn().Err(err).Msg("failed to clear stuck db migrations")
+			}
+
+			// SEO/LLM ingester — parses the Caddy access log for deployzy.com
+			// and records which crawlers (GPTBot/Googlebot/…) fetch us and which
+			// sources (ChatGPT/Google/…) send us human traffic.
+			seoIngester := deploy.NewSEOIngester(database, log)
+			go seoIngester.Start(context.Background())
 
 			// Worker-health monitor: pings every active worker periodically
 			// and marks dead ones offline so SelectServerForProject can't
@@ -341,13 +423,17 @@ func main() {
 		}
 
 		cfClient := cf.New(*cfToken, *cfZoneID)
-		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, log)
+		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, analyticsCollector, log)
 		apiServer := &http.Server{
-			Addr:         *apiAddr,
-			Handler:      apiRouter,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
+			Addr:    *apiAddr,
+			Handler: apiRouter,
+			// ReadHeaderTimeout guards slowloris without capping request-body reads.
+			// WriteTimeout MUST be 0 (unlimited): SSE streams (the AI agent's live
+			// build/self-repair logs) run for minutes, and any positive WriteTimeout
+			// kills the connection mid-build → "Connection interrupted" in the chat.
+			ReadHeaderTimeout: 30 * time.Second,
+			WriteTimeout:      0,
+			IdleTimeout:       120 * time.Second,
 		}
 
 		go func() {
@@ -360,7 +446,7 @@ func main() {
 
 	// Start TLS control listener
 	go func() {
-		if err := listenControl(*controlAddr, *tlsCert, *tlsKey, *authToken, *domain, scheme, serverHost, registry, manager, tcpProxy, database, jwtMgr, log); err != nil {
+		if err := listenControl(*controlAddr, *tlsCert, *tlsKey, *authToken, *appDomain, scheme, serverHost, registry, manager, tcpProxy, database, jwtMgr, log); err != nil {
 			log.Fatal().Err(err).Msg("control listener error")
 		}
 	}()

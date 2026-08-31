@@ -56,10 +56,15 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 	byoc, _ := s.db.CountBYOCServersForUser(ctx, u.ID)
 	subdomains, _ := s.db.CountUserSubdomains(ctx, u.ID)
 
+	buildUsage, _ := s.db.GetBuildUsage(r.Context(), u.ID)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"plan":     plan,
 		"is_admin": isAdmin,
 		"limits":   limits,
+		// Build minutes are consumption, not a count of objects, so they ride
+		// alongside the usage map rather than inside it.
+		"build_usage": buildUsage,
 		"usage": map[string]int{
 			"projects":         projects,
 			"preview_deploys":  previews,

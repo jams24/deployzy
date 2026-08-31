@@ -2,12 +2,15 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
+	"github.com/serverme/serverme/server/internal/analytics"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
 	cf "github.com/serverme/serverme/server/internal/cloudflare"
@@ -43,12 +46,14 @@ type Server struct {
 	ctrlManager         *control.Manager
 	cfDNS               *cf.Client // nil when Cloudflare token not configured
 	cfDomain            string     // base domain for auto-DNS (e.g. "deployzy.com")
+	analytics           *analytics.Collector // records first-party (deployzy.com) pageviews
 	log                 zerolog.Logger
 	cliPending          sync.Map // cli_state -> JWT token (set after OAuth, consumed by poll)
+	selfProjectID       atomic.Value // cached reserved project id for first-party analytics
 }
 
 // NewRouter creates the REST API router.
-func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, log zerolog.Logger) http.Handler {
+func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Registry, inspectStore *inspect.Store, google *GoogleOAuthConfig, telegramBot *notify.TelegramBot, telegramUsername string, emailSvc *notify.EmailService, billingClient *billing.InventPay, polarClient *billing.Polar, deployEngine *deploy.Engine, ctrlManager *control.Manager, cfClient *cf.Client, cfDomain string, analyticsCollector *analytics.Collector, log zerolog.Logger) http.Handler {
 	s := &Server{
 		db:                  database,
 		jwt:                 jwtMgr,
@@ -64,6 +69,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		ctrlManager:         ctrlManager,
 		cfDNS:               cfClient,
 		cfDomain:            cfDomain,
+		analytics:           analyticsCollector,
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 
@@ -73,7 +79,21 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(30 * time.Second))
+	// 30s request timeout for normal endpoints, but NOT the AI routes: the agent
+	// builds & self-repairs apps (minutes) and streams over SSE — a blanket
+	// timeout cancels the request context mid-build ("the agent had a problem")
+	// and http.TimeoutHandler buffers the response, breaking streaming entirely.
+	timeout30 := chimw.Timeout(30 * time.Second)
+	r.Use(func(next http.Handler) http.Handler {
+		wrapped := timeout30(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api/v1/ai/") {
+				next.ServeHTTP(w, req) // no timeout — long-running / streaming
+				return
+			}
+			wrapped.ServeHTTP(w, req)
+		})
+	})
 	r.Use(corsMiddleware)
 
 	// Rate limiters for unauthenticated endpoints — blocks brute-force
@@ -89,7 +109,16 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Use(rateLimitMiddleware(authRateLimiter))
 			r.Post("/auth/register", s.handleRegister)
 			r.Post("/auth/login", s.handleLogin)
+			r.Post("/auth/verify-email", s.handleVerifyEmail)
+			r.Post("/auth/resend-verification", s.handleResendVerification)
+			// Public abuse reporting (phishing/malware/spam/illegal content).
+			r.Post("/abuse-report", s.handleSubmitAbuseReport)
 		})
+
+		// First-party website analytics beacon (deployzy.com). Public + cookieless;
+		// the marketing site posts a pageview here. Lightly IP-rate-limited.
+		r.With(rateLimitMiddleware(newIPRateLimiter(120, time.Minute))).
+			Post("/analytics/collect", s.handleCollectSelfAnalytics)
 
 		// Google OAuth
 		r.Get("/auth/google", s.handleGoogleLogin)
@@ -98,6 +127,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 		// Health
 		r.Get("/health", s.handleHealth)
+
+		// Public pricing — the enforced plan_limits so the dashboard billing page
+		// and the landing page render live numbers (admin edits reflect instantly).
+		r.Get("/plans", s.handlePublicPlans)
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
@@ -167,6 +200,12 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Billing (account-level → full)
 			r.With(fullScope).Post("/billing/checkout", s.handleCreateCheckout)
+			// AI credits (builder/agent metering + top-ups)
+			r.Get("/ai/credits", s.handleGetAICredits)
+			r.With(fullScope).Post("/ai/credits/topup", s.handleCreateCreditTopup)
+			// Email verification API (metered by credits)
+			r.Post("/email/verify", s.handleEmailVerify)
+			r.Post("/email/verify/batch", s.handleEmailVerifyBatch)
 			r.Get("/billing/status", s.handleBillingStatus)
 			r.Get("/billing/check", s.handleCheckPayment)
 
@@ -180,7 +219,18 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Deploy / Projects
 			r.Get("/projects", s.handleListProjects)
-			r.With(deployScope).Post("/projects", s.handleCreateProject)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects", s.handleCreateProject)
+			// AI builder: prompt -> generated site/code -> deployed. Counts as a project.
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/build", s.handleAIBuild)
+			// Finishes a code-gen build that needed secrets: set env + deploy (with self-repair).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/deploy", s.handleAIDeploy)
+			// AI edits an already-deployed code-gen project (load files -> change -> redeploy).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/edit", s.handleAIEdit)
+			// Deployzy Agent: DeepSeek tool-calling loop grounded in the platform —
+			// answers about the user's account + takes actions (build/edit/redeploy).
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/agent", s.handleAIAgent)
+			// Streaming (SSE) agent: live tool-calls + streamed reply + build/fix logs in-chat.
+			r.With(deployScope, s.requireVerifiedEmail).Post("/ai/agent/stream", s.handleAIAgentStream)
 			r.Get("/projects/{projectId}", s.handleGetProject)
 			r.With(deployScope).Put("/projects/{projectId}", s.handleUpdateProject)
 			r.With(deployScope).Put("/projects/{projectId}/build-config", s.handleUpdateBuildConfig)
@@ -200,7 +250,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(deployScope).Put("/projects/{projectId}/crons/{cronId}", s.handleUpdateCron)
 			r.With(deployScope).Delete("/projects/{projectId}/crons/{cronId}", s.handleDeleteCron)
 			r.With(deployScope).Post("/projects/{projectId}/upload", s.handleUploadProject)
-			r.With(deployScope).Post("/projects/{projectId}/deploy", s.handleDeployProject)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects/{projectId}/deploy", s.handleDeployProject)
 			r.With(deployScope).Post("/projects/{projectId}/move", s.handleMoveProject)
 			r.With(deployScope).Put("/projects/{projectId}/auto-deploy", s.handleToggleAutoDeploy)
 			r.With(deployScope).Post("/projects/{projectId}/stop", s.handleStopProject)
@@ -208,7 +258,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/projects/{projectId}/logs", s.handleGetDeployLogs)
 
 			// Project Databases
-			r.With(deployScope).Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/projects/{projectId}/database", s.handleCreateProjectDatabase)
 			// Database editor — SQL runner + table browser (query mutates → deploy)
 			r.With(deployScope).Post("/projects/{projectId}/database/query", s.handleProjectDatabaseQuery)
 			r.Get("/projects/{projectId}/database/tables", s.handleProjectDatabaseTables)
@@ -255,13 +305,23 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Standalone Services (databases, Redis, etc.)
 			r.Get("/services", s.handleListServices)
-			r.With(deployScope).Post("/services", s.handleCreateService)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/services", s.handleCreateService)
 			r.Get("/services/{serviceId}", s.handleGetService)
 			r.With(deployScope).Delete("/services/{serviceId}", s.handleDeleteService)
+			r.With(deployScope).Post("/services/{serviceId}/move", s.handleMoveService)
+			r.Get("/services/{serviceId}/backup", s.handleServiceBackup)
+
+			// Database migration (bring your own DB) — premium-gated in the handler
+			r.With(deployScope).Post("/migrations", s.handleCreateMigration)
+			r.Get("/migrations", s.handleListMigrations)
+			r.Get("/migrations/{id}", s.handleGetMigration)
 
 			// Templates — star and deploy require auth
 			r.Post("/templates/{slug}/star", s.handleToggleTemplateStar)
-			r.With(deployScope).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
+			r.With(deployScope, s.requireVerifiedEmail).Post("/templates/{slug}/deploy", s.handleDeployFromTemplate)
+
+			// Servers a user may deploy to (platform regions + own BYOC)
+			r.Get("/servers/selectable", s.handleListSelectableServers)
 
 			// User BYOC Servers (account-level infra → full)
 			r.Get("/servers", s.handleListUserServers)
@@ -276,6 +336,8 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/users", s.handleAdminListUsers)
 				r.Put("/users/{userId}", s.handleAdminUpdateUser)
 				r.Delete("/users/{userId}", s.handleAdminDeleteUser)
+				r.Get("/users/{userId}/credits", s.handleAdminGetUserCredits)
+				r.Post("/users/{userId}/credits", s.handleAdminAdjustUserCredits)
 				r.Post("/redeploy-all", s.handleAdminRedeployAll)
 
 				// Infrastructure management
@@ -283,6 +345,9 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Post("/servers", s.handleAdminAddServer)
 				r.Delete("/servers/{serverId}", s.handleAdminDeleteServer)
 				r.Put("/servers/{serverId}/status", s.handleAdminUpdateServerStatus)
+				r.Put("/servers/{serverId}/selectable", s.handleAdminSetServerSelectable)
+				r.Put("/servers/{serverId}/backups", s.handleAdminSetServerBackups)
+				r.Put("/servers/{serverId}", s.handleAdminUpdateServer)
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)
@@ -290,9 +355,56 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 				// Project management across all users
 				r.Get("/projects", s.handleAdminListProjects)
+				r.Get("/plans", s.handleAdminListPlans)
+				r.Put("/plans/{plan}", s.handleAdminUpdatePlan)
+
+				// Platform-wide build concurrency (protects the host)
+				r.Get("/build-config", s.handleAdminGetBuildConfig)
+				r.Put("/build-config", s.handleAdminSetBuildConfig)
+
+				// VPN panel (TuTBot reseller) configuration
+				// AI builder / agent LLM provider (pluggable: DeepSeek, OpenAI,
+				// Anthropic, Moonshot/Kimi, Groq, OpenRouter, xAI… all OpenAI-compatible)
+				r.Get("/ai/config", s.handleAdminGetAIConfig)
+				r.Put("/ai/config", s.handleAdminSetAIConfig)
+				r.Post("/ai/test", s.handleAdminTestAI)
+
+				r.Get("/vpn/config", s.handleAdminGetVPNConfig)
+				r.Put("/vpn/config", s.handleAdminSetVPNConfig)
+				r.Post("/vpn/test", s.handleAdminTestVPN)
+				r.Get("/analytics", s.handleAdminAnalytics)
+				// First-party (deployzy.com) website analytics.
+				r.Get("/website/analytics", s.handleWebsiteAnalytics)
+				r.Get("/website/analytics/top", s.handleWebsiteTop)
+				r.Get("/density", s.handleAdminDensity)
+
+				// IP bans
+				// Abuse reports
+				r.Get("/abuse-reports", s.handleAdminListAbuseReports)
+				r.Post("/abuse-reports/{id}/status", s.handleAdminSetAbuseReportStatus)
+
+				r.Get("/ip-bans", s.handleAdminListIPBans)
+				r.Post("/ip-bans", s.handleAdminBanIP)
+				r.Delete("/ip-bans/{ip}", s.handleAdminUnbanIP)
+				r.Get("/projects/{projectId}/diagnostics", s.handleAdminProjectDiagnostics)
 				r.Post("/projects/{projectId}/stop", s.handleAdminStopProject)
 				r.Post("/projects/{projectId}/redeploy", s.handleAdminRedeployProject)
+				r.Post("/projects/{projectId}/move", s.handleAdminMoveProject)
+				r.Post("/projects/{projectId}/sleep", s.handleAdminSleepProject)
+				r.Post("/projects/{projectId}/wake", s.handleAdminWakeProject)
 				r.Delete("/projects/{projectId}", s.handleAdminDeleteProject)
+
+				// Standalone databases/services across all users
+				r.Get("/databases", s.handleAdminListServices)
+				r.Delete("/databases/{serviceId}", s.handleAdminDeleteService)
+				r.Post("/databases/{serviceId}/move", s.handleAdminMoveService)
+
+				// Orphan container detection + reaping (report-only scan)
+				r.Get("/orphans", s.handleAdminScanOrphans)
+				r.Post("/orphans/reap", s.handleAdminReapOrphan)
+
+				// SEO & LLM insight for deployzy.com (crawler + referral tracking)
+				r.Get("/seo", s.handleAdminSEO)
 
 				// Platform backups (admin only)
 				r.Get("/backups", s.handleListPlatformBackups)

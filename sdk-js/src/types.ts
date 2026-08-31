@@ -177,3 +177,28 @@ export interface ReplayResult {
   durationMs: number;
   error?: string;
 }
+
+/** Verdict for a single email verification. */
+export interface EmailVerifyResult {
+  email: string;
+  normalized: string;
+  domain: string;
+  score: "valid" | "risky" | "invalid" | "unknown";
+  reason: string;
+  syntax_valid: boolean;
+  has_mx: boolean;
+  disposable: boolean;
+  role_based: boolean;
+  free_provider: boolean;
+  suggestion?: string;
+  /** true when a live SMTP mailbox check ran. */
+  mailbox_checked: boolean;
+  /** true when the domain accepts every address (result inconclusive). */
+  catch_all: boolean;
+}
+
+/** Result of a batch email verification. */
+export interface EmailBatchResult {
+  count: number;
+  results: EmailVerifyResult[];
+}

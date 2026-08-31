@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,16 @@ import (
 	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
 )
+
+// dockerFirewallPrefix is prepended to every DB-container `docker run`. On hosts
+// running an ACTIVE UFW (INPUT policy DROP, e.g. the France worker), a container
+// reaching another container's published port on the same host hairpins onto the
+// host INPUT chain via docker0 and UFW drops it — so a co-located app can't reach
+// its DB ("connect ETIMEDOUT <host>:<dbport>"). This idempotently allows the
+// Docker bridge to reach published app/DB ports (10000–40000, all already
+// 0.0.0.0-published, so no new exposure). No-op where UFW isn't active. `grep
+// -qiw active` matches "Status: active" but NOT "inactive".
+const dockerFirewallPrefix = `if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qiw active; then ufw allow in on docker0 to any port 10000:40000 proto tcp >/dev/null 2>&1 || true; fi; `
 
 // resolveServicePublicHost returns the public host users should use to connect
 // to standalone services from outside Docker (local dev, pgAdmin, etc).
@@ -47,16 +58,37 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Free plan gets Postgres only. Redis / MongoDB / MySQL need a paid plan.
+	if req.Type != "postgres" && !billing.IsFeatureAllowed(r.Context(), s.db, u, "advanced_databases") {
+		writeError(w, http.StatusPaymentRequired,
+			"Redis, MongoDB and MySQL require a paid plan — upgrade to add more database engines.")
+		return
+	}
+
 	if err := billing.EnsureCanCreate(r.Context(), s.db, u, billing.DimService); err != nil {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
 
-	// BYOC path — provision a container on the user's own server via SSH.
+	// A specific server/region was chosen (the region picker sends its
+	// worker_server_id). The target may be a PLATFORM region server (no owner,
+	// e.g. France) OR the user's own BYOC box — both provision a container on
+	// that server. Only reject a server owned by someone else. Previously this
+	// went straight to the BYOC path, which rejected any server the user didn't
+	// own, so picking a platform region like France 502'd with "server not found".
 	if req.WorkerServerID != "" {
-		svc, err := s.provisionBYOCService(r.Context(), u.ID, req.Name, req.Type, req.WorkerServerID)
+		server, gerr := s.db.GetWorkerServer(r.Context(), req.WorkerServerID)
+		if gerr != nil || server == nil {
+			writeError(w, http.StatusBadRequest, "selected region/server not found")
+			return
+		}
+		if server.UserID != nil && *server.UserID != u.ID {
+			writeError(w, http.StatusForbidden, "that server isn't available to you")
+			return
+		}
+		svc, err := s.provisionServiceContainerOn(r.Context(), u.ID, req.Name, req.Type, server)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "failed to create service on your server: "+err.Error())
+			writeError(w, http.StatusBadGateway, "failed to create service on that server: "+err.Error())
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -102,6 +134,14 @@ func (s *Server) provisionBYOCService(ctx context.Context, userID, name, service
 	if err != nil || server == nil || server.UserID == nil || *server.UserID != userID {
 		return nil, fmt.Errorf("server not found")
 	}
+	return s.provisionServiceContainerOn(ctx, userID, name, serviceType, server)
+}
+
+// provisionServiceContainerOn runs a database container on an already-validated
+// worker server (platform OR BYOC) and records it. Used by the BYOC create path
+// (after ownership check) and by admin database moves (any active server).
+func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, serviceType string, server *db.WorkerServer) (*db.Service, error) {
+	workerServerID := server.ID
 	if !server.DockerInstalled {
 		return nil, fmt.Errorf("docker not installed on that server — click Install Docker first")
 	}
@@ -159,7 +199,7 @@ func (s *Server) provisionBYOCService(ctx context.Context, userID, name, service
 		return nil, fmt.Errorf("unsupported type: %s", serviceType)
 	}
 
-	out, err := runRemoteSSH(server, dockerRun, 5*time.Minute)
+	out, err := runRemoteSSH(server, dockerFirewallPrefix+dockerRun, 5*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("docker run failed: %s", lastLine(string(out)))
 	}
@@ -241,6 +281,9 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 	default:
 		return nil, fmt.Errorf("unsupported type: %s", serviceType)
 	}
+
+	// Ensure a co-located app can reach this DB's published port on UFW-hardened hosts.
+	dockerRun = dockerFirewallPrefix + dockerRun
 
 	if isLocal {
 		execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -371,4 +414,77 @@ func (s *Server) handleDeleteService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleMoveService lets a user migrate their own database to a platform region
+// or their own BYOC server. Hobby+ (paid) feature. Non-destructive: it copies
+// the data to a fresh instance and leaves the original intact.
+func (s *Server) handleMoveService(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	svcID := chi.URLParam(r, "serviceId")
+
+	// Plan gate — Hobby and above. Admins bypass.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		user, _ := s.db.GetUserByID(r.Context(), u.ID)
+		if user == nil || user.Plan == "" || user.Plan == "free" {
+			writeError(w, http.StatusForbidden, "Moving a database to another server is a Hobby feature — upgrade to unlock it.")
+			return
+		}
+	}
+
+	var body struct {
+		WorkerServerID string `json:"worker_server_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	target := strings.TrimSpace(body.WorkerServerID)
+	if target == "" || target == "auto" || target == "platform" {
+		writeError(w, http.StatusBadRequest, "pick a target server to migrate to")
+		return
+	}
+
+	svc, err := s.db.GetService(r.Context(), svcID)
+	if err != nil || svc == nil || svc.UserID != u.ID {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if svc.Type == "redis" {
+		writeError(w, http.StatusBadRequest, "Redis migration isn't supported yet — Postgres, MySQL and MongoDB can be moved.")
+		return
+	}
+	if svc.WorkerServerID != nil && *svc.WorkerServerID == target {
+		writeError(w, http.StatusBadRequest, "database is already on that server")
+		return
+	}
+
+	tsrv, err := s.db.GetWorkerServer(r.Context(), target)
+	if err != nil || tsrv == nil {
+		writeError(w, http.StatusBadRequest, "target server not found")
+		return
+	}
+	// Target must be a shared platform server, or the user's own BYOC server.
+	if tsrv.UserID != nil && *tsrv.UserID != u.ID {
+		writeError(w, http.StatusForbidden, "you can only move to a platform region or your own server")
+		return
+	}
+	if tsrv.Status != "active" {
+		writeError(w, http.StatusBadRequest, "target server is not active")
+		return
+	}
+	if !tsrv.DockerInstalled {
+		writeError(w, http.StatusBadRequest, "Docker isn't installed on the target server")
+		return
+	}
+
+	newSvc, targetURL, err := s.startServiceMigration(r.Context(), svc, tsrv)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":         "migrating",
+		"target":         tsrv.Label,
+		"new_database":   newSvc.Name,
+		"new_connection": targetURL,
+		"note":           "Copying data now. Your original database is untouched — repoint your app to the new connection, then delete the source when verified.",
+	})
 }

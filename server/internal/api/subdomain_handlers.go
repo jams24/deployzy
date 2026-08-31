@@ -88,10 +88,19 @@ func (s *Server) handleCheckSubdomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	available, reason := s.db.CheckSubdomainAvailable(r.Context(), subdomain, u.ID)
+	slug := slugifySubdomain(subdomain)
+	available, reason := s.db.CheckSubdomainAvailable(r.Context(), slug, u.ID)
+	// suggestion is the name the deploy would actually use: the clean slug when
+	// it's free, or a Vercel/Railway-style variant with a random id when taken.
+	suggestion := slug
+	if !available && reason == "subdomain already taken" {
+		suggestion = s.uniqueSubdomain(r.Context(), slug, u.ID)
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"subdomain": subdomain,
-		"available": available,
-		"reason":    reason,
+		"subdomain":  subdomain,
+		"slug":       slug,
+		"available":  available,
+		"reason":     reason,
+		"suggestion": suggestion,
 	})
 }

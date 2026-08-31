@@ -52,6 +52,7 @@ type Event struct {
 	OS          string
 	VisitorHash string
 	IsBot       bool
+	BotName     string // crawler identity, empty for humans
 }
 
 // bwEvent accumulates egress bytes for a project.
@@ -216,12 +217,12 @@ func (c *Collector) rotateSalt() {
 
 func (c *Collector) insertBatch(ctx context.Context, events []Event) error {
 	// Use a single multi-value INSERT. Avoids per-row round-trips.
-	const cols = "(project_id, ts, path, method, status, bytes, referrer, country, device, browser, os, visitor_hash, is_bot)"
+	const cols = "(project_id, ts, path, method, status, bytes, referrer, country, device, browser, os, visitor_hash, is_bot, bot_name)"
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO site_events ")
 	sb.WriteString(cols)
 	sb.WriteString(" VALUES ")
-	args := make([]any, 0, len(events)*13)
+	args := make([]any, 0, len(events)*14)
 	for i, e := range events {
 		if i > 0 {
 			sb.WriteByte(',')
@@ -231,13 +232,13 @@ func (c *Collector) insertBatch(ctx context.Context, events []Event) error {
 		if country == "" {
 			country = LookupCountry(e.IP)
 		}
-		base := i * 13
-		sb.WriteString(fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
-			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13))
+		base := i * 14
+		sb.WriteString(fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13, base+14))
 		args = append(args,
 			e.ProjectID, e.TS, e.Path, e.Method, e.Status, e.Bytes,
 			e.RefererHost, country, e.Device, e.Browser, e.OS,
-			e.VisitorHash, e.IsBot,
+			e.VisitorHash, e.IsBot, e.BotName,
 		)
 	}
 	_, err := c.pool.Exec(ctx, sb.String(), args...)
@@ -246,6 +247,10 @@ func (c *Collector) insertBatch(ctx context.Context, events []Event) error {
 
 // ── User-agent parsing ────────────────────────────────────────────────────
 
+// botRE catches generic automation. Note \bbot\b only matches "bot" as a
+// standalone word, so it MISSES every modern crawler that suffixes it
+// (GPTBot, ClaudeBot, PerplexityBot, AhrefsBot...) — those were being counted
+// as human visitors until the botSignatures list became the primary check.
 var botRE = regexp.MustCompile(`(?i)\bbot\b|crawl|spider|slurp|pingdom|uptimerobot|headless|monitor|python-requests|curl/|wget/|facebookexternalhit|whatsapp|telegrambot`)
 
 // ParseUA returns (device, browser, os, isBot).
@@ -253,7 +258,9 @@ func ParseUA(ua string) (string, string, string, bool) {
 	if ua == "" {
 		return "other", "other", "other", false
 	}
-	isBot := botRE.MatchString(ua)
+	// A named crawler is definitive; the regex is the fallback for unnamed
+	// automation.
+	isBot := ClassifyBot(ua) != "" || botRE.MatchString(ua)
 
 	device := "desktop"
 	uaLow := strings.ToLower(ua)

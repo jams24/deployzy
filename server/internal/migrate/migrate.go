@@ -1,0 +1,243 @@
+// Package migrate performs one-time "bring your own database" imports: dump a
+// user's existing database and restore it into a freshly-created Deployzy
+// service. It shells out to the official client tools, but runs them inside a
+// throwaway Docker container (so the host needs no mysql/mongo clients) and
+// never interpolates user input into a shell string — credentials are passed as
+// container environment variables and referenced by name in a fixed script.
+package migrate
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"net/url"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Supported source types.
+const (
+	Postgres = "postgres"
+	MySQL    = "mysql"
+	MongoDB  = "mongodb"
+)
+
+// denyExtraIPs are hosts we refuse to dump from even though they're public —
+// notably our own VPS, so the tool can't be turned against the platform.
+var denyExtraIPs = map[string]bool{
+	"163.245.208.218": true, // legacy primary (InterServer), retained during migration
+	"169.58.235.86":   true, // primary (Contabo)
+}
+
+// ValidateSource parses and sanity-checks a source connection string and returns
+// the host (for display). It rejects anything pointing at a private, loopback,
+// link-local, or otherwise non-public address so the importer can't be used to
+// reach internal services (SSRF) — e.g. our own Postgres on localhost or the
+// cloud metadata endpoint.
+func ValidateSource(sourceType, rawURL string) (host string, err error) {
+	if rawURL == "" {
+		return "", fmt.Errorf("source connection string is required")
+	}
+	// Normalise scheme so url.Parse is happy for all three.
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("invalid connection string")
+	}
+	host = u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("connection string has no host")
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return "", fmt.Errorf("could not resolve host %q", host)
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip) || denyExtraIPs[ip.String()] {
+			return "", fmt.Errorf("host %q resolves to a non-public or blocked address — the source must be a publicly reachable database", host)
+		}
+	}
+	return host, nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	// CGNAT / shared address space (100.64.0.0/10) — Tailscale et al.
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+		return false
+	}
+	return true
+}
+
+// SourceSizeMB returns the on-disk size of the source database in MB, so the
+// caller can reject an import that would blow past the user's plan storage cap.
+// Best-effort: returns (0, nil) if it can't measure (e.g. permissions), so a
+// probe failure never blocks a migration outright.
+func SourceSizeMB(ctx context.Context, sourceType, sourceURL string) (int, error) {
+	var image, script string
+	env := map[string]string{"SRC": sourceURL}
+	switch sourceType {
+	case Postgres:
+		image = "postgres:17-alpine"
+		script = `psql -tAX -d "$SRC" -c "SELECT pg_database_size(current_database())/1024/1024"`
+	case MySQL:
+		p, err := parseMySQL(sourceURL)
+		if err != nil {
+			return 0, err
+		}
+		image = "mysql:8"
+		env = map[string]string{"SHOST": p.host, "SPORT": p.port, "SUSER": p.user, "SPW": p.pass, "SDB": p.db}
+		script = `MYSQL_PWD="$SPW" mysql -N -h"$SHOST" -P"$SPORT" -u"$SUSER" -e "SELECT COALESCE(SUM(data_length+index_length),0) DIV (1024*1024) FROM information_schema.tables WHERE table_schema='$SDB'"`
+	case MongoDB:
+		image = "mongo:7"
+		script = `mongosh "$SRC" --quiet --eval "Math.round(db.stats().dataSize/1048576)"`
+	default:
+		return 0, fmt.Errorf("unsupported source type")
+	}
+
+	args := []string{"run", "--rm", "--network", "host"}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, image, "sh", "-c", script)
+
+	pctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(pctx, "docker", args...).Output()
+	if err != nil {
+		return 0, nil // best-effort — don't block on a failed probe
+	}
+	mb, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return mb, nil
+}
+
+// Run dumps sourceURL and restores it into targetURL. The target is always a
+// Deployzy-managed DB reachable on the host's localhost (platform Postgres, or a
+// mapped service container port), so we run with --network host. Returns a
+// trimmed combined log.
+func Run(ctx context.Context, sourceType, sourceURL, targetURL string) (string, error) {
+	script, image, env, err := buildJob(sourceType, sourceURL, targetURL)
+	if err != nil {
+		return "", err
+	}
+
+	args := []string{"run", "--rm", "--network", "host"}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, image, "sh", "-c", script)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	runErr := cmd.Run()
+
+	log := out.String()
+	if len(log) > 8000 { // keep the tail — errors surface at the end
+		log = "…\n" + log[len(log)-8000:]
+	}
+	if runErr != nil {
+		return log, fmt.Errorf("migration failed: %s", lastNonEmptyLine(log))
+	}
+	return log, nil
+}
+
+// buildJob returns the shell script (referencing only env-var names, never the
+// raw values), the docker image, and the env map for one migration.
+func buildJob(sourceType, sourceURL, targetURL string) (script, image string, env map[string]string, err error) {
+	// IMPORTANT: dump to a file, then restore only on success (`&&`). A naive
+	// `dump | restore` pipe returns the restore's exit code, so a failed dump
+	// (e.g. version mismatch) yields empty input and a FALSE success. The file +
+	// `&&` + `set -e` makes any dump failure abort the whole job with its error.
+	switch sourceType {
+	case Postgres:
+		// pg_dump 17 can read servers up to 17 (Railway/Supabase/Neon default to
+		// newer majors); a 16 client refuses a 17 server. --no-owner/--no-acl so
+		// the dump restores cleanly into the target's differently-named role.
+		// We restore as the target's limited service role into our platform PG16.
+		// Two lines a newer/other-provider dump emits would abort the restore
+		// under ON_ERROR_STOP and must be stripped:
+		//   - `SET transaction_timeout` — a PG17 GUC our PG16 doesn't know.
+		//   - `COMMENT ON SCHEMA public` — requires ownership of the public
+		//     schema, which the service role may not have.
+		// Neither carries data, so dropping them is safe; everything else loads.
+		return `set -e
+pg_dump --no-owner --no-acl -d "$SRC" -f /tmp/dump.sql
+test -s /tmp/dump.sql
+sed -i -e '/^SET transaction_timeout/d' -e '/^COMMENT ON SCHEMA public/d' /tmp/dump.sql
+psql -v ON_ERROR_STOP=1 -d "$DST" -f /tmp/dump.sql`,
+			"postgres:17-alpine",
+			map[string]string{"SRC": sourceURL, "DST": targetURL},
+			nil
+
+	case MongoDB:
+		return `set -e
+mongodump --uri="$SRC" --archive=/tmp/dump.archive
+mongorestore --uri="$DST" --archive=/tmp/dump.archive --drop`,
+			"mongo:7",
+			map[string]string{"SRC": sourceURL, "DST": targetURL},
+			nil
+
+	case MySQL:
+		// The mysql client can't take a URL — split both endpoints into parts.
+		s, err := parseMySQL(sourceURL)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("source: %w", err)
+		}
+		d, err := parseMySQL(targetURL)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("target: %w", err)
+		}
+		// MYSQL_PWD keeps passwords off the process list. All values arrive as
+		// env vars, so nothing user-controlled is parsed by the shell.
+		return `set -e
+MYSQL_PWD="$SPW" mysqldump --single-transaction --no-tablespaces -h"$SHOST" -P"$SPORT" -u"$SUSER" "$SDB" > /tmp/dump.sql
+test -s /tmp/dump.sql
+MYSQL_PWD="$DPW" mysql -h"$DHOST" -P"$DPORT" -u"$DUSER" "$DDB" < /tmp/dump.sql`,
+			"mysql:8",
+			map[string]string{
+				"SHOST": s.host, "SPORT": s.port, "SUSER": s.user, "SPW": s.pass, "SDB": s.db,
+				"DHOST": d.host, "DPORT": d.port, "DUSER": d.user, "DPW": d.pass, "DDB": d.db,
+			},
+			nil
+	}
+	return "", "", nil, fmt.Errorf("unsupported source type %q", sourceType)
+}
+
+type mysqlParts struct{ host, port, user, pass, db string }
+
+func parseMySQL(raw string) (mysqlParts, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return mysqlParts{}, fmt.Errorf("invalid mysql url")
+	}
+	p := mysqlParts{host: u.Hostname(), port: u.Port(), db: strings.TrimPrefix(u.Path, "/")}
+	if p.port == "" {
+		p.port = "3306"
+	}
+	if u.User != nil {
+		p.user = u.User.Username()
+		p.pass, _ = u.User.Password()
+	}
+	if p.host == "" || p.db == "" {
+		return mysqlParts{}, fmt.Errorf("mysql url needs host and database name")
+	}
+	return p, nil
+}
+
+func lastNonEmptyLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(lines[i]); t != "" {
+			return t
+		}
+	}
+	return "unknown error"
+}

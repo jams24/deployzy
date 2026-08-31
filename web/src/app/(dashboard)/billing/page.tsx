@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, CreditCard, Crown, ExternalLink, Loader2, Zap } from "lucide-react";
+import { Check, CreditCard, Crown, ExternalLink, Loader2, PartyPopper, Zap } from "lucide-react";
+import Link from "next/link";
+import { fetchPlanCards } from "@/lib/plans";
+import { AICreditsCard } from "@/components/ai-credits-card";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -22,6 +25,7 @@ interface Subscription {
 interface BillingStatus {
   active_subscription: Subscription | null;
   history: Subscription[];
+  grace?: { plan: string; access_ends: string } | null;
 }
 
 interface PlanLimits {
@@ -44,10 +48,25 @@ interface UsageResponse {
 
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  // Live plan cards from plan_limits; null until fetched (falls back to static).
+  const [livePlanCards, setLivePlanCards] = useState<{ id: string; name: string; price: string; accent: string; tagline: string; features: string[] }[] | null>(null);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
+  // Post-checkout celebration. The provider redirects here immediately, but
+  // the plan only flips once the webhook lands — so we poll rather than
+  // claiming success we haven't confirmed.
+  const [celebrate, setCelebrate] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmedPlan, setConfirmedPlan] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [pendingTimedOut, setPendingTimedOut] = useState(false);
+  const [pending, setPending] = useState<{
+    plan: string; method: string; url: string;
+    amount?: number; currency?: string; blocked: boolean;
+  } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const headers = () => {
     const token = localStorage.getItem("sm_token");
@@ -66,24 +85,75 @@ export default function BillingPage() {
     setLoading(false);
   }
 
+  // Open the provider's hosted page in a NEW TAB and keep this page waiting on
+  // the webhook. Redirecting away meant the user lost their place, and for
+  // crypto (InventPay can't redirect back) they never returned at all — the
+  // upgrade appeared to do nothing until they refreshed manually.
   async function checkout(plan: "hobby" | "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
     setCheckoutLoading(true);
+    setCheckoutError("");
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({ plan, method }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        // Redirect to the hosted payment page (InventPay invoice or Polar checkout)
-        window.location.href = data.invoice_url;
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to create checkout");
+      const data = await res.json();
+      if (!res.ok) {
+        setCheckoutError(data.error || "Failed to create checkout");
+        return;
       }
-    } catch {}
-    setCheckoutLoading(false);
+
+      // Popup blockers only allow this because it's inside the click handler's
+      // async chain from a user gesture; if it's still blocked the modal shows
+      // the link so the user can open it manually.
+      const win = window.open(data.invoice_url, "_blank", "noopener,noreferrer");
+      setPending({
+        plan,
+        method,
+        url: data.invoice_url,
+        amount: data.amount,
+        currency: data.currency,
+        blocked: !win,
+      });
+      watchForActivation(plan);
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : "Network error creating checkout");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  // Poll billing status until the provider's webhook flips the subscription
+  // active. Card usually lands in seconds; crypto waits for confirmations, so
+  // this runs long and the modal stays honest about what's happening.
+  function watchForActivation(plan: string) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const started = Date.now();
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+        if (res.ok) {
+          const d: BillingStatus = await res.json();
+          if (d.active_subscription?.status === "active") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+            setPending(null);
+            setConfirmedPlan(d.active_subscription.plan || plan);
+            setCelebrate(true);
+            loadStatus();
+            return;
+          }
+        }
+      } catch {}
+      // Stop nagging the API after 30 minutes; the email confirmation is the
+      // backstop and the modal says so.
+      if (Date.now() - started > 30 * 60 * 1000 && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        setPendingTimedOut(true);
+      }
+    }, 4000);
   }
 
   async function pollPayment(paymentId: string) {
@@ -107,6 +177,46 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadStatus();
+    // Live plan cards from plan_limits (reflect admin edits without redeploy).
+    fetchPlanCards().then((cards) => {
+      if (cards) setLivePlanCards(cards.map((c) => ({ id: c.id, name: c.name, price: c.price, accent: c.accent, tagline: c.tagline, features: c.features })));
+    });
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("status") !== "success") return;
+
+    setCelebrate(true);
+    setConfirming(true);
+    // Clean the URL so a refresh doesn't replay the celebration.
+    window.history.replaceState({}, "", "/billing");
+
+    let cancelled = false;
+    (async () => {
+      // Webhooks usually land in a second or two; keep checking for ~90s
+      // before falling back to "we'll email you when it clears".
+      for (let i = 0; i < 30 && !cancelled; i++) {
+        try {
+          const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+          if (res.ok) {
+            const d: BillingStatus = await res.json();
+            if (d.active_subscription?.status === "active") {
+              if (cancelled) return;
+              setConfirmedPlan(d.active_subscription.plan);
+              setConfirming(false);
+              loadStatus();
+              return;
+            }
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      if (!cancelled) setConfirming(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeSub = status?.active_subscription;
@@ -115,7 +225,9 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
     : 0;
 
-  // Plan catalog — mirrors plan_limits table; update both together when changing limits.
+  // Plan catalog. The numbers render LIVE from plan_limits (fetched below), so
+  // admin edits reflect here without a redeploy. The static array is only a
+  // fallback for the first paint / if the API is briefly unreachable.
   type PlanCard = {
     id: string;
     name: string;
@@ -124,7 +236,7 @@ export default function BillingPage() {
     tagline: string;
     features: string[];
   };
-  const planCards: PlanCard[] = [
+  const fallbackPlanCards: PlanCard[] = [
     {
       id: "free",
       name: "Free",
@@ -133,7 +245,7 @@ export default function BillingPage() {
       tagline: "For hobby projects and learning",
       features: [
         "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 2 databases, 1 standalone service",
+        "3 projects, 1 PostgreSQL database (1 GB storage)",
         "1 BYOC server, 1 custom domain",
         "512 MB RAM / 0.25 vCPU per project",
         "50 GB bandwidth, 120 build min / mo",
@@ -148,7 +260,8 @@ export default function BillingPage() {
       tagline: "Perfect for indie hackers and side projects",
       features: [
         "All Free features, plus:",
-        "5 projects, 3 databases, 3 standalone services",
+        "5 projects, 3 databases (Postgres, Redis, Mongo, MySQL)",
+        "5 GB database storage · migrate existing databases",
         "8 subdomains, 8 tunnels, 2 BYOC servers",
         "2 custom domains, 2 PR previews, 2 cron jobs",
         "1 GB RAM / 0.5 vCPU per project",
@@ -167,6 +280,7 @@ export default function BillingPage() {
       features: [
         "10 reserved subdomains, 15 active tunnels",
         "10 projects, 5 databases, 5 BYOC servers",
+        "10 GB database storage · migrate existing databases",
         "5 custom domains, 10 standalone services",
         "5 scheduled jobs, 5 active PR previews",
         "1 GB RAM / 1 vCPU per project (configurable)",
@@ -185,6 +299,7 @@ export default function BillingPage() {
       features: [
         "Everything in Pro, plus:",
         "50 subdomains / tunnels / projects, 20 databases",
+        "50 GB database storage · migrate existing databases",
         "15 BYOC servers, 25 custom domains + services",
         "25 scheduled jobs, 25 active PR previews",
         "Up to 8 GB RAM / 4 vCPU per project",
@@ -195,14 +310,209 @@ export default function BillingPage() {
       ],
     },
   ];
+  const planCards: PlanCard[] = livePlanCards ?? fallbackPlanCards;
   const currentPlan = usage?.plan || (isPremium ? "pro" : "free");
+
+  // Post-checkout celebration takes over the page until dismissed.
+  if (celebrate) {
+    const planName = confirmedPlan ? confirmedPlan[0].toUpperCase() + confirmedPlan.slice(1) : null;
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="w-full max-w-md text-center">
+          <div className="flex justify-center mb-6">
+            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${
+              confirming ? "bg-muted" : "bg-emerald-500/15"
+            }`}>
+              {confirming
+                ? <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                : <PartyPopper className="h-8 w-8 text-emerald-500" />}
+            </div>
+          </div>
+
+          {confirming ? (
+            <>
+              <h1 className="text-2xl font-bold">Confirming your payment…</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This usually takes a few seconds. You can leave this page — we&apos;ll email
+                you the moment it clears.
+              </p>
+            </>
+          ) : planName ? (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Welcome to {planName}! 🎉
+              </h1>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Your subscription is active and the new limits apply right now —
+                nothing to redeploy. A receipt is on its way to your inbox.
+              </p>
+
+              {usage && (
+                <div className="mt-6 grid grid-cols-3 gap-2 text-left">
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Projects</div>
+                    <div className="text-sm font-mono">{usage.limits.max_projects < 0 ? "∞" : usage.limits.max_projects}</div>
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Memory</div>
+                    <div className="text-sm font-mono">{usage.limits.max_memory_mb} MB</div>
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                    <div className="text-[10px] text-muted-foreground">Bandwidth</div>
+                    <div className="text-sm font-mono">{usage.limits.max_bandwidth_gb} GB</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-7 flex flex-col gap-2">
+                <Button className="w-full gap-2" nativeButton={false} render={<Link href="/new" />}>
+                  <Zap className="h-4 w-4" /> Deploy something
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => { setCelebrate(false); loadStatus(); }}>
+                  View billing details
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold">Payment received</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We haven&apos;t seen the confirmation yet — crypto payments can take a few
+                minutes to settle. Your plan upgrades automatically once it lands, and
+                we&apos;ll email you. Nothing else to do.
+              </p>
+              <Button variant="outline" className="mt-6 w-full" onClick={() => { setCelebrate(false); loadStatus(); }}>
+                Back to billing
+              </Button>
+            </>
+          )}
+
+          <p className="mt-6 text-xs text-muted-foreground">
+            Questions? <a href="mailto:support@deployzy.com" className="hover:underline">support@deployzy.com</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 className="text-xl sm:text-2xl font-bold">Billing</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage your subscription and payment history.
-      </p>
+      {/* Payment-in-progress modal. The provider's page is open in another tab;
+          this stays put and waits for the webhook rather than navigating away. */}
+      {pending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+                </div>
+              </div>
+
+              <h2 className="text-lg font-semibold">
+                {pendingTimedOut ? "Still waiting on your payment" : "Complete your payment"}
+              </h2>
+
+              {pendingTimedOut ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  We haven&apos;t seen the confirmation yet. Your plan upgrades automatically
+                  the moment it lands and we&apos;ll email you — you can safely close this.
+                </p>
+              ) : pending.blocked ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Your browser blocked the payment window. Use the link below to open it.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  We opened the {pending.method === "card" ? "card checkout" : "crypto invoice"} in a
+                  new tab. Finish there and this page updates on its own — no need to refresh.
+                </p>
+              )}
+
+              <div className="mt-4 rounded-lg border border-border/60 px-3 py-2 text-left text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Plan</span>
+                  <span className="font-medium capitalize">{pending.plan}</span>
+                </div>
+                {pending.amount !== undefined && (
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-medium">{pending.amount} {pending.currency}</span>
+                  </div>
+                )}
+                <div className="mt-1 flex justify-between">
+                  <span className="text-muted-foreground">Method</span>
+                  <span className="font-medium">{pending.method === "card" ? "Card" : "Crypto"}</span>
+                </div>
+              </div>
+
+              {pending.method === "crypto" && !pendingTimedOut && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                  Crypto payments confirm on-chain — this can take a few minutes.
+                </p>
+              )}
+
+              <div className="mt-5 flex flex-col gap-2">
+                <Button
+                  variant={pending.blocked ? "default" : "outline"}
+                  className="w-full gap-2"
+                  nativeButton={false}
+                  render={<a href={pending.url} target="_blank" rel="noopener noreferrer" />}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {pending.blocked ? "Open payment page" : "Reopen payment page"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full text-muted-foreground"
+                  onClick={() => {
+                    if (pollRef.current) clearInterval(pollRef.current);
+                    pollRef.current = null;
+                    setPending(null);
+                    setPendingTimedOut(false);
+                    loadStatus();
+                  }}
+                >
+                  {pendingTimedOut ? "Close" : "Cancel"}
+                </Button>
+              </div>
+
+              <p className="mt-4 text-[10px] text-muted-foreground">
+                Closing this won&apos;t cancel the payment — your plan still upgrades once it clears.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <div className="animate-fade-in-up">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
+        <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Billing</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage your subscription and payment history.
+        </p>
+      </div>
+
+      {/* AI builder credits (self-hides while credit metering is switched off). */}
+      <AICreditsCard />
+
+      {/* Grace-period banner: subscription lapsed but paid features are still on
+          until access_ends. Renewing before then avoids the drop to Free. */}
+      {status?.grace && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+          <span className="flex-1">
+            Your <span className="font-semibold capitalize">{status.grace.plan}</span> subscription has expired, but your features stay active during a grace period.
+            Renew before <span className="font-semibold">{new Date(status.grace.access_ends).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span> to avoid being moved to the Free plan. Your projects keep running either way.
+          </span>
+        </div>
+      )}
+
+      {checkoutError && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/5 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          <span className="flex-1">{checkoutError}</span>
+          <button onClick={() => setCheckoutError("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+        </div>
+      )}
 
       {/* Usage vs caps */}
       {usage && (() => {
@@ -231,15 +541,15 @@ export default function BillingPage() {
                 {rows.map((r) => {
                   const isUnl = r.max < 0;
                   const p = isUnl ? 0 : pct(r.used, r.max);
-                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-emerald-500";
+                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 to-emerald-400";
                   return (
                     <div key={r.label} className="space-y-1">
                       <div className="flex items-baseline justify-between text-xs">
                         <span className="text-muted-foreground">{r.label}</span>
-                        <span className="font-mono">{r.used} / {fmt(r.max)}</span>
+                        <span className="font-mono tabular-nums">{r.used} / {fmt(r.max)}</span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                        <div className={`h-full ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
+                      <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                        <div className={`h-full rounded-full transition-all duration-700 ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
                       </div>
                     </div>
                   );
@@ -272,7 +582,7 @@ export default function BillingPage() {
                   ["TCP tunnels", usage.limits.allow_tcp_tunnels],
                   ["Live logs", usage.limits.allow_live_logs],
                 ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-500 border-emerald-500/50" : "text-muted-foreground"}`}>
+                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-muted-foreground"}`}>
                     {on ? "✓" : "✗"} {label}
                   </Badge>
                 ))}
@@ -289,17 +599,17 @@ export default function BillingPage() {
             <div>
               <div className="flex items-center gap-2">
                 {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
+                  <Badge className="gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
                     <Crown className="h-3 w-3" />
                     Admin (Unlimited)
                   </Badge>
                 ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-emerald-500/15 text-emerald-500 border-emerald-500/40">
+                  <Badge className="gap-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40">
                     <Crown className="h-3 w-3" />
                     Team
                   </Badge>
                 ) : currentPlan === "pro" ? (
-                  <Badge className="gap-1 bg-emerald-500/20 text-emerald-500 border-emerald-500/50">
+                  <Badge className="gap-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/40">
                     <Zap className="h-3 w-3" />
                     Pro
                   </Badge>
@@ -355,13 +665,13 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setPayMethod("card")}
-              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
                 payMethod === "card"
-                  ? "border-primary bg-primary/5 ring-1 ring-primary"
-                  : "border-border/60 hover:border-border hover:bg-muted/40"
+                  ? "border-foreground/30 bg-accent shadow-sm"
+                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
               }`}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-500">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400">
                 <CreditCard className="h-5 w-5" />
               </div>
               <div className="min-w-0">
@@ -380,13 +690,13 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setPayMethod("crypto")}
-              className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
                 payMethod === "crypto"
-                  ? "border-primary bg-primary/5 ring-1 ring-primary"
-                  : "border-border/60 hover:border-border hover:bg-muted/40"
+                  ? "border-foreground/30 bg-accent shadow-sm"
+                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
               }`}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-500 font-bold">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold">
                 ₿
               </div>
               <div className="min-w-0">
@@ -435,7 +745,7 @@ export default function BillingPage() {
                     {plan.id === "team" && <Crown className="h-4 w-4 text-emerald-500" />}
                     {plan.name}
                   </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
+                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
                 </CardTitle>
                 <p className="text-3xl font-bold tracking-tight">
                   {plan.price}
@@ -484,7 +794,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="space-y-2">
               {status.history.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-lg border border-border/50 p-3 text-sm">
+                <div key={s.id} className="flex items-center justify-between rounded-xl border border-border/60 p-3 text-sm transition-colors hover:border-foreground/20">
                   <div>
                     <span className="font-medium capitalize">{s.plan}</span>
                     <span className="ml-2 text-muted-foreground">
@@ -495,8 +805,8 @@ export default function BillingPage() {
                     <Badge
                       variant="outline"
                       className={`text-[10px] ${
-                        s.status === "active" ? "text-green-500 border-green-500/20" :
-                        s.status === "pending" ? "text-yellow-500 border-yellow-500/50" :
+                        s.status === "active" ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" :
+                        s.status === "pending" ? "text-amber-600 dark:text-amber-400 border-amber-500/40" :
                         "text-muted-foreground"
                       }`}
                     >

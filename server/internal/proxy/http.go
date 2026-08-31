@@ -66,6 +66,21 @@ type DomainResolver interface {
 	ResolveDomain(hostname string) (targetType, targetSubdomain string, ok bool)
 }
 
+// IPBanChecker is optionally implemented by the project provider to reject
+// traffic from banned IPs at the proxy edge.
+type IPBanChecker interface {
+	IsIPBanned(ip string) bool
+}
+
+// SleepAware is optionally implemented by the project provider to support idle
+// sleep/wake. The proxy wakes a slept container before forwarding, and records
+// activity so the sweeper knows the app is in use. Only exercised for local
+// platform projects.
+type SleepAware interface {
+	WakeIfSleeping(projectID string, port int) error
+	NoteRequest(projectID string)
+}
+
 // HTTPProxy handles incoming HTTP requests and forwards them through tunnels.
 type HTTPProxy struct {
 	registry   *tunnel.Registry
@@ -110,6 +125,16 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	hostname := extractHostname(r.Host)
 
+	// Banned-IP gate: reject at the edge before any routing/forwarding. Applies
+	// to all proxied traffic (projects, tunnels, custom domains). Skips the TLS
+	// gate path below so Caddy cert issuance isn't affected.
+	if p.projects != nil && r.URL.Path != "/tls/ask" {
+		if ban, ok := p.projects.(IPBanChecker); ok && ban.IsIPBanned(clientIP(r)) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
 	// /tls/ask — Caddy on-demand TLS gate. Called by Caddy before issuing a
 	// new certificate. We approve only:
 	//   • deployzy.com itself and known static subdomains (api, www)
@@ -151,18 +176,10 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	tun := p.registry.LookupByHost(hostname)
 	if tun == nil {
-		// Check if this is a deployed project (subdomain path: myapp.deployzy.com)
-		if p.projects != nil {
-			parts := strings.SplitN(hostname, ".", 2)
-			if len(parts) >= 1 {
-				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
-					p.proxyToProject(w, r, svrHost, port, projID)
-					return
-				}
-			}
-		}
-
-		// Check if this is a verified custom domain
+		// Verified custom domains FIRST: an exact domains-table match always
+		// wins over the bare-label project lookup. Otherwise an apex custom
+		// domain like foo.com whose first label matches a platform project
+		// subdomain (e.g. a project named "foo") gets hijacked by that project.
 		if p.domains != nil {
 			targetType, targetSub, ok := p.domains.ResolveDomain(hostname)
 			if ok {
@@ -198,6 +215,17 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Platform project subdomains (myapp.deployzy.com / myapp.deployzy.app).
+		if tun == nil && p.projects != nil {
+			parts := strings.SplitN(hostname, ".", 2)
+			if len(parts) >= 1 {
+				if svrHost, port, projID, ok := p.projects.GetProjectRouting(parts[0]); ok {
+					p.proxyToProject(w, r, svrHost, port, projID)
+					return
+				}
+			}
+		}
+
 		if tun == nil {
 			p.log.Debug().Str("host", hostname).Msg("no tunnel found")
 			writeErrorPage(w, http.StatusNotFound, errorPageData{
@@ -222,6 +250,15 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+	}
+
+	// Anti-abuse interstitial: on the first HTML navigation to a tunnel host,
+	// show a "this is a user-run tunnel, not Deployzy" warning to deter
+	// phishing/scam use. Applies to all tunnels; skips assets, XHR/fetch,
+	// WebSocket upgrades, and clients that have already acknowledged. Deployed
+	// projects never reach here (they return early via proxyToProject above).
+	if p.maybeServeInterstitial(w, r, hostname) {
+		return
 	}
 
 	// Buffer the full request body before touching the stream. This must happen
@@ -432,17 +469,21 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Resolve host → projectID.
+	// Resolve host → projectID. Custom domains first so apex domains whose
+	// first label matches a platform project subdomain attribute analytics
+	// to the bound project, not the colliding one.
 	var projectID string
-	parts := strings.SplitN(hostname, ".", 2)
-	if len(parts) >= 1 {
-		if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
-			projectID = pid
-		}
-	}
-	if projectID == "" && p.domains != nil {
+	if p.domains != nil {
 		if targetType, targetSub, ok := p.domains.ResolveDomain(hostname); ok && targetType == "project" {
 			if _, _, pid, ok := p.projects.GetProjectRouting(targetSub); ok {
+				projectID = pid
+			}
+		}
+	}
+	if projectID == "" && p.projects != nil {
+		parts := strings.SplitN(hostname, ".", 2)
+		if len(parts) >= 1 {
+			if _, _, pid, ok := p.projects.GetProjectRouting(parts[0]); ok {
 				projectID = pid
 			}
 		}
@@ -469,6 +510,14 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 	ip := clientIP(r)
 	ua := r.UserAgent()
 	device, browser, os, isBot := analytics.ParseUA(ua)
+	// Identify WHICH crawler; unrecognised bots are grouped so the
+	// breakdown always sums to the bot total.
+	botName := ""
+	if isBot {
+		if botName = analytics.ClassifyBot(ua); botName == "" {
+			botName = "Other bot"
+		}
+	}
 	country := r.Header.Get("CF-IPCountry")
 	if country == "" {
 		country = r.Header.Get("X-Country")
@@ -498,6 +547,7 @@ func (p *HTTPProxy) handleAnalyticsIngest(w http.ResponseWriter, r *http.Request
 		OS:          os,
 		VisitorHash: p.analytics.HashVisitor(ip, ua),
 		IsBot:       isBot,
+		BotName:     botName,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -597,6 +647,31 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 	if serverHost != "" {
 		targetHost = serverHost
 	}
+
+	// Idle sleep/wake (local platform projects only). Wake a slept container
+	// before forwarding; record activity so the sweeper keeps it awake while in
+	// use. If the wake can't complete in time, serve a friendly "starting" page
+	// rather than a raw connection-refused 502.
+	if serverHost == "" && projectID != "" {
+		if sa, ok := p.projects.(SleepAware); ok {
+			if err := sa.WakeIfSleeping(projectID, port); err != nil {
+				writeErrorPage(w, http.StatusServiceUnavailable, errorPageData{
+					Code:      "503",
+					Title:     "Starting up",
+					BadgeText: "Waking",
+					DotColor:  "#f59e0b",
+					Heading:   "This app is waking up",
+					Body:      "It was idle and is starting back up — this takes a few seconds. Refresh in a moment.",
+					Host:      r.Host,
+					Reason:    "waking",
+					DashURL:   "https://deployzy.com/projects",
+				})
+				return
+			}
+			sa.NoteRequest(projectID)
+		}
+	}
+
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
@@ -617,6 +692,12 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 		ip := clientIP(r)
 		ua := r.UserAgent()
 		device, browser, os, isBot := analytics.ParseUA(ua)
+		botName := ""
+		if isBot {
+			if botName = analytics.ClassifyBot(ua); botName == "" {
+				botName = "Other bot"
+			}
+		}
 		country := r.Header.Get("CF-IPCountry")
 		if country == "" {
 			country = r.Header.Get("X-Country")
@@ -636,6 +717,7 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 			OS:          os,
 			VisitorHash: p.analytics.HashVisitor(ip, ua),
 			IsBot:       isBot,
+			BotName:     botName,
 		})
 	}
 }

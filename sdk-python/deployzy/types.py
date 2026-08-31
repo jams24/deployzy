@@ -120,3 +120,22 @@ class DeployLog:
     message: str
     level: str
     created_at: str
+
+
+@dataclass
+class EmailVerifyResult:
+    """Verdict for a single email verification."""
+
+    email: str
+    normalized: str = ""
+    domain: str = ""
+    score: str = ""  # valid | risky | invalid | unknown
+    reason: str = ""
+    syntax_valid: bool = False
+    has_mx: bool = False
+    disposable: bool = False
+    role_based: bool = False
+    free_provider: bool = False
+    suggestion: str = ""
+    mailbox_checked: bool = False
+    catch_all: bool = False

@@ -28,7 +28,17 @@ function SignUpForm() {
     try {
       const ref = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("ref") || undefined : undefined;
       const data = await api.register(email, name, password, ref);
-      setApiKey(data.api_key);
+      // Password signups must confirm their address first; the API key is
+      // handed over on the verify page once the code checks out.
+      if (data.verification_required) {
+        const redirect = searchParams.get("redirect");
+        router.push(
+          `/verify-email?email=${encodeURIComponent(email)}` +
+            (redirect ? `&redirect=${encodeURIComponent(redirect)}` : "")
+        );
+        return;
+      }
+      setApiKey(data.api_key || "");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

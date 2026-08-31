@@ -108,6 +108,54 @@ func (p *Polar) CreateCheckout(plan, userID, email, successURL string) (*PolarCh
 	return &out, nil
 }
 
+// CreateProductCheckout creates a hosted checkout for an explicit Polar product
+// ID (used for AI credit packs, which aren't plan subscriptions). metadata rides
+// along so the webhook can attribute the payment.
+func (p *Polar) CreateProductCheckout(productID, userID, email, successURL string, amountCents int, metadata map[string]string) (*PolarCheckout, error) {
+	if productID == "" {
+		return nil, fmt.Errorf("no Polar product configured")
+	}
+	md := map[string]string{"user_id": userID}
+	for k, v := range metadata {
+		md[k] = v
+	}
+	payload := map[string]interface{}{
+		"products":             []string{productID},
+		"external_customer_id": userID,
+		"customer_email":       email,
+		"success_url":          successURL,
+		"metadata":             md,
+	}
+	// For a pay-what-you-want product, set the exact amount (minor units).
+	if amountCents > 0 {
+		payload["amount"] = amountCents
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", p.baseURL+"/v1/checkouts/", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("polar checkout failed: HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 300))
+	}
+	var out PolarCheckout
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		return nil, fmt.Errorf("polar checkout: decode response: %w", err)
+	}
+	if out.URL == "" {
+		return nil, fmt.Errorf("polar checkout: response missing url")
+	}
+	return &out, nil
+}
+
 // PolarWebhookEvent is the envelope of a Polar webhook payload.
 type PolarWebhookEvent struct {
 	Type string          `json:"type"`
