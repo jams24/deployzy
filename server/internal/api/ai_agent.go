@@ -586,9 +586,11 @@ func (s *Server) handleAIAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
-		writeError(w, http.StatusPaymentRequired, err.Error())
-		return
+	if !s.userHasBYOK(r.Context(), u.ID) {
+		if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+			writeError(w, http.StatusPaymentRequired, err.Error())
+			return
+		}
 	}
 	bctx := withAIBill(r.Context(), u, "agent", "")
 
@@ -665,7 +667,7 @@ type agentResp struct {
 }
 
 func (s *Server) deepseekAgentCall(ctx context.Context, msgs []map[string]any) (*agentResp, error) {
-	p := s.llm(ctx)
+	p := s.llmForCtx(ctx)
 	body, _ := json.Marshal(map[string]any{
 		"model":       p.Model,
 		"messages":    msgs,

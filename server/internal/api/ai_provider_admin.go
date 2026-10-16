@@ -31,6 +31,7 @@ var aiPresets = []aiPreset{
 	{ID: "groq", Label: "Groq", BaseURL: "https://api.groq.com/openai/v1", Model: "llama-3.3-70b-versatile", KeyHint: "gsk_…"},
 	{ID: "openrouter", Label: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", Model: "anthropic/claude-3.5-sonnet", KeyHint: "sk-or-…"},
 	{ID: "xai", Label: "xAI (Grok)", BaseURL: "https://api.x.ai/v1", Model: "grok-2-latest", KeyHint: "xai-…"},
+	{ID: "google", Label: "Google (Gemini)", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Model: "gemini-2.0-flash", KeyHint: "AIza…"},
 	{ID: "mistral", Label: "Mistral", BaseURL: "https://api.mistral.ai/v1", Model: "mistral-large-latest", KeyHint: "…"},
 	{ID: "together", Label: "Together AI", BaseURL: "https://api.together.xyz/v1", Model: "deepseek-ai/DeepSeek-V3", KeyHint: "…"},
 	{ID: "custom", Label: "Custom (OpenAI-compatible)", BaseURL: "", Model: "", KeyHint: "any bearer token"},

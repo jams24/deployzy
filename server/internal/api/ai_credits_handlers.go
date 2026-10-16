@@ -35,11 +35,20 @@ func (s *Server) handleGetAICredits(w http.ResponseWriter, r *http.Request) {
 	isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID)
 
 	st, _ := s.db.GetAICreditStatus(r.Context(), u.ID, allotment)
-	le, _ := s.db.GetAILedger(r.Context(), u.ID, 30)
+	le, _ := s.db.GetAILedger(r.Context(), u.ID, 100)
 	var ledger any = le
 	if le == nil {
 		ledger = []any{} // keep JSON as [] not null
 	}
+
+	// Usage analytics window (product breakdown + daily trend + rolling totals).
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+	usage, _ := s.db.GetAICreditUsage(r.Context(), u.ID, days)
 
 	// Which payment methods can actually complete a top-up right now.
 	cryptoOK := s.billing != nil
@@ -60,6 +69,8 @@ func (s *Server) handleGetAICredits(w http.ResponseWriter, r *http.Request) {
 		"presets":           topupPresets,
 		"min_usd":           minTopupUSD,
 		"max_usd":           maxTopupUSD,
+		"usage":             usage,
+		"free_allotment":    allotment,
 	})
 }
 
@@ -177,6 +188,7 @@ func (s *Server) handleAdminGetUserCredits(w http.ResponseWriter, r *http.Reques
 	if le == nil {
 		ledger = []any{}
 	}
+	usage, _ := s.db.GetAICreditUsage(r.Context(), uid, 30)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id":         uid,
 		"plan":            user.Plan,
@@ -184,6 +196,7 @@ func (s *Server) handleAdminGetUserCredits(w http.ResponseWriter, r *http.Reques
 		"credits_enabled": billing.AICreditsEnabled(r.Context(), s.db),
 		"status":          st,
 		"ledger":          ledger,
+		"usage":           usage,
 	})
 }
 

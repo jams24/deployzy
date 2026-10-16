@@ -116,9 +116,11 @@ func (s *Server) handleAIBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
-	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
-		writeError(w, http.StatusPaymentRequired, err.Error())
-		return
+	if !s.userHasBYOK(r.Context(), u.ID) {
+		if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+			writeError(w, http.StatusPaymentRequired, err.Error())
+			return
+		}
 	}
 
 	// 1) Generate content.json (the ONLY thing the model produces).
@@ -180,7 +182,7 @@ func (s *Server) deepseekGenerate(ctx context.Context, key, hint, schema, prompt
 JSON Schema:
 ` + schema
 
-	p := s.llm(ctx)
+	p := s.llmForCtx(ctx)
 	body, _ := json.Marshal(map[string]any{
 		"model": p.Model,
 		"messages": []map[string]string{

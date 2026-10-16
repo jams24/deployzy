@@ -11,8 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Copy, Check, Plus, Trash2, Key } from "lucide-react";
+import { Copy, Check, Plus, Trash2, Key, Sparkles, Eye, EyeOff, Loader2 } from "lucide-react";
 import { api, type ApiKey } from "@/lib/api";
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+const authHeaders = () => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("sm_token") : "";
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API Keys — create/revoke keys for the CLI and SDKs. Flow unchanged;
@@ -38,6 +44,50 @@ export default function ApiKeysPage() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // ── Bring-your-own AI key (BYOK) ──
+  interface ByokProvider { id: string; label: string; key_hint: string; }
+  interface ByokKey { provider: string; preview: string; updated_at: string; }
+  const [byokProviders, setByokProviders] = useState<ByokProvider[]>([]);
+  const [byokKeys, setByokKeys] = useState<ByokKey[]>([]);
+  const [byokMetering, setByokMetering] = useState(false);
+  const [byokProvider, setByokProvider] = useState("anthropic");
+  const [byokInput, setByokInput] = useState("");
+  const [byokShow, setByokShow] = useState(false);
+  const [byokSaving, setByokSaving] = useState(false);
+  const [byokErr, setByokErr] = useState("");
+
+  const loadByok = async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/ai/keys`, { headers: authHeaders() });
+      if (res.ok) {
+        const d = await res.json();
+        setByokProviders(d.providers || []);
+        setByokKeys(d.keys || []);
+        setByokMetering(!!d.metering_on);
+        if (d.providers?.[0]) setByokProvider(p => p || d.providers[0].id);
+      }
+    } catch {}
+  };
+  const saveByok = async () => {
+    if (!byokInput.trim()) return;
+    setByokSaving(true); setByokErr("");
+    try {
+      const res = await fetch(`${API}/api/v1/ai/keys`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ provider: byokProvider, api_key: byokInput.trim() }) });
+      const d = await res.json();
+      if (res.ok) { setByokInput(""); await loadByok(); }
+      else setByokErr(d.error || "Could not save key");
+    } catch { setByokErr("Network error"); }
+    setByokSaving(false);
+  };
+  const removeByok = async (provider: string) => {
+    try {
+      await fetch(`${API}/api/v1/ai/keys/${provider}`, { method: "DELETE", headers: authHeaders() });
+      await loadByok();
+    } catch {}
+  };
+  const providerLabel = (id: string) => byokProviders.find(p => p.id === id)?.label || id;
+  const currentHint = byokProviders.find(p => p.id === byokProvider)?.key_hint || "sk-…";
+
   async function load() {
     try {
       setKeys(await api.listApiKeys());
@@ -50,6 +100,7 @@ export default function ApiKeysPage() {
 
   useEffect(() => {
     load();
+    loadByok();
   }, []);
 
   async function createKey() {
@@ -82,6 +133,61 @@ export default function ApiKeysPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Manage authentication keys for the CLI and SDKs.
       </p>
+
+      {/* Bring your own AI key (BYOK) */}
+      <Panel title="Bring your own AI key" className="mt-6">
+        <p className="text-xs text-muted-foreground mb-3">
+          Save your own AI provider key and the <span className="font-medium text-foreground">Agent &amp; AI builder</span> will use it —
+          those calls run on your account and <span className="font-medium text-foreground">don&apos;t count toward your plan</span>.
+          {byokMetering ? " Without a key, Deployzy's key applies and usage is billed to your balance." : " (AI usage is currently free on this platform.)"}
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+          <div className="sm:w-52">
+            <label className="block text-[11px] text-muted-foreground mb-1">Provider</label>
+            <select value={byokProvider} onChange={(e) => setByokProvider(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+              {byokProviders.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-[11px] text-muted-foreground mb-1">API key</label>
+            <div className="flex items-center h-9 rounded-md border border-input bg-background px-2 focus-within:border-foreground/40">
+              <input type={byokShow ? "text" : "password"} value={byokInput}
+                onChange={(e) => setByokInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveByok()}
+                placeholder={currentHint}
+                className="w-full bg-transparent text-sm outline-none font-mono" />
+              <button type="button" onClick={() => setByokShow(v => !v)} className="text-muted-foreground hover:text-foreground ml-1">
+                {byokShow ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <Button onClick={saveByok} disabled={byokSaving || !byokInput.trim()} className="gap-1.5 shrink-0">
+            {byokSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Save key
+          </Button>
+        </div>
+        {byokErr && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{byokErr}</p>}
+
+        {byokKeys.length > 0 && (
+          <div className="mt-4 rounded-lg border border-border/60 divide-y divide-border/40">
+            {byokKeys.map(k => (
+              <div key={k.provider} className="flex items-center justify-between px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium">{providerLabel(k.provider)}</span>
+                  <span className="text-muted-foreground font-mono text-xs">{k.preview}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-medium">active · your key</span>
+                  <button onClick={() => removeByok(k.provider)} className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400" title="Remove">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       {/* Create Key */}
       <Panel title="Create New Key" className="mt-6">

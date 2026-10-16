@@ -18,8 +18,9 @@ var migrations embed.FS
 
 // DB wraps the pgx connection pool.
 type DB struct {
-	Pool *pgxpool.Pool
-	log  zerolog.Logger
+	Pool      *pgxpool.Pool
+	log       zerolog.Logger
+	secretKey []byte // AES key for encrypting user secrets at rest (set via SetSecretKey)
 }
 
 // New creates a new database connection pool and runs migrations.

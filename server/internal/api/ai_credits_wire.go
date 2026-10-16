@@ -23,6 +23,7 @@ type aiBill struct {
 	user      *auth.AuthenticatedUser
 	reason    string // build|edit|agent
 	projectID string
+	engine    string // "" = platform default; else a provider id the user picked (BYOK)
 }
 
 // withAIBill returns a context carrying billing info for downstream LLM calls.
@@ -33,12 +34,25 @@ func withAIBill(ctx context.Context, user *auth.AuthenticatedUser, reason, proje
 	return context.WithValue(ctx, aiBillKey{}, &aiBill{user: user, reason: reason, projectID: projectID})
 }
 
+// withAIBillEngine is like withAIBill but pins a chosen engine (BYOK provider).
+func withAIBillEngine(ctx context.Context, user *auth.AuthenticatedUser, reason, projectID, engine string) context.Context {
+	if user == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, aiBillKey{}, &aiBill{user: user, reason: reason, projectID: projectID, engine: engine})
+}
+
 // chargeUsage settles a completed provider call's token usage against the billing
 // context (if any). Safe to call unconditionally — no bill on the context, empty
 // usage, or the feature being dark all make it a no-op.
 func (s *Server) chargeUsage(ctx context.Context, model string, tokensIn, tokensOut int) {
 	b, _ := ctx.Value(aiBillKey{}).(*aiBill)
 	if b == nil || b.user == nil {
+		return
+	}
+	// BYOK: the call ran on the user's own key (auto or explicitly chosen) — don't
+	// meter it against our credits.
+	if s.billIsBYOK(ctx) {
 		return
 	}
 	billing.SettleAICredits(ctx, s.db, b.user, b.reason, b.projectID, model, tokensIn, tokensOut)

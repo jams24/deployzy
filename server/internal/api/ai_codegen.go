@@ -38,14 +38,14 @@ type codegenEnv struct {
 	Required    bool   `json:"required"`
 }
 type codegenResult struct {
-	Language     string        `json:"language"`
-	Name         string        `json:"name"`
-	Summary      string        `json:"summary"`
-	Port         int           `json:"port"`
-	EnvVars      []codegenEnv  `json:"env_vars"`
-	Files        []codegenFile `json:"files"`
-	NeedsDatabase bool         `json:"needs_database"`
-	DatabaseType  string       `json:"database_type"` // postgres|redis|mongodb|mysql
+	Language      string        `json:"language"`
+	Name          string        `json:"name"`
+	Summary       string        `json:"summary"`
+	Port          int           `json:"port"`
+	EnvVars       []codegenEnv  `json:"env_vars"`
+	Files         []codegenFile `json:"files"`
+	NeedsDatabase bool          `json:"needs_database"`
+	DatabaseType  string        `json:"database_type"` // postgres|redis|mongodb|mysql
 }
 
 // The contract DeepSeek MUST follow. Grounds it in how Deployzy builds and runs
@@ -183,7 +183,7 @@ func (s *Server) deepseekEdit(ctx context.Context, key, origPrompt string, files
 }
 
 func (s *Server) deepseekCodeCall(ctx context.Context, key string, messages []map[string]string) (*codegenResult, error) {
-	p := s.llm(ctx)
+	p := s.llmForCtx(ctx)
 	body, _ := json.Marshal(map[string]any{
 		"model":           p.Model,
 		"messages":        messages,
@@ -208,7 +208,9 @@ func (s *Server) deepseekCodeCall(ctx context.Context, key string, messages []ma
 	}
 	var out struct {
 		Choices []struct {
-			Message      struct{ Content string `json:"content"` } `json:"message"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
@@ -333,9 +335,11 @@ func (s *Server) buildCodegen(w http.ResponseWriter, r *http.Request, u *auth.Au
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
-	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
-		writeError(w, http.StatusPaymentRequired, err.Error())
-		return
+	if !s.userHasBYOK(r.Context(), u.ID) {
+		if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+			writeError(w, http.StatusPaymentRequired, err.Error())
+			return
+		}
 	}
 
 	// 1) generate code (billed: token usage settles against the user's credits)
@@ -407,14 +411,14 @@ func (s *Server) buildCodegen(w http.ResponseWriter, r *http.Request, u *auth.Au
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":        "needs_setup",
-			"project":       project,
-			"url":           url,
-			"language":      res.Language,
-			"summary":       res.Summary,
-			"env_vars":      missing,
+			"status":         "needs_setup",
+			"project":        project,
+			"url":            url,
+			"language":       res.Language,
+			"summary":        res.Summary,
+			"env_vars":       missing,
 			"needs_database": res.NeedsDatabase,
-			"database_type": dbType,
+			"database_type":  dbType,
 		})
 		return
 	}
@@ -565,9 +569,11 @@ func (s *Server) handleAIEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "AI builder isn't available")
 		return
 	}
-	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
-		writeError(w, http.StatusPaymentRequired, err.Error())
-		return
+	if !s.userHasBYOK(r.Context(), u.ID) {
+		if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+			writeError(w, http.StatusPaymentRequired, err.Error())
+			return
+		}
 	}
 	files, err := readStagedFiles(project.ID)
 	if err != nil || len(files) == 0 {

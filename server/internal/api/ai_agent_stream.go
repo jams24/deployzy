@@ -15,12 +15,14 @@ import (
 )
 
 // handleAIAgentStream is the streaming (SSE) version of the agent. It emits:
-//   event: step        {tool, args}            — a tool is about to run (live)
-//   event: step_done   {tool, result_summary}  — tool finished
-//   event: token       {text}                  — a chunk of the final answer
-//   event: build_log   {line, level}           — a live deploy/build/fix log line
-//   event: build_status{ok, url, error}        — terminal build result
-//   event: done        {}
+//
+//	event: step        {tool, args}            — a tool is about to run (live)
+//	event: step_done   {tool, result_summary}  — tool finished
+//	event: token       {text}                  — a chunk of the final answer
+//	event: build_log   {line, level}           — a live deploy/build/fix log line
+//	event: build_status{ok, url, error}        — terminal build result
+//	event: done        {}
+//
 // so the chat can show tool activity + the agent's build/self-repair progress
 // in-line, instead of the user having to open the project logs page.
 func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
@@ -29,9 +31,11 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
-		writeError(w, http.StatusPaymentRequired, err.Error())
-		return
+	if !s.userHasBYOK(r.Context(), u.ID) {
+		if err := billing.EnsureAICredits(r.Context(), s.db, u); err != nil {
+			writeError(w, http.StatusPaymentRequired, err.Error())
+			return
+		}
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -80,6 +84,7 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"messages"`
+		Engine string `json:"engine"` // "" / "deployzy" = platform; else a BYOK provider id
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Messages) == 0 {
 		emit("token", map[string]string{"text": "⚠️ bad request"})
@@ -110,7 +115,7 @@ func (s *Server) handleAIAgentStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx := withAIBill(r.Context(), u, "agent", "")
+	ctx := withAIBillEngine(r.Context(), u, "agent", "", req.Engine)
 	var activeSub string // a project a build/edit/redeploy tool touched
 	builtOnce := false   // one new project per turn — never spawn duplicates
 
@@ -266,4 +271,3 @@ func (s *Server) streamBuildToChat(ctx context.Context, projectID string, emit f
 	}
 	emit("build_status", map[string]any{"ok": false, "error": "timed out waiting for the build"})
 }
-

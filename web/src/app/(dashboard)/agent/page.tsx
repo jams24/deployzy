@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Sparkles, ArrowUp, Loader2, Check, Wrench, Rocket, Bug, Database, BookOpen } from "lucide-react";
+import { Sparkles, ArrowUp, Loader2, Check, Wrench, Rocket, Bug, Database, BookOpen, Key, ChevronDown, Plus } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -61,6 +61,11 @@ export default function AgentPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  const [byok, setByok] = useState<{ provider: string; label: string } | null>(null);
+  // Engine picker: platform default + any saved BYOK keys.
+  const [engines, setEngines] = useState<{ id: string; label: string; byok: boolean }[]>([{ id: "deployzy", label: "Deployzy (included)", byok: false }]);
+  const [engine, setEngine] = useState("deployzy");
+  const [engineOpen, setEngineOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const headers = () => ({
@@ -72,6 +77,22 @@ export default function AgentPage() {
     fetch(`${API}/api/v1/users/me`, { headers: headers() })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.email) setName((d.name || d.email.split("@")[0])); })
+      .catch(() => {});
+    // BYOK: load saved keys → build the engine picker (Deployzy + each key).
+    fetch(`${API}/api/v1/ai/keys`, { headers: headers() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const provs: { id: string; label: string }[] = d?.providers || [];
+        const keys: { provider: string }[] = d?.keys || [];
+        const labelOf = (id: string) => provs.find((p) => p.id === id)?.label || id;
+        const list = [{ id: "deployzy", label: "Deployzy (included)", byok: false }];
+        for (const k of keys) list.push({ id: k.provider, label: labelOf(k.provider), byok: true });
+        setEngines(list);
+        if (keys.length) {
+          setByok({ provider: keys[0].provider, label: labelOf(keys[0].provider) });
+          setEngine(keys[0].provider); // default to their key when they have one
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -99,7 +120,7 @@ export default function AgentPage() {
     try {
       const res = await fetch(`${API}/api/v1/ai/agent/stream`, {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ messages: history.map((m) => ({ role: m.role, content: m.text })) }),
+        body: JSON.stringify({ messages: history.map((m) => ({ role: m.role, content: m.text })), engine }),
       });
       if (!res.ok || !res.body) {
         patchLast((m) => ({ ...m, text: "⚠️ The agent is unavailable right now. Please try again.", streaming: false }));
@@ -161,9 +182,44 @@ export default function AgentPage() {
           className="w-full bg-transparent px-2.5 pt-1 pb-2 text-[15px] leading-relaxed resize-none focus:outline-none max-h-56 min-h-[2.5rem] placeholder:text-muted-foreground/50"
         />
         <div className="flex items-center justify-between px-1">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 pl-1.5 pr-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-            <Image src="/logo-mark.png" alt="" width={15} height={15} className="rounded-sm" /> Deployzy Agent
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 pl-1.5 pr-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+              <Image src="/logo-mark.png" alt="" width={15} height={15} className="rounded-sm" /> Deployzy Agent
+            </span>
+
+            {/* Engine picker: Deployzy default + any saved BYOK keys, and a link to add one */}
+            <div className="relative">
+              <button type="button" onClick={() => setEngineOpen((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full border border-border/60 pl-2 pr-1.5 py-1 text-[11px] font-medium hover:border-foreground/40 transition-colors">
+                {engine === "deployzy"
+                  ? <span className="text-muted-foreground">Engine: Deployzy</span>
+                  : <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><Key className="h-3 w-3" /> Your {engines.find(e => e.id === engine)?.label || "key"}</span>}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+              {engineOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setEngineOpen(false)} />
+                  <div className="absolute bottom-full mb-1.5 left-0 z-20 w-56 rounded-xl border border-border/70 bg-background shadow-lg p-1">
+                    {engines.map((e) => (
+                      <button key={e.id} onClick={() => { setEngine(e.id); setEngineOpen(false); }}
+                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[12px] hover:bg-muted/60 ${engine === e.id ? "font-medium" : ""}`}>
+                        <span className="flex items-center gap-1.5">
+                          {e.byok ? <Key className="h-3 w-3 text-emerald-500" /> : <Image src="/logo-mark.png" alt="" width={13} height={13} className="rounded-sm" />}
+                          {e.label}
+                        </span>
+                        {engine === e.id && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    ))}
+                    <div className="my-1 border-t border-border/50" />
+                    <a href="/api-keys"
+                      className="w-full flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] text-emerald-600 dark:text-emerald-400 hover:bg-muted/60">
+                      <Plus className="h-3.5 w-3.5" /> Add your own API key
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
           <button onClick={() => send(input)} disabled={!input.trim() || busy}
             aria-label="Send"
             className="h-9 w-9 rounded-full bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">

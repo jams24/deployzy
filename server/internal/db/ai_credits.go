@@ -219,3 +219,126 @@ func (d *DB) GetAILedger(ctx context.Context, userID string, limit int) ([]AILed
 	}
 	return out, rows.Err()
 }
+
+// ── Usage analytics (for the unified billing dashboard) ──────────────────────
+
+// AIUsageProduct is spend + count for one product category over a window.
+type AIUsageProduct struct {
+	Product string  `json:"product"` // ai_builder | email_verify | other
+	Label   string  `json:"label"`
+	Credits float64 `json:"credits"`
+	Count   int     `json:"count"`
+	Tokens  int64   `json:"tokens"`
+}
+
+// AIUsageDay is total spend for one day (for the trend chart).
+type AIUsageDay struct {
+	Day     string  `json:"day"` // YYYY-MM-DD (UTC)
+	Credits float64 `json:"credits"`
+}
+
+// AIUsageSummary powers the billing dashboard: product breakdown, daily trend,
+// and rolling totals — all derived from the append-only ledger (debits only).
+type AIUsageSummary struct {
+	Products    []AIUsageProduct `json:"products"`
+	Daily       []AIUsageDay     `json:"daily"`
+	SpentToday  float64          `json:"spent_today"`
+	SpentMonth  float64          `json:"spent_month"`
+	SpentWindow float64          `json:"spent_window"`
+	Days        int              `json:"days"`
+}
+
+// reasonProduct maps a ledger reason to a product bucket. Grants (topup, refund,
+// monthly_free, admin — all delta>0) are excluded from usage.
+func reasonProduct(reason string) (key, label string, ok bool) {
+	switch reason {
+	case "build", "edit", "agent":
+		return "ai_builder", "AI Builder & Agent", true
+	case "email_verify", "email_verify_batch":
+		return "email_verify", "Email Verify", true
+	}
+	return "other", "Other", false
+}
+
+// GetAICreditUsage aggregates the last `days` of debits into a product breakdown,
+// a daily trend, and rolling totals.
+func (d *DB) GetAICreditUsage(ctx context.Context, userID string, days int) (AIUsageSummary, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	sum := AIUsageSummary{Days: days, Products: []AIUsageProduct{}, Daily: []AIUsageDay{}}
+
+	// Per-reason totals over the window (debits only: delta < 0).
+	rows, err := d.Pool.Query(ctx, `
+		SELECT reason, COALESCE(SUM(-delta),0), COUNT(*), COALESCE(SUM(tokens_in+tokens_out),0)
+		FROM ai_credit_ledger
+		WHERE user_id = $1 AND delta < 0 AND created_at >= now() - ($2 || ' days')::interval
+		GROUP BY reason`, userID, days)
+	if err != nil {
+		return sum, err
+	}
+	agg := map[string]*AIUsageProduct{}
+	for rows.Next() {
+		var reason string
+		var credits float64
+		var count int
+		var tokens int64
+		if err := rows.Scan(&reason, &credits, &count, &tokens); err != nil {
+			rows.Close()
+			return sum, err
+		}
+		key, label, isUsage := reasonProduct(reason)
+		if !isUsage {
+			continue
+		}
+		p := agg[key]
+		if p == nil {
+			p = &AIUsageProduct{Product: key, Label: label}
+			agg[key] = p
+		}
+		p.Credits += credits
+		p.Count += count
+		p.Tokens += tokens
+	}
+	rows.Close()
+	for _, p := range agg {
+		sum.Products = append(sum.Products, *p)
+		sum.SpentWindow += p.Credits
+	}
+
+	// Daily trend (all usage debits per day).
+	drows, err := d.Pool.Query(ctx, `
+		SELECT to_char(date_trunc('day', created_at),'YYYY-MM-DD'), COALESCE(SUM(-delta),0)
+		FROM ai_credit_ledger
+		WHERE user_id = $1 AND delta < 0
+		  AND reason IN ('build','edit','agent','email_verify','email_verify_batch')
+		  AND created_at >= now() - ($2 || ' days')::interval
+		GROUP BY 1 ORDER BY 1`, userID, days)
+	if err != nil {
+		return sum, err
+	}
+	for drows.Next() {
+		var day string
+		var credits float64
+		if err := drows.Scan(&day, &credits); err != nil {
+			drows.Close()
+			return sum, err
+		}
+		sum.Daily = append(sum.Daily, AIUsageDay{Day: day, Credits: credits})
+	}
+	drows.Close()
+
+	// Rolling totals (today, this calendar month).
+	d.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(-delta),0) FROM ai_credit_ledger
+		WHERE user_id=$1 AND delta<0
+		  AND reason IN ('build','edit','agent','email_verify','email_verify_batch')
+		  AND created_at >= date_trunc('day', now())`, userID).Scan(&sum.SpentToday)
+	d.Pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(-delta),0) FROM ai_credit_ledger
+		WHERE user_id=$1 AND delta<0
+		  AND reason IN ('build','edit','agent','email_verify','email_verify_batch')
+		  AND created_at >= date_trunc('month', now())`, userID).Scan(&sum.SpentMonth)
+
+	return sum, nil
+}
