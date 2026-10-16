@@ -1097,7 +1097,25 @@ Same body as \`/ai/agent\`. Returns a \`text/event-stream\` with events:
 (live build & self-repair output), and \`done\`.
 
 > Rate-limited per account. A single request builds exactly one project — the
-> agent won't spawn duplicates.`,
+> agent won't spawn duplicates.
+
+## Usage &amp; billing
+
+AI builder, agent, and email verification all draw from **one prepaid balance**,
+priced in dollars (pay-as-you-go). Each plan includes a monthly usage allowance
+that resets each month; beyond it you spend from your top-up balance, which
+carries over. See your balance, per-product breakdown, and history on the
+**Billing** page, and add funds there (card or crypto).
+
+## Bring your own AI key (BYOK)
+
+Save your own AI provider key on the **API Keys** page → "Bring your own AI key".
+When set, the agent and AI builder run on **your** key and those calls are
+**not billed** to your Deployzy balance. Supported providers: Anthropic, OpenAI,
+Google (Gemini), xAI, DeepSeek, Moonshot (Kimi), Groq, Mistral. Pick which engine
+to use (Deployzy's included one, or your key) right in the agent composer. Without
+a key, Deployzy's key is used and usage is metered normally. Keys are stored
+encrypted and never shown in full.`,
   },
 
   "api/templates": {
