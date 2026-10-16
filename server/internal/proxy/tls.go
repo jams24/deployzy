@@ -84,18 +84,20 @@ func (p *TLSProxy) HandleConn(conn net.Conn) {
 	// Bidirectional copy for the rest
 	var wg sync.WaitGroup
 	wg.Add(2)
+	var bytesIn, bytesOut int64
 
 	go func() {
 		defer wg.Done()
-		io.Copy(stream, conn)
+		bytesIn, _ = io.Copy(stream, conn)
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(conn, stream)
+		bytesOut, _ = io.Copy(conn, stream)
 	}()
 
 	wg.Wait()
+	tun.RecordHit(bytesIn, bytesOut) // one hit per proxied connection
 
 	p.log.Debug().Str("sni", hostname).Msg("TLS connection proxied")
 }

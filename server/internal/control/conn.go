@@ -48,22 +48,25 @@ type Conn struct {
 	id               string
 	userID           string // authenticated user ID (empty for dev-token)
 	subdomainChecker SubdomainChecker
-	session      *smux.Session
-	ctrlStr      *smux.Stream // stream 0: control messages
-	registry     *tunnel.Registry
-	tcpAllocator TCPAllocator
-	domain       string
-	scheme       string
-	serverHost   string // server's public host for TCP URLs
-	log          zerolog.Logger
-	tunnels      []string // URLs of tunnels owned by this client
-	mu           sync.Mutex
-	proxyCh      chan *smux.Stream // incoming data streams from client
-	closeCh      chan struct{}
-	closeOnce    sync.Once
-	lastPong     time.Time
-	pongMu       sync.Mutex
-	connectedAt  time.Time
+	session          *smux.Session
+	ctrlStr          *smux.Stream // stream 0: control messages
+	registry         *tunnel.Registry
+	tcpAllocator     TCPAllocator
+	domain           string
+	scheme           string
+	serverHost       string // server's public host for TCP URLs
+	log              zerolog.Logger
+	tunnels          []string // URLs of tunnels owned by this client
+	mu               sync.Mutex
+	proxyCh          chan *smux.Stream // incoming data streams from client
+	closeCh          chan struct{}
+	closeOnce        sync.Once
+	lastPong         time.Time
+	pongMu           sync.Mutex
+	connectedAt      time.Time
+	clientVersion    string
+	clientOS         string
+	stats            tunnel.Counters // session-wide traffic across all its tunnels
 }
 
 // UserID returns the authenticated user ID for this connection.
@@ -71,6 +74,13 @@ func (c *Conn) UserID() string { return c.userID }
 
 // ConnectedAt returns when this connection was established.
 func (c *Conn) ConnectedAt() time.Time { return c.connectedAt }
+
+// ClientVersion / ClientOS are reported by the CLI at auth time.
+func (c *Conn) ClientVersion() string { return c.clientVersion }
+func (c *Conn) ClientOS() string      { return c.clientOS }
+
+// Stats returns session-wide traffic totals (all tunnels, including closed ones).
+func (c *Conn) Stats() tunnel.CounterSnapshot { return c.stats.Snapshot() }
 
 // TunnelURLs returns a snapshot of tunnel URLs owned by this connection.
 func (c *Conn) TunnelURLs() []string {
@@ -119,6 +129,7 @@ func (c *Conn) Authenticate(validToken string) error {
 	}
 
 	c.log = c.log.With().Str("client_version", auth.Version).Str("os", auth.OS).Logger()
+	c.clientVersion, c.clientOS = auth.Version, auth.OS
 
 	// Validate token
 	if auth.Token != validToken {
@@ -161,6 +172,7 @@ func (c *Conn) AuthenticateWithDB(staticToken string, database *db.DB, jwtMgr JW
 	}
 
 	c.log = c.log.With().Str("client_version", authMsg.Version).Str("os", authMsg.OS).Logger()
+	c.clientVersion, c.clientOS = authMsg.Version, authMsg.OS
 
 	authenticated := false
 
@@ -329,6 +341,7 @@ func (c *Conn) handleHTTPTunnel(req *proto.ReqTunnel) {
 	url := fmt.Sprintf("%s://%s", c.scheme, hostname)
 
 	t := &tunnel.Tunnel{
+		Session:   &c.stats,
 		URL:       url,
 		Protocol:  proto.ProtoHTTP,
 		Subdomain: hostname,
@@ -366,6 +379,7 @@ func (c *Conn) handleTCPTunnel(req *proto.ReqTunnel) {
 	}
 	_ = req // continue
 	t := &tunnel.Tunnel{
+		Session:   &c.stats,
 		Protocol:  proto.ProtoTCP,
 		LocalAddr: req.LocalAddr,
 		Name:      req.Name,
@@ -428,6 +442,7 @@ func (c *Conn) handleTLSTunnel(req *proto.ReqTunnel) {
 	url := fmt.Sprintf("tls://%s:443", hostname)
 
 	t := &tunnel.Tunnel{
+		Session:   &c.stats,
 		URL:       url,
 		Protocol:  proto.ProtoTLS,
 		Subdomain: hostname,

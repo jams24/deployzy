@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/tunnel"
 )
 
 // adminOnly middleware checks if the user is an admin.
@@ -161,13 +162,14 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if users == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"users": []interface{}{}, "total": total, "limit": limit, "offset": offset}); return
+		writeJSON(w, http.StatusOK, map[string]interface{}{"users": []interface{}{}, "total": total, "limit": limit, "offset": offset})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"users": users,
-		"total": total,
-		"limit": limit,
+		"users":  users,
+		"total":  total,
+		"limit":  limit,
 		"offset": offset,
 	})
 }
@@ -389,15 +391,23 @@ type sessionTunnelInfo struct {
 	LocalAddr string `json:"local_addr"`
 	Name      string `json:"name"`
 	Inspect   bool   `json:"inspect"`
+	// Live traffic for this tunnel. Active=false means the client closed it
+	// earlier in the session (it still counts toward session totals).
+	Active    bool                   `json:"active"`
+	CreatedAt *time.Time             `json:"created_at,omitempty"`
+	Stats     tunnel.CounterSnapshot `json:"stats"`
 }
 
 type sessionInfo struct {
-	ClientID    string              `json:"client_id"`
-	UserID      string              `json:"user_id"`
-	UserEmail   string              `json:"user_email"`
-	RemoteAddr  string              `json:"remote_addr"`
-	ConnectedAt time.Time           `json:"connected_at"`
-	Tunnels     []sessionTunnelInfo `json:"tunnels"`
+	ClientID      string                 `json:"client_id"`
+	UserID        string                 `json:"user_id"`
+	UserEmail     string                 `json:"user_email"`
+	RemoteAddr    string                 `json:"remote_addr"`
+	ConnectedAt   time.Time              `json:"connected_at"`
+	Tunnels       []sessionTunnelInfo    `json:"tunnels"`
+	ClientVersion string                 `json:"client_version"`
+	OS            string                 `json:"os"`
+	Stats         tunnel.CounterSnapshot `json:"stats"` // session-wide totals
 }
 
 func (s *Server) handleAdminListSessions(w http.ResponseWriter, r *http.Request) {
@@ -421,12 +431,16 @@ func (s *Server) handleAdminListSessions(w http.ResponseWriter, r *http.Request)
 		for _, url := range conn.TunnelURLs() {
 			t := s.registry.LookupByURL(url)
 			if t != nil {
+				created := t.CreatedAt
 				tunnels = append(tunnels, sessionTunnelInfo{
 					URL:       t.URL,
 					Protocol:  t.Protocol,
 					LocalAddr: t.LocalAddr,
 					Name:      t.Name,
 					Inspect:   t.Inspect,
+					Active:    true,
+					CreatedAt: &created,
+					Stats:     t.Stats.Snapshot(),
 				})
 			} else {
 				tunnels = append(tunnels, sessionTunnelInfo{URL: url})
@@ -437,16 +451,31 @@ func (s *Server) handleAdminListSessions(w http.ResponseWriter, r *http.Request)
 		}
 
 		sessions = append(sessions, sessionInfo{
-			ClientID:    conn.ID(),
-			UserID:      conn.UserID(),
-			UserEmail:   email,
-			RemoteAddr:  conn.RemoteAddr().String(),
-			ConnectedAt: conn.ConnectedAt(),
-			Tunnels:     tunnels,
+			ClientID:      conn.ID(),
+			UserID:        conn.UserID(),
+			UserEmail:     email,
+			RemoteAddr:    conn.RemoteAddr().String(),
+			ConnectedAt:   conn.ConnectedAt(),
+			Tunnels:       tunnels,
+			ClientVersion: conn.ClientVersion(),
+			OS:            conn.ClientOS(),
+			Stats:         conn.Stats(),
 		})
 	}
 
 	writeJSON(w, http.StatusOK, sessions)
+}
+
+// handleAdminTunnelOverview returns tunnel-session history aggregates: today /
+// 7-day totals, a 14-day series, top users by traffic, and recent sessions.
+func (s *Server) handleAdminTunnelOverview(w http.ResponseWriter, r *http.Request) {
+	o, err := s.db.GetTunnelOverview(r.Context(), 50)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("tunnel overview")
+		writeError(w, http.StatusInternalServerError, "failed to load tunnel overview")
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
 }
 
 func (s *Server) handleAdminKillSession(w http.ResponseWriter, r *http.Request) {

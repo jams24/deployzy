@@ -341,9 +341,14 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Read response body (capture + forward)
+	// Read response body (forward, and capture only when the inspector is on —
+	// teeing every response into memory let a large download through a tunnel
+	// balloon server RAM even when nobody was inspecting it).
 	var respBody bytes.Buffer
-	respReader := io.TeeReader(resp.Body, &respBody)
+	var respReader io.Reader = resp.Body
+	if tun.Inspect {
+		respReader = io.TeeReader(resp.Body, &respBody)
+	}
 
 	// Copy response headers
 	for key, values := range resp.Header {
@@ -374,6 +379,13 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	duration := time.Since(start)
+
+	// Per-tunnel + per-session traffic for the admin monitor.
+	reqBytes := r.ContentLength
+	if reqBytes < 0 {
+		reqBytes = 0
+	}
+	tun.RecordHit(reqBytes, responseSize)
 
 	// Capture for inspection
 	if tun.Inspect && p.store != nil {

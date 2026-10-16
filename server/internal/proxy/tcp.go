@@ -145,18 +145,20 @@ func (p *TCPProxy) handleTCPConn(extConn net.Conn, tun *tunnel.Tunnel) {
 	// Bidirectional copy
 	var wg sync.WaitGroup
 	wg.Add(2)
+	var bytesIn, bytesOut int64
 
 	go func() {
 		defer wg.Done()
-		io.Copy(stream, extConn)
+		bytesIn, _ = io.Copy(stream, extConn)
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(extConn, stream)
+		bytesOut, _ = io.Copy(extConn, stream)
 	}()
 
 	wg.Wait()
+	tun.RecordHit(bytesIn, bytesOut) // one hit per proxied connection
 
 	p.log.Debug().
 		Int("port", tun.RemotePort).

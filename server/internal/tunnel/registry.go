@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Tunnel represents an active tunnel with its metadata.
@@ -13,20 +14,24 @@ type Tunnel struct {
 	Protocol   string
 	Subdomain  string
 	Hostname   string
-	RemotePort int    // assigned TCP port (for TCP tunnels)
+	RemotePort int // assigned TCP port (for TCP tunnels)
 	LocalAddr  string
 	Name       string
 	Inspect    bool
 	Auth       string // basic auth "user:pass"
 	ClientID   string
 	UserID     string // owner user ID (empty for dev-token tunnels)
+
+	CreatedAt time.Time
+	Stats     Counters  // this tunnel's own traffic
+	Session   *Counters // the owning client session's totals (may be nil)
 }
 
 // Registry manages active tunnels and maps hostnames/ports to them.
 type Registry struct {
 	mu       sync.RWMutex
-	byHost   map[string]*Tunnel // hostname -> tunnel (for HTTP/TLS)
-	byPort   map[int]*Tunnel    // port -> tunnel (for TCP)
+	byHost   map[string]*Tunnel   // hostname -> tunnel (for HTTP/TLS)
+	byPort   map[int]*Tunnel      // port -> tunnel (for TCP)
 	byClient map[string][]*Tunnel // clientID -> tunnels
 }
 
@@ -43,6 +48,9 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(t *Tunnel) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = time.Now()
+	}
 
 	host := t.Subdomain
 	if t.Hostname != "" {
@@ -53,7 +61,7 @@ func (r *Registry) Register(t *Tunnel) error {
 		if existing, exists := r.byHost[host]; exists {
 			// Same-user reconnect: evict the old (likely dead) tunnel so the new one wins.
 			// This fixes the case where a client disconnects uncleanly and reconnects with
-				// the same subdomain before the ping-timeout has detected the old as dead.
+			// the same subdomain before the ping-timeout has detected the old as dead.
 			if t.UserID != "" && existing.UserID == t.UserID {
 				r.removeTunnelLocked(existing)
 			} else {

@@ -21,6 +21,41 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse";
 
+// Grouped sidebar navigation — the 17 tabs organised into labelled sections so
+// the console is scannable instead of a single long scroll of pills.
+type NavIcon = React.ComponentType<{ className?: string }>;
+const NAV_GROUPS: { group: string; items: { id: Tab; label: string; icon: NavIcon }[] }[] = [
+  { group: "Monitor", items: [
+    { id: "overview", label: "Overview", icon: Activity },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "sessions", label: "Tunnels", icon: Radio },
+  ] },
+  { group: "Growth", items: [
+    { id: "seo", label: "SEO & LLM", icon: TrendingUp },
+    { id: "density", label: "Density", icon: Layers },
+  ] },
+  { group: "Billing", items: [
+    { id: "plans", label: "Plans", icon: Crown },
+    { id: "ai", label: "AI Model", icon: Sparkles },
+  ] },
+  { group: "People", items: [
+    { id: "users", label: "Users", icon: Users },
+    { id: "bans", label: "IP Bans", icon: Ban },
+    { id: "abuse", label: "Abuse Reports", icon: Flag },
+  ] },
+  { group: "Workloads", items: [
+    { id: "projects", label: "Projects", icon: Rocket },
+    { id: "databases", label: "Databases", icon: Database },
+    { id: "orphans", label: "Orphans", icon: WifiOff },
+  ] },
+  { group: "Platform", items: [
+    { id: "infra", label: "Infrastructure", icon: Server },
+    { id: "backups", label: "Backups", icon: HardDrive },
+    { id: "broadcast", label: "Broadcast", icon: Zap },
+    { id: "vpn", label: "VPN Panel", icon: Globe },
+  ] },
+];
+
 interface DensityServer {
   id: string; label: string; region: string; is_local: boolean; status: string;
   total_memory_mb: number; allocated_memory_mb: number; used_memory_mb: number;
@@ -172,13 +207,54 @@ interface WorkerServer {
   allocated_memory_mb: number; max_projects: number; current_projects: number;
   used_memory_mb: number; load_avg: number;
   user_id: string | null;
+  last_heartbeat?: string | null;
   status: string; docker_installed: boolean; priority?: number; is_local?: boolean; user_selectable?: boolean; backups_enabled?: boolean;
 }
 
-interface SessionTunnel { url: string; protocol: string; local_addr: string; name: string; inspect: boolean; }
+// Compact "measured Xs ago" for live-metric freshness (heartbeat timestamp).
+function agoShort(iso?: string | null): string {
+  if (!iso) return "—";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 0) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+interface TrafficStats { requests: number; bytes_in: number; bytes_out: number; last_hit?: string | null; }
+interface SessionTunnel {
+  url: string; protocol: string; local_addr: string; name: string; inspect: boolean;
+  active?: boolean; created_at?: string; stats?: TrafficStats;
+}
 interface Session {
   client_id: string; user_id: string; user_email: string;
   remote_addr: string; connected_at: string; tunnels: SessionTunnel[];
+  client_version?: string; os?: string; stats?: TrafficStats;
+}
+interface TunnelPeriod { sessions: number; unique_users: number; requests: number; bytes: number; }
+interface TunnelOverview {
+  today: TunnelPeriod; week: TunnelPeriod;
+  daily: { day: string; sessions: number; users: number; bytes: number }[];
+  top_users: { user_id: string; email: string; sessions: number; requests: number; bytes: number; last_seen: string }[];
+  recent: {
+    id: number; user_id: string; email: string; remote_ip: string; client_version: string; os: string;
+    connected_at: string; disconnected_at: string | null; tunnel_urls: string[];
+    requests: number; bytes_in: number; bytes_out: number;
+  }[];
+}
+
+// Human duration between two instants (end defaults to now): "3h 12m", "45s".
+function fmtDuration(fromIso: string, toIso?: string | null): string {
+  const secs = Math.max(0, Math.floor(((toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 interface BackupRun {
@@ -213,6 +289,7 @@ function formatTs(ts: string) {
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [navSearch, setNavSearch] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -281,6 +358,8 @@ export default function AdminPage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSearch, setSessionSearch] = useState("");
   const [sessionsRefresh, setSessionsRefresh] = useState<Date | null>(null);
+  const [tunnelOverview, setTunnelOverview] = useState<TunnelOverview | null>(null);
+  const [historyFilter, setHistoryFilter] = useState("");
 
   // Infrastructure state
   const [servers, setServers] = useState<WorkerServer[]>([]);
@@ -412,6 +491,11 @@ export default function AdminPage() {
     user_id: string; plan: string; free_allotment: number; credits_enabled: boolean;
     status: { free_used: number; free_remaining: number; wallet: number; available: number; unlimited: boolean };
     ledger: { delta: number; reason: string; source: string; model: string; tokens_in: number; tokens_out: number; created_at: string }[];
+    usage?: {
+      products: { product: string; label: string; credits: number; count: number; tokens: number }[];
+      daily: { day: string; credits: number }[];
+      spent_today: number; spent_month: number; spent_window: number; days: number;
+    };
   }
   const [creditUser, setCreditUser] = useState<{ id: string; email: string } | null>(null);
   const [creditData, setCreditData] = useState<UserCreditData | null>(null);
@@ -943,6 +1027,21 @@ export default function AdminPage() {
     setSessionsLoading(false);
   }, [headers]);
 
+  const loadTunnelOverview = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/tunnels/overview`, { headers: headers() });
+      if (res.ok) setTunnelOverview(await res.json());
+    } catch {}
+  }, [headers]);
+  // History aggregates are DB-backed: load when the tab opens, then every 30s
+  // while it stays open (live sessions already refresh on the 15s cycle).
+  useEffect(() => {
+    if (tab !== "sessions") return;
+    loadTunnelOverview();
+    const t = setInterval(loadTunnelOverview, 30000);
+    return () => clearInterval(t);
+  }, [tab, loadTunnelOverview]);
+
   const killSession = async (clientId: string) => {
     if (!confirm("Force-disconnect this client?")) return;
     if (await adminFetch(`${API}/api/v1/admin/sessions/${clientId}`, { method: "DELETE" }, "Disconnect"))
@@ -1139,13 +1238,14 @@ export default function AdminPage() {
     { id: "projects", label: "Projects", badge: projectsTotal },
     { id: "databases", label: "Databases" },
     { id: "orphans", label: "Orphans", badge: orphanScan?.orphans.length || undefined },
-    { id: "sessions", label: "Live Sessions", badge: sessions.length },
+    { id: "sessions", label: "Tunnels", badge: sessions.length },
     { id: "infra", label: "Infrastructure" },
     { id: "backups", label: "Backups" },
     { id: "broadcast", label: "Broadcast" },
     { id: "vpn", label: "VPN Panel" },
     { id: "ai", label: "AI Model" },
   ];
+  const badgeOf = (id: Tab): number | undefined => TABS.find(t => t.id === id)?.badge;
 
   return (
     <div>
@@ -1203,8 +1303,8 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Tab Navigation */}
-      <div className="flex gap-1 mb-6 overflow-x-auto pb-1 border-b border-border/50">
+      {/* Mobile tab bar — horizontal scroll of chips (sidebar is desktop-only) */}
+      <div className="lg:hidden flex gap-1 mb-4 overflow-x-auto pb-1 border-b border-border/50">
         {TABS.map(t => (
           <button
             key={t.id}
@@ -1229,6 +1329,101 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {/* Two-column shell: grouped sidebar nav + content */}
+      <div className="flex gap-6 items-start">
+        {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+        <aside className="hidden lg:block w-56 shrink-0 sticky top-4 self-start">
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
+            <input
+              value={navSearch}
+              onChange={(e) => setNavSearch(e.target.value)}
+              placeholder="Jump to…"
+              className="w-full rounded-lg border border-border/60 bg-background/60 pl-8 pr-2 py-1.5 text-[13px] outline-none focus:border-foreground/30"
+            />
+          </div>
+          <nav className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1">
+            {NAV_GROUPS.map(group => {
+              const q = navSearch.trim().toLowerCase();
+              const items = q ? group.items.filter(it => it.label.toLowerCase().includes(q) || group.group.toLowerCase().includes(q)) : group.items;
+              if (!items.length) return null;
+              return (
+                <div key={group.group}>
+                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">{group.group}</p>
+                  <div className="space-y-0.5">
+                    {items.map(it => {
+                      const Icon = it.icon;
+                      const active = tab === it.id;
+                      const badge = badgeOf(it.id);
+                      return (
+                        <button
+                          key={it.id}
+                          onClick={() => setTab(it.id)}
+                          className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                            active
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                          }`}
+                        >
+                          <Icon className={`h-4 w-4 shrink-0 ${active ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/70 group-hover:text-foreground"}`} />
+                          <span className="flex-1 text-left truncate">{it.label}</span>
+                          {badge !== undefined && badge > 0 && (
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                              it.id === "sessions"
+                                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                                : active ? "bg-background text-muted-foreground" : "bg-muted text-muted-foreground"
+                            }`}>
+                              {badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+
+          {/* Live platform pulse — uses already-loaded stats, no extra fetch */}
+          <div className="mt-4 rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">Pulse</p>
+              <span className={`inline-flex items-center gap-1 text-[10px] ${autoRefresh ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                <Radio className={`h-2.5 w-2.5 ${autoRefresh ? "animate-pulse" : ""}`} />
+                {autoRefresh ? "live" : "paused"}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              <div className="rounded-lg bg-background/50 py-1.5">
+                <div className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{runningCount}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">running</div>
+              </div>
+              <div className="rounded-lg bg-background/50 py-1.5">
+                <div className={`text-sm font-bold tabular-nums ${failedCount > 0 ? "text-red-500" : "text-muted-foreground"}`}>{failedCount}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">failed</div>
+              </div>
+              <div className="rounded-lg bg-background/50 py-1.5">
+                <div className="text-sm font-bold tabular-nums">{sessions.length}</div>
+                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">live</div>
+              </div>
+            </div>
+            {deploySuccessRate !== null && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                  <span>Deploy health</span><span className="tabular-nums">{deploySuccessRate}%</span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                  <div className={`h-full rounded-full ${deploySuccessRate >= 90 ? "bg-emerald-500" : deploySuccessRate >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${deploySuccessRate}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* ── Content ──────────────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+
       {/* ── OVERVIEW TAB ─────────────────────────────────────────────────── */}
       {tab === "overview" && (
         <div className="space-y-6">
@@ -1237,33 +1432,33 @@ export default function AdminPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <KpiCard
                 label="Total Users" value={stats.total_users}
-                sub={`+${stats.users_today} today`} trend="up"
-                icon={<Users className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20"
+                sub={`+${stats.users_today} today`} trend={stats.users_today > 0 ? "up" : undefined}
+                icon={<Users className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20" bar="bg-blue-500" delay={0}
               />
               <KpiCard
                 label="New This Week" value={stats.users_this_week}
-                sub={`${stats.users_this_month} this month`}
-                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20"
+                sub={`${stats.users_this_month} this month`} trend={stats.users_this_week > 0 ? "up" : undefined}
+                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20" bar="bg-emerald-500" delay={40}
               />
               <KpiCard
                 label="Projects" value={stats.projects_total}
                 sub={`${runningCount} running`}
-                icon={<Rocket className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20"
+                icon={<Rocket className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20" bar="bg-violet-500" delay={80}
               />
               <KpiCard
                 label="Deploys Today" value={stats.deploys_today}
-                sub={`${stats.deploys_this_week} this week`}
-                icon={<Zap className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20"
+                sub={`${stats.deploys_this_week} this week`} trend={stats.deploys_today > 0 ? "up" : undefined}
+                icon={<Zap className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20" bar="bg-amber-500" delay={120}
               />
               <KpiCard
                 label="Databases" value={stats.services_total}
                 sub={`${stats.tunnels_total} tunnels`}
-                icon={<Database className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20"
+                icon={<Database className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20" bar="bg-cyan-500" delay={160}
               />
               <KpiCard
                 label="API Keys" value={stats.total_keys}
                 sub={`${stats.total_domains} domains`}
-                icon={<Key className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20"
+                icon={<Key className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20" bar="bg-pink-500" delay={200}
               />
             </div>
           ) : (
@@ -1274,11 +1469,11 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* Deploy health + status + stack */}
+          {/* Deploy health + traffic + stack */}
           {stats && (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-3">
               {/* Deploy health */}
-              <Card>
+              <Card className="animate-fade-in-up" style={{ animationDelay: "240ms" }}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Activity className="h-4 w-4 text-muted-foreground" />
@@ -1286,37 +1481,30 @@ export default function AdminPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {deploySuccessRate !== null && (
-                    <div>
-                      <div className="flex justify-between text-xs mb-1.5">
-                        <span className="text-muted-foreground">Deploy success rate</span>
-                        <span className={`font-mono font-medium ${deploySuccessRate >= 90 ? "text-emerald-600 dark:text-emerald-400" : deploySuccessRate >= 70 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
-                          {deploySuccessRate}%
-                        </span>
+                  <div className="flex items-center gap-4">
+                    <Ring
+                      pct={deploySuccessRate ?? 0}
+                      cls={deploySuccessRate === null ? "stroke-muted" : deploySuccessRate >= 90 ? "stroke-emerald-500" : deploySuccessRate >= 70 ? "stroke-amber-500" : "stroke-red-500"}
+                    >
+                      <div className="text-center leading-none">
+                        <div className="text-lg font-bold tabular-nums">{deploySuccessRate ?? "—"}<span className="text-[10px] font-medium text-muted-foreground">%</span></div>
                       </div>
-                      <div className="h-2 rounded-full bg-muted/40 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${deploySuccessRate >= 90 ? "bg-emerald-500" : deploySuccessRate >= 70 ? "bg-amber-500" : "bg-red-500"}`}
-                          style={{ width: `${deploySuccessRate}%` }}
-                        />
-                      </div>
+                    </Ring>
+                    <div className="min-w-0 flex-1 grid grid-cols-1 gap-1 text-xs">
+                      {[
+                        { label: "Running", count: runningCount, cls: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+                        { label: "Building", count: buildingCount, cls: "text-sky-600 dark:text-sky-400", dot: "bg-sky-500" },
+                        { label: "Failed", count: failedCount, cls: "text-red-600 dark:text-red-400", dot: "bg-red-500" },
+                        { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-muted-foreground", dot: "bg-zinc-500" },
+                      ].map(({ label, count, cls, dot }) => (
+                        <div key={label} className="flex items-center justify-between gap-2 rounded-md bg-muted/20 px-2.5 py-1">
+                          <span className="flex items-center gap-1.5 text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dot}`} />{label}</span>
+                          <span className={`font-mono font-semibold tabular-nums ${cls}`}>{count}</span>
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {[
-                      { label: "Running", count: runningCount, cls: "text-emerald-600 dark:text-emerald-400" },
-                      { label: "Building", count: buildingCount, cls: "text-sky-600 dark:text-sky-400" },
-                      { label: "Failed", count: failedCount, cls: "text-red-600 dark:text-red-400" },
-                      { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-muted-foreground" },
-                    ].map(({ label, count, cls }) => (
-                      <div key={label} className="flex items-center justify-between rounded-md bg-muted/20 px-2.5 py-1.5">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className={`font-mono font-semibold ${cls}`}>{count}</span>
-                      </div>
-                    ))}
                   </div>
-
+                  <p className="text-[10px] text-muted-foreground/70">Success = running ÷ (running + failed)</p>
                   {sessions.length > 0 && (
                     <div className="flex items-center gap-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1328,8 +1516,41 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
 
+              {/* Traffic — surfaces request volume that was loaded but never shown */}
+              <Card className="animate-fade-in-up" style={{ animationDelay: "280ms" }}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                    Traffic
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <div className="flex items-end gap-2">
+                      <span className="text-2xl font-bold tracking-tight tabular-nums">{stats.requests_today.toLocaleString()}</span>
+                      <span className="mb-1 text-[11px] text-muted-foreground">requests today</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{stats.total_requests.toLocaleString()} captured all-time</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
+                      <div className="text-sm font-semibold tabular-nums">{stats.total_teams}</div>
+                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">teams</div>
+                    </div>
+                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
+                      <div className="text-sm font-semibold tabular-nums">{stats.subdomains_total}</div>
+                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">subdomains</div>
+                    </div>
+                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
+                      <div className="text-sm font-semibold tabular-nums">{stats.worker_servers_total}</div>
+                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">servers</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Stack breakdown */}
-              <Card>
+              <Card className="animate-fade-in-up" style={{ animationDelay: "320ms" }}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Layers className="h-4 w-4 text-muted-foreground" />
@@ -1380,11 +1601,16 @@ export default function AdminPage() {
                           {s.is_local && <Badge variant="outline" className="text-[9px]">primary</Badge>}
                           {s.user_id && <Badge variant="outline" className="text-[9px] text-violet-600 dark:text-violet-400 border-violet-500/30">BYOC</Badge>}
                         </div>
-                        <span className="text-[10px] text-muted-foreground font-mono">{s.host}</span>
+                        <div className="text-right">
+                          <span className="block text-[10px] text-muted-foreground font-mono">{s.host}</span>
+                          <span className="block text-[9px] text-muted-foreground/60" title="Live metrics are probed from each host's /proc every 60s via heartbeat">
+                            {s.status === "active" ? `measured ${agoShort(s.last_heartbeat)}` : "no recent probe"}
+                          </span>
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <UtilBar label="RAM used" used={s.used_memory_mb} total={s.total_memory_mb} pct={memPct} unit="MB" />
-                        <UtilBar label="Load" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" />
+                        <UtilBar label="Load (1m avg)" used={parseFloat(s.load_avg.toFixed(1))} total={s.total_cpu} pct={cpuPct} unit="cores" />
                         <UtilBar label="Projects" used={s.current_projects} total={s.max_projects} pct={projPct} unit="" />
                       </div>
                     </div>
@@ -2164,7 +2390,13 @@ export default function AdminPage() {
             </select>
           </div>
 
-          <div className="text-xs text-muted-foreground">{databasesTotal} databases total</div>
+          <div className="text-xs text-muted-foreground">
+            {databasesTotal} databases total
+            {databases.length > 0 && (() => {
+              const mb = databases.reduce((n, d) => n + (d.service.size_mb || 0), 0);
+              return <> · {mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb} MB`} on this page · sizes refresh every 5 min</>;
+            })()}
+          </div>
 
           {databasesLoading && databases.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>
@@ -2329,105 +2561,265 @@ export default function AdminPage() {
       )}
 
       {/* ── LIVE SESSIONS TAB ────────────────────────────────────────────── */}
-      {tab === "sessions" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Filter by email, client ID, or URL..."
-                className="pl-9 h-9 text-sm"
-                value={sessionSearch}
-                onChange={e => setSessionSearch(e.target.value)}
-              />
-            </div>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={loadSessions} disabled={sessionsLoading}>
-              <RefreshCw className={`h-3.5 w-3.5 ${sessionsLoading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
+      {tab === "sessions" && (() => {
+        const liveTunnels = sessions.reduce((n, s) => n + s.tunnels.filter(t => t.active !== false).length, 0);
+        const liveUsers = new Set(sessions.map(s => s.user_id || s.client_id)).size;
+        const liveBytes = sessions.reduce((n, s) => n + (s.stats ? s.stats.bytes_in + s.stats.bytes_out : 0), 0);
+        const liveReqs = sessions.reduce((n, s) => n + (s.stats?.requests ?? 0), 0);
+        const ov = tunnelOverview;
+        const maxDay = Math.max(1, ...(ov?.daily ?? []).map(d => d.sessions));
+        const hq = historyFilter.trim().toLowerCase();
+        const recent = (ov?.recent ?? []).filter(r => !hq ||
+          r.email.toLowerCase().includes(hq) || r.remote_ip.includes(hq) ||
+          r.tunnel_urls.some(u => u.toLowerCase().includes(hq)));
+        const protoCls = (p: string) =>
+          p === "http" ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/40"
+          : p === "tcp" ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40"
+          : "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/40";
+        return (
+        <div className="space-y-5">
+          {/* KPI row: live now + history */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+            <KpiCard label="Live clients" value={sessions.length} sub={`${liveUsers} user${liveUsers !== 1 ? "s" : ""}`}
+              icon={<Radio className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20" bar="bg-emerald-500" />
+            <KpiCard label="Live tunnels" value={liveTunnels} sub="open right now"
+              icon={<Link2 className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20" bar="bg-blue-500" delay={40} />
+            <KpiCard label="Live traffic" value={formatBytes(liveBytes)} sub={`${liveReqs.toLocaleString()} requests`}
+              icon={<Activity className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20" bar="bg-violet-500" delay={80} />
+            <KpiCard label="Sessions today" value={ov?.today.sessions ?? "—"} sub={ov ? `${ov.today.unique_users} unique user${ov.today.unique_users !== 1 ? "s" : ""}` : undefined}
+              icon={<Clock className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20" bar="bg-amber-500" delay={120} />
+            <KpiCard label="Users (7d)" value={ov?.week.unique_users ?? "—"} sub={ov ? `${ov.week.sessions} sessions` : undefined}
+              icon={<UserCheck className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20" bar="bg-cyan-500" delay={160} />
+            <KpiCard label="Traffic (7d)" value={ov ? formatBytes(ov.week.bytes) : "—"} sub={ov ? `${ov.week.requests.toLocaleString()} requests` : undefined}
+              icon={<BarChart3 className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20" bar="bg-pink-500" delay={200} />
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${sessions.length > 0 ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"}`} />
-              {sessions.length} active session{sessions.length !== 1 ? "s" : ""}
-            </span>
-            {sessionsRefresh && <span>· last refreshed {sessionsRefresh.toLocaleTimeString()}</span>}
-            {autoRefresh && <span className="text-emerald-600 dark:text-emerald-400/70">· auto-refresh every 15s</span>}
-          </div>
-
-          {filteredSessions.length === 0 ? (
-            <div className="flex flex-col items-center py-16">
-              <WifiOff className="h-10 w-10 text-muted-foreground/20 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                {sessionSearch ? "No sessions match your filter." : "No active tunnel sessions right now."}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredSessions.map(session => (
-                <div key={session.client_id} className="rounded-lg border border-border/50 p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/50 rounded px-1.5 py-0.5 font-medium">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          connected
-                        </span>
-                        <span className="text-sm font-medium">
-                          {session.user_email || <span className="text-muted-foreground font-mono text-xs">anonymous</span>}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{session.remote_addr}</span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
-                        <span className="font-mono">{session.client_id.slice(0, 14)}…</span>
-                        <span>connected {new Date(session.connected_at).toLocaleTimeString()}</span>
-                        <span>{session.tunnels.length} tunnel{session.tunnels.length !== 1 ? "s" : ""}</span>
+          {/* 14-day activity */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-muted-foreground" /> Tunnel sessions · last 14 days
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {ov ? (
+                <div className="flex h-28 items-end gap-1.5">
+                  {ov.daily.map(d => (
+                    <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end">
+                      <div
+                        className="w-full rounded-t bg-emerald-500/70 transition-colors group-hover:bg-emerald-500"
+                        style={{ height: `${d.sessions === 0 ? 2 : Math.max(6, (d.sessions / maxDay) * 100)}%`, opacity: d.sessions === 0 ? 0.25 : 1 }}
+                      />
+                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] shadow-sm group-hover:block">
+                        <div className="font-medium">{new Date(d.day + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
+                        <div className="text-muted-foreground">{d.sessions} sessions · {d.users} users · {formatBytes(d.bytes)}</div>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="h-8 px-2.5 text-destructive border-destructive/30 hover:bg-destructive/10 shrink-0"
+                  ))}
+                </div>
+              ) : <div className="h-28 animate-pulse rounded-md bg-muted/20" />}
+              {ov && (
+                <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/70">
+                  <span>{new Date(ov.daily[0]?.day + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                  <span>today</span>
+                </div>
+              )}
+              <p className="mt-2 text-[10px] text-muted-foreground/60">History starts from when session tracking was enabled.</p>
+            </CardContent>
+          </Card>
+
+          {/* Live sessions */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2 mr-auto">
+                <span className={`h-2 w-2 rounded-full ${sessions.length > 0 ? "bg-emerald-500 animate-pulse" : "bg-zinc-500"}`} />
+                Live now
+                <span className="text-xs font-normal text-muted-foreground">
+                  {sessionsRefresh && <>· refreshed {sessionsRefresh.toLocaleTimeString()}</>}
+                  {autoRefresh && <> · every 15s</>}
+                </span>
+              </h3>
+              <div className="relative sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Filter by email, client ID, or URL..." className="pl-9 h-9 text-sm"
+                  value={sessionSearch} onChange={e => setSessionSearch(e.target.value)} />
+              </div>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => { loadSessions(); loadTunnelOverview(); }} disabled={sessionsLoading}>
+                <RefreshCw className={`h-3.5 w-3.5 ${sessionsLoading ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+
+            {filteredSessions.length === 0 ? (
+              <div className="flex flex-col items-center rounded-xl border border-dashed border-border/60 py-10">
+                <WifiOff className="h-8 w-8 text-muted-foreground/25 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  {sessionSearch ? "No sessions match your filter." : "No one has a tunnel open right now."}
+                </p>
+              </div>
+            ) : filteredSessions.map(session => (
+              <div key={session.client_id} className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> connected {fmtDuration(session.connected_at)}
+                      </span>
+                      <span className="text-sm font-medium truncate">
+                        {session.user_email || <span className="font-mono text-xs text-muted-foreground">static token</span>}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[11px] text-muted-foreground">
+                      <span className="font-mono">{session.remote_addr.replace(/:\d+$/, "")}</span>
+                      {session.client_version && <span>CLI v{session.client_version}{session.os ? ` · ${session.os}` : ""}</span>}
+                      <span className="font-mono text-muted-foreground/60">{session.client_id.slice(0, 12)}…</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {session.stats && (
+                      <div className="text-right">
+                        <div className="text-sm font-semibold tabular-nums">{formatBytes(session.stats.bytes_in + session.stats.bytes_out)}</div>
+                        <div className="text-[10px] text-muted-foreground tabular-nums">{session.stats.requests.toLocaleString()} req</div>
+                      </div>
+                    )}
+                    <Button variant="outline" size="sm" className="h-8 px-2.5 text-destructive border-destructive/30 hover:bg-destructive/10"
                       onClick={() => killSession(session.client_id)} title="Force disconnect">
                       <WifiOff className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+                </div>
 
-                  {session.tunnels.length > 0 && (
-                    <div className="space-y-1.5 pl-3 border-l-2 border-border/40">
-                      {session.tunnels.map(t => (
-                        <div key={t.url} className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Badge variant="outline" className={`text-[9px] shrink-0 ${
-                              t.protocol === "http"  ? "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/50" :
-                              t.protocol === "tcp"   ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50" :
-                              "bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/50"
-                            }`}>
-                              {t.protocol.toUpperCase()}
-                            </Badge>
-                            <span className="text-[11px] font-mono text-muted-foreground truncate">{t.url}</span>
-                            {t.local_addr && <span className="text-[10px] text-muted-foreground/60 shrink-0">→ {t.local_addr}</span>}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {t.protocol === "http" && (
-                              <a href={t.url} target="_blank" rel="noopener noreferrer"
-                                className="flex h-6 w-6 items-center justify-center rounded hover:bg-accent text-muted-foreground">
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
+                {session.tunnels.length > 0 && (
+                  <div className="divide-y divide-border/40 rounded-lg border border-border/50">
+                    {session.tunnels.map(t => (
+                      <div key={t.url} className={`flex items-center justify-between gap-3 px-3 py-2 ${t.active === false ? "opacity-50" : ""}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {t.protocol ? (
+                            <Badge variant="outline" className={`text-[9px] shrink-0 ${protoCls(t.protocol)}`}>{t.protocol.toUpperCase()}</Badge>
+                          ) : <Badge variant="outline" className="text-[9px] shrink-0">closed</Badge>}
+                          <span className="text-[11px] font-mono truncate">{t.url}</span>
+                          {t.local_addr && <span className="text-[10px] text-muted-foreground/60 shrink-0">→ {t.local_addr}</span>}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {t.stats && (
+                            <span className="hidden sm:inline text-[10px] text-muted-foreground tabular-nums">
+                              {t.stats.requests.toLocaleString()} req · {formatBytes(t.stats.bytes_in + t.stats.bytes_out)}
+                              {t.stats.last_hit ? ` · hit ${agoShort(t.stats.last_hit)}` : " · no traffic yet"}
+                            </span>
+                          )}
+                          {t.protocol === "http" && t.active !== false && (
+                            <a href={t.url} target="_blank" rel="noopener noreferrer"
+                              className="flex h-6 w-6 items-center justify-center rounded hover:bg-accent text-muted-foreground" title="Open">
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                          {t.active !== false && (
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                              onClick={() => killTunnel(t.url)}>
+                              onClick={() => killTunnel(t.url)} title="Close this tunnel">
                               <X className="h-3 w-3" />
                             </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-5">
+            {/* Top users */}
+            <Card className="xl:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /> Top tunnel users · 7 days</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!ov ? <div className="h-40 animate-pulse rounded-md bg-muted/20" />
+                : ov.top_users.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No tunnel sessions in the last 7 days.</p>
+                : (
+                  <div className="space-y-1">
+                    {ov.top_users.map((u, i) => {
+                      const maxB = Math.max(1, ov.top_users[0]?.bytes ?? 1);
+                      return (
+                        <div key={(u.user_id || "anon") + i} className="relative overflow-hidden rounded-md">
+                          <div className="absolute inset-y-0 left-0 bg-emerald-500/10" style={{ width: `${(u.bytes / maxB) * 100}%` }} />
+                          <div className="relative flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{u.email || "static token"}</div>
+                              <div className="text-[10px] text-muted-foreground">{u.sessions} session{u.sessions !== 1 ? "s" : ""} · last {agoShort(u.last_seen)}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="font-mono tabular-nums">{formatBytes(u.bytes)}</div>
+                              <div className="text-[10px] text-muted-foreground tabular-nums">{u.requests.toLocaleString()} req</div>
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* History */}
+            <Card className="xl:col-span-3">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-sm flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" /> Session history</CardTitle>
+                  <Input placeholder="Filter email, IP, URL…" className="h-8 w-48 text-xs" value={historyFilter} onChange={e => setHistoryFilter(e.target.value)} />
                 </div>
-              ))}
-            </div>
-          )}
+              </CardHeader>
+              <CardContent>
+                {!ov ? <div className="h-40 animate-pulse rounded-md bg-muted/20" />
+                : recent.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">{hq ? "No sessions match." : "No sessions recorded yet."}</p>
+                : (
+                  <div className="max-h-[420px] overflow-auto rounded-md border border-border/50">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-background/95 text-[10px] uppercase tracking-wide text-muted-foreground backdrop-blur">
+                        <tr className="text-left">
+                          <th className="px-2.5 py-2 font-medium">User</th>
+                          <th className="px-2.5 py-2 font-medium">Started</th>
+                          <th className="px-2.5 py-2 font-medium">Duration</th>
+                          <th className="px-2.5 py-2 font-medium">Tunnels</th>
+                          <th className="px-2.5 py-2 font-medium text-right">Traffic</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {recent.map(r => (
+                          <tr key={r.id} className="align-top hover:bg-accent/30">
+                            <td className="px-2.5 py-2">
+                              <div className="truncate max-w-[180px] font-medium">{r.email || "static token"}</div>
+                              <div className="text-[10px] text-muted-foreground font-mono">{r.remote_ip}{r.client_version ? ` · v${r.client_version}` : ""}{r.os ? ` · ${r.os}` : ""}</div>
+                            </td>
+                            <td className="px-2.5 py-2 whitespace-nowrap text-muted-foreground" title={new Date(r.connected_at).toLocaleString()}>{agoShort(r.connected_at)}</td>
+                            <td className="px-2.5 py-2 whitespace-nowrap">
+                              {r.disconnected_at ? fmtDuration(r.connected_at, r.disconnected_at)
+                                : <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />live</span>}
+                            </td>
+                            <td className="px-2.5 py-2">
+                              {r.tunnel_urls.length === 0 ? <span className="text-muted-foreground/60">none</span> : (
+                                <div className="space-y-0.5">
+                                  {r.tunnel_urls.slice(0, 2).map(u => <div key={u} className="truncate max-w-[200px] font-mono text-[10px]">{u.replace(/^https?:\/\//, "")}</div>)}
+                                  {r.tunnel_urls.length > 2 && <div className="text-[10px] text-muted-foreground">+{r.tunnel_urls.length - 2} more</div>}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2.5 py-2 text-right whitespace-nowrap">
+                              <div className="font-mono tabular-nums">{formatBytes(r.bytes_in + r.bytes_out)}</div>
+                              <div className="text-[10px] text-muted-foreground tabular-nums">{r.requests.toLocaleString()} req</div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── INFRASTRUCTURE TAB ───────────────────────────────────────────── */}
       {tab === "infra" && (
@@ -2713,6 +3105,33 @@ export default function AdminPage() {
               </div>
             );
 
+            // Dollar-denominated field: stores internal units (1 unit = $0.01) but
+            // shows/edits in $. -1 = unlimited (typed as -1).
+            const usdField = (label: string, key: keyof PlanLimitRow, hint?: string) => {
+              const raw = d[key] as number;
+              const shown = raw < 0 ? "-1" : (raw / 100).toString();
+              return (
+                <div key={key}>
+                  <label className="block text-[11px] text-muted-foreground mb-1">{label}</label>
+                  <div className="flex items-center h-8 rounded-md border border-input bg-background px-2 focus-within:border-foreground/40 disabled:opacity-50">
+                    <span className="text-xs text-muted-foreground mr-1">$</span>
+                    <input
+                      type="text" inputMode="decimal" disabled={isAdminPlan}
+                      value={shown}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        if (v === "-1") { setField(key, -1); return; }
+                        const n = parseFloat(v.replace(/[^0-9.]/g, ""));
+                        setField(key, isNaN(n) ? 0 : Math.round(n * 100));
+                      }}
+                      className="h-full w-full bg-transparent text-xs font-mono outline-none disabled:opacity-50"
+                    />
+                  </div>
+                  {hint && <p className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</p>}
+                </div>
+              );
+            };
+
             return (
               <Card key={p.plan}>
                 <CardHeader className="pb-3">
@@ -2749,7 +3168,7 @@ export default function AdminPage() {
                       {numField("Runtime vCPU", "max_cpus", undefined, 0.25)}
                       {numField("Build memory (MB)", "max_build_memory_mb", "Ceiling — still clamped to free host RAM")}
                       {numField("Build minutes / mo", "max_build_minutes_monthly", "Counts failed builds too")}
-                      {numField("AI credits / mo", "monthly_ai_credits", "Free AI-builder credits; -1 = unlimited")}
+                      {usdField("AI & email usage / mo", "monthly_ai_credits", "Included AI builder + email-verify usage per month; -1 = unlimited")}
                     </div>
                   </div>
 
@@ -3339,10 +3758,10 @@ export default function AdminPage() {
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {[
-                      { l: "Free/mo", v: creditData.free_allotment < 0 ? "∞" : String(creditData.free_allotment) },
-                      { l: "Used", v: (Math.round(creditData.status.free_used * 100) / 100).toString() },
-                      { l: "Wallet", v: (Math.round(creditData.status.wallet * 100) / 100).toString() },
-                      { l: "Available", v: creditData.status.unlimited ? "∞" : (Math.round(creditData.status.available * 100) / 100).toString() },
+                      { l: "Included/mo", v: creditData.free_allotment < 0 ? "∞" : `$${(creditData.free_allotment/100).toFixed(2)}` },
+                      { l: "Used", v: `$${(creditData.status.free_used/100).toFixed(2)}` },
+                      { l: "Added funds", v: `$${(creditData.status.wallet/100).toFixed(2)}` },
+                      { l: "Balance", v: creditData.status.unlimited ? "∞" : `$${(creditData.status.available/100).toFixed(2)}` },
                     ].map(s => (
                       <div key={s.l} className="rounded-lg border border-border/60 p-2 text-center">
                         <div className="text-[10px] text-muted-foreground">{s.l}</div>
@@ -3350,14 +3769,52 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
+                  {/* Usage analytics (last 30 days) */}
+                  {creditData.usage && (creditData.usage.products.length > 0 || (creditData.usage.spent_window ?? 0) > 0) && (
+                    <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-medium text-muted-foreground">Usage · last {creditData.usage.days}d</div>
+                        <div className="text-[11px] tabular-nums text-muted-foreground">
+                          today ${(creditData.usage.spent_today/100).toFixed(2)} · month ${(creditData.usage.spent_month/100).toFixed(2)}
+                        </div>
+                      </div>
+                      {(() => {
+                        const total = Math.max(0.001, creditData.usage!.products.reduce((s, p) => s + p.credits, 0));
+                        return creditData.usage!.products.slice().sort((a, b) => b.credits - a.credits).map(p => (
+                          <div key={p.product}>
+                            <div className="flex items-center justify-between text-[11px] mb-1">
+                              <span className="font-medium">{p.label}</span>
+                              <span className="tabular-nums text-muted-foreground">${(p.credits/100).toFixed(2)} · {p.count} calls</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                              <div className={`h-full rounded-full ${p.product === "email_verify" ? "bg-sky-500" : "bg-foreground"}`} style={{ width: `${Math.max(3, (p.credits / total) * 100)}%` }} />
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                      {/* mini trend */}
+                      {creditData.usage.daily.length > 0 && (() => {
+                        const max = Math.max(0.001, ...creditData.usage!.daily.map(d => d.credits));
+                        return (
+                          <div className="flex items-end gap-[2px] h-10 pt-1">
+                            {creditData.usage!.daily.map(d => (
+                              <div key={d.day} title={`${d.day}: $${(d.credits/100).toFixed(2)}`}
+                                className="flex-1 rounded-sm bg-foreground/30" style={{ height: `${Math.max(6, (d.credits / max) * 100)}%` }} />
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
-                      <label className="text-[11px] text-muted-foreground">Adjust wallet (credits; negative to deduct)</label>
+                      <label className="text-[11px] text-muted-foreground">Adjust balance ($; negative to deduct)</label>
                       <input value={creditGrant} onChange={e => setCreditGrant(e.target.value)} inputMode="numeric"
-                        placeholder="e.g. 500 or -100"
+                        placeholder="e.g. 10 or -5"
                         className="w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30 font-mono" />
                     </div>
-                    <Button size="sm" disabled={creditBusy || !creditGrant.trim()} onClick={() => adjustUserCredits(Number(creditGrant))}>
+                    <Button size="sm" disabled={creditBusy || !creditGrant.trim()} onClick={() => adjustUserCredits(Math.round(Number(creditGrant) * 100))}>
                       {creditBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Apply"}
                     </Button>
                   </div>
@@ -3372,7 +3829,7 @@ export default function AdminPage() {
                             {(row.tokens_in > 0 || row.tokens_out > 0) ? ` · ${row.tokens_in}/${row.tokens_out} tok` : ""}
                           </span>
                           <span className={row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-foreground"}>
-                            {row.delta >= 0 ? "+" : ""}{Math.round(row.delta * 100) / 100}
+                            {row.delta >= 0 ? "+" : "−"}${(Math.abs(row.delta)/100).toFixed(2)}
                           </span>
                         </div>
                       ))}
@@ -3385,32 +3842,59 @@ export default function AdminPage() {
         </div>
       )}
 
+        </div>{/* /content */}
+      </div>{/* /two-column shell */}
     </div>
   );
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function KpiCard({ icon, label, value, sub, trend, color }: {
+function KpiCard({ icon, label, value, sub, trend, color, bar, delay = 0 }: {
   icon: React.ReactNode; label: string; value: number | string;
-  sub?: string; trend?: "up" | "down"; color: string;
+  sub?: string; trend?: "up" | "down"; color: string; bar?: string; delay?: number;
 }) {
   return (
-    <Card className="hover:border-foreground/10 transition-colors">
+    <Card
+      className="group relative overflow-hidden animate-fade-in-up transition-all duration-200 hover:border-foreground/15 hover:-translate-y-0.5 hover:shadow-md hover:shadow-black/5"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      {/* accent bar + soft glow on hover */}
+      {bar && <span className={`absolute inset-x-0 top-0 h-[2px] ${bar} opacity-60 group-hover:opacity-100 transition-opacity`} />}
       <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}>{icon}</span>
+        <div className="flex items-center justify-between mb-2.5">
+          <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${color} ring-1 ring-inset ring-white/10`}>{icon}</span>
           {trend && (
-            <span className={`text-[10px] flex items-center gap-0.5 ${trend === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+            <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${trend === "up" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400"}`}>
               {trend === "up" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </span>
           )}
         </div>
-        <p className="text-xl font-bold tracking-tight">{typeof value === "number" ? value.toLocaleString() : value}</p>
+        <p className="text-2xl font-bold tracking-tight tabular-nums">{typeof value === "number" ? value.toLocaleString() : value}</p>
         <p className="text-[11px] font-medium text-muted-foreground mt-0.5">{label}</p>
-        {sub && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{sub}</p>}
+        {sub && <p className="text-[10px] text-muted-foreground/70 mt-1">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+// Ring — a thin SVG donut used for success-rate / percentage stats. Reliable in
+// both themes (no conic-gradient quirks) and animates on value change.
+function Ring({ pct, cls, children }: { pct: number; cls: string; children?: React.ReactNode }) {
+  const r = 26, c = 2 * Math.PI * r;
+  const off = c - (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <div className="relative h-[72px] w-[72px] shrink-0">
+      <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
+        <circle cx="32" cy="32" r={r} fill="none" strokeWidth="6" className="stroke-muted/60" />
+        <circle
+          cx="32" cy="32" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
+          className={cls}
+          style={{ strokeDasharray: c, strokeDashoffset: off, transition: "stroke-dashoffset .7s cubic-bezier(.4,0,.2,1)" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+    </div>
   );
 }
 
