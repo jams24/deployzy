@@ -136,6 +136,13 @@ func (d *DB) DeleteUser(ctx context.Context, userID string) error {
 	return err
 }
 
+// UpdateUserName updates a user's display name (self-service profile edit).
+func (d *DB) UpdateUserName(ctx context.Context, userID, name string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE users SET name = $1, updated_at = now() WHERE id = $2`, name, userID)
+	return err
+}
+
 // CheckPassword verifies a password against the stored hash.
 func (u *User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil

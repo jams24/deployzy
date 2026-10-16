@@ -115,6 +115,13 @@ class ApiClient {
     return this.request<User>("/api/v1/users/me");
   }
 
+  updateProfile(name: string) {
+    return this.request<User>("/api/v1/users/me", {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    });
+  }
+
   // API Keys
   listApiKeys() {
     return this.request<ApiKey[]>("/api/v1/api-keys");
@@ -292,6 +299,9 @@ export interface User {
   name: string;
   plan: string;
   created_at: string;
+  email_verified?: boolean;
+  pro_until?: string | null;
+  updated_at?: string;
 }
 
 export interface ApiKey {

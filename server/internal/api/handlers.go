@@ -340,6 +340,33 @@ func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// handleUpdateMe lets a user edit their own profile. Only the display name is
+// editable (email is the login identity; plan is billing-controlled).
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name cannot be empty")
+		return
+	}
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	if err := s.db.UpdateUserName(r.Context(), u.ID, name); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update profile")
+		return
+	}
+	user, _ := s.db.GetUserByID(r.Context(), u.ID)
+	writeJSON(w, http.StatusOK, user)
+}
+
 func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
