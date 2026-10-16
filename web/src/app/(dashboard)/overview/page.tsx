@@ -406,7 +406,7 @@ function ProjectRow({ p }: { p: Project }) {
   const repo = p.repo_url?.replace("https://github.com/", "") || "";
 
   return (
-    <Link href={`/projects?id=${p.id}`} className="group flex items-center gap-3 px-4 py-3.5 hover:bg-accent/60 transition-colors">
+    <Link href={`/projects/${p.id}`} className="group flex items-center gap-3 px-4 py-3.5 hover:bg-accent/60 transition-colors">
       <StatusDot status={p.status} />
 
       <div className="min-w-0 flex-1">

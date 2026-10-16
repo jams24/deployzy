@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   GitBranch, Database, Container, Layers, Search, Rocket,
   ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
-  Download, Sparkles, ExternalLink,
+  Download, Sparkles, ExternalLink, Upload, FolderUp,
 } from "lucide-react";
+import { makeTarGz, shouldIgnore, detectFrameworkFromFiles, type TarFile } from "@/lib/tar";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
 import { api, Template, EnvVarSchema } from "@/lib/api";
@@ -34,6 +35,7 @@ const langColor: Record<string, string> = {
 
 const options = [
   { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-600 dark:text-violet-400 bg-violet-500/10", category: "deploy" },
+  { id: "upload", title: "Upload Project", desc: "Deploy a folder from your computer", icon: FolderUp, color: "text-teal-600 dark:text-teal-400 bg-teal-500/10", category: "deploy" },
   { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10", category: "infra" },
   { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-600 dark:text-amber-400 bg-amber-500/10", category: "deploy" },
   { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-600 dark:text-blue-400 bg-blue-500/10", category: "deploy" },
@@ -141,6 +143,17 @@ export default function NewResourcePage() {
   // Servers
   const [userServers, setUserServers] = useState<{ id: string; label: string; host: string; status: string; total_memory_mb?: number; total_cpu?: number }[]>([]);
   const [selectedServer, setSelectedServer] = useState("");
+
+  // Upload-a-folder deploy
+  const [uploadFiles, setUploadFiles] = useState<TarFile[] | null>(null);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadSub, setUploadSub] = useState("");
+  const [uploadFramework, setUploadFramework] = useState("");
+  const [uploadErr, setUploadErr] = useState("");
+  const [uploadStats, setUploadStats] = useState<{ count: number; bytes: number; hasDockerfile: boolean } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadDragging, setUploadDragging] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // Plan limits (used to show real resource caps in the advanced form)
   const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number; allow_advanced_databases?: boolean; allow_db_migration?: boolean; max_db_size_mb?: number } | null>(null);
@@ -356,6 +369,120 @@ function startDocker() {
     }
   }
 
+  // Read a picked folder (FileList from <input webkitdirectory> or drag-drop)
+  // into TarFiles, skipping ignored paths. Sets a friendly summary.
+  async function collectUploadFiles(fileList: File[]) {
+    setUploadErr("");
+    const kept: TarFile[] = [];
+    let bytes = 0;
+    // Strip the top-level folder name so the archive root is the project root.
+    const rels = fileList.map((f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name);
+    const firstSeg = rels[0]?.split("/")[0];
+    const sameRoot = firstSeg && rels.every((r) => r.split("/")[0] === firstSeg);
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      let rel = rels[i];
+      if (sameRoot && rel.includes("/")) rel = rel.slice(firstSeg!.length + 1);
+      if (!rel || shouldIgnore(rel)) continue;
+      const data = new Uint8Array(await f.arrayBuffer());
+      kept.push({ path: rel, data });
+      bytes += data.length;
+    }
+    if (kept.length === 0) { setUploadErr("That folder had no deployable files (everything was ignored)."); return; }
+    if (bytes > 190 * 1024 * 1024) { setUploadErr("Project is too large (over ~190 MB after ignoring node_modules). Trim it and retry."); return; }
+    const paths = kept.map((k) => k.path);
+    const fw = detectFrameworkFromFiles(paths);
+    setUploadFiles(kept);
+    setUploadFramework(fw);
+    setUploadStats({ count: kept.length, bytes, hasDockerfile: paths.some((p) => p === "Dockerfile" || p.endsWith("/Dockerfile")) });
+    if (!uploadName) {
+      const guess = (firstSeg || "my-app").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "my-app";
+      setUploadName(guess);
+      setUploadSub(guess);
+    }
+  }
+
+  async function onUploadPick(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files?.length) await collectUploadFiles(Array.from(e.target.files));
+  }
+
+  // Drag-and-drop a folder: walk the FileSystemEntry tree.
+  async function onUploadDrop(e: React.DragEvent) {
+    e.preventDefault(); setUploadDragging(false);
+    const items = Array.from(e.dataTransfer.items);
+    const files: File[] = [];
+    const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+      if (entry.isFile) {
+        const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+        Object.defineProperty(file, "webkitRelativePath", { value: prefix + entry.name });
+        files.push(file);
+      } else if (entry.isDirectory) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        const entries: FileSystemEntry[] = await new Promise((res) => {
+          const all: FileSystemEntry[] = [];
+          const read = () => reader.readEntries((batch) => { if (!batch.length) { res(all); return; } all.push(...batch); read(); });
+          read();
+        });
+        for (const child of entries) await walk(child, prefix + entry.name + "/");
+      }
+    };
+    const roots = items.map((it) => it.webkitGetAsEntry?.()).filter(Boolean) as FileSystemEntry[];
+    for (const r of roots) await walk(r, "");
+    if (files.length) await collectUploadFiles(files);
+  }
+
+  async function deployUpload() {
+    if (!uploadFiles || !uploadName || !uploadSub) return;
+    setUploading(true); setUploadErr("");
+    try {
+      // 1) create the project (framework detected from files; deploy_source=upload).
+      const res = await fetch(`${API}/api/v1/projects`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({
+          name: uploadName, subdomain: uploadSub,
+          framework: uploadFramework || "docker",
+          deploy_source: "upload",
+          worker_server_id: selectedServer || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        const msg = err.error || "Failed to create project";
+        if (!showPlanLimit(msg)) setUploadErr(msg);
+        setUploading(false); return;
+      }
+      const project = await res.json();
+
+      // 2) env vars (optional)
+      if (envText.trim()) {
+        await fetch(`${API}/api/v1/projects/${project.id}`, {
+          method: "PUT", headers: headers(),
+          body: JSON.stringify({ env_vars: parseEnvText(envText) }),
+        });
+      }
+
+      // 3) tar+gzip the files client-side and push to the upload endpoint.
+      const blob = await makeTarGz(uploadFiles);
+      const token = localStorage.getItem("sm_token");
+      const up = await fetch(`${API}/api/v1/projects/${project.id}/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: blob,
+      });
+      if (!up.ok) {
+        const err = await up.json().catch(() => ({ error: "Upload failed" }));
+        setUploadErr(err.error || "Upload failed"); setUploading(false); return;
+      }
+
+      // 4) deploy
+      await fetch(`${API}/api/v1/projects/${project.id}/deploy`, { method: "POST", headers: headers() });
+      router.push("/projects");
+    } catch (e) {
+      setUploadErr(e instanceof Error ? e.message : "Something went wrong");
+      setUploading(false);
+    }
+  }
+
   async function deployTemplate() {
     if (!selectedTemplate || !templateName.trim()) return;
     setTemplateDeploying(true);
@@ -392,6 +519,10 @@ function startDocker() {
         setStep("github");
         break;
       case "database": setDbName(""); setStep("database"); break;
+      case "upload":
+        setUploadFiles(null); setUploadName(""); setUploadSub(""); setUploadErr(""); setUploadFramework("");
+        setStep("upload");
+        break;
       case "template":
         setTemplateSearch("");
         setSelectedTemplate(null);
@@ -747,6 +878,97 @@ function startDocker() {
   }
 
   // ── Step: GitHub Repo Picker ──
+  if (step === "upload") {
+    const fmt = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+    return (
+      <div className="max-w-lg mx-auto mt-8">
+        <BackButton />
+        <h1 className="text-xl font-bold mb-1">Upload a project</h1>
+        <p className="text-sm text-muted-foreground mb-4">
+          Deploy a folder straight from your computer — no GitHub needed. Your project needs a
+          <code className="mx-1 px-1 rounded bg-muted text-[0.85em] font-mono">Dockerfile</code>
+          or a recognizable framework (Node, Next.js, Python, or static site).
+        </p>
+
+        {/* Drop zone / folder picker */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
+          onDragLeave={() => setUploadDragging(false)}
+          onDrop={onUploadDrop}
+          onClick={() => uploadInputRef.current?.click()}
+          className={`cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${uploadDragging ? "border-teal-500 bg-teal-500/5" : "border-border/70 hover:border-foreground/30"}`}
+        >
+          <FolderUp className="h-8 w-8 mx-auto text-muted-foreground/60 mb-2" />
+          {uploadStats ? (
+            <div className="text-sm">
+              <div className="font-medium">{uploadFiles?.length} files · {fmt(uploadStats.bytes)}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Detected: <span className="font-medium capitalize">{uploadFramework}</span>
+                {uploadStats.hasDockerfile ? " · Dockerfile found" : ""}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">Click or drop again to replace</div>
+            </div>
+          ) : (
+            <>
+              <div className="text-sm font-medium">Drag &amp; drop your project folder here</div>
+              <div className="text-xs text-muted-foreground mt-1">or click to choose a folder · node_modules and .git are ignored automatically</div>
+            </>
+          )}
+          {/* webkitdirectory lets the user pick a whole folder */}
+          <input
+            ref={uploadInputRef}
+            type="file"
+            // @ts-expect-error non-standard but widely supported directory picker
+            webkitdirectory=""
+            directory=""
+            multiple
+            className="hidden"
+            onChange={onUploadPick}
+          />
+        </div>
+
+        {!uploadStats?.hasDockerfile && uploadFiles && uploadFramework !== "docker" && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            No Dockerfile found — Deployzy will build it as a <span className="font-medium capitalize">{uploadFramework}</span> app. Add a Dockerfile if you need full control.
+          </p>
+        )}
+
+        {uploadFiles && (
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Project name</label>
+              <Input value={uploadName} onChange={(e) => { setUploadName(e.target.value); }} placeholder="my-app" className="h-9 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Subdomain</label>
+              <div className="flex items-center gap-2">
+                <Input value={uploadSub} onChange={(e) => setUploadSub(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} placeholder="my-app" className="h-9 text-sm" />
+                <span className="text-xs text-muted-foreground shrink-0">.deployzy.app</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Region</label>
+              <RegionPicker value={selectedServer} onChange={setSelectedServer} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Environment variables <span className="font-normal">(optional)</span></label>
+              <textarea value={envText} onChange={(e) => setEnvText(e.target.value)} rows={3}
+                placeholder={"KEY=value\nANOTHER=value"}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono outline-none focus:border-foreground/30 resize-y" />
+            </div>
+
+            {uploadErr && <p className="text-xs text-red-600 dark:text-red-400">{uploadErr}</p>}
+
+            <Button className="w-full gap-2" onClick={deployUpload} disabled={uploading || !uploadName || !uploadSub}>
+              {uploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading &amp; deploying…</> : <><Upload className="h-4 w-4" /> Upload &amp; deploy</>}
+            </Button>
+          </div>
+        )}
+        {uploadErr && !uploadFiles && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{uploadErr}</p>}
+      </div>
+    );
+  }
+
   if (step === "github") {
     return (
       <div className="max-w-lg mx-auto mt-8">
