@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
@@ -778,19 +779,34 @@ func (s *Server) handleMoveProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Tear down the current container (belt-and-braces removes it wherever it runs),
-	// reassign, then redeploy on the target.
-	s.deployer.Stop(r.Context(), project)
+	// For a GitHub-source project, refuse early (before we tear anything down) if
+	// the repo is private and we can't get a token — otherwise the move stops the
+	// working container and then fails to clone on the target, leaving nothing up.
+	isGitHubSrc := project.RepoURL != "" && strings.Contains(project.RepoURL, "github.com/")
+	freshURL, tokenOK := s.freshCloneURL(r.Context(), u.ID, project.RepoURL)
+	if isGitHubSrc && !tokenOK {
+		if gc, _ := s.db.GetGitHubConnection(r.Context(), u.ID); gc == nil {
+			writeError(w, http.StatusBadRequest, "This project deploys from a GitHub repo, but GitHub isn't connected — reconnect GitHub, then move it.")
+			return
+		}
+		// Connected but token fetch failed right now: proceed with the clean URL
+		// (works for a public repo; a private one will surface a clear clone error).
+	}
+
+	// Tear down the current container, but DON'T let a down source server stall the
+	// move: bound the teardown so a hung SSH to an offline box can't block. The
+	// teardown is best-effort — any orphan left on a dead server is reaped later
+	// (orphan sweep / when it comes back). The move proceeds regardless.
+	stopCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	if err := s.deployer.Stop(stopCtx, project); err != nil {
+		s.log.Warn().Err(err).Str("project", projectID).Msg("move: source teardown didn't confirm (server may be down) — proceeding")
+	}
+	cancel()
+
 	s.db.AssignProjectServer(r.Context(), projectID, target)
 	project.WorkerServerID = target
-
-	// Fresh GitHub token for the rebuild on the new host.
-	if s.deployer.GitHub != nil && project.RepoURL != "" && !strings.Contains(project.RepoURL, "@github.com") {
-		if repoName := extractRepoFullName(project.RepoURL); repoName != "" {
-			if token, ok := s.bestGitHubToken(r.Context(), u.ID); ok {
-				project.RepoURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repoName)
-			}
-		}
+	if isGitHubSrc {
+		project.RepoURL = freshURL // fresh token, stale one stripped
 	}
 
 	go func() {
@@ -935,11 +951,39 @@ func (s *Server) handleGetDeployLogs(w http.ResponseWriter, r *http.Request) {
 
 // extractRepoFullName extracts "user/repo" from a GitHub URL.
 func extractRepoFullName(repoURL string) string {
-	// Handle https://github.com/user/repo.git
 	s := repoURL
+	// Strip an embedded credential (https://x-access-token:TOKEN@github.com/...
+	// or https://user:pass@github.com/...) so we recover the clean owner/repo
+	// even from a previously-tokenized URL. This is what lets a move/redeploy
+	// re-inject a FRESH token instead of reusing a stale embedded one.
+	if at := strings.Index(s, "@github.com/"); at != -1 {
+		s = "https://github.com/" + s[at+len("@github.com/"):]
+	}
 	s = strings.TrimPrefix(s, "https://github.com/")
 	s = strings.TrimPrefix(s, "http://github.com/")
 	s = strings.TrimSuffix(s, ".git")
 	s = strings.TrimSuffix(s, "/")
 	return s
+}
+
+// freshCloneURL normalizes a GitHub repo URL to its clean owner/repo form and,
+// for private repos, injects a FRESH access token — replacing any stale/expired
+// token already embedded in the stored URL. Returns the clean (de-tokenized) URL
+// when no token is available so we never carry a dead credential forward. The
+// bool reports whether a token was successfully injected (false = public repo or
+// GitHub not connected → a private clone will fail and the caller can warn).
+func (s *Server) freshCloneURL(ctx context.Context, userID, repoURL string) (string, bool) {
+	if repoURL == "" || !strings.Contains(repoURL, "github.com/") {
+		return repoURL, false // not a GitHub source (upload, etc.) — leave as-is
+	}
+	full := extractRepoFullName(repoURL)
+	if full == "" {
+		return repoURL, false
+	}
+	if s.deployer != nil && s.deployer.GitHub != nil {
+		if token, ok := s.bestGitHubToken(ctx, userID); ok {
+			return fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, full), true
+		}
+	}
+	return fmt.Sprintf("https://github.com/%s.git", full), false
 }

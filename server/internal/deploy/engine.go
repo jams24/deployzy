@@ -1178,6 +1178,15 @@ func (e *Engine) LogStreamCmd(ctx context.Context, project *db.Project) *exec.Cm
 	return e.getRunner(ctx, project).StreamLogsCmd(ctx, containerName)
 }
 
+// ShellExecCmd returns an *exec.Cmd (not started) that opens an interactive
+// shell inside project's running container, wherever it lives (local for
+// platform projects, over SSH for BYOC). The bool reports whether the caller
+// must wrap it in a local PTY. See Runner.ExecShellCmd.
+func (e *Engine) ShellExecCmd(ctx context.Context, project *db.Project) (*exec.Cmd, bool) {
+	containerName := fmt.Sprintf("sm-%s", project.ID[:8])
+	return e.getRunner(ctx, project).ExecShellCmd(ctx, containerName)
+}
+
 // GetProjectPort returns the container port for a deployed project by subdomain.
 func (e *Engine) GetProjectPort(subdomain string) (int, bool) {
 	_, port, _, ok := e.GetProjectRouting(subdomain)

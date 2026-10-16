@@ -143,6 +143,58 @@ func (r *Runner) StreamLogsCmd(ctx context.Context, containerName string) *exec.
 	return r.sshStreamCmd(ctx, dockerArgs)
 }
 
+// ExecShellCmd returns an *exec.Cmd (not started) that opens an interactive
+// shell inside containerName. The second return value is always true: the
+// caller must wrap the command in a *local* PTY.
+//
+// Local runners: `docker exec -it` needs a real TTY on stdin/stdout — the PTY
+// provides it. Remote runners: we wrap the whole `ssh -tt` in the same local
+// PTY so ssh gets a controlling terminal (a plain pipe makes ssh drop its TTY
+// and exit instantly with EOF); ssh then allocates the remote PTY and forwards
+// window-size changes from our local PTY down to the container.
+//
+// The shell prefers bash and falls back to sh, so it works in both fat and
+// minimal (alpine/distroless-ish) images.
+func (r *Runner) ExecShellCmd(ctx context.Context, containerName string) (*exec.Cmd, bool) {
+	// Prefer an interactive bash, fall back to sh. Do NOT redirect stderr —
+	// bash writes its prompt (PS1) to stderr, so swallowing it hides the prompt.
+	const shell = "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"
+	if r.server == nil {
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-it",
+			"-e", "TERM=xterm-256color", containerName, "sh", "-c", shell)
+		return cmd, true
+	}
+	dockerCmd := "docker exec -it -e TERM=xterm-256color " + shellQuote(containerName) + " sh -c " + shellQuote(shell)
+	return r.sshInteractiveCmd(ctx, dockerCmd), true
+}
+
+// sshInteractiveCmd is like sshStreamCmd but forces remote PTY allocation
+// (`ssh -tt`) so an interactive `docker exec -it` gets a working terminal.
+// Uses its own temp-key prefix (sm_term_) to avoid racing other SSH ops.
+func (r *Runner) sshInteractiveCmd(ctx context.Context, cmd string) *exec.Cmd {
+	s := r.server
+	var sshLine string
+	escaped := strings.ReplaceAll(cmd, "'", "'\\''")
+	// NOTE: deliberately NO ControlMaster/ControlPersist here. Combining SSH
+	// connection multiplexing with sshpass leaves a stale master socket when a
+	// session's ssh is killed on WS close, and every subsequent terminal hangs
+	// trying to reuse the dead socket. A fresh connection per session is a hair
+	// slower on first open but reliable — reliability wins.
+	if s.SSHPassword != "" {
+		sshLine = fmt.Sprintf(
+			"sshpass -p '%s' ssh -tt -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=15 -p %d %s@%s '%s'",
+			strings.ReplaceAll(s.SSHPassword, "'", "'\\''"), s.Port, s.SSHUser, s.Host, escaped)
+	} else if s.SSHKey != "" {
+		kp := fmt.Sprintf("/tmp/sm_term_%s", s.ID[:8])
+		sshLine = fmt.Sprintf(
+			"echo '%s' > %s && chmod 600 %s && ssh -tt -i %s -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ServerAliveInterval=15 -p %d %s@%s '%s'",
+			strings.ReplaceAll(s.SSHKey, "'", "'\\''"), kp, kp, kp, s.Port, s.SSHUser, s.Host, escaped)
+	} else {
+		return exec.CommandContext(ctx, "bash", "-c", "echo 'no SSH credentials configured' >&2; exit 1")
+	}
+	return exec.CommandContext(ctx, "bash", "-c", sshLine)
+}
+
 // sshStreamCmd builds a streaming SSH *exec.Cmd for the given shell command.
 // Uses a separate temp-key prefix (sm_log_) so it never races the deploy-time
 // key file (sm_ssh_) when both operations run concurrently.
