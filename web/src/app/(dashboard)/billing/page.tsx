@@ -1,66 +1,120 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Check, CreditCard, Crown, ExternalLink, Loader2, PartyPopper, Zap } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertTriangle, Crown, ExternalLink, Gauge, Loader2, PartyPopper,
+  Receipt, X, Zap,
+} from "lucide-react";
 import Link from "next/link";
 import { fetchPlanCards } from "@/lib/plans";
-import { AICreditsCard } from "@/components/ai-credits-card";
+import {
+  API, authHeaders, type BillingStatus, type CreditsResp,
+  type PlanCardData, type UsageResponse,
+} from "@/components/billing/types";
+import { PlanHero, PlanHeroSkeleton } from "@/components/billing/plan-hero";
+import { UsageMeters } from "@/components/billing/usage-meters";
+import { CreditsOverview, CreditsOverviewSkeleton } from "@/components/billing/credits-overview";
+import { Invoices, CreditsLedger } from "@/components/billing/billing-activity";
+import { PlansGrid } from "@/components/billing/plans-grid";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing — tabbed into three focused views:
+//   Overview  → current plan hero, plan-limit meters, AI balance & spend
+//   Plans     → payment method + tier comparison + upgrade CTAs
+//   Activity  → subscription invoices + metered AI/email ledger
+// Data flows are unchanged from the previous single-scroll page.
+// ─────────────────────────────────────────────────────────────────────────────
 
-interface Subscription {
-  id: string;
-  plan: string;
-  status: string;
-  amount: number;
-  currency: string;
-  period_start: string | null;
-  period_end: string | null;
-  created_at: string;
-}
+type TabId = "overview" | "plans" | "activity";
 
-interface BillingStatus {
-  active_subscription: Subscription | null;
-  history: Subscription[];
-  grace?: { plan: string; access_ends: string } | null;
-}
-
-interface PlanLimits {
-  plan: string;
-  max_subdomains: number; max_tunnels: number;
-  max_projects: number; max_databases: number; max_services: number;
-  max_custom_domains: number; max_crons: number; max_byoc_servers: number;
-  max_preview_deploys: number;
-  max_memory_mb: number; max_cpus: number;
-  max_bandwidth_gb: number; max_build_minutes_monthly: number;
-  allow_previews: boolean; allow_release_cmd: boolean; allow_health_checks: boolean;
-  allow_private_repos: boolean; allow_tcp_tunnels: boolean; allow_live_logs: boolean;
-}
-interface UsageResponse {
-  plan: string;
-  is_admin: boolean;
-  limits: PlanLimits;
-  usage: Record<string, number>; // projects, databases, services, custom_domains, crons, byoc_servers, subdomains, preview_deploys
-}
+// Static fallback for first paint / when /api/v1/plans is briefly unreachable.
+// Live cards replace this (admin limit edits reflect without a redeploy).
+const FALLBACK_PLAN_CARDS: PlanCardData[] = [
+  {
+    id: "free", name: "Free", price: "$0",
+    tagline: "For hobby projects and learning",
+    features: [
+      "5 reserved subdomains, 5 active tunnels",
+      "3 projects, 1 PostgreSQL database (1 GB storage)",
+      "1 BYOC server, 1 custom domain",
+      "512 MB RAM / 0.25 vCPU per project",
+      "50 GB bandwidth, 120 build min / mo",
+      "7-day analytics, 3-day deploy logs",
+    ],
+  },
+  {
+    id: "hobby", name: "Hobby", price: "$5",
+    tagline: "Perfect for indie hackers and side projects",
+    features: [
+      "All Free features, plus:",
+      "5 projects, 3 databases (Postgres, Redis, Mongo, MySQL)",
+      "5 GB database storage · migrate existing databases",
+      "8 subdomains, 8 tunnels, 2 BYOC servers",
+      "2 custom domains, 2 PR previews, 2 cron jobs",
+      "1 GB RAM / 0.5 vCPU per project",
+      "150 GB bandwidth, 300 build min / mo",
+      "TCP/TLS tunnels, private repos, live logs",
+      "Health checks, release cmds, Telegram alerts",
+      "30-day analytics, 7-day deploy logs",
+    ],
+  },
+  {
+    id: "pro", name: "Pro", price: "$12",
+    tagline: "Built for production-ready applications",
+    features: [
+      "10 reserved subdomains, 15 active tunnels",
+      "10 projects, 5 databases, 5 BYOC servers",
+      "10 GB database storage · migrate existing databases",
+      "5 custom domains, 10 standalone services",
+      "5 scheduled jobs, 5 active PR previews",
+      "1 GB RAM / 1 vCPU per project (configurable)",
+      "500 GB bandwidth, 600 build min / mo",
+      "Live container logs, release commands, health checks",
+      "Private GitHub repos, TCP tunnels, Telegram alerts",
+      "90-day analytics, 7-day backups, 14-day deploy logs",
+    ],
+  },
+  {
+    id: "team", name: "Team", price: "$35",
+    tagline: "For small teams shipping in production",
+    features: [
+      "Everything in Pro, plus:",
+      "50 subdomains / tunnels / projects, 20 databases",
+      "50 GB database storage · migrate existing databases",
+      "15 BYOC servers, 25 custom domains + services",
+      "25 scheduled jobs, 25 active PR previews",
+      "Up to 8 GB RAM / 4 vCPU per project",
+      "1 TB bandwidth, 1800 build min / mo",
+      "30-day backups, 1-year analytics, 30-day deploy logs",
+      "Multi-user collaboration (min 2 seats)",
+      "Priority support",
+    ],
+  },
+];
 
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
-  // Live plan cards from plan_limits; null until fetched (falls back to static).
-  const [livePlanCards, setLivePlanCards] = useState<{ id: string; name: string; price: string; accent: string; tagline: string; features: string[] }[] | null>(null);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [livePlanCards, setLivePlanCards] = useState<PlanCardData[] | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // AI credits — polled so spend lands without a refresh.
+  const [credits, setCredits] = useState<CreditsResp | null>(null);
+  const [pulse, setPulse] = useState(false);
+  const prevSpend = useRef<number | null>(null);
+
+  // Checkout flow.
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
+  const [checkoutError, setCheckoutError] = useState("");
   // Post-checkout celebration. The provider redirects here immediately, but
   // the plan only flips once the webhook lands — so we poll rather than
   // claiming success we haven't confirmed.
   const [celebrate, setCelebrate] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmedPlan, setConfirmedPlan] = useState<string | null>(null);
-  const [checkoutError, setCheckoutError] = useState("");
   const [pendingTimedOut, setPendingTimedOut] = useState(false);
   const [pending, setPending] = useState<{
     plan: string; method: string; url: string;
@@ -68,16 +122,22 @@ export default function BillingPage() {
   } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const headers = () => {
-    const token = localStorage.getItem("sm_token");
-    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  };
+  const [tab, setTab] = useState<TabId>("overview");
+
+  function changeTab(v: string | number) {
+    const t = (v === "plans" || v === "activity" ? v : "overview") as TabId;
+    setTab(t);
+    const url = new URL(window.location.href);
+    if (t === "overview") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", t);
+    window.history.replaceState({}, "", url);
+  }
 
   async function loadStatus() {
     try {
       const [sRes, uRes] = await Promise.all([
-        fetch(`${API}/api/v1/billing/status`, { headers: headers() }),
-        fetch(`${API}/api/v1/users/me/limits`, { headers: headers() }),
+        fetch(`${API}/api/v1/billing/status`, { headers: authHeaders() }),
+        fetch(`${API}/api/v1/users/me/limits`, { headers: authHeaders() }),
       ]);
       if (sRes.ok) setStatus(await sRes.json());
       if (uRes.ok) setUsage(await uRes.json());
@@ -85,17 +145,33 @@ export default function BillingPage() {
     setLoading(false);
   }
 
+  const loadCredits = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/ai/credits?days=30`, { headers: authHeaders() });
+      if (res.ok) {
+        const d: CreditsResp = await res.json();
+        const s = d.usage?.spent_today ?? 0;
+        if (prevSpend.current !== null && s > prevSpend.current) {
+          setPulse(true);
+          setTimeout(() => setPulse(false), 1500);
+        }
+        prevSpend.current = s;
+        setCredits(d);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // Open the provider's hosted page in a NEW TAB and keep this page waiting on
   // the webhook. Redirecting away meant the user lost their place, and for
   // crypto (InventPay can't redirect back) they never returned at all — the
   // upgrade appeared to do nothing until they refreshed manually.
-  async function checkout(plan: "hobby" | "pro" | "team" = "pro", method: "crypto" | "card" = "crypto") {
+  async function checkout(plan: "hobby" | "pro" | "team", method: "crypto" | "card" = payMethod) {
     setCheckoutLoading(true);
     setCheckoutError("");
     try {
       const res = await fetch(`${API}/api/v1/billing/checkout`, {
         method: "POST",
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify({ plan, method }),
       });
       const data = await res.json();
@@ -132,7 +208,7 @@ export default function BillingPage() {
     const started = Date.now();
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+        const res = await fetch(`${API}/api/v1/billing/status`, { headers: authHeaders() });
         if (res.ok) {
           const d: BillingStatus = await res.json();
           if (d.active_subscription?.status === "active") {
@@ -156,33 +232,23 @@ export default function BillingPage() {
     }, 4000);
   }
 
-  async function pollPayment(paymentId: string) {
-    const maxAttempts = 60; // 10 minutes
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 10000)); // 10s intervals
-      try {
-        const res = await fetch(`${API}/api/v1/billing/check?payment_id=${paymentId}`, {
-          headers: headers(),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "COMPLETED") {
-            loadStatus();
-            return;
-          }
-        }
-      } catch {}
-    }
-  }
-
   useEffect(() => {
+    // Deep-link: ?tab=plans|activity
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "plans" || t === "activity") setTab(t);
+
     loadStatus();
+    loadCredits();
+    const creditsPoll = setInterval(loadCredits, 20000);
     // Live plan cards from plan_limits (reflect admin edits without redeploy).
     fetchPlanCards().then((cards) => {
-      if (cards) setLivePlanCards(cards.map((c) => ({ id: c.id, name: c.name, price: c.price, accent: c.accent, tagline: c.tagline, features: c.features })));
+      if (cards) setLivePlanCards(cards.map((c) => ({ id: c.id, name: c.name, price: c.price, tagline: c.tagline, features: c.features })));
     });
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+    return () => {
+      clearInterval(creditsPoll);
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [loadCredits]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -199,7 +265,7 @@ export default function BillingPage() {
       // before falling back to "we'll email you when it clears".
       for (let i = 0; i < 30 && !cancelled; i++) {
         try {
-          const res = await fetch(`${API}/api/v1/billing/status`, { headers: headers() });
+          const res = await fetch(`${API}/api/v1/billing/status`, { headers: authHeaders() });
           if (res.ok) {
             const d: BillingStatus = await res.json();
             if (d.active_subscription?.status === "active") {
@@ -216,113 +282,21 @@ export default function BillingPage() {
       if (!cancelled) setConfirming(false);
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeSub = status?.active_subscription;
   const isPremium = activeSub && activeSub.status === "active";
-  const daysLeft = activeSub?.period_end
-    ? Math.max(0, Math.ceil((new Date(activeSub.period_end).getTime() - Date.now()) / 86400000))
-    : 0;
-
-  // Plan catalog. The numbers render LIVE from plan_limits (fetched below), so
-  // admin edits reflect here without a redeploy. The static array is only a
-  // fallback for the first paint / if the API is briefly unreachable.
-  type PlanCard = {
-    id: string;
-    name: string;
-    price: string;
-    accent: string;
-    tagline: string;
-    features: string[];
-  };
-  const fallbackPlanCards: PlanCard[] = [
-    {
-      id: "free",
-      name: "Free",
-      price: "$0",
-      accent: "border-[#30363d]/40",
-      tagline: "For hobby projects and learning",
-      features: [
-        "5 reserved subdomains, 5 active tunnels",
-        "3 projects, 1 PostgreSQL database (1 GB storage)",
-        "1 BYOC server, 1 custom domain",
-        "512 MB RAM / 0.25 vCPU per project",
-        "50 GB bandwidth, 120 build min / mo",
-        "7-day analytics, 3-day deploy logs",
-      ],
-    },
-    {
-      id: "hobby",
-      name: "Hobby",
-      price: "$5",
-      accent: "border-emerald-500/30",
-      tagline: "Perfect for indie hackers and side projects",
-      features: [
-        "All Free features, plus:",
-        "5 projects, 3 databases (Postgres, Redis, Mongo, MySQL)",
-        "5 GB database storage · migrate existing databases",
-        "8 subdomains, 8 tunnels, 2 BYOC servers",
-        "2 custom domains, 2 PR previews, 2 cron jobs",
-        "1 GB RAM / 0.5 vCPU per project",
-        "150 GB bandwidth, 300 build min / mo",
-        "TCP/TLS tunnels, private repos, live logs",
-        "Health checks, release cmds, Telegram alerts",
-        "30-day analytics, 7-day deploy logs",
-      ],
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: "$12",
-      accent: "border-primary/30",
-      tagline: "Built for production-ready applications",
-      features: [
-        "10 reserved subdomains, 15 active tunnels",
-        "10 projects, 5 databases, 5 BYOC servers",
-        "10 GB database storage · migrate existing databases",
-        "5 custom domains, 10 standalone services",
-        "5 scheduled jobs, 5 active PR previews",
-        "1 GB RAM / 1 vCPU per project (configurable)",
-        "500 GB bandwidth, 600 build min / mo",
-        "Live container logs, release commands, health checks",
-        "Private GitHub repos, TCP tunnels, Telegram alerts",
-        "90-day analytics, 7-day backups, 14-day deploy logs",
-      ],
-    },
-    {
-      id: "team",
-      name: "Team",
-      price: "$35",
-      accent: "border-emerald-500/30",
-      tagline: "For small teams shipping in production",
-      features: [
-        "Everything in Pro, plus:",
-        "50 subdomains / tunnels / projects, 20 databases",
-        "50 GB database storage · migrate existing databases",
-        "15 BYOC servers, 25 custom domains + services",
-        "25 scheduled jobs, 25 active PR previews",
-        "Up to 8 GB RAM / 4 vCPU per project",
-        "1 TB bandwidth, 1800 build min / mo",
-        "30-day backups, 1-year analytics, 30-day deploy logs",
-        "Multi-user collaboration (min 2 seats)",
-        "Priority support",
-      ],
-    },
-  ];
-  const planCards: PlanCard[] = livePlanCards ?? fallbackPlanCards;
   const currentPlan = usage?.plan || (isPremium ? "pro" : "free");
+  const planCards = livePlanCards ?? FALLBACK_PLAN_CARDS;
 
-  // Post-checkout celebration takes over the page until dismissed.
+  // ── Post-checkout celebration takes over the page until dismissed ──
   if (celebrate) {
     const planName = confirmedPlan ? confirmedPlan[0].toUpperCase() + confirmedPlan.slice(1) : null;
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
-          <div className="flex justify-center mb-6">
-            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${
-              confirming ? "bg-muted" : "bg-emerald-500/15"
-            }`}>
+          <div className="mb-6 flex justify-center">
+            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${confirming ? "bg-muted" : "bg-emerald-500/15"}`}>
               {confirming
                 ? <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 : <PartyPopper className="h-8 w-8 text-emerald-500" />}
@@ -339,9 +313,7 @@ export default function BillingPage() {
             </>
           ) : planName ? (
             <>
-              <h1 className="text-3xl font-bold tracking-tight">
-                Welcome to {planName}! 🎉
-              </h1>
+              <h1 className="text-3xl font-bold tracking-tight">Welcome to {planName}! 🎉</h1>
               <p className="mt-3 text-sm text-muted-foreground">
                 Your subscription is active and the new limits apply right now —
                 nothing to redeploy. A receipt is on its way to your inbox.
@@ -349,17 +321,17 @@ export default function BillingPage() {
 
               {usage && (
                 <div className="mt-6 grid grid-cols-3 gap-2 text-left">
-                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                  <div className="rounded-xl border border-border/60 px-3 py-2">
                     <div className="text-[10px] text-muted-foreground">Projects</div>
-                    <div className="text-sm font-mono">{usage.limits.max_projects < 0 ? "∞" : usage.limits.max_projects}</div>
+                    <div className="font-mono text-sm">{usage.limits.max_projects < 0 ? "∞" : usage.limits.max_projects}</div>
                   </div>
-                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                  <div className="rounded-xl border border-border/60 px-3 py-2">
                     <div className="text-[10px] text-muted-foreground">Memory</div>
-                    <div className="text-sm font-mono">{usage.limits.max_memory_mb} MB</div>
+                    <div className="font-mono text-sm">{usage.limits.max_memory_mb} MB</div>
                   </div>
-                  <div className="rounded-lg border border-border/60 px-3 py-2">
+                  <div className="rounded-xl border border-border/60 px-3 py-2">
                     <div className="text-[10px] text-muted-foreground">Bandwidth</div>
-                    <div className="text-sm font-mono">{usage.limits.max_bandwidth_gb} GB</div>
+                    <div className="font-mono text-sm">{usage.limits.max_bandwidth_gb} GB</div>
                   </div>
                 </div>
               )}
@@ -396,14 +368,14 @@ export default function BillingPage() {
   }
 
   return (
-    <div>
+    <div className="animate-fade-in-up">
       {/* Payment-in-progress modal. The provider's page is open in another tab;
           this stays put and waits for the webhook rather than navigating away. */}
       {pending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4">
-          <Card className="w-full max-w-md">
-            <CardContent className="pt-6 text-center">
-              <div className="flex justify-center mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border/70 bg-background shadow-2xl">
+            <div className="p-6 text-center">
+              <div className="mb-4 flex justify-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
                   <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
                 </div>
@@ -429,7 +401,7 @@ export default function BillingPage() {
                 </p>
               )}
 
-              <div className="mt-4 rounded-lg border border-border/60 px-3 py-2 text-left text-xs">
+              <div className="mt-4 rounded-xl border border-border/60 px-3.5 py-2.5 text-left text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Plan</span>
                   <span className="font-medium capitalize">{pending.plan}</span>
@@ -480,348 +452,113 @@ export default function BillingPage() {
               <p className="mt-4 text-[10px] text-muted-foreground">
                 Closing this won&apos;t cancel the payment — your plan still upgrades once it clears.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="animate-fade-in-up">
+      {/* Header */}
+      <div>
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-        <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Billing</h1>
+        <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Billing</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your subscription and payment history.
+          Your plan, usage and payments — all in one place.
         </p>
       </div>
-
-      {/* AI builder credits (self-hides while credit metering is switched off). */}
-      <AICreditsCard />
 
       {/* Grace-period banner: subscription lapsed but paid features are still on
           until access_ends. Renewing before then avoids the drop to Free. */}
       {status?.grace && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
-          <span className="flex-1">
-            Your <span className="font-semibold capitalize">{status.grace.plan}</span> subscription has expired, but your features stay active during a grace period.
-            Renew before <span className="font-semibold">{new Date(status.grace.access_ends).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span> to avoid being moved to the Free plan. Your projects keep running either way.
-          </span>
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <div className="flex-1 text-sm">
+            <p className="font-semibold text-amber-700 dark:text-amber-300">
+              Your <span className="capitalize">{status.grace.plan}</span> subscription has expired
+            </p>
+            <p className="mt-0.5 text-amber-600/90 dark:text-amber-400/80">
+              Features stay active during a grace period. Renew before{" "}
+              <span className="font-semibold">{new Date(status.grace.access_ends).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>{" "}
+              to avoid moving to Free — your projects keep running either way.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="shrink-0 rounded-lg"
+            disabled={checkoutLoading}
+            onClick={() => checkout(status.grace!.plan as "hobby" | "pro" | "team", payMethod)}
+          >
+            {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Renew now"}
+          </Button>
         </div>
       )}
 
       {checkoutError && (
-        <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/5 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/[0.06] px-4 py-3.5 text-sm text-red-600 dark:text-red-400">
           <span className="flex-1">{checkoutError}</span>
-          <button onClick={() => setCheckoutError("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+          <button onClick={() => setCheckoutError("")} className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground" aria-label="Dismiss">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Usage vs caps */}
-      {usage && (() => {
-        const fmt = (n: number) => n < 0 ? "∞" : String(n);
-        const pct = (used: number, max: number) => max <= 0 ? 0 : Math.min(100, Math.round((used / max) * 100));
-        const rows: { label: string; used: number; max: number }[] = [
-          { label: "Projects", used: usage.usage.projects ?? 0, max: usage.limits.max_projects },
-          { label: "Project databases", used: usage.usage.databases ?? 0, max: usage.limits.max_databases },
-          { label: "Standalone services", used: usage.usage.services ?? 0, max: usage.limits.max_services },
-          { label: "Subdomains", used: usage.usage.subdomains ?? 0, max: usage.limits.max_subdomains },
-          { label: "Custom domains", used: usage.usage.custom_domains ?? 0, max: usage.limits.max_custom_domains },
-          { label: "Scheduled jobs", used: usage.usage.crons ?? 0, max: usage.limits.max_crons },
-          { label: "BYOC servers", used: usage.usage.byoc_servers ?? 0, max: usage.limits.max_byoc_servers },
-          { label: "Active PR previews", used: usage.usage.preview_deploys ?? 0, max: usage.limits.max_preview_deploys },
-        ];
-        return (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center justify-between">
-                <span>Usage on the {usage.is_admin ? "Admin (unlimited)" : usage.plan} plan</span>
-                {usage.is_admin && <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/40">Unlimited</Badge>}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {rows.map((r) => {
-                  const isUnl = r.max < 0;
-                  const p = isUnl ? 0 : pct(r.used, r.max);
-                  const barColor = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 to-emerald-400";
-                  return (
-                    <div key={r.label} className="space-y-1">
-                      <div className="flex items-baseline justify-between text-xs">
-                        <span className="text-muted-foreground">{r.label}</span>
-                        <span className="font-mono tabular-nums">{r.used} / {fmt(r.max)}</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-border overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-700 ${isUnl ? "bg-emerald-500/40 w-full" : barColor}`} style={{ width: isUnl ? "100%" : `${p}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-                <div className="rounded bg-muted px-2 py-1.5">
-                  <div className="text-muted-foreground">Memory cap</div>
-                  <div className="font-mono">{usage.limits.max_memory_mb < 0 ? "∞" : `${usage.limits.max_memory_mb} MB`}</div>
-                </div>
-                <div className="rounded bg-muted px-2 py-1.5">
-                  <div className="text-muted-foreground">CPU cap</div>
-                  <div className="font-mono">{usage.limits.max_cpus < 0 ? "∞" : `${usage.limits.max_cpus} vCPU`}</div>
-                </div>
-                <div className="rounded bg-muted px-2 py-1.5">
-                  <div className="text-muted-foreground">Bandwidth/mo</div>
-                  <div className="font-mono">{usage.limits.max_bandwidth_gb < 0 ? "∞" : `${usage.limits.max_bandwidth_gb} GB`}</div>
-                </div>
-                <div className="rounded bg-muted px-2 py-1.5">
-                  <div className="text-muted-foreground">Build min/mo</div>
-                  <div className="font-mono">{usage.limits.max_build_minutes_monthly < 0 ? "∞" : usage.limits.max_build_minutes_monthly}</div>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[
-                  ["Previews", usage.limits.allow_previews],
-                  ["Release cmds", usage.limits.allow_release_cmd],
-                  ["Health checks", usage.limits.allow_health_checks],
-                  ["Private repos", usage.limits.allow_private_repos],
-                  ["TCP tunnels", usage.limits.allow_tcp_tunnels],
-                  ["Live logs", usage.limits.allow_live_logs],
-                ].map(([label, on]) => (
-                  <Badge key={String(label)} variant="outline" className={`text-[10px] ${on ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" : "text-muted-foreground"}`}>
-                    {on ? "✓" : "✗"} {label}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })()}
+      {/* Tabs */}
+      <Tabs value={tab} onValueChange={changeTab} className="mt-6">
+        <TabsList>
+          <TabsTrigger value="overview" className="gap-1.5 px-3 text-xs">
+            <Gauge className="h-3.5 w-3.5" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="plans" className="gap-1.5 px-3 text-xs">
+            <Crown className="h-3.5 w-3.5" /> Plans
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-1.5 px-3 text-xs">
+            <Receipt className="h-3.5 w-3.5" /> Activity
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Current Plan */}
-      <Card className="mt-6">
-        <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                {usage?.is_admin ? (
-                  <Badge className="gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
-                    <Crown className="h-3 w-3" />
-                    Admin (Unlimited)
-                  </Badge>
-                ) : currentPlan === "team" ? (
-                  <Badge className="gap-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40">
-                    <Crown className="h-3 w-3" />
-                    Team
-                  </Badge>
-                ) : currentPlan === "pro" ? (
-                  <Badge className="gap-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/40">
-                    <Zap className="h-3 w-3" />
-                    Pro
-                  </Badge>
-                ) : (
-                  <Badge variant="outline">Free</Badge>
-                )}
-              </div>
-              {usage?.is_admin ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  You&apos;re an admin — all platform limits are bypassed for your account.
-                </p>
-              ) : isPremium ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Your subscription is active. {daysLeft} days remaining.
-                  {activeSub?.period_end && (
-                    <span className="block mt-0.5">
-                      Expires {new Date(activeSub.period_end).toLocaleDateString()}
-                    </span>
-                  )}
-                </p>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  You&apos;re on the Free plan. Upgrade for higher limits and advanced features.
-                </p>
-              )}
-            </div>
-            {!isPremium && !usage?.is_admin && (
-              <Button
-                onClick={() => checkout("pro", payMethod)}
-                disabled={checkoutLoading}
-                className="gap-2 shrink-0"
-              >
-                {checkoutLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Zap className="h-4 w-4" />
-                )}
-                Upgrade to Pro — $12/mo
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        {/* ── Overview ── */}
+        <TabsContent value="overview" className="mt-5 space-y-4">
+          {loading ? (
+            <>
+              <PlanHeroSkeleton />
+              <CreditsOverviewSkeleton />
+            </>
+          ) : (
+            <>
+              <PlanHero
+                usage={usage}
+                status={status}
+                planCards={planCards}
+                onManagePlan={() => changeTab("plans")}
+              />
+              {usage && <UsageMeters usage={usage} />}
+              {credits
+                ? <CreditsOverview data={credits} pulse={pulse} />
+                : <CreditsOverviewSkeleton />}
+            </>
+          )}
+        </TabsContent>
 
-      {/* Payment method selector — drives the Upgrade buttons below */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">Payment Method</CardTitle>
-          <p className="text-xs text-muted-foreground">Choose how you want to pay before upgrading.</p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setPayMethod("card")}
-              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
-                payMethod === "card"
-                  ? "border-foreground/30 bg-accent shadow-sm"
-                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
-              }`}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                <CreditCard className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  Credit / debit card
-                  {payMethod === "card" && <Check className="h-3.5 w-3.5 text-primary" />}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  Visa, Mastercard, Amex — via{" "}
-                  <a href="https://polar.sh" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                    Polar <ExternalLink className="inline h-2.5 w-2.5" />
-                  </a>
-                </p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPayMethod("crypto")}
-              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
-                payMethod === "crypto"
-                  ? "border-foreground/30 bg-accent shadow-sm"
-                  : "border-border/60 hover:border-foreground/20 hover:bg-accent/50"
-              }`}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold">
-                ₿
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  Cryptocurrency
-                  {payMethod === "crypto" && <Check className="h-3.5 w-3.5 text-primary" />}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  BTC, ETH, USDT, SOL, LTC — via{" "}
-                  <a href="https://inventpay.io" target="_blank" rel="noopener" className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                    InventPay <ExternalLink className="inline h-2.5 w-2.5" />
-                  </a>
-                </p>
-              </div>
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+        {/* ── Plans ── */}
+        <TabsContent value="plans" className="mt-5">
+          <PlansGrid
+            planCards={planCards}
+            currentPlan={currentPlan}
+            isAdmin={usage?.is_admin ?? false}
+            payMethod={payMethod}
+            onPayMethod={setPayMethod}
+            onCheckout={(plan) => checkout(plan, payMethod)}
+            checkoutLoading={checkoutLoading}
+          />
+        </TabsContent>
 
-      {/* Plan Comparison — three real tiers */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
-        {planCards.map((plan) => {
-          const isCurrent = currentPlan === plan.id;
-          const tierOrder = ["free", "hobby", "pro", "team"];
-          const canUpgradeToThis = tierOrder.indexOf(plan.id) > tierOrder.indexOf(currentPlan);
-          const isPro = plan.id === "pro";
-          return (
-            <Card
-              key={plan.id}
-              className={`relative flex flex-col ${
-                isPro
-                  ? "border-primary/50 shadow-[0_0_24px_-8px] shadow-primary/20"
-                  : isCurrent
-                  ? plan.accent
-                  : ""
-              }`}
-            >
-              {isPro && !isCurrent && (
-                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
-                  <Badge className="text-[10px] px-2.5 shadow-sm">Most popular</Badge>
-                </div>
-              )}
-              <CardHeader>
-                <CardTitle className="text-base flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    {plan.id === "team" && <Crown className="h-4 w-4 text-emerald-500" />}
-                    {plan.name}
-                  </span>
-                  {isCurrent && <Badge className={`text-[10px] ${plan.id === "team" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40" : ""}`} variant={plan.id === "team" ? "default" : "outline"}>Current plan</Badge>}
-                </CardTitle>
-                <p className="text-3xl font-bold tracking-tight">
-                  {plan.price}
-                  {plan.id !== "free" && <span className="text-sm font-normal text-muted-foreground">/mo{plan.id === "team" && " per seat"}</span>}
-                </p>
-                <p className="text-xs text-muted-foreground">{plan.tagline}</p>
-              </CardHeader>
-              <CardContent className="flex flex-1 flex-col">
-                <ul className="space-y-2.5 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-[13px] leading-snug">
-                      <Check className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${plan.id === "team" || isPro ? "text-emerald-500" : "text-zinc-500"}`} />
-                      <span className="text-muted-foreground">{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-6 h-10">
-                  {canUpgradeToThis ? (
-                    <Button
-                      onClick={() => checkout(plan.id as "hobby" | "pro" | "team", payMethod)}
-                      disabled={checkoutLoading}
-                      className="w-full gap-2"
-                      variant={isPro ? "default" : "outline"}
-                    >
-                      {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                      Upgrade to {plan.name}
-                    </Button>
-                  ) : isCurrent ? (
-                    <Button variant="outline" disabled className="w-full">
-                      Your current plan
-                    </Button>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* History */}
-      {status?.history && status.history.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Payment History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {status.history.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-xl border border-border/60 p-3 text-sm transition-colors hover:border-foreground/20">
-                  <div>
-                    <span className="font-medium capitalize">{s.plan}</span>
-                    <span className="ml-2 text-muted-foreground">
-                      ${s.amount} {s.currency}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] ${
-                        s.status === "active" ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/40" :
-                        s.status === "pending" ? "text-amber-600 dark:text-amber-400 border-amber-500/40" :
-                        "text-muted-foreground"
-                      }`}
-                    >
-                      {s.status}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(s.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+        {/* ── Activity ── */}
+        <TabsContent value="activity" className="mt-5 space-y-4">
+          <Invoices history={status?.history ?? []} />
+          {credits && <CreditsLedger ledger={credits.ledger} />}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
