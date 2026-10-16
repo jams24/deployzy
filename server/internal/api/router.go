@@ -146,6 +146,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// User
 			r.Get("/users/me", s.handleGetMe)
 			r.Get("/users/me/limits", s.handleGetMyLimits)
+			r.With(fullScope).Put("/users/me", s.handleUpdateMe)
 			r.With(fullScope).Delete("/users/me", s.handleDeleteMe)
 
 			// Referrals
@@ -206,6 +207,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Email verification API (metered by credits)
 			r.Post("/email/verify", s.handleEmailVerify)
 			r.Post("/email/verify/batch", s.handleEmailVerifyBatch)
+			// Per-user BYOK: bring your own AI provider key
+			r.Get("/ai/keys", s.handleGetUserAIKeys)
+			r.With(fullScope).Put("/ai/keys", s.handleSetUserAIKey)
+			r.With(fullScope).Delete("/ai/keys/{provider}", s.handleDeleteUserAIKey)
 			r.Get("/billing/status", s.handleBillingStatus)
 			r.Get("/billing/check", s.handleCheckPayment)
 
@@ -350,6 +355,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Put("/servers/{serverId}", s.handleAdminUpdateServer)
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
+				r.Get("/tunnels/overview", s.handleAdminTunnelOverview)
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)
 				r.Delete("/tunnels/{encodedURL}", s.handleAdminKillTunnel)
 
@@ -461,6 +467,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 	// WebSocket (separate auth via query param)
 	r.Get("/api/v1/ws/traffic/{url}", s.handleTrafficWebSocket)
 	r.Get("/api/v1/ws/projects/{projectId}/logs", s.handleProjectLogsWS)
+	r.Get("/api/v1/ws/projects/{projectId}/terminal", s.handleProjectTerminalWS)
 
 	return r
 }

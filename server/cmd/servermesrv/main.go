@@ -120,6 +120,8 @@ func main() {
 			log.Fatal().Err(err).Msg("failed to connect to database")
 		}
 		defer database.Close()
+		// Derive the at-rest encryption key (for user BYOK AI keys) from the JWT secret.
+		database.SetSecretKey(*jwtSecret)
 		log.Info().Msg("database connected, user auth enabled")
 	} else {
 		log.Warn().Msg("no database URL provided, running without user auth (dev mode)")
@@ -500,6 +502,16 @@ func listenControl(addr, certFile, keyFile, authToken, domain, scheme, serverHos
 	smuxConfig.KeepAliveInterval = 30 * time.Second
 	smuxConfig.KeepAliveTimeout = 60 * time.Second
 
+	// Sessions still "open" in the history were cut off by the previous
+	// process exiting; close them out before any new client connects.
+	if database != nil {
+		if n, err := database.CloseOrphanTunnelSessions(context.Background()); err != nil {
+			log.Warn().Err(err).Msg("close orphan tunnel sessions")
+		} else if n > 0 {
+			log.Info().Int64("count", n).Msg("closed orphan tunnel sessions from previous run")
+		}
+	}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -539,8 +551,48 @@ func handleClient(conn net.Conn, smuxConfig *smux.Config, authToken, domain, sch
 	manager.Add(ctrlConn)
 	defer manager.Remove(ctrlConn.ID())
 
+	// Session history for the admin tunnel monitor. Best-effort: a DB hiccup
+	// must never break the tunnel itself.
+	var sessionID int64
+	if database != nil {
+		remoteIP := conn.RemoteAddr().String()
+		if host, _, err := net.SplitHostPort(remoteIP); err == nil {
+			remoteIP = host
+		}
+		if id, err := database.StartTunnelSession(context.Background(), ctrlConn.ID(), ctrlConn.UserID(),
+			remoteIP, ctrlConn.ClientVersion(), ctrlConn.ClientOS()); err == nil {
+			sessionID = id
+		} else {
+			clientLog.Warn().Err(err).Msg("record tunnel session start")
+		}
+	}
+	flushDone := make(chan struct{})
+	if sessionID > 0 {
+		go func() {
+			t := time.NewTicker(2 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-flushDone:
+					return
+				case <-t.C:
+					st := ctrlConn.Stats()
+					database.UpdateTunnelSession(context.Background(), sessionID, ctrlConn.TunnelURLs(), st.Requests, st.BytesIn, st.BytesOut)
+				}
+			}
+		}()
+	}
+
 	if err := ctrlConn.Run(); err != nil {
 		clientLog.Debug().Err(err).Msg("control connection ended")
+	}
+
+	close(flushDone)
+	if sessionID > 0 {
+		st := ctrlConn.Stats()
+		if err := database.EndTunnelSession(context.Background(), sessionID, ctrlConn.TunnelURLs(), st.Requests, st.BytesIn, st.BytesOut); err != nil {
+			clientLog.Warn().Err(err).Msg("record tunnel session end")
+		}
 	}
 }
 
@@ -689,7 +741,9 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 		database.ReconcileAllServerAllocations(ctx)
 	}
 	check()
-	t := time.NewTicker(2 * time.Minute)
+	// Probe every 60s so the Admin/Servers live metrics (used RAM, load avg)
+	// track reality closely — a small SSH cost per worker per minute.
+	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
 	for {
 		select {
