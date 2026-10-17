@@ -30,7 +30,14 @@ import (
 
 // proxyKitEnvKeys are the configuration knobs the argo kits read. They're
 // distinctive enough that a legitimate app essentially never has them.
-var proxyKitEnvKeys = []string{"NEZHA_SERVER", "NEZHA_KEY", "NEZHA_PORT", "ARGO_AUTH", "ARGO_DOMAIN", "ARGO_PORT"}
+// HY2/TUIC/REALITY/S5 are the sing-box variant's per-protocol ports.
+var proxyKitEnvKeys = []string{"NEZHA_SERVER", "NEZHA_KEY", "NEZHA_PORT", "ARGO_AUTH", "ARGO_DOMAIN", "ARGO_PORT",
+	"HY2_PORT", "TUIC_PORT", "REALITY_PORT", "S5_PORT"}
+
+// proxyBinarySigs are Go module paths compiled into proxy/tunnel binaries.
+// They survive renaming (kits use random names like .tmp/xyjlbr) and can be
+// read from /proc/<pid>/exe even after the kit deletes the file on disk.
+const proxyBinarySigs = `github.com/xtls/xray-core|github.com/v2fly/v2ray-core|github.com/sagernet/sing-box|github.com/apernet/hysteria|github.com/cloudflare/cloudflared|github.com/nezhahq/agent|github.com/go-gost/|github.com/ginuerzh/gost`
 
 // proxyKitProcPattern matches process command lines of the kit's components.
 const proxyKitProcPattern = `edge-ip-version|tunnel .*run --token|xray|v2ray|sing-box|hysteria|nezha|-s [a-z0-9.-]+:443 -p `
@@ -69,6 +76,17 @@ func (e *Engine) proxyKitGuard(ctx context.Context, runner *Runner, project *db.
 			hit = "file " + strings.TrimPrefix(strings.TrimPrefix(f, buildCtx), "/")
 		}
 	}
+	if hit == "" && buildCtx != "" {
+		// Proxy binaries committed into the repo/upload. Only large files are
+		// candidates (Go binaries are several MB), which keeps this cheap.
+		out, _ := runner.RunShell(ctx, fmt.Sprintf(
+			`find %s -type f -size +1M -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | head -50 | while read -r f; do m=$(grep -aoE -m1 '%s' "$f" 2>/dev/null | head -1); [ -n "$m" ] && { echo "$f|$m"; break; }; done; true`,
+			shellQuote(buildCtx), proxyBinarySigs))
+		if line := strings.TrimSpace(string(out)); line != "" {
+			f, sig, _ := strings.Cut(line, "|")
+			hit = fmt.Sprintf("binary %s (%s)", strings.TrimPrefix(strings.TrimPrefix(f, buildCtx), "/"), strings.TrimPrefix(sig, "github.com/"))
+		}
+	}
 	if hit == "" {
 		return nil
 	}
@@ -102,9 +120,21 @@ func (e *Engine) StartAbuseScanner(ctx context.Context) {
 }
 
 // proxyScanScript lists "SMHIT <container>|<signatures>" for every app
-// container with a matching process. `docker top` requires a pid column.
+// container with a matching process. Two signals per container:
+//   - command lines matching proxyKitProcPattern
+//   - "bin:<module>" for any process whose executable embeds a proxy module
+//     path. System executables (/usr, /bin, /sbin, /lib) are skipped unless
+//     deleted, so node/python/sh aren't read; kit binaries live in app or
+//     hidden dirs and are usually deleted after launch.
+//
+// `docker top` requires a pid column.
 var proxyScanScript = `for c in $(docker ps -q --filter name=^sm-); do ` +
+	`pids=$(docker top "$c" -eo pid 2>/dev/null | tail -n +2); ` +
 	`m=$(docker top "$c" -eo pid,args 2>/dev/null | grep -oE '` + proxyKitProcPattern + `' | sort -u | tr '\n' ','); ` +
+	`for p in $pids; do x=$(readlink /proc/$p/exe 2>/dev/null) || continue; ` +
+	`case "$x" in *deleted*) ;; /usr/*|/bin/*|/sbin/*|/lib/*) continue ;; esac; ` +
+	`b=$(grep -aoE -m1 '` + proxyBinarySigs + `' /proc/$p/exe 2>/dev/null | head -1); ` +
+	`[ -n "$b" ] && m="${m}bin:${b#github.com/},"; done; ` +
 	`[ -n "$m" ] && echo "SMHIT $(docker inspect --format '{{.Name}}' "$c")|$m"; done; true`
 
 func (e *Engine) scanProxyAbuse(ctx context.Context) {
