@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/deploy"
+	"github.com/serverme/serverme/server/internal/notify"
 )
 
 // handleSubmitAbuseReport accepts a public abuse report (phishing, malware,
@@ -92,6 +94,10 @@ func htmlEscapeSafe(s string) string {
 // block the owner (no sign-in, no deploys), stop the reported project, and
 // close the report. Refuses admin-owned projects.
 func (s *Server) handleAdminSuspendFromAbuseReport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Notify bool `json:"notify"` // email the owner (off by default for abuse)
+	}
+	_ = decodeJSON(r, &req) // empty body = defaults
 	rep, err := s.db.GetAbuseReport(r.Context(), chi.URLParam(r, "id"))
 	if err != nil || rep == nil {
 		writeError(w, http.StatusNotFound, "report not found")
@@ -124,7 +130,14 @@ func (s *Server) handleAdminSuspendFromAbuseReport(w http.ResponseWriter, r *htt
 		}
 	}
 	_ = s.db.SetAbuseReportStatus(r.Context(), rep.ID, "actioned")
-	writeJSON(w, http.StatusOK, map[string]any{"owner": rep.OwnerEmail, "project": rep.ProjectName, "stopped": stopped})
+	if req.Notify {
+		var offline []string
+		if stopped {
+			offline = []string{rep.ProjectName}
+		}
+		s.sendSuspensionEmail(rep.OwnerID, offline)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"owner": rep.OwnerEmail, "project": rep.ProjectName, "stopped": stopped, "notified": req.Notify})
 }
 
 // handleAdminAbuseScanStatus returns the proxy-node scanner state + settings.
@@ -166,4 +179,24 @@ func (s *Server) handleAdminSetAbuseAutoSuspend(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"auto_suspend": req.Enabled})
+}
+
+// sendSuspensionEmail emails a suspended user, in the background, using the
+// generic template (no detection details). offlineApps names apps that were
+// stopped as part of the suspension; nil means none were.
+func (s *Server) sendSuspensionEmail(userID string, offlineApps []string) {
+	if s.emailSvc == nil {
+		return
+	}
+	u, err := s.db.GetUserByID(context.Background(), userID)
+	if err != nil || u == nil || u.Email == "" {
+		return
+	}
+	go func() {
+		if err := s.emailSvc.SendOne(u.Email, "Your Deployzy account has been suspended", notify.AccountSuspendedEmail(u.Name, offlineApps)); err != nil {
+			s.log.Warn().Err(err).Str("user", userID).Msg("suspension email failed")
+		} else {
+			s.log.Info().Str("user", userID).Msg("suspension email sent")
+		}
+	}()
 }

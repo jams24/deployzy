@@ -179,6 +179,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		IsAdmin       *bool   `json:"is_admin"`
 		Blocked       *bool   `json:"blocked"`
 		BlockedReason string  `json:"blocked_reason"`
+		Notify        bool    `json:"notify"` // email the user when suspending
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -193,6 +194,9 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.SetUserBlocked(r.Context(), userID, *req.Blocked, req.BlockedReason); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update block status")
 			return
+		}
+		if *req.Blocked && req.Notify {
+			s.sendSuspensionEmail(userID, nil) // suspend alone doesn't stop apps
 		}
 	}
 

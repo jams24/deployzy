@@ -14,6 +14,7 @@ const PROHIBITED = [
   ["Illegal content", "Any content that is illegal where you or your users are located — including CSAM (which we report to authorities), pirated media, or the sale of illegal goods."],
   ["Attacks & scanning", "Using tunnels or deployments to launch DoS/DDoS attacks, port-scan, brute-force, proxy attacks, or otherwise probe systems you don't own."],
   ["Resource abuse", "Cryptocurrency mining, deliberate resource exhaustion, or circumventing plan limits."],
+  ["Proxies & VPN nodes", "Running VPN, proxy, or traffic-relay servers (such as V2Ray, Xray, sing-box, Hysteria, Trojan, or Shadowsocks) that relay other people's internet traffic, including behind Cloudflare or other tunnels, or hiding such services inside an app."],
 ];
 
 export default function AcceptableUsePage() {

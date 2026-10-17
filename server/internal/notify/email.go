@@ -511,3 +511,66 @@ func SubscriptionEmail(name, plan, kind string, amount float64, currency, renews
             </p>`
 	return brandShell(card, "You're receiving this because you have a Deployzy subscription.")
 }
+
+// AccountSuspendedEmail tells a user their account was suspended. Deliberately
+// generic: it cites the Acceptable Use Policy, never the detection method, so abuse
+// operators learn nothing about how they were caught. apps lists the user's
+// projects that were stopped; when empty, the email makes no claim about apps.
+func AccountSuspendedEmail(name string, apps []string) string {
+	greeting := "Hi,"
+	if strings.TrimSpace(name) != "" {
+		greeting = "Hi " + htmlEscape(name) + ","
+	}
+	appList, offline := "", ""
+	if len(apps) > 0 {
+		offline = ", and the apps listed below have been taken offline"
+		items := ""
+		for i, a := range apps {
+			if i == 10 {
+				items += `<li style="margin:0 0 4px;color:#888888;">…and ` + fmt.Sprint(len(apps)-10) + ` more</li>`
+				break
+			}
+			items += `<li style="margin:0 0 4px;font-family:'SF Mono',Consolas,monospace;font-size:13px;color:#cccccc;">` + htmlEscape(a) + `</li>`
+		}
+		appList = `
+    <p style="margin:0 0 10px;font-size:11px;font-weight:600;color:#6b6b6b;text-transform:uppercase;letter-spacing:0.8px;">Apps taken offline</p>
+    <ul style="margin:0 0 24px;padding-left:18px;">` + items + `</ul>`
+	}
+
+	card := `
+    <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="background:#1a140a;border:1px solid #3d2c12;border-radius:20px;padding:5px 12px;">
+          <span style="font-size:11px;font-weight:600;color:#f59e0b;letter-spacing:0.5px;text-transform:uppercase;">⬤ &nbsp;Account suspended</span>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#ffffff;line-height:1.3;">Your Deployzy account has been suspended</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#888888;line-height:1.6;">` + greeting + `<br/><br/>
+      We've suspended your account because activity on it violated the
+      <a href="https://deployzy.com/acceptable-use" style="color:#a5b4fc;">Deployzy Acceptable Use Policy</a>.
+      While suspended you can't sign in or deploy` + offline + `.
+    </p>
+
+    <div style="height:1px;background:#1f1f1f;margin-bottom:24px;"></div>
+` + appList + `
+    <p style="margin:0 0 24px;font-size:14px;color:#888888;line-height:1.6;">
+      If you believe this is a mistake, reply to this email or write to
+      <a href="mailto:support@deployzy.com" style="color:#a5b4fc;">support@deployzy.com</a>
+      from this address, and tell us what your apps do. We review every appeal.
+    </p>
+
+    <table cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td>
+          <a href="mailto:support@deployzy.com?subject=Account%20suspension%20appeal"
+             style="display:block;text-align:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;padding:11px 20px;border-radius:8px;">
+            Contact support
+          </a>
+        </td>
+      </tr>
+    </table>`
+
+	return brandShell(card, "You're receiving this because your Deployzy account was suspended.")
+}

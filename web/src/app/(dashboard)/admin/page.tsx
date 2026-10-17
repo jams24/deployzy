@@ -8,6 +8,7 @@ import { REGION_PRESETS } from "@/lib/regions";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Pager, FilterChip, fmtBytes, timeAgo } from "@/components/admin/pager";
+import { SuspendDialog, type SuspendRequest } from "@/components/admin/suspend-dialog";
 import {
   Users, Key, Globe, Activity, Search, Trash2, Shield, Crown,
   Server, Plus, Loader2, Rocket, BarChart3, Database, Link2,
@@ -377,6 +378,8 @@ export default function AdminPage() {
   const [abuseFilter, setAbuseFilter] = useState<"open" | "actioned" | "dismissed" | "all">("open");
   const [abuseScan, setAbuseScan] = useState<AbuseScanState | null>(null);
   const [abuseBusy, setAbuseBusy] = useState<string | null>(null);
+  // Pending suspension awaiting the dialog's reason + notify choice.
+  const [suspendAsk, setSuspendAsk] = useState<{ req: SuspendRequest; run: (reason: string, notify: boolean) => Promise<void> } | null>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
   const [analytics, setAnalytics] = useState<PlatformAnalytics | null>(null);
@@ -511,7 +514,7 @@ export default function AdminPage() {
   }, [tab, loadUsers]);
   const reloadUsers = () => { loadUsers(); };
 
-  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean; blocked?: boolean; blocked_reason?: string }) => {
+  const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean; blocked?: boolean; blocked_reason?: string; notify?: boolean }) => {
     if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, {
       method: "PUT", body: JSON.stringify(updates),
     }, "Updating user")) {
@@ -749,11 +752,20 @@ export default function AdminPage() {
     if (await adminFetch(`${API}/api/v1/admin/abuse/auto-suspend`, { method: "PUT", body: JSON.stringify({ enabled }) }, "Saving setting")) await loadAbuseScan();
     setAbuseBusy(null);
   }
-  async function suspendFromReport(r: AbuseReport) {
-    if (!confirm(`Suspend ${r.owner_email} and stop "${r.project_name}"?\n\nThe owner can't sign in or deploy until unsuspended (Users tab). The report will be marked actioned.`)) return;
-    setAbuseBusy(r.id);
-    if (await adminFetch(`${API}/api/v1/admin/abuse-reports/${r.id}/suspend`, { method: "POST" }, "Suspending")) loadAbuseReports();
-    setAbuseBusy(null);
+  function suspendFromReport(r: AbuseReport) {
+    setSuspendAsk({
+      req: {
+        title: `Suspend ${r.owner_email} and stop "${r.project_name}"?`,
+        description: "The owner can't sign in or deploy until unsuspended (Users tab), the app is stopped, and the report is marked actioned.",
+        defaultReason: "", defaultNotify: false, showReason: false,
+        confirmLabel: "Suspend & stop",
+      },
+      run: async (_reason, notify) => {
+        setAbuseBusy(r.id);
+        if (await adminFetch(`${API}/api/v1/admin/abuse-reports/${r.id}/suspend`, { method: "POST", body: JSON.stringify({ notify }) }, "Suspending")) loadAbuseReports();
+        setAbuseBusy(null);
+      },
+    });
   }
 
   async function setAbuseStatus(id: string, status: "open" | "actioned" | "dismissed") {
@@ -1391,6 +1403,8 @@ export default function AdminPage() {
 
       {/* Action errors — mutations used to fail silently, which read as
           "the button does nothing". */}
+      <SuspendDialog request={suspendAsk?.req ?? null} onCancel={() => setSuspendAsk(null)}
+        onConfirm={async (reason, notify) => { const a = suspendAsk; if (!a) return; await a.run(reason, notify); setSuspendAsk(null); }} />
       {actionError && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
           <span className="flex-1">{actionError}</span>
@@ -1750,17 +1764,23 @@ export default function AdminPage() {
         const bulkBlock = async (blocked: boolean) => {
           const ids = [...selectedUsers].filter(id => { const u = users.find(x => x.id === id); return u && !u.is_admin && !!u.blocked !== blocked; });
           if (ids.length === 0) return;
-          let reason = "";
-          if (blocked) {
-            const r = prompt(`Suspend ${ids.length} account(s)?\n\nThey won't be able to sign in or deploy. Reason:`, "abuse");
-            if (r === null) return;
-            reason = r;
-          } else if (!confirm(`Unsuspend ${ids.length} account(s)?`)) return;
-          for (const id of ids) {
-            await adminFetch(`${API}/api/v1/admin/users/${id}`, { method: "PUT", body: JSON.stringify({ blocked, blocked_reason: reason }) }, blocked ? "Suspending" : "Unsuspending");
-          }
-          setSelectedUsers(new Set());
-          reloadUsers();
+          const apply = async (reason: string, notify: boolean) => {
+            for (const id of ids) {
+              await adminFetch(`${API}/api/v1/admin/users/${id}`, { method: "PUT", body: JSON.stringify({ blocked, blocked_reason: reason, notify }) }, blocked ? "Suspending" : "Unsuspending");
+            }
+            setSelectedUsers(new Set());
+            reloadUsers();
+          };
+          if (!blocked) { if (confirm(`Unsuspend ${ids.length} account(s)?`)) await apply("", false); return; }
+          setSuspendAsk({
+            req: {
+              title: `Suspend ${ids.length} account${ids.length === 1 ? "" : "s"}?`,
+              description: "They won't be able to sign in or deploy. Their apps keep running — stop them from the Projects tab if needed.",
+              defaultReason: "abuse", defaultNotify: true,
+              confirmLabel: `Suspend ${ids.length}`,
+            },
+            run: apply,
+          });
         };
         const f = userFacets;
         return (
@@ -1873,8 +1893,14 @@ export default function AdminPage() {
                         title={u.blocked ? "Unsuspend account" : "Suspend account (block login + deploys)"}
                         onClick={() => {
                           if (u.blocked) { updateUser(u.id, { blocked: false }); return; }
-                          const reason = prompt(`Suspend ${u.email}?\n\nThey won't be able to sign in or deploy. Optional reason:`, "abuse");
-                          if (reason !== null) updateUser(u.id, { blocked: true, blocked_reason: reason });
+                          setSuspendAsk({
+                            req: {
+                              title: `Suspend ${u.email}?`,
+                              description: "They won't be able to sign in or deploy. Their apps keep running — stop them from the Projects tab if needed.",
+                              defaultReason: "abuse", defaultNotify: true,
+                            },
+                            run: async (reason, notify) => { await updateUser(u.id, { blocked: true, blocked_reason: reason, notify }); },
+                          });
                         }}>
                         {u.blocked ? <UserCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
                       </Button>
