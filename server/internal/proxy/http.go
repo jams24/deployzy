@@ -72,6 +72,12 @@ type IPBanChecker interface {
 	IsIPBanned(ip string) bool
 }
 
+// BandwidthGate is optionally implemented by the project provider to stop
+// serving projects whose owner has used their plan's monthly bandwidth.
+type BandwidthGate interface {
+	IsBandwidthBlocked(projectID string) bool
+}
+
 // SleepAware is optionally implemented by the project provider to support idle
 // sleep/wake. The proxy wakes a slept container before forwarding, and records
 // activity so the sweeper knows the app is in use. Only exercised for local
@@ -658,6 +664,23 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 	targetHost := "127.0.0.1"
 	if serverHost != "" {
 		targetHost = serverHost
+	}
+
+	// Monthly bandwidth cap (per account). 402 rather than 5xx so Cloudflare
+	// passes our page through instead of substituting its own error screen.
+	if bg, ok := p.projects.(BandwidthGate); ok && bg.IsBandwidthBlocked(projectID) {
+		writeErrorPage(w, http.StatusPaymentRequired, errorPageData{
+			Code:      "402",
+			Title:     "Bandwidth limit reached",
+			BadgeText: "Paused",
+			DotColor:  "#f59e0b",
+			Heading:   "This site has used its monthly bandwidth",
+			Body:      "The owner's plan allowance for this month is used up. It resets on the 1st — or the owner can upgrade their plan to restore access right away.",
+			Host:      r.Host,
+			Reason:    "bandwidth_exceeded",
+			DashURL:   "https://deployzy.com/billing",
+		})
+		return
 	}
 
 	// Idle sleep/wake (local platform projects only). Wake a slept container

@@ -379,6 +379,7 @@ func main() {
 			// Banned-IP cache — loads the ban list and keeps it fresh so the
 			// proxy can reject banned traffic with an in-memory lookup.
 			deployEngine.StartBanRefresher(context.Background())
+			deployEngine.StartBandwidthGate(context.Background())
 
 			// Install/enforce the plan-gated outbound-SMTP egress policy across the
 			// whole platform fleet (local + remote), and backfill paid allow-holes

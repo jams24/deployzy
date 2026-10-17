@@ -41,3 +41,28 @@ func TestNodeDockerfileMultiStage(t *testing.T) {
 		t.Errorf("legacy strip left a --mount behind")
 	}
 }
+
+func TestPythonDockerfileDepsFirst(t *testing.T) {
+	e := &Engine{}
+	def := e.generateDockerfile(&db.Project{}, "python")
+	iDeps := strings.Index(def, "COPY .sm-deps requirements.tx[t]")
+	iSrc := strings.Index(def, "COPY . .")
+	if iDeps < 0 || iSrc < 0 || iDeps > iSrc {
+		t.Fatalf("deps must be copied/installed before the source")
+	}
+	if !strings.Contains(def, "--mount=type=cache,target=/root/.cache/pip") || strings.Contains(def, "--no-cache-dir") {
+		t.Errorf("default python should use the pip cache mount, not --no-cache-dir")
+	}
+	legacy := strings.ReplaceAll(legacyStrip.ReplaceAllString(def, ""), "pip install ", "pip install --no-cache-dir ")
+	if strings.Contains(legacy, "--mount=") || !strings.Contains(legacy, "pip install --no-cache-dir -r") {
+		t.Errorf("legacy variant must drop mounts and restore --no-cache-dir")
+	}
+	if os.Getenv("DUMP_DF") != "" {
+		os.WriteFile("/tmp/df_py_default", []byte(def), 0644)
+		os.WriteFile("/tmp/df_py_legacy", []byte(legacy), 0644)
+	}
+	custom := e.generateDockerfile(&db.Project{InstallCmd: "pip install -r req/prod.txt"}, "python")
+	if strings.Contains(custom, ".sm-deps") || strings.Contains(custom, "--mount=") {
+		t.Errorf("custom install must keep the original template")
+	}
+}

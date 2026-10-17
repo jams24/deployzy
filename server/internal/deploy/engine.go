@@ -446,6 +446,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 					runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
 					effectiveDockerfile = "Dockerfile"
 					generatedDockerfile = true
+					if framework == "python" {
+						runner.RunShell(ctx, fmt.Sprintf(`touch %[1]s/.sm-deps; if [ -f %[1]s/.dockerignore ]; then printf '\n!.sm-deps\n' >> %[1]s/.dockerignore; fi`, shellQuote(buildCtx)))
+					}
 				}
 			}
 		} else {
@@ -455,6 +458,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 					os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
 					effectiveDockerfile = "Dockerfile"
 					generatedDockerfile = true
+					if framework == "python" {
+						runner.RunShell(ctx, fmt.Sprintf(`touch %[1]s/.sm-deps; if [ -f %[1]s/.dockerignore ]; then printf '\n!.sm-deps\n' >> %[1]s/.dockerignore; fi`, shellQuote(buildCtx)))
+					}
 				}
 			}
 		}
@@ -593,7 +599,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		if generatedDockerfile {
 			// Legacy builder can't parse `RUN --mount=...`; drop the cache
 			// mounts (the build still works, just without the shared cache).
-			runner.RunShell(buildCtx2, fmt.Sprintf(`sed -i 's/--mount=type=cache,[^ ]* //g' %s`, shellQuote(buildCtx+"/"+effectiveDockerfile)))
+			runner.RunShell(buildCtx2, fmt.Sprintf(`sed -i -e 's/--mount=type=cache,[^ ]* //g' -e 's/pip install /pip install --no-cache-dir /g' %s`, shellQuote(buildCtx+"/"+effectiveDockerfile)))
 		}
 		buildShellCmd = fmt.Sprintf(
 			"DOCKER_BUILDKIT=0 docker build %s--memory=%dm -f %s -t %s %s",
@@ -1855,10 +1861,13 @@ RUN npm prune --production 2>/dev/null || true
 		// The COPY-all-first approach means missing requirements.txt doesn't
 		// fail the build (the old `COPY requirements.txt* ./` glob failed
 		// with "no source files were specified" on script-only repos).
+		customInstall := project.InstallCmd != ""
 		installCmd := project.InstallCmd
 		if installCmd == "" {
-			installCmd = `if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; ` +
-				`elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; ` +
+			// No --no-cache-dir: pip's cache lives in a BuildKit cache mount (not
+			// the image). The legacy-builder strip re-adds --no-cache-dir.
+			installCmd = `if [ -f requirements.txt ]; then pip install -r requirements.txt; ` +
+				`elif [ -f pyproject.toml ]; then pip install .; ` +
 				`else echo "[serverme] no requirements.txt or pyproject.toml — skipping pip install"; fi`
 		}
 		startCmd := project.StartCmd
@@ -1898,10 +1907,30 @@ RUN npm prune --production 2>/dev/null || true
 				`  fi; ` +
 				`fi`
 		}
-		return fmt.Sprintf(`FROM python:3.12-slim
+		if customInstall {
+			return fmt.Sprintf(`FROM python:3.12-slim
 WORKDIR /app
 COPY . .
 RUN %s
+EXPOSE 3000
+CMD sh -c %q`, installCmd, startCmd)
+		}
+		// Dependencies install BEFORE the source is copied, so a code-only change
+		// reuses the installed packages instead of reinstalling everything (the
+		// old COPY-everything-first order reinstalled on every build).
+		// .sm-deps is an empty marker the engine adds to the build context so this
+		// COPY stays valid when requirements.txt is absent (the legacy builder
+		// rejects a COPY whose only source is an unmatched glob).
+		// The pre-install is best-effort: requirements that reference local files
+		// (-r other.txt, -e ., ./pkg) can't resolve yet, so it defers, and the
+		// post-copy install handles them (a no-op when already satisfied).
+		return fmt.Sprintf(`FROM python:3.12-slim
+WORKDIR /app
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+COPY .sm-deps requirements.tx[t] /tmp/smdeps/
+RUN --mount=type=cache,target=/root/.cache/pip if [ -f /tmp/smdeps/requirements.txt ]; then cd /tmp/smdeps && pip install -r requirements.txt || echo "[serverme] deferring dependency install until the source is copied"; fi
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/pip %s
 EXPOSE 3000
 CMD sh -c %q`, installCmd, startCmd)
 
