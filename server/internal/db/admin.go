@@ -2,26 +2,9 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 )
-
-type AdminUser struct {
-	ID         string    `json:"id"`
-	Email      string    `json:"email"`
-	Name       string    `json:"name"`
-	Plan       string    `json:"plan"`
-	IsAdmin    bool      `json:"is_admin"`
-	CreatedAt  time.Time `json:"created_at"`
-	KeyCount   int       `json:"key_count"`
-	TunnelReqs int64     `json:"tunnel_requests"`
-	SignupIP   string    `json:"signup_ip"`
-	SignupCountry string `json:"signup_country"`
-	LastLoginIP   string `json:"last_login_ip"`
-	LastCountry   string `json:"last_country"`
-	Blocked       bool   `json:"blocked"`
-}
 
 type AdminStats struct {
 	TotalUsers     int64 `json:"total_users"`
@@ -52,66 +35,6 @@ func (d *DB) IsUserAdmin(ctx context.Context, userID string) (bool, error) {
 		`SELECT COALESCE(is_admin, false) FROM users WHERE id = $1`, userID,
 	).Scan(&isAdmin)
 	return isAdmin, err
-}
-
-func (d *DB) AdminListUsers(ctx context.Context, search string, limit, offset int) ([]AdminUser, int64, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	var total int64
-	var users []AdminUser
-
-	if search != "" {
-		pattern := "%" + search + "%"
-		d.Pool.QueryRow(ctx,
-			`SELECT COUNT(*) FROM users WHERE email ILIKE $1 OR name ILIKE $1`, pattern,
-		).Scan(&total)
-
-		rows, err := d.Pool.Query(ctx,
-			`SELECT u.id, u.email, u.name, u.plan, COALESCE(u.is_admin, false), u.created_at,
-			 (SELECT COUNT(*) FROM api_keys WHERE user_id = u.id),
-			 COALESCE((SELECT COUNT(*) FROM captured_requests WHERE user_id = u.id), 0),
-			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,''), COALESCE(u.blocked,false)
-			 FROM users u WHERE u.email ILIKE $1 OR u.name ILIKE $1
-			 ORDER BY u.created_at DESC LIMIT $2 OFFSET $3`,
-			pattern, limit, offset,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-		defer rows.Close()
-		users = scanAdminUsers(rows)
-	} else {
-		d.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&total)
-
-		rows, err := d.Pool.Query(ctx,
-			`SELECT u.id, u.email, u.name, u.plan, COALESCE(u.is_admin, false), u.created_at,
-			 (SELECT COUNT(*) FROM api_keys WHERE user_id = u.id),
-			 COALESCE((SELECT COUNT(*) FROM captured_requests WHERE user_id = u.id), 0),
-			 COALESCE(u.signup_ip,''), COALESCE(u.signup_country,''), COALESCE(u.last_login_ip,''), COALESCE(u.last_country,''), COALESCE(u.blocked,false)
-			 FROM users u
-			 ORDER BY u.created_at DESC LIMIT $1 OFFSET $2`,
-			limit, offset,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-		defer rows.Close()
-		users = scanAdminUsers(rows)
-	}
-
-	return users, total, nil
-}
-
-func scanAdminUsers(rows interface{ Next() bool; Scan(...interface{}) error }) []AdminUser {
-	var users []AdminUser
-	for rows.Next() {
-		var u AdminUser
-		rows.Scan(&u.ID, &u.Email, &u.Name, &u.Plan, &u.IsAdmin, &u.CreatedAt, &u.KeyCount, &u.TunnelReqs, &u.SignupIP, &u.SignupCountry, &u.LastLoginIP, &u.LastCountry, &u.Blocked)
-		users = append(users, u)
-	}
-	return users
 }
 
 func (d *DB) AdminGetStats(ctx context.Context) (*AdminStats, error) {
@@ -212,76 +135,6 @@ func (d *DB) AdminDeleteUser(ctx context.Context, userID string) error {
 	return err
 }
 
-// AdminProject is a project row enriched with the owner's email.
-type AdminProject struct {
-	Project
-	UserEmail string `json:"user_email"`
-}
-
-// AdminListProjects returns all projects across all users, newest first.
-// search filters on name, subdomain, repo_url, or owner email.
-func (d *DB) AdminListProjects(ctx context.Context, search, status string, limit, offset int) ([]AdminProject, int64, error) {
-	where := `p.parent_project_id IS NULL`
-	args := []interface{}{}
-	i := 1
-
-	if search != "" {
-		where += ` AND (p.name ILIKE $` + itoa(i) + ` OR p.subdomain ILIKE $` + itoa(i) + ` OR p.repo_url ILIKE $` + itoa(i) + ` OR u.email ILIKE $` + itoa(i) + `)`
-		args = append(args, "%"+search+"%")
-		i++
-	}
-	if status != "" && status != "all" {
-		where += ` AND p.status = $` + itoa(i)
-		args = append(args, status)
-		i++
-	}
-
-	var total int64
-	countArgs := make([]interface{}, len(args))
-	copy(countArgs, args)
-	d.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM projects p LEFT JOIN users u ON u.id = p.user_id WHERE `+where,
-		countArgs...,
-	).Scan(&total)
-
-	args = append(args, limit, offset)
-	rows, err := d.Pool.Query(ctx,
-		`SELECT `+adminProjectCols+`, COALESCE(u.email, '') FROM projects p
-		 LEFT JOIN users u ON u.id = p.user_id
-		 WHERE `+where+`
-		 ORDER BY p.created_at DESC
-		 LIMIT $`+itoa(i)+` OFFSET $`+itoa(i+1),
-		args...,
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	var projects []AdminProject
-	for rows.Next() {
-		var ap AdminProject
-		var envJSON, servicesJSON []byte
-		p := &ap.Project
-		err := rows.Scan(
-			&p.ID, &p.UserID, &p.Name, &p.Subdomain, &p.RepoURL, &p.Branch, &p.Framework,
-			&p.InstallCmd, &p.BuildCmd, &p.StartCmd, &p.RootDir, &p.NodeVersion, &p.PortOverride,
-			&p.MemoryMB, &p.CPUs, &p.HealthCheckPath, &p.ReleaseCmd, &p.CommitSHA, &p.Labels,
-			&p.BuildMode, &p.ParentProjectID, &p.PRNumber, &p.PRTitle, &p.PreviewEnabled,
-			&p.PRCommentID, &envJSON, &p.Status, &p.ContainerID, &p.ContainerPort,
-			&p.GitHubRepo, &p.GitHubBranch, &p.AutoDeploy, &p.LastDeployAt, &p.CreatedAt, &p.UpdatedAt,
-			&p.DockerfilePath, &servicesJSON, &p.DeploySource, &p.ImageRef, &p.WorkerServerID,
-			&ap.UserEmail,
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-		json.Unmarshal(envJSON, &p.EnvVars)
-		json.Unmarshal(servicesJSON, &p.Services)
-		projects = append(projects, ap)
-	}
-	return projects, total, rows.Err()
-}
 
 // AllProjectIDs returns every project id (including preview deploys). Used by
 // the orphan reaper to compute the set of container names the platform expects

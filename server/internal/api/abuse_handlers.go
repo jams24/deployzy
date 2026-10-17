@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/deploy"
 )
 
 // handleSubmitAbuseReport accepts a public abuse report (phishing, malware,
@@ -85,4 +86,84 @@ func (s *Server) handleAdminSetAbuseReportStatus(w http.ResponseWriter, r *http.
 func htmlEscapeSafe(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;")
 	return r.Replace(s)
+}
+
+// handleAdminSuspendFromAbuseReport is the one-click action on a report:
+// block the owner (no sign-in, no deploys), stop the reported project, and
+// close the report. Refuses admin-owned projects.
+func (s *Server) handleAdminSuspendFromAbuseReport(w http.ResponseWriter, r *http.Request) {
+	rep, err := s.db.GetAbuseReport(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || rep == nil {
+		writeError(w, http.StatusNotFound, "report not found")
+		return
+	}
+	if rep.ProjectID == "" || rep.OwnerID == "" {
+		writeError(w, http.StatusBadRequest, "this report doesn't point at a Deployzy app — act on it manually")
+		return
+	}
+	if rep.OwnerIsAdmin {
+		writeError(w, http.StatusBadRequest, "the owner is an admin; refusing to suspend")
+		return
+	}
+	reason := "Abuse report (" + rep.Category + ")"
+	if rep.Category == "proxy-node" {
+		reason = "Running a VPN/proxy node - prohibited use of free hosting"
+	}
+	if err := s.db.SetUserBlocked(r.Context(), rep.OwnerID, true, reason); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to suspend owner")
+		return
+	}
+	stopped := false
+	if s.deployer != nil {
+		if p, err := s.db.GetProject(r.Context(), rep.ProjectID); err == nil && p != nil {
+			if err := s.deployer.Stop(r.Context(), p); err != nil {
+				s.log.Warn().Err(err).Str("project", p.ID).Msg("abuse suspend: stop failed")
+			} else {
+				stopped = true
+			}
+		}
+	}
+	_ = s.db.SetAbuseReportStatus(r.Context(), rep.ID, "actioned")
+	writeJSON(w, http.StatusOK, map[string]any{"owner": rep.OwnerEmail, "project": rep.ProjectName, "stopped": stopped})
+}
+
+// handleAdminAbuseScanStatus returns the proxy-node scanner state + settings.
+func (s *Server) handleAdminAbuseScanStatus(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	v, _ := s.db.GetSetting(r.Context(), deploy.AbuseAutoSuspendSetting)
+	writeJSON(w, http.StatusOK, map[string]any{"scan": s.deployer.AbuseScanState(), "auto_suspend": v == "true"})
+}
+
+// handleAdminAbuseScanNow starts a scan of every platform host in the background.
+func (s *Server) handleAdminAbuseScanNow(w http.ResponseWriter, r *http.Request) {
+	if s.deployer == nil {
+		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")
+		return
+	}
+	started := s.deployer.ScanProxyAbuseNow()
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": started})
+}
+
+// handleAdminSetAbuseAutoSuspend toggles automatic suspension of
+// high-confidence proxy-node hits on free accounts.
+func (s *Server) handleAdminSetAbuseAutoSuspend(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	v := "false"
+	if req.Enabled {
+		v = "true"
+	}
+	if err := s.db.SetSetting(r.Context(), deploy.AbuseAutoSuspendSetting, v); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save setting")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"auto_suspend": req.Enabled})
 }

@@ -148,30 +148,27 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
-	search := r.URL.Query().Get("search")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 {
-		limit = 50
-	}
-
-	users, total, err := s.db.AdminListUsers(r.Context(), search, limit, offset)
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	users, total, err := s.db.AdminListUsersPage(r.Context(), db.AdminUserQuery{
+		Search: q.Get("search"), Plan: q.Get("plan"), Status: q.Get("status"), Sort: q.Get("sort"),
+		Limit: limit, Offset: offset,
+	})
 	if err != nil {
+		s.log.Error().Err(err).Msg("admin list users")
 		writeError(w, http.StatusInternalServerError, "failed to list users")
 		return
 	}
-
-	if users == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"users": []interface{}{}, "total": total, "limit": limit, "offset": offset})
-		return
+	resp := map[string]any{"users": users, "total": total, "limit": limit, "offset": offset}
+	if q.Get("facets") == "1" {
+		if f, err := s.db.AdminUserFacetCounts(r.Context()); err == nil {
+			resp["facets"] = f
+		} else {
+			s.log.Warn().Err(err).Msg("admin user facets")
+		}
 	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"users":  users,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
-	})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -295,24 +292,27 @@ func (s *Server) handleAdminRedeployAll(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleAdminListProjects(w http.ResponseWriter, r *http.Request) {
-	search := r.URL.Query().Get("search")
-	status := r.URL.Query().Get("status")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 {
-		limit = 50
-	}
-
-	projects, total, err := s.db.AdminListProjects(r.Context(), search, status, limit, offset)
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	projects, total, err := s.db.AdminListProjectsPage(r.Context(), db.AdminProjectQuery{
+		Search: q.Get("search"), Status: q.Get("status"), Server: q.Get("server"), Plan: q.Get("plan"),
+		Sort: q.Get("sort"), FlaggedOnly: q.Get("flagged") == "1", Limit: limit, Offset: offset,
+	})
 	if err != nil {
+		s.log.Error().Err(err).Msg("admin list projects")
 		writeError(w, http.StatusInternalServerError, "failed to list projects")
 		return
 	}
-	if projects == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"projects": []interface{}{}, "total": total})
-		return
+	resp := map[string]any{"projects": projects, "total": total, "limit": limit, "offset": offset}
+	if q.Get("facets") == "1" {
+		if f, err := s.db.AdminProjectFacetCounts(r.Context()); err == nil {
+			resp["facets"] = f
+		} else {
+			s.log.Warn().Err(err).Msg("admin project facets")
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"projects": projects, "total": total, "limit": limit, "offset": offset})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminStopProject(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/serverme/serverme/server/internal/db"
@@ -25,8 +26,9 @@ import (
 //   - deploy: proxyKitGuard refuses source/env that carry the kits' config
 //     knobs, before anything is built.
 //   - runtime: StartAbuseScanner looks at running processes on every platform
-//     host (one command per host) and files an Abuse Report per hit. It never
-//     stops anything by itself — an admin reviews and acts.
+//     host (one command per host) and files an Abuse Report per hit. By default
+//     an admin reviews and acts; with app_settings abuse_auto_suspend=true,
+//     high-confidence hits on FREE accounts are suspended automatically.
 
 // proxyKitEnvKeys are the configuration knobs the argo kits read. They're
 // distinctive enough that a legitimate app essentially never has them.
@@ -137,7 +139,90 @@ var proxyScanScript = `for c in $(docker ps -q --filter name=^sm-); do ` +
 	`[ -n "$b" ] && m="${m}bin:${b#github.com/},"; done; ` +
 	`[ -n "$m" ] && echo "SMHIT $(docker inspect --format '{{.Name}}' "$c")|$m"; done; true`
 
+// AbuseScanStatus is what the admin console shows about the scanner.
+type AbuseScanStatus struct {
+	Running       bool       `json:"running"`
+	LastStarted   *time.Time `json:"last_started,omitempty"`
+	LastFinished  *time.Time `json:"last_finished,omitempty"`
+	Hosts         int        `json:"hosts"`
+	Hits          int        `json:"hits"`           // containers that matched
+	NewReports    int        `json:"new_reports"`    // reports filed this run
+	AutoSuspended int        `json:"auto_suspended"` // suspended this run
+	NextRunAt     *time.Time `json:"next_run_at,omitempty"`
+}
+
+var (
+	abuseScanMu    sync.Mutex
+	abuseScanState AbuseScanStatus
+)
+
+// AbuseScanState returns a snapshot of the scanner's last/current run.
+func (e *Engine) AbuseScanState() AbuseScanStatus {
+	abuseScanMu.Lock()
+	defer abuseScanMu.Unlock()
+	return abuseScanState
+}
+
+// ScanProxyAbuseNow starts a scan in the background unless one is running.
+// Returns false when a scan was already in progress.
+func (e *Engine) ScanProxyAbuseNow() bool {
+	abuseScanMu.Lock()
+	running := abuseScanState.Running
+	abuseScanMu.Unlock()
+	if running {
+		return false
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		e.scanProxyAbuse(ctx)
+	}()
+	return true
+}
+
+// AbuseAutoSuspendSetting is the app_settings key for automatic suspension.
+const AbuseAutoSuspendSetting = "abuse_auto_suspend"
+
+// highConfidenceProxy reports whether a hit is certain enough to act on
+// without a human: a proxy core or Nezha agent identified by its compiled-in
+// module path. A bare cloudflared tunnel is NOT enough (legit apps use it).
+func highConfidenceProxy(signatures string) bool {
+	for _, sig := range []string{"bin:xtls/xray-core", "bin:v2fly/v2ray-core", "bin:sagernet/sing-box", "bin:apernet/hysteria", "bin:nezhahq/agent"} {
+		if strings.Contains(signatures, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) scanProxyAbuse(ctx context.Context) {
+	abuseScanMu.Lock()
+	if abuseScanState.Running {
+		abuseScanMu.Unlock()
+		return
+	}
+	now := time.Now()
+	abuseScanState = AbuseScanStatus{Running: true, LastStarted: &now, LastFinished: abuseScanState.LastFinished}
+	abuseScanMu.Unlock()
+
+	hosts, hits, filed, suspended := 0, 0, 0, 0
+	defer func() {
+		done := time.Now()
+		next := done.Add(abuseScanInterval)
+		abuseScanMu.Lock()
+		abuseScanState.Running = false
+		abuseScanState.LastFinished = &done
+		abuseScanState.NextRunAt = &next
+		abuseScanState.Hosts, abuseScanState.Hits = hosts, hits
+		abuseScanState.NewReports, abuseScanState.AutoSuspended = filed, suspended
+		abuseScanMu.Unlock()
+	}()
+
+	autoSuspend := false
+	if v, _ := e.db.GetSetting(ctx, AbuseAutoSuspendSetting); v == "true" {
+		autoSuspend = true
+	}
+
 	runners := []*Runner{NewLocalRunner()}
 	servers, err := e.db.ListWorkerServers(ctx, nil)
 	if err == nil {
@@ -151,7 +236,7 @@ func (e *Engine) scanProxyAbuse(ctx context.Context) {
 			}
 		}
 	}
-	filed := 0
+	hosts = len(runners)
 	for _, r := range runners {
 		scanCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		out, err := r.RunShell(scanCtx, proxyScanScript)
@@ -172,12 +257,50 @@ func (e *Engine) scanProxyAbuse(ctx context.Context) {
 			if err != nil || full == nil {
 				continue
 			}
-			if e.fileProxyAbuseReport(ctx, full, "Running processes match a VPN/proxy-node kit: "+hit.signatures+" (host "+r.Host()+").") {
+			hits++
+			details := "Running processes match a VPN/proxy-node kit: " + hit.signatures + " (host " + r.Host() + ")."
+			if autoSuspend && highConfidenceProxy(hit.signatures) && e.autoSuspendProxy(ctx, full, details) {
+				suspended++
+				filed++
+				continue
+			}
+			if e.fileProxyAbuseReport(ctx, full, details) {
 				filed++
 			}
 		}
 	}
-	e.log.Info().Int("new_reports", filed).Int("hosts", len(runners)).Msg("proxy-node abuse scan done")
+	e.log.Info().Int("hosts", hosts).Int("hits", hits).Int("new_reports", filed).Int("auto_suspended", suspended).Msg("proxy-node abuse scan done")
+}
+
+// autoSuspendProxy blocks a FREE owner and stops the project, recording an
+// actioned report. Paid owners are never auto-suspended — they get a report
+// for a human to review. Returns true when it acted.
+func (e *Engine) autoSuspendProxy(ctx context.Context, p *db.Project, details string) bool {
+	u, err := e.db.GetUserByID(ctx, p.UserID)
+	if err != nil || u == nil || (u.Plan != "" && u.Plan != "free") {
+		return false
+	}
+	if err := e.db.SetUserBlocked(ctx, p.UserID, true, "Running a VPN/proxy node (auto-detected) - prohibited use of free hosting"); err != nil {
+		e.log.Error().Err(err).Str("project", p.ID).Msg("auto-suspend: block owner failed")
+		return false
+	}
+	if err := e.Stop(ctx, p); err != nil {
+		e.log.Warn().Err(err).Str("project", p.ID).Msg("auto-suspend: stop failed (owner is blocked)")
+	}
+	target := fmt.Sprintf("https://%s.%s", p.Subdomain, e.AppDomain)
+	if e.db.HasAbuseReport(ctx, target, abuseCategoryProxy) {
+		_ = e.db.MarkAbuseReportsActioned(ctx, target, abuseCategoryProxy)
+	} else {
+		r := &db.AbuseReport{
+			TargetURL: target, Category: abuseCategoryProxy, ReporterEmail: "scanner@deployzy.com", ReporterIP: "internal",
+			Details: fmt.Sprintf("[auto-suspended] project %q (%s), owner %s. %s", p.Name, p.ID, u.Email, details),
+		}
+		if err := e.db.CreateAbuseReport(ctx, r); err == nil {
+			_ = e.db.SetAbuseReportStatus(ctx, r.ID, "actioned")
+		}
+	}
+	e.log.Warn().Str("project", p.ID).Str("owner", u.Email).Msg("auto-suspended proxy-node project")
+	return true
 }
 
 type proxyHit struct{ id8, signatures string }

@@ -389,6 +389,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				// Abuse reports
 				r.Get("/abuse-reports", s.handleAdminListAbuseReports)
 				r.Post("/abuse-reports/{id}/status", s.handleAdminSetAbuseReportStatus)
+				r.Post("/abuse-reports/{id}/suspend", s.handleAdminSuspendFromAbuseReport)
+				r.Get("/abuse/scan", s.handleAdminAbuseScanStatus)
+				r.Post("/abuse/scan", s.handleAdminAbuseScanNow)
+				r.Put("/abuse/auto-suspend", s.handleAdminSetAbuseAutoSuspend)
 
 				r.Get("/ip-bans", s.handleAdminListIPBans)
 				r.Post("/ip-bans", s.handleAdminBanIP)

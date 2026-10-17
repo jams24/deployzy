@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { REGION_PRESETS } from "@/lib/regions";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Pager, FilterChip, fmtBytes, timeAgo } from "@/components/admin/pager";
 import {
   Users, Key, Globe, Activity, Search, Trash2, Shield, Crown,
   Server, Plus, Loader2, Rocket, BarChart3, Database, Link2,
@@ -88,16 +89,35 @@ interface Stats {
 }
 
 interface AdminUser {
-  id: string; email: string; name: string; plan: string; is_admin: boolean;
-  created_at: string; key_count: number; tunnel_requests: number;
-  project_count?: number;
+  id: string; email: string; name: string; plan: string; pro_until?: string | null;
+  is_admin: boolean; email_verified: boolean;
+  created_at: string; last_seen_at?: string | null; key_count: number;
   signup_ip?: string; signup_country?: string; last_login_ip?: string; last_country?: string;
-  blocked?: boolean;
+  blocked?: boolean; blocked_reason?: string; blocked_at?: string | null;
+  projects: number; running: number; sleeping: number; bandwidth_bytes: number; flagged: boolean;
+}
+interface UserFacets {
+  total: number; by_plan: Record<string, number>;
+  suspended: number; admins: number; flagged: number; unverified: number;
+}
+interface ProjectFacets {
+  total: number; by_status: Record<string, number>; flagged: number;
+  servers: { id: string; label: string; count: number }[];
 }
 interface IPBan { ip: string; reason: string; created_by: string; created_at: string; }
 interface AbuseReport {
   id: string; target_url: string; category: string; details: string;
   reporter_email: string; reporter_ip: string; status: string; created_at: string;
+  project_id?: string; project_name?: string; project_status?: string;
+  owner_id?: string; owner_email?: string; owner_plan?: string;
+  owner_blocked?: boolean; owner_is_admin?: boolean;
+}
+interface AbuseScanState {
+  scan: {
+    running: boolean; last_started?: string; last_finished?: string; next_run_at?: string;
+    hosts: number; hits: number; new_reports: number; auto_suspended: number;
+  };
+  auto_suspend: boolean;
 }
 
 // Turn a 2-letter ISO country code into its flag emoji (regional indicators).
@@ -108,9 +128,12 @@ function countryFlag(code?: string): string {
 }
 
 interface AdminProject {
-  id: string; user_id: string; user_email: string; name: string;
-  subdomain: string; repo_url: string; branch: string; framework: string;
-  status: string; created_at: string; last_deploy_at: string | null; commit_sha: string;
+  id: string; name: string; subdomain: string; status: string; sleeping: boolean;
+  framework: string; deploy_source: string; repo_url: string; branch: string; memory_mb: number;
+  created_at: string; last_deploy_at: string | null; last_request_at: string | null;
+  user_id: string; user_email: string; user_plan: string; user_blocked: boolean;
+  worker_server_id: string; server_label: string; server_byoc: boolean;
+  bandwidth_bytes: number; flagged: boolean;
 }
 
 interface AdminDatabase {
@@ -311,21 +334,29 @@ export default function AdminPage() {
   // Users state
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersTotal, setUsersTotal] = useState(0);
-  const [usersOffset, setUsersOffset] = useState(0);
-  const [usersHasMore, setUsersHasMore] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [userPlanFilter, setUserPlanFilter] = useState("all");
-  const userSentinelRef = useRef<HTMLDivElement>(null);
+  const [userStatus, setUserStatus] = useState("all");
+  const [userSort, setUserSort] = useState("newest");
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPageSize, setUsersPageSize] = useState(25);
+  const [userFacets, setUserFacets] = useState<UserFacets | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
 
   // Projects state
   const [projects, setProjects] = useState<AdminProject[]>([]);
   const [projectsTotal, setProjectsTotal] = useState(0);
-  const [projectsOffset, setProjectsOffset] = useState(0);
-  const [projectsHasMore, setProjectsHasMore] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectStatus, setProjectStatus] = useState("all");
+  const [projectServer, setProjectServer] = useState("all");
+  const [projectPlan, setProjectPlan] = useState("all");
+  const [projectSort, setProjectSort] = useState("newest");
+  const [projectFlagged, setProjectFlagged] = useState(false);
+  const [projectsPage, setProjectsPage] = useState(1);
+  const [projectsPageSize, setProjectsPageSize] = useState(25);
+  const [projectFacets, setProjectFacets] = useState<ProjectFacets | null>(null);
   const [databases, setDatabases] = useState<AdminDatabase[]>([]);
   const [databasesTotal, setDatabasesTotal] = useState(0);
   const [databasesLoading, setDatabasesLoading] = useState(false);
@@ -344,7 +375,8 @@ export default function AdminPage() {
   const [abuseReports, setAbuseReports] = useState<AbuseReport[]>([]);
   const [abuseLoading, setAbuseLoading] = useState(false);
   const [abuseFilter, setAbuseFilter] = useState<"open" | "actioned" | "dismissed" | "all">("open");
-  const projectSentinelRef = useRef<HTMLDivElement>(null);
+  const [abuseScan, setAbuseScan] = useState<AbuseScanState | null>(null);
+  const [abuseBusy, setAbuseBusy] = useState<string | null>(null);
   const [redeploying, setRedeploying] = useState(false);
   const [actionError, setActionError] = useState("");
   const [analytics, setAnalytics] = useState<PlatformAnalytics | null>(null);
@@ -443,50 +475,47 @@ export default function AdminPage() {
   }, [headers]);
 
   // ── Users ──────────────────────────────────────────────────────────────────
-  const fetchUsers = useCallback(async (offset: number, search: string, plan: string, append: boolean) => {
+  // Server-side filter/sort/page. Facets (chip counts) refresh with each load.
+  const usersReq = useRef(0);
+  const loadUsers = useCallback(async () => {
+    const id = ++usersReq.current;
     setUsersLoading(true);
     try {
-      const q = new URLSearchParams({ limit: "30", offset: String(offset) });
-      if (search) q.set("search", search);
-      if (plan && plan !== "all") q.set("plan", plan);
+      const q = new URLSearchParams({
+        limit: String(usersPageSize), offset: String((usersPage - 1) * usersPageSize),
+        sort: userSort, facets: "1",
+      });
+      if (userSearch.trim()) q.set("search", userSearch.trim());
+      if (userPlanFilter !== "all") q.set("plan", userPlanFilter);
+      if (userStatus !== "all") q.set("status", userStatus);
       const res = await fetch(`${API}/api/v1/admin/users?${q}`, { headers: headers() });
+      if (id !== usersReq.current) return; // a newer request superseded this one
       if (res.ok) {
         const data = await res.json();
-        const rows = data.users || [];
+        const rows: AdminUser[] = data.users || [];
+        if (rows.length === 0 && usersPage > 1) { setUsersPage(1); return; }
+        setUsers(rows);
         setUsersTotal(data.total || 0);
-        setUsers(prev => append ? [...prev, ...rows] : rows);
-        setUsersHasMore(offset + rows.length < (data.total || 0));
-        setUsersOffset(offset + rows.length);
-      }
+        if (data.facets) setUserFacets(data.facets);
+      } else setActionError(`Loading users failed: HTTP ${res.status}`);
     } catch {}
-    setUsersLoading(false);
-  }, [headers]);
+    if (id === usersReq.current) setUsersLoading(false);
+  }, [headers, usersPage, usersPageSize, userSort, userSearch, userPlanFilter, userStatus]);
 
-  const resetUsers = useCallback((search: string, plan: string) => {
-    setUsers([]); setUsersOffset(0); setUsersHasMore(true);
-    fetchUsers(0, search, plan, false);
-  }, [fetchUsers]);
-
-  // Auto-search users on search/plan change (debounced 300ms)
+  // Filters/search reset to page 1; the load itself is debounced for typing.
+  useEffect(() => { setUsersPage(1); setSelectedUsers(new Set()); }, [userSearch, userPlanFilter, userStatus, userSort, usersPageSize]);
   useEffect(() => {
-    const t = setTimeout(() => resetUsers(userSearch, userPlanFilter), 300);
+    if (tab !== "users") return;
+    const t = setTimeout(loadUsers, 250);
     return () => clearTimeout(t);
-  }, [userSearch, userPlanFilter]);
-
-  useEffect(() => {
-    const el = userSentinelRef.current; if (!el) return;
-    const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && usersHasMore && !usersLoading)
-        fetchUsers(usersOffset, userSearch, userPlanFilter, true);
-    }, { threshold: 0.1 });
-    obs.observe(el); return () => obs.disconnect();
-  }, [usersHasMore, usersLoading, usersOffset, userSearch, userPlanFilter, fetchUsers]);
+  }, [tab, loadUsers]);
+  const reloadUsers = () => { loadUsers(); };
 
   const updateUser = async (userId: string, updates: { plan?: string; is_admin?: boolean; blocked?: boolean; blocked_reason?: string }) => {
     if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, {
       method: "PUT", body: JSON.stringify(updates),
     }, "Updating user")) {
-      resetUsers(userSearch, userPlanFilter);
+      reloadUsers();
       loadStats();
     }
   };
@@ -494,7 +523,7 @@ export default function AdminPage() {
   const deleteUser = async (userId: string, email: string) => {
     if (!confirm(`Delete ${email}? This cannot be undone.`)) return;
     if (await adminFetch(`${API}/api/v1/admin/users/${userId}`, { method: "DELETE" }, "Deleting user")) {
-      resetUsers(userSearch, userPlanFilter);
+      reloadUsers();
       loadStats();
     }
   };
@@ -535,44 +564,41 @@ export default function AdminPage() {
   };
 
   // ── Projects ───────────────────────────────────────────────────────────────
-  const fetchProjects = useCallback(async (offset: number, search: string, status: string, append: boolean) => {
+  const projectsReq = useRef(0);
+  const loadProjects = useCallback(async () => {
+    const id = ++projectsReq.current;
     setProjectsLoading(true);
     try {
-      const q = new URLSearchParams({ limit: "25", offset: String(offset) });
-      if (search) q.set("search", search);
-      if (status && status !== "all") q.set("status", status);
+      const q = new URLSearchParams({
+        limit: String(projectsPageSize), offset: String((projectsPage - 1) * projectsPageSize),
+        sort: projectSort, facets: "1",
+      });
+      if (projectSearch.trim()) q.set("search", projectSearch.trim());
+      if (projectStatus !== "all") q.set("status", projectStatus);
+      if (projectServer !== "all") q.set("server", projectServer);
+      if (projectPlan !== "all") q.set("plan", projectPlan);
+      if (projectFlagged) q.set("flagged", "1");
       const res = await fetch(`${API}/api/v1/admin/projects?${q}`, { headers: headers() });
+      if (id !== projectsReq.current) return;
       if (res.ok) {
         const data = await res.json();
-        const rows = data.projects || [];
+        const rows: AdminProject[] = data.projects || [];
+        if (rows.length === 0 && projectsPage > 1) { setProjectsPage(1); return; }
+        setProjects(rows);
         setProjectsTotal(data.total || 0);
-        setProjects(prev => append ? [...prev, ...rows] : rows);
-        setProjectsHasMore(offset + rows.length < (data.total || 0));
-        setProjectsOffset(offset + rows.length);
-      }
+        if (data.facets) setProjectFacets(data.facets);
+      } else setActionError(`Loading projects failed: HTTP ${res.status}`);
     } catch {}
-    setProjectsLoading(false);
-  }, [headers]);
+    if (id === projectsReq.current) setProjectsLoading(false);
+  }, [headers, projectsPage, projectsPageSize, projectSort, projectSearch, projectStatus, projectServer, projectPlan, projectFlagged]);
 
-  const resetProjects = useCallback((search: string, status: string) => {
-    setProjects([]); setProjectsOffset(0); setProjectsHasMore(true);
-    fetchProjects(0, search, status, false);
-  }, [fetchProjects]);
-
-  // Auto-search projects on search/status change (debounced 300ms)
+  useEffect(() => { setProjectsPage(1); }, [projectSearch, projectStatus, projectServer, projectPlan, projectFlagged, projectSort, projectsPageSize]);
   useEffect(() => {
-    const t = setTimeout(() => resetProjects(projectSearch, projectStatus), 300);
+    if (tab !== "projects") return;
+    const t = setTimeout(loadProjects, 250);
     return () => clearTimeout(t);
-  }, [projectSearch, projectStatus]);
-
-  useEffect(() => {
-    const el = projectSentinelRef.current; if (!el) return;
-    const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && projectsHasMore && !projectsLoading)
-        fetchProjects(projectsOffset, projectSearch, projectStatus, true);
-    }, { threshold: 0.1 });
-    obs.observe(el); return () => obs.disconnect();
-  }, [projectsHasMore, projectsLoading, projectsOffset, projectSearch, projectStatus, fetchProjects]);
+  }, [tab, loadProjects]);
+  const reloadProjects = () => { loadProjects(); };
 
   // ── Databases (standalone services) ────────────────────────────────────────
   const loadDatabases = useCallback(async (search: string, typ: string) => {
@@ -690,6 +716,45 @@ export default function AdminPage() {
   // Load once on mount too, so the "Abuse Reports" tab badge reflects pending
   // open reports without the operator having to open the tab first.
   useEffect(() => { loadAbuseReports(); }, [loadAbuseReports]);
+
+  // Proxy-node scanner status + auto-suspend setting. Polls while a scan runs.
+  const loadAbuseScan = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/v1/admin/abuse/scan`, { headers: headers() });
+      if (res.ok) setAbuseScan(await res.json());
+    } catch {}
+  }, [headers]);
+  useEffect(() => { if (tab === "abuse") loadAbuseScan(); }, [tab, loadAbuseScan]);
+  useEffect(() => {
+    if (tab !== "abuse" || !abuseScan?.scan.running) return;
+    const t = setInterval(async () => { await loadAbuseScan(); }, 3000);
+    return () => clearInterval(t);
+  }, [tab, abuseScan?.scan.running, loadAbuseScan]);
+  // When a scan finishes, pull the reports it filed.
+  const prevScanRunning = useRef(false);
+  useEffect(() => {
+    const running = !!abuseScan?.scan.running;
+    if (prevScanRunning.current && !running) loadAbuseReports();
+    prevScanRunning.current = running;
+  }, [abuseScan?.scan.running, loadAbuseReports]);
+
+  async function runAbuseScan() {
+    setAbuseBusy("scan");
+    if (await adminFetch(`${API}/api/v1/admin/abuse/scan`, { method: "POST" }, "Starting scan")) await loadAbuseScan();
+    setAbuseBusy(null);
+  }
+  async function setAutoSuspend(enabled: boolean) {
+    if (enabled && !confirm("Turn on auto-suspend?\n\nEvery scan will immediately suspend FREE accounts whose running app contains a proxy server (Xray / V2Ray / sing-box / Hysteria) or a Nezha agent, identified by binary fingerprint. Paid accounts are never auto-suspended — they get a report instead.")) return;
+    setAbuseBusy("auto");
+    if (await adminFetch(`${API}/api/v1/admin/abuse/auto-suspend`, { method: "PUT", body: JSON.stringify({ enabled }) }, "Saving setting")) await loadAbuseScan();
+    setAbuseBusy(null);
+  }
+  async function suspendFromReport(r: AbuseReport) {
+    if (!confirm(`Suspend ${r.owner_email} and stop "${r.project_name}"?\n\nThe owner can't sign in or deploy until unsuspended (Users tab). The report will be marked actioned.`)) return;
+    setAbuseBusy(r.id);
+    if (await adminFetch(`${API}/api/v1/admin/abuse-reports/${r.id}/suspend`, { method: "POST" }, "Suspending")) loadAbuseReports();
+    setAbuseBusy(null);
+  }
 
   async function setAbuseStatus(id: string, status: "open" | "actioned" | "dismissed") {
     try {
@@ -925,21 +990,21 @@ export default function AdminPage() {
   const stopProject = async (id: string, name: string) => {
     if (!confirm(`Stop "${name}"?`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/stop`, { method: "POST" }, `Stopping ${name}`))
-      resetProjects(projectSearch, projectStatus);
+      reloadProjects();
   };
   const redeployProject = async (id: string, name: string) => {
     if (!confirm(`Redeploy "${name}" from source?`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/redeploy`, { method: "POST" }, `Redeploying ${name}`))
-      setTimeout(() => resetProjects(projectSearch, projectStatus), 1500);
+      setTimeout(() => reloadProjects(), 1500);
   };
   const sleepProject = async (id: string, name: string) => {
     if (!confirm(`Sleep "${name}" now?\n\nStops its container to free resources; it wakes automatically on the next HTTP request. Platform-local projects only.`)) return;
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/sleep`, { method: "POST" }, `Sleeping ${name}`))
-      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
+      setTimeout(() => { reloadProjects(); loadDensity(); }, 1000);
   };
   const wakeProject = async (id: string, name: string) => {
     if (await adminFetch(`${API}/api/v1/admin/projects/${id}/wake`, { method: "POST" }, `Waking ${name}`))
-      setTimeout(() => { resetProjects(projectSearch, projectStatus); loadDensity(); }, 1000);
+      setTimeout(() => { reloadProjects(); loadDensity(); }, 1000);
   };
   const openMove = async (id: string) => {
     if (moveOpen === id) { setMoveOpen(null); return; }
@@ -958,7 +1023,7 @@ export default function AdminPage() {
       method: "POST", body: JSON.stringify({ worker_server_id: serverId }),
     }, `Moving ${name} to ${label}`);
     setMoveBusy(false);
-    if (ok) { setMoveOpen(null); setTimeout(() => resetProjects(projectSearch, projectStatus), 1500); }
+    if (ok) { setMoveOpen(null); setTimeout(() => reloadProjects(), 1500); }
   };
   const openMoveDb = async (id: string) => {
     if (moveDbOpen === id) { setMoveDbOpen(null); return; }
@@ -993,7 +1058,7 @@ export default function AdminPage() {
       // Delete still succeeded, but the container teardown may be unconfirmed
       // (unreachable BYOC host) — surface that so the admin can check.
       try { const d = await res.json(); if (d?.warning) alert(d.warning); } catch {}
-      resetProjects(projectSearch, projectStatus);
+      reloadProjects();
       loadStats();
     } catch (e) {
       setActionError(`Deleting ${name} failed: ${e instanceof Error ? e.message : "network error"}`);
@@ -1678,91 +1743,133 @@ export default function AdminPage() {
       )}
 
       {/* ── USERS TAB ────────────────────────────────────────────────────── */}
-      {tab === "users" && (
-        <div className="space-y-4">
-          {/* Controls */}
-          <div className="flex flex-col sm:flex-row gap-2">
+      {tab === "users" && (() => {
+        const allOnPage = users.length > 0 && users.every(u => selectedUsers.has(u.id));
+        const toggleAll = () => setSelectedUsers(allOnPage ? new Set() : new Set(users.map(u => u.id)));
+        const toggleOne = (id: string) => setSelectedUsers(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+        const bulkBlock = async (blocked: boolean) => {
+          const ids = [...selectedUsers].filter(id => { const u = users.find(x => x.id === id); return u && !u.is_admin && !!u.blocked !== blocked; });
+          if (ids.length === 0) return;
+          let reason = "";
+          if (blocked) {
+            const r = prompt(`Suspend ${ids.length} account(s)?\n\nThey won't be able to sign in or deploy. Reason:`, "abuse");
+            if (r === null) return;
+            reason = r;
+          } else if (!confirm(`Unsuspend ${ids.length} account(s)?`)) return;
+          for (const id of ids) {
+            await adminFetch(`${API}/api/v1/admin/users/${id}`, { method: "PUT", body: JSON.stringify({ blocked, blocked_reason: reason }) }, blocked ? "Suspending" : "Unsuspending");
+          }
+          setSelectedUsers(new Set());
+          reloadUsers();
+        };
+        const f = userFacets;
+        return (
+        <div className="space-y-3">
+          <div className="flex flex-col lg:flex-row gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by email or name..."
-                className="pl-9 h-9 text-sm"
-                value={userSearch}
-                onChange={e => setUserSearch(e.target.value)}
-              />
+              <Input placeholder="Search email, name, IP, project or user ID…" className="pl-9 h-9 text-sm"
+                value={userSearch} onChange={e => setUserSearch(e.target.value)} />
             </div>
-            <select
-              value={userPlanFilter}
-              onChange={e => setUserPlanFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="all">All plans</option>
-              <option value="free">Free</option>
-              <option value="hobby">Hobby</option>
-              <option value="pro">Pro</option>
-              <option value="team">Team</option>
-            </select>
+            <div className="flex gap-2">
+              <select value={userPlanFilter} onChange={e => setUserPlanFilter(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm" aria-label="Plan">
+                <option value="all">All plans{f ? ` (${f.total})` : ""}</option>
+                {["free", "hobby", "pro", "team"].map(pl => (
+                  <option key={pl} value={pl}>{pl[0].toUpperCase() + pl.slice(1)}{f ? ` (${f.by_plan[pl] || 0})` : ""}</option>
+                ))}
+              </select>
+              <select value={userSort} onChange={e => setUserSort(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm" aria-label="Sort">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="last_seen">Last seen</option>
+                <option value="projects">Most projects</option>
+                <option value="bandwidth">Most bandwidth</option>
+                <option value="email">Email A–Z</option>
+              </select>
+            </div>
           </div>
 
-          <div className="text-xs text-muted-foreground">{usersTotal} users total</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            <FilterChip active={userStatus === "all"} onClick={() => setUserStatus("all")} count={f?.total}>All</FilterChip>
+            <FilterChip active={userStatus === "active"} onClick={() => setUserStatus("active")} count={f ? f.total - f.suspended : undefined}>Active</FilterChip>
+            <FilterChip active={userStatus === "flagged"} onClick={() => setUserStatus("flagged")} count={f?.flagged} tone="danger">Flagged</FilterChip>
+            <FilterChip active={userStatus === "suspended"} onClick={() => setUserStatus("suspended")} count={f?.suspended} tone="warn">Suspended</FilterChip>
+            <FilterChip active={userStatus === "unverified"} onClick={() => setUserStatus("unverified")} count={f?.unverified}>Unverified</FilterChip>
+            <FilterChip active={userStatus === "admin"} onClick={() => setUserStatus("admin")} count={f?.admins}>Admins</FilterChip>
+          </div>
 
-          {usersLoading && users.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>
-          ) : users.length === 0 ? (
-            <div className="flex flex-col items-center py-12">
-              <Users className="h-8 w-8 text-muted-foreground/30 mb-2" />
-              <p className="text-sm text-muted-foreground">No users found.</p>
+          {selectedUsers.size > 0 && (
+            <div className="flex items-center gap-2 flex-wrap rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+              <span className="font-medium">{selectedUsers.size} selected</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-amber-600 dark:text-amber-400" onClick={() => bulkBlock(true)}>
+                <Ban className="h-3 w-3" /> Suspend
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => bulkBlock(false)}>
+                <UserCheck className="h-3 w-3" /> Unsuspend
+              </Button>
+              <button className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => setSelectedUsers(new Set())}>Clear</button>
             </div>
-          ) : (
-            <>
-              <div className="space-y-1.5">
+          )}
+
+          <div className="rounded-xl border border-border/60 overflow-hidden">
+            <div className="hidden md:grid grid-cols-[28px_minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-3 items-center px-3 py-2 bg-muted/30 border-b border-border/60 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select page" className="h-3.5 w-3.5" />
+              <span>User</span><span>Projects</span><span>Usage</span><span>Location · seen</span><span className="text-right pr-1">Actions</span>
+            </div>
+            {usersLoading && users.length === 0 ? (
+              <div className="flex items-center justify-center py-14 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+            ) : users.length === 0 ? (
+              <div className="flex flex-col items-center py-14">
+                <Users className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">No users match these filters.</p>
+              </div>
+            ) : (
+              <div className={`divide-y divide-border/50 transition-opacity ${usersLoading ? "opacity-60" : ""}`}>
                 {users.map(u => (
-                  <div key={u.id} className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-border/50 px-4 py-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{u.name || u.email}</span>
-                        {u.is_admin && (
-                          <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/50">
-                            <Crown className="h-2.5 w-2.5" /> Admin
-                          </Badge>
-                        )}
+                  <div key={u.id} className={`grid grid-cols-[28px_minmax(0,1fr)] md:grid-cols-[28px_minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-x-3 gap-y-2 items-center px-3 py-2.5 ${selectedUsers.has(u.id) ? "bg-primary/5" : "hover:bg-muted/20"}`}>
+                    <input type="checkbox" checked={selectedUsers.has(u.id)} onChange={() => toggleOne(u.id)} aria-label={`Select ${u.email}`} className="h-3.5 w-3.5 self-start mt-1 md:self-center md:mt-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium truncate max-w-[16rem]">{u.name || u.email.split("@")[0]}</span>
                         <Badge variant="outline" className={`text-[10px] ${PLAN_COLORS[u.plan] || ""}`}>{u.plan}</Badge>
-                        {u.blocked && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-600 dark:text-red-400">suspended</Badge>}
+                        {u.is_admin && <Badge className="text-[10px] gap-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/50"><Crown className="h-2.5 w-2.5" /> Admin</Badge>}
+                        {u.flagged && <Badge variant="outline" className="text-[10px] border-red-500/50 text-red-600 dark:text-red-400 gap-0.5"><Flag className="h-2.5 w-2.5" /> flagged</Badge>}
+                        {u.blocked && <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-600 dark:text-amber-400" title={u.blocked_reason || ""}>suspended</Badge>}
+                        {!u.email_verified && <Badge variant="outline" className="text-[10px] text-muted-foreground">unverified</Badge>}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{u.email}</p>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1 text-[10px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><Key className="h-2.5 w-2.5" />{u.key_count} keys</span>
-                        <span className="flex items-center gap-1"><Activity className="h-2.5 w-2.5" />{u.tunnel_requests.toLocaleString()} requests</span>
-                        <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Joined {new Date(u.created_at).toLocaleDateString()}</span>
-                        {u.signup_ip && (
-                          <span className="flex items-center gap-1 font-mono" title={`signup IP${u.signup_country ? ` · ${u.signup_country}` : ""}`}>
-                            {countryFlag(u.signup_country)} {u.signup_ip}
-                          </span>
-                        )}
-                        {u.last_login_ip && u.last_login_ip !== u.signup_ip && (
-                          <span className="flex items-center gap-1 font-mono" title="last login IP">
-                            ↻ {countryFlag(u.last_country)} {u.last_login_ip}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      {u.blocked && u.blocked_reason && <p className="text-[10px] text-amber-600/90 dark:text-amber-400/90 truncate" title={u.blocked_reason}>{u.blocked_reason}</p>}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <select
-                        value={u.plan}
-                        onChange={e => updateUser(u.id, { plan: e.target.value })}
-                        className="h-7 rounded border border-input bg-background px-2 text-[11px]"
-                      >
-                        <option value="free">Free</option>
-                        <option value="hobby">Hobby</option>
-                        <option value="pro">Pro</option>
-                        <option value="team">Team</option>
+                    <div className="col-start-2 md:col-start-auto text-xs text-muted-foreground flex md:block gap-3">
+                      <span className="text-foreground tabular-nums">{u.projects}</span> project{u.projects === 1 ? "" : "s"}
+                      <span className="md:block text-[10px]">{u.running} up{u.sleeping ? ` · ${u.sleeping} asleep` : ""}</span>
+                    </div>
+                    <div className="col-start-2 md:col-start-auto text-xs text-muted-foreground flex md:block gap-3">
+                      <span className="tabular-nums text-foreground">{fmtBytes(u.bandwidth_bytes)}</span> <span className="text-[10px]">this month</span>
+                      <span className="md:block text-[10px]">{u.key_count} API key{u.key_count === 1 ? "" : "s"}</span>
+                    </div>
+                    <div className="col-start-2 md:col-start-auto text-[11px] text-muted-foreground min-w-0">
+                      <p className="truncate font-mono" title={`signup ${u.signup_ip || "?"}${u.last_login_ip ? ` · last ${u.last_login_ip}` : ""}`}>
+                        {countryFlag(u.last_country || u.signup_country)} {u.last_login_ip || u.signup_ip || "—"}
+                      </p>
+                      <p className="text-[10px]">seen {timeAgo(u.last_seen_at)} · joined {new Date(u.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div className="col-start-2 md:col-start-auto flex items-center gap-0.5 md:justify-end">
+                      <select value={u.plan} onChange={e => updateUser(u.id, { plan: e.target.value })}
+                        className="h-7 rounded border border-input bg-background px-1.5 text-[11px]" aria-label="Plan">
+                        <option value="free">Free</option><option value="hobby">Hobby</option>
+                        <option value="pro">Pro</option><option value="team">Team</option>
                       </select>
-                      <Button variant="ghost" size="sm" className="h-7 px-2"
-                        onClick={() => updateUser(u.id, { is_admin: !u.is_admin })}
-                        title={u.is_admin ? "Remove admin" : "Make admin"}>
+                      <Button variant="ghost" size="sm" className="h-7 px-2" title="Show their projects"
+                        onClick={() => { setProjectSearch(u.email); setProjectStatus("all"); setProjectServer("all"); setProjectPlan("all"); setProjectFlagged(false); setTab("projects"); }}>
+                        <Rocket className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => updateUser(u.id, { is_admin: !u.is_admin })} title={u.is_admin ? "Remove admin" : "Make admin"}>
                         <Shield className={`h-3.5 w-3.5 ${u.is_admin ? "text-yellow-600 dark:text-yellow-400" : "text-muted-foreground"}`} />
                       </Button>
-                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-600 dark:text-emerald-400 hover:text-emerald-600" : "text-amber-600 dark:text-amber-400 hover:text-amber-600"}`}
+                      <Button variant="ghost" size="sm" className={`h-7 px-2 ${u.blocked ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
                         title={u.blocked ? "Unsuspend account" : "Suspend account (block login + deploys)"}
                         onClick={() => {
                           if (u.blocked) { updateUser(u.id, { blocked: false }); return; }
@@ -1772,60 +1879,59 @@ export default function AdminPage() {
                         {u.blocked ? <UserCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
                       </Button>
                       {u.signup_ip && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-600 dark:text-orange-400 hover:text-orange-600"
-                          title={`Ban IP ${u.signup_ip}`}
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-orange-600 dark:text-orange-400" title={`Ban IP ${u.signup_ip}`}
                           onClick={() => banIP(u.signup_ip!, `abuse — user ${u.email}`)}>
                           <WifiOff className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground"
-                        title="AI credits & usage"
-                        onClick={() => openUserCredits(u.id, u.email)}>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" title="AI credits & usage" onClick={() => openUserCredits(u.id, u.email)}>
                         <Sparkles className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive"
-                        onClick={() => deleteUser(u.id, u.email)}>
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" title="Delete user" onClick={() => deleteUser(u.id, u.email)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
-              <div ref={userSentinelRef} className="py-2 flex justify-center">
-                {usersLoading && users.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                {!usersHasMore && users.length > 0 && <p className="text-[11px] text-muted-foreground">All {usersTotal} users loaded</p>}
-              </div>
-            </>
-          )}
+            )}
+          </div>
+          <Pager total={usersTotal} page={usersPage} pageSize={usersPageSize} onPage={setUsersPage} onPageSize={setUsersPageSize} loading={usersLoading} />
         </div>
-      )}
+        );
+      })()}
 
       {/* ── PROJECTS TAB ─────────────────────────────────────────────────── */}
       {tab === "projects" && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {/* Controls */}
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col lg:flex-row gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, email, repo..."
-                className="pl-9 h-9 text-sm"
-                value={projectSearch}
-                onChange={e => setProjectSearch(e.target.value)}
-              />
+              <Input placeholder="Search name, subdomain, repo, owner email or ID…" className="pl-9 h-9 text-sm"
+                value={projectSearch} onChange={e => setProjectSearch(e.target.value)} />
             </div>
-            <select
-              value={projectStatus}
-              onChange={e => setProjectStatus(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="all">All statuses</option>
-              <option value="running">Running</option>
-              <option value="building">Building</option>
-              <option value="stopped">Stopped</option>
-              <option value="failed">Failed</option>
-              <option value="created">Created</option>
-            </select>
+            <div className="flex gap-2 flex-wrap">
+              <select value={projectServer} onChange={e => setProjectServer(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm" aria-label="Server">
+                <option value="all">All servers</option>
+                {(projectFacets?.servers || []).map(sv => <option key={sv.id} value={sv.id}>{sv.label} ({sv.count})</option>)}
+              </select>
+              <select value={projectPlan} onChange={e => setProjectPlan(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm" aria-label="Owner plan">
+                <option value="all">All plans</option>
+                <option value="free">Free</option><option value="hobby">Hobby</option>
+                <option value="pro">Pro</option><option value="team">Team</option>
+              </select>
+              <select value={projectSort} onChange={e => setProjectSort(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm" aria-label="Sort">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="last_deploy">Last deployed</option>
+                <option value="last_request">Last visited</option>
+                <option value="bandwidth">Most bandwidth</option>
+                <option value="name">Name A–Z</option>
+              </select>
             <div className="flex gap-1.5">
               <Button size="sm" variant="outline" className="h-9 text-xs gap-1"
                 onClick={() => redeployAll("running")} disabled={redeploying}>
@@ -1837,6 +1943,7 @@ export default function AdminPage() {
                 <RotateCcw className="h-3 w-3" /> All
               </Button>
             </div>
+            </div>
           </div>
 
           {redeployResult && (
@@ -1847,7 +1954,22 @@ export default function AdminPage() {
             </p>
           )}
 
-          <div className="text-xs text-muted-foreground">{projectsTotal} projects total</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            {([
+              ["all", "All"], ["running", "Running"], ["sleeping", "Sleeping"], ["building", "Building"],
+              ["crashed", "Crashed"], ["failed", "Failed"], ["stopped", "Stopped"], ["created", "Created"],
+            ] as const).map(([k, label]) => {
+              const n = k === "all" ? projectFacets?.total : projectFacets?.by_status[k] || 0;
+              if (k !== "all" && k !== projectStatus && projectFacets && !n) return null;
+              return (
+                <FilterChip key={k} active={projectStatus === k} onClick={() => setProjectStatus(k)} count={n}
+                  tone={k === "crashed" || k === "failed" ? "warn" : undefined}>{label}</FilterChip>
+              );
+            })}
+            <FilterChip active={projectFlagged} onClick={() => setProjectFlagged(v => !v)} count={projectFacets?.flagged} tone="danger">
+              <Flag className="h-3 w-3" /> Flagged
+            </FilterChip>
+          </div>
 
           {projectsLoading && projects.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>
@@ -1863,28 +1985,36 @@ export default function AdminPage() {
                   <div key={p.id} className="rounded-lg border border-border/50">
                   <div className="flex items-center gap-3 px-3 py-2.5">
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{p.name}</span>
-                        <Badge variant="outline" className={`text-[9px] shrink-0 ${STATUS_COLORS[p.status] || "bg-muted text-muted-foreground"}`}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium truncate max-w-[14rem]">{p.name}</span>
+                        <Badge variant="outline" className={`text-[9px] shrink-0 ${p.status === "sleeping" ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/40" : STATUS_COLORS[p.status] || "bg-muted text-muted-foreground"}`}>
                           {p.status === "building" && <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse inline-block mr-1" />}
                           {p.status}
                         </Badge>
                         {p.framework && <Badge variant="outline" className="text-[9px] shrink-0">{p.framework}</Badge>}
+                        {p.deploy_source && p.deploy_source !== "git" && <Badge variant="outline" className="text-[9px] shrink-0">{p.deploy_source}</Badge>}
+                        {p.flagged && <Badge variant="outline" className="text-[9px] shrink-0 border-red-500/50 text-red-600 dark:text-red-400 gap-0.5"><Flag className="h-2.5 w-2.5" /> flagged</Badge>}
                       </div>
-                      <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
+                      <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[10px] text-muted-foreground">
                         <span className="font-mono">{p.subdomain}.deployzy.app</span>
-                        <span className="text-muted-foreground/80">{p.user_email || p.user_id.slice(0, 8)}</span>
+                        <button className="hover:text-foreground hover:underline truncate max-w-[14rem]" title="Show this owner in Users"
+                          onClick={() => { setUserSearch(p.user_email); setUserStatus("all"); setUserPlanFilter("all"); setTab("users"); }}>
+                          {p.user_email || p.user_id.slice(0, 8)}
+                        </button>
+                        <span className={`inline-flex items-center rounded px-1 border text-[9px] ${PLAN_COLORS[p.user_plan] || "border-border/60"}`}>{p.user_plan}</span>
+                        {p.user_blocked && <span className="text-amber-600 dark:text-amber-400">owner suspended</span>}
+                        <span className="flex items-center gap-1"><Server className="h-2.5 w-2.5" />{p.server_label}{p.server_byoc ? " (BYOC)" : ""}</span>
                         {p.repo_url && (
-                          <span className="flex items-center gap-1">
-                            <GitBranch className="h-2.5 w-2.5" />
-                            {p.repo_url.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "")}
-                            {p.branch ? `@${p.branch}` : ""}
+                          <span className="flex items-center gap-1 truncate max-w-[16rem]">
+                            <GitBranch className="h-2.5 w-2.5 shrink-0" />
+                            {p.repo_url.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "")}{p.branch ? `@${p.branch}` : ""}
                           </span>
                         )}
+                        <span className="tabular-nums" title="Bandwidth this month">{fmtBytes(p.bandwidth_bytes)}</span>
+                        <span title={p.last_request_at ? new Date(p.last_request_at).toLocaleString() : ""}>visited {timeAgo(p.last_request_at)}</span>
                         {p.last_deploy_at && (
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-2.5 w-2.5" />
-                            {new Date(p.last_deploy_at).toLocaleDateString()}
+                          <span className="flex items-center gap-1" title={new Date(p.last_deploy_at).toLocaleString()}>
+                            <Clock className="h-2.5 w-2.5" />deployed {timeAgo(p.last_deploy_at)}
                           </span>
                         )}
                       </div>
@@ -1895,9 +2025,15 @@ export default function AdminPage() {
                         onClick={() => loadDiagnostics(p.id)} title="Logs & diagnostics">
                         <Activity className="h-3.5 w-3.5" />
                       </Button>
+                      {p.status === "sleeping" && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-600"
+                          onClick={() => wakeProject(p.id, p.name)} title="Wake now">
+                          <Zap className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       {p.status === "running" && (
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-indigo-500 hover:text-indigo-500"
-                          onClick={() => sleepProject(p.id, p.name)} title="Sleep now (frees resources; wakes on next request — platform-local only)">
+                          onClick={() => sleepProject(p.id, p.name)} title="Sleep now (frees RAM; wakes on the next request)">
                           <Moon className="h-3.5 w-3.5" />
                         </Button>
                       )}
@@ -2031,10 +2167,7 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
-              <div ref={projectSentinelRef} className="py-2 flex justify-center">
-                {projectsLoading && projects.length > 0 && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                {!projectsHasMore && projects.length > 0 && <p className="text-[11px] text-muted-foreground">All {projectsTotal} projects loaded</p>}
-              </div>
+              <Pager total={projectsTotal} page={projectsPage} pageSize={projectsPageSize} onPage={setProjectsPage} onPageSize={setProjectsPageSize} loading={projectsLoading} />
             </>
           )}
         </div>
@@ -2101,6 +2234,7 @@ export default function AdminPage() {
           illegal:  "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/40",
           malware:  "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/40",
           spam:     "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40",
+          "proxy-node": "bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/40",
           other:    "bg-zinc-500/15 text-muted-foreground border-zinc-500/40",
         };
         const statusColor: Record<string, string> = {
@@ -2115,11 +2249,43 @@ export default function AdminPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <h2 className="text-lg font-semibold flex items-center gap-2"><Flag className="h-4 w-4 text-red-600 dark:text-red-400" /> Abuse Reports</h2>
-              <p className="text-sm text-muted-foreground">Public reports of phishing, malware, spam, or illegal content on deployed apps and tunnels. Submitted via <span className="font-mono">/report</span>.</p>
+              <p className="text-sm text-muted-foreground">Public reports (via <span className="font-mono">/report</span>) plus automatic proxy-node detections from the scanner.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={loadAbuseReports} disabled={abuseLoading} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => { loadAbuseReports(); loadAbuseScan(); }} disabled={abuseLoading} className="gap-1.5">
               {abuseLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh
             </Button>
+          </div>
+
+          {/* Proxy-node scanner */}
+          <div className="rounded-xl border border-border/60 p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-fuchsia-600 dark:text-fuchsia-400" /> Proxy-node scanner
+                  {abuseScan?.scan.running && <Badge variant="outline" className="text-[10px] gap-1"><Loader2 className="h-2.5 w-2.5 animate-spin" /> scanning</Badge>}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Fingerprints running apps on every platform server for VPN/proxy kits (Xray, V2Ray, sing-box, Hysteria, cloudflared, Nezha). Runs every 6 hours.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={runAbuseScan} disabled={abuseBusy === "scan" || !!abuseScan?.scan.running}>
+                {abuseBusy === "scan" || abuseScan?.scan.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />} Scan now
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="rounded-lg bg-muted/30 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Last scan</p><p className="font-medium">{abuseScan?.scan.last_finished ? timeAgo(abuseScan.scan.last_finished) : "not yet"}</p></div>
+              <div className="rounded-lg bg-muted/30 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Hits</p><p className="font-medium tabular-nums">{abuseScan?.scan.hits ?? "—"} <span className="text-muted-foreground font-normal">on {abuseScan?.scan.hosts ?? "—"} hosts</span></p></div>
+              <div className="rounded-lg bg-muted/30 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">New reports</p><p className="font-medium tabular-nums">{abuseScan?.scan.new_reports ?? "—"}</p></div>
+              <div className="rounded-lg bg-muted/30 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Auto-suspended</p><p className="font-medium tabular-nums">{abuseScan?.scan.auto_suspended ?? "—"}</p></div>
+            </div>
+            <label className="flex items-start gap-3 rounded-lg border border-border/60 px-3 py-2.5 cursor-pointer">
+              <input type="checkbox" className="mt-0.5 h-4 w-4" checked={!!abuseScan?.auto_suspend} disabled={abuseBusy === "auto" || !abuseScan}
+                onChange={e => setAutoSuspend(e.target.checked)} />
+              <span className="text-xs">
+                <span className="font-medium text-foreground">Auto-suspend confirmed proxy nodes</span>
+                <span className="block text-muted-foreground">Free accounts whose app contains a proxy server or Nezha agent (by binary fingerprint) are suspended and stopped automatically. Tunnel-only hits and paid accounts always wait for review.</span>
+              </span>
+            </label>
           </div>
 
           <div className="flex gap-1.5 flex-wrap">
@@ -2160,10 +2326,27 @@ export default function AdminPage() {
                       <p className="text-sm whitespace-pre-wrap break-words">{r.details}</p>
                     </div>
                   )}
+                  {r.project_id && (
+                    <div className="flex items-center gap-2 flex-wrap rounded-lg bg-muted/30 px-3 py-2 text-xs">
+                      <Rocket className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-medium">{r.project_name}</span>
+                      {r.project_status && <Badge variant="outline" className={`text-[9px] ${STATUS_COLORS[r.project_status] || ""}`}>{r.project_status}</Badge>}
+                      <span className="text-muted-foreground">owned by</span>
+                      <span className="font-medium truncate max-w-[16rem]">{r.owner_email}</span>
+                      {r.owner_plan && <Badge variant="outline" className={`text-[9px] ${PLAN_COLORS[r.owner_plan] || ""}`}>{r.owner_plan}</Badge>}
+                      {r.owner_blocked && <Badge variant="outline" className="text-[9px] border-amber-500/50 text-amber-600 dark:text-amber-400">suspended</Badge>}
+                      {r.owner_is_admin && <Badge variant="outline" className="text-[9px]">admin</Badge>}
+                    </div>
+                  )}
                   <div className="text-[11px] text-muted-foreground">
                     Reporter: {r.reporter_email || "anonymous"}{r.reporter_ip ? <> · <span className="font-mono">{r.reporter_ip}</span></> : null}
                   </div>
                   <div className="flex gap-2 flex-wrap pt-1">
+                    {r.project_id && !r.owner_is_admin && !(r.owner_blocked && r.project_status === "stopped") && (
+                      <Button size="sm" variant="destructive" className="h-8 gap-1.5 text-xs" disabled={abuseBusy === r.id} onClick={() => suspendFromReport(r)}>
+                        {abuseBusy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />} Suspend owner &amp; stop app
+                      </Button>
+                    )}
                     {r.status !== "actioned" && (
                       <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAbuseStatus(r.id, "actioned")}>
                         <CheckCircle2 className="h-3.5 w-3.5" /> Mark actioned
