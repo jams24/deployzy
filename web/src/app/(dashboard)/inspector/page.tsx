@@ -142,6 +142,7 @@ function Detail({ r, host, onClose }: { r: CapturedRequest; host: string; onClos
 
 const STATUS_FILTERS = [
   { k: "all", label: "All" }, { k: "2", label: "2xx" }, { k: "3", label: "3xx" }, { k: "4", label: "4xx" }, { k: "5", label: "5xx" },
+  { k: "err", label: "Errors" },
 ] as const;
 
 export default function InspectorPage() {
@@ -205,7 +206,7 @@ export default function InspectorPage() {
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return reqs.filter((r) =>
-      (status === "all" || String(r.status_code).startsWith(status)) &&
+      (status === "all" || (status === "err" ? r.status_code >= 400 : String(r.status_code).startsWith(status))) &&
       (!f || r.path.toLowerCase().includes(f) || r.method.toLowerCase() === f || (r.query || "").toLowerCase().includes(f)));
   }, [reqs, filter, status]);
 
@@ -294,12 +295,15 @@ export default function InspectorPage() {
             <div className="flex min-h-0 flex-col border-border/60 lg:border-r">
               <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
                 <span><span className="font-medium tabular-nums text-foreground">{shown.length}</span> of {reqs.length} requests</span>
-                {errorCount > 0 && <button onClick={() => setStatus("4")} className="text-amber-700 hover:underline dark:text-amber-400">{errorCount} errors</button>}
+                {errorCount > 0 && <button onClick={() => setStatus("err")} className="text-amber-700 hover:underline dark:text-amber-400">{errorCount} error{errorCount === 1 ? "" : "s"}</button>}
               </div>
               {shown.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
                   <span className="relative flex h-3 w-3"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60 motion-reduce:hidden" /><span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" /></span>
-                  <p className="text-sm font-medium">{reqs.length ? "No requests match these filters" : "Waiting for requests…"}</p>
+                  <p className="text-sm font-medium">{reqs.length ? `${reqs.length} request${reqs.length === 1 ? "" : "s"} hidden by your filters` : "Waiting for requests…"}</p>
+                  {reqs.length > 0 && (
+                    <button onClick={() => { setStatus("all"); setFilter(""); }} className="mt-1 inline-flex h-8 items-center rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-accent">Show all</button>
+                  )}
                   {!reqs.length && tunnel && <p className="text-xs text-muted-foreground">Open <a href={tunnel.url} target="_blank" rel="noopener" className="font-mono underline">{tunnel.url.replace(/^https?:\/\//, "")}</a> to see the first one.</p>}
                 </div>
               ) : (
