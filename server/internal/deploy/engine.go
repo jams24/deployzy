@@ -240,7 +240,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		// Plans without private repos clone anonymously: public repos still
 		// work, private ones fail below with an upgrade hint.
 		strippedToken := false
-		if strings.Contains(project.RepoURL, "@github.com") && !e.ownerAllowsPrivateRepos(ctx, project.UserID) {
+		if strings.Contains(project.RepoURL, "@github.com") && !e.ownerAllowsPrivateRepos(ctx, project) {
 			project.RepoURL = stripRepoCreds(project.RepoURL)
 			strippedToken = true
 		}
@@ -352,6 +352,10 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	if project.DockerfilePath != "" {
 		effectiveDockerfile = project.DockerfilePath
 	}
+	// generatedDockerfile is true when WE wrote the Dockerfile. Generated files
+	// use BuildKit cache mounts, which the legacy builder rejects — so if the
+	// build falls back to legacy we strip them (see the build step).
+	generatedDockerfile := false
 
 	if imageSource {
 		framework = "image"
@@ -441,6 +445,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 				if dockerfile != "" {
 					runner.RunShell(ctx, fmt.Sprintf("cat > %s/Dockerfile << 'SMEOF'\n%s\nSMEOF", buildCtx, dockerfile))
 					effectiveDockerfile = "Dockerfile"
+					generatedDockerfile = true
 				}
 			}
 		} else {
@@ -449,6 +454,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 				if dockerfile != "" {
 					os.WriteFile(buildCtx+"/Dockerfile", []byte(dockerfile), 0644)
 					effectiveDockerfile = "Dockerfile"
+					generatedDockerfile = true
 				}
 			}
 		}
@@ -584,6 +590,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			shellQuote(buildCtx),
 		)
 	} else {
+		if generatedDockerfile {
+			// Legacy builder can't parse `RUN --mount=...`; drop the cache
+			// mounts (the build still works, just without the shared cache).
+			runner.RunShell(buildCtx2, fmt.Sprintf(`sed -i 's/--mount=type=cache,[^ ]* //g' %s`, shellQuote(buildCtx+"/"+effectiveDockerfile)))
+		}
 		buildShellCmd = fmt.Sprintf(
 			"DOCKER_BUILDKIT=0 docker build %s--memory=%dm -f %s -t %s %s",
 			cpuFlags,
@@ -1757,15 +1768,16 @@ func (e *Engine) generateDockerfile(project *db.Project, framework string) strin
 		}
 		return fmt.Sprintf(`FROM node:%s-alpine
 WORKDIR /app
+%s
 COPY package*.json ./
-RUN %s
+RUN %s%s
 COPY . .
 RUN if [ -d "prisma" ]; then npx prisma generate; fi
 ENV NODE_OPTIONS="--max-old-space-size=1536"
 ENV NEXT_STATIC_GENERATION_TIMEOUT=120
 RUN %s
 EXPOSE 3000
-CMD sh -c '%s && %s'`, nodeVer, installCmd, buildCmd, prismaPush, startCmd)
+CMD sh -c '%s && %s'`, nodeVer, npmQuietEnv, npmCacheMount(project.InstallCmd), installCmd, buildCmd, prismaPush, startCmd)
 
 	case "node":
 		// Install full deps (incl. dev) so TypeScript, bundlers, prisma, etc.
@@ -1789,17 +1801,40 @@ CMD sh -c '%s && %s'`, nodeVer, installCmd, buildCmd, prismaPush, startCmd)
 		if project.BuildCmd != "" {
 			buildLine = "RUN " + project.BuildCmd
 		}
-		return fmt.Sprintf(`FROM node:%s-alpine
+		// Slim final stage: the build stage carries the native toolchain
+		// (python3/make/g++ ≈300 MB) and devDependencies; `npm prune` in a later
+		// layer only HID devDeps — they still shipped in the image. Copying the
+		// pruned /app into a fresh node image drops both (≈70% smaller in
+		// benchmarks → faster export/pull/start). Only for default commands: a
+		// custom install/build may put tools outside /app (e.g. `npm i -g pm2`)
+		// that the runtime needs, so those keep the single-stage image.
+		multiStage := project.InstallCmd == "" && project.BuildCmd == ""
+		stageName := ""
+		if multiStage {
+			stageName = " AS build"
+		}
+		finalStage := fmt.Sprintf(`EXPOSE 3000
+CMD sh -c '%s && %s'`, prismaPush, startCmd)
+		if multiStage {
+			finalStage = fmt.Sprintf(`FROM node:%s-alpine
 WORKDIR /app
+%s
+ENV NODE_OPTIONS="--max-old-space-size=1536"
+COPY --from=build /app /app
+EXPOSE 3000
+CMD sh -c '%s && %s'`, nodeVer, npmQuietEnv, prismaPush, startCmd)
+		}
+		return fmt.Sprintf(`FROM node:%s-alpine%s
+WORKDIR /app
+%s
 # Native module build toolchain. Alpine is tiny but misses gcc/python used by
-# packages like bcrypt, node-gyp, sharp. Installed here (not apk del'd later)
-# because prune gets them out of the final stage anyway.
+# packages like bcrypt, node-gyp, sharp. Build stage only — it doesn't ship.
 RUN apk add --no-cache --virtual .build-deps python3 make g++ 2>/dev/null || true
 COPY package*.json ./
 # --ignore-scripts skips user lifecycle hooks (preinstall/postinstall/install)
 # so a common pattern like "postinstall: npm run build" can't fire before
 # COPY . . — source files aren't in the layer yet.
-RUN %s
+RUN %s%s
 COPY . .
 # Rebuild native modules now that build tools AND source are present.
 # Handles bcrypt, better-sqlite3, sharp, canvas, etc.
@@ -1810,8 +1845,7 @@ RUN SCHEMA=$(find . -name schema.prisma -not -path "./node_modules/*" 2>/dev/nul
 ENV NODE_OPTIONS="--max-old-space-size=1536"
 %s
 RUN npm prune --production 2>/dev/null || true
-EXPOSE 3000
-CMD sh -c '%s && %s'`, nodeVer, installCmd, buildLine, prismaPush, startCmd)
+%s`, nodeVer, stageName, npmQuietEnv, npmCacheMount(project.InstallCmd), installCmd, buildLine, finalStage)
 
 	case "python":
 		// Install strategy:
@@ -2153,15 +2187,24 @@ func (e *Engine) planBuildMemoryMB(ctx context.Context, userID string) int {
 // ownerAllowsPrivateRepos reports whether the project owner's plan includes
 // private GitHub repos. Fails OPEN on lookup errors so a transient DB hiccup
 // never breaks a legitimate deploy.
-func (e *Engine) ownerAllowsPrivateRepos(ctx context.Context, userID string) bool {
+func (e *Engine) ownerAllowsPrivateRepos(ctx context.Context, project *db.Project) bool {
+	userID := project.UserID
 	if userID == "" {
 		return true
 	}
 	// Rollout switch (app_settings.enforce_private_repos = "true"). Off by
 	// default: some free projects already deploy private repos, and turning
-	// this on makes their next redeploy fail — an operator decision.
+	// this on would make their next redeploy fail.
 	if v, _ := e.db.GetSetting(ctx, "enforce_private_repos"); v != "true" {
 		return true
+	}
+	// Grandfathering: projects that already existed when enforcement was
+	// switched on (app_settings.enforce_private_repos_since, RFC3339) keep
+	// deploying their repo; only projects created afterwards are gated.
+	if since, _ := e.db.GetSetting(ctx, "enforce_private_repos_since"); since != "" {
+		if t, err := time.Parse(time.RFC3339, since); err == nil && project.CreatedAt.Before(t) {
+			return true
+		}
 	}
 	if ok, _ := e.db.IsUserAdmin(ctx, userID); ok {
 		return true
@@ -2185,4 +2228,19 @@ func stripRepoCreds(raw string) string {
 	}
 	u.User = nil
 	return u.String()
+}
+
+// npmQuietEnv turns off npm's network audit/fund/update checks for every npm
+// call in the image (install, prune, user commands). The audit alone added
+// ~10s+ to each install and prune.
+const npmQuietEnv = `ENV npm_config_audit=false npm_config_fund=false npm_config_update_notifier=false`
+
+// npmCacheMount returns a BuildKit cache mount for npm's download cache so a
+// lockfile change doesn't re-download every package. Only for the default
+// install (a custom command may not be npm). Stripped for the legacy builder.
+func npmCacheMount(customInstall string) string {
+	if customInstall != "" {
+		return ""
+	}
+	return "--mount=type=cache,target=/root/.npm "
 }
