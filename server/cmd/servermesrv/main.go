@@ -380,6 +380,7 @@ func main() {
 			// proxy can reject banned traffic with an in-memory lookup.
 			deployEngine.StartBanRefresher(context.Background())
 			deployEngine.StartBandwidthGate(context.Background())
+			deployEngine.StartAbuseScanner(context.Background())
 
 			// Install/enforce the plan-gated outbound-SMTP egress policy across the
 			// whole platform fleet (local + remote), and backfill paid allow-holes

@@ -338,6 +338,14 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 	}
 
+	// Refuse VPN/proxy-node kits before spending a build on them.
+	if !imageSource {
+		if err := e.proxyKitGuard(ctx, runner, project, buildCtx); err != nil {
+			restoreOldState()
+			return err
+		}
+	}
+
 	// Determine framework — for remote, check via runner; for local, use filesystem
 	var framework string
 	// ignore_dockerfile: pretend the repo's Dockerfile doesn't exist. Useful when

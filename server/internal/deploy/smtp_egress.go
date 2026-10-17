@@ -14,7 +14,7 @@ import (
 // DROP the submission ports (465/587) — the deploy engine punches per-project
 // ACCEPT holes above these for paid plans.
 const egressUnit = `[Unit]
-Description=Deployzy container egress policy (block :25, gate submission 465/587)
+Description=Deployzy container egress policy (block :25, gate submission 465/587 and cloudflared 7844)
 After=docker.service
 Requires=docker.service
 
@@ -23,6 +23,8 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/sh -c "iptables -C DOCKER-USER -p tcp --dport 25 -j DROP 2>/dev/null || iptables -I DOCKER-USER -p tcp --dport 25 -j DROP"
 ExecStart=/bin/sh -c "iptables -C DOCKER-USER -p tcp -m multiport --dports 465,587 -j DROP 2>/dev/null || iptables -A DOCKER-USER -p tcp -m multiport --dports 465,587 -j DROP"
+ExecStart=/bin/sh -c "iptables -C DOCKER-USER -p tcp --dport 7844 -j DROP 2>/dev/null || iptables -A DOCKER-USER -p tcp --dport 7844 -j DROP"
+ExecStart=/bin/sh -c "iptables -C DOCKER-USER -p udp --dport 7844 -j DROP 2>/dev/null || iptables -A DOCKER-USER -p udp --dport 7844 -j DROP"
 
 [Install]
 WantedBy=multi-user.target
@@ -33,7 +35,11 @@ WantedBy=multi-user.target
 // and the existing-server reconcile. Idempotent.
 var EgressSetupScript = "echo " + base64.StdEncoding.EncodeToString([]byte(egressUnit)) +
 	" | base64 -d > /etc/systemd/system/deployzy-egress.service; " +
-	"systemctl daemon-reload >/dev/null 2>&1; systemctl enable --now deployzy-egress.service >/dev/null 2>&1 || true; "
+	"systemctl daemon-reload >/dev/null 2>&1; systemctl enable deployzy-egress.service >/dev/null 2>&1; " +
+	// restart, not `enable --now`: the unit is a RemainAfterExit oneshot, so
+	// `--now` on an already-active unit never re-runs ExecStart and newly added
+	// rules would only land at the next reboot. Every rule is -C guarded.
+	"systemctl restart deployzy-egress.service >/dev/null 2>&1 || true; "
 
 // Outbound-SMTP egress policy for user containers (Railway-style, plan-gated).
 //
@@ -43,6 +49,9 @@ var EgressSetupScript = "echo " + base64.StdEncoding.EncodeToString([]byte(egres
 //   - Ports 465/587 (authenticated submission — "send with your own SMTP creds")
 //     are blocked by a base DROP for all containers, and this punches a
 //     per-project ACCEPT ONLY for paid plans (pro/team), admins, and BYOC.
+//   - Port 7844 (tcp+udp, Cloudflare Tunnel's edge port) is gated the same way:
+//     free apps were being run as cloudflared-fronted proxy nodes whose traffic
+//     bypassed our proxy entirely (see abuse_scan.go).
 //
 // Each ACCEPT is tagged in an iptables comment with the project id, so a redeploy
 // (new container IP) or a downgrade replaces/removes the project's own rule —
@@ -101,8 +110,9 @@ func (e *Engine) applySMTPEgress(ctx context.Context, runner *Runner, projectID8
 		return
 	}
 	ins := fmt.Sprintf(
-		`iptables -I DOCKER-USER 1 -s %s -p tcp -m multiport --dports %s -m comment --comment %q -j ACCEPT`,
-		ip, smtpSubmissionPorts, tag)
+		`iptables -I DOCKER-USER 1 -s %s -p tcp -m multiport --dports %s,7844 -m comment --comment %q -j ACCEPT; `+
+			`iptables -I DOCKER-USER 1 -s %s -p udp --dport 7844 -m comment --comment %q -j ACCEPT`,
+		ip, smtpSubmissionPorts, tag, ip, tag)
 	_, _ = runner.RunShell(ctx, ins)
 }
 

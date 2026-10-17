@@ -57,6 +57,16 @@ func (d *DB) SetAbuseReportStatus(ctx context.Context, id, status string) error 
 	return err
 }
 
+// HasAbuseReport reports whether a non-dismissed report already exists for this
+// target and category, so automated scanners don't file duplicates.
+func (d *DB) HasAbuseReport(ctx context.Context, targetURL, category string) bool {
+	var n int
+	d.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM abuse_reports WHERE target_url = $1 AND category = $2 AND status <> 'dismissed'`,
+		targetURL, category).Scan(&n)
+	return n > 0
+}
+
 // CountOpenAbuseReports is used for the admin badge.
 func (d *DB) CountOpenAbuseReports(ctx context.Context) int {
 	var n int
