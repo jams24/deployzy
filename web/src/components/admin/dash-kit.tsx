@@ -54,7 +54,7 @@ export function Delta({ cur, prev, span = 14 }: { cur: number; prev: number; spa
   const pct = Math.round(((cur - prev) / prev) * 100);
   const up = pct >= 0;
   return (
-    <span title={`${cur.toLocaleString()} vs ${prev.toLocaleString()} in the previous ${span} days`}
+    <span title={`${cur.toLocaleString()} vs ${prev.toLocaleString()} in the previous ${span === 1 ? "day" : `${span} days`}`}
       className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
         up ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400"}`}>
       {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}{Math.abs(pct)}%

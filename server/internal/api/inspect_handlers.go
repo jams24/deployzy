@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/serverme/serverme/server/internal/auth"
 	"net/http"
 	"strconv"
 
@@ -149,4 +150,28 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, analytics)
+}
+
+// handleAccountAnalytics serves the Account → Analytics page: traffic to the
+// workspace's apps and tunnels (?range=24h|7d|30d), plus this month's
+// bandwidth against the plan cap. Replaces the inspector-only /analytics
+// view, which was empty unless request inspection was enabled.
+func (s *Server) handleAccountAnalytics(w http.ResponseWriter, r *http.Request) {
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	u := auth.GetUser(r)
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	a, err := s.db.GetAccountAnalytics(r.Context(), userIDs, u.ID, r.URL.Query().Get("range"))
+	if err != nil {
+		s.log.Error().Err(err).Msg("account analytics")
+		writeError(w, http.StatusInternalServerError, "failed to load analytics")
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
 }

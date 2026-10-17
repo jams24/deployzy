@@ -181,6 +181,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 
 			// Analytics
 			r.Get("/analytics", s.handleAnalytics)
+			r.Get("/analytics/account", s.handleAccountAnalytics)
 
 			// Teams (account-level → full)
 			r.Get("/teams", s.handleListTeams)
