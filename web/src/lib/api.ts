@@ -387,11 +387,25 @@ export interface DnsInstructions {
   note: string;
 }
 
+// GET /api/v1/tunnels returns live CLI tunnels (type "tunnel") and the
+// workspace's running deployed apps (type "project").
 export interface Tunnel {
   url: string;
   protocol: string;
   name: string;
-  client_id: string;
+  type: "tunnel" | "project";
+  client_id?: string;
+  // tunnels
+  local_addr?: string;
+  inspect?: boolean;
+  created_at?: string;
+  requests?: number;
+  bytes?: number;
+  // projects
+  id?: string;
+  subdomain?: string;
+  status?: string; // running | sleeping
+  framework?: string;
 }
 
 export interface EnvVarSchema {

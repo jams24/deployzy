@@ -786,33 +786,53 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	for _, uid := range userIDs {
 		tunnels := s.registry.ListByUser(uid)
 		for _, t := range tunnels {
+			st := t.Stats.Snapshot()
 			result = append(result, map[string]interface{}{
-				"url":       t.URL,
-				"protocol":  t.Protocol,
-				"name":      t.Name,
-				"client_id": t.ClientID,
-				"user_id":   t.UserID,
-				"type":      "tunnel",
+				"url":        t.URL,
+				"protocol":   t.Protocol,
+				"name":       t.Name,
+				"client_id":  t.ClientID,
+				"user_id":    t.UserID,
+				"type":       "tunnel",
+				"local_addr": t.LocalAddr,
+				"inspect":    t.Inspect,
+				"created_at": t.CreatedAt,
+				"requests":   st.Requests,
+				"bytes":      st.BytesIn + st.BytesOut,
 			})
 		}
 	}
 
-	// Deployed projects (running containers)
+	// Deployed projects (running containers). Apps are served on the app
+	// domain (deployzy.app, isolated from the brand domain); idle-slept apps
+	// are reported as "sleeping" — they wake on the next request.
 	if s.db != nil {
+		appDomain := "deployzy.app"
+		if s.deployer != nil && s.deployer.AppDomain != "" {
+			appDomain = s.deployer.AppDomain
+		}
 		for _, uid := range userIDs {
 			projects, _ := s.db.ListProjects(r.Context(), uid)
 			for _, p := range projects {
-				if p.Status == "running" {
-					result = append(result, map[string]interface{}{
-						"url":       fmt.Sprintf("https://%s.%s", p.Subdomain, "deployzy.com"),
-						"protocol":  "deploy",
-						"name":      p.Name,
-						"subdomain": p.Subdomain,
-						"user_id":   p.UserID,
-						"type":      "project",
-						"status":    p.Status,
-					})
+				if p.Status != "running" || p.ParentProjectID != nil {
+					continue
 				}
+				status := "running"
+				if s.deployer != nil && s.deployer.IsProjectSleeping(p.ID) {
+					status = "sleeping"
+				}
+				result = append(result, map[string]interface{}{
+					"id":         p.ID,
+					"url":        fmt.Sprintf("https://%s.%s", p.Subdomain, appDomain),
+					"protocol":   "deploy",
+					"name":       p.Name,
+					"subdomain":  p.Subdomain,
+					"user_id":    p.UserID,
+					"type":       "project",
+					"status":     status,
+					"framework":  p.Framework,
+					"created_at": p.CreatedAt,
+				})
 			}
 		}
 	}

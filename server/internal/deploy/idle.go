@@ -483,3 +483,8 @@ func (e *Engine) rebuildMissingContainer(projectID, name string) {
 	}
 	e.log.Info().Str("project", projectID).Str("container", name).Msg("wake rebuild: project restored")
 }
+
+// IsProjectSleeping reports whether a project is currently idle-slept.
+func (e *Engine) IsProjectSleeping(projectID string) bool {
+	return e.idle != nil && e.idle.isSleeping(projectID)
+}
