@@ -2465,6 +2465,14 @@ export default function AdminPage() {
                           title={revealed ? "Hide connection string" : "Reveal connection string"}>
                           {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                         </Button>
+                        <a
+                          href={svc.type === "redis" ? `/redis/${svc.id}` : svc.type === "mongodb" ? `/mongo/${svc.id}` : `/database/${svc.id}?type=${svc.type}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="flex h-7 items-center rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open data browser (admin)">
+                          <FolderOpen className="h-3.5 w-3.5" />
+                        </a>
+
                         {svc.type !== "redis" && (
                           <Button variant="ghost" size="sm"
                             className={`h-7 px-2 ${moveDbOpen === svc.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}

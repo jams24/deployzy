@@ -372,9 +372,15 @@ func (s *Server) handleGetService(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "serviceId")
 
 	svc, _ := s.db.GetService(r.Context(), id)
-	if svc == nil || svc.UserID != u.ID {
+	if svc == nil {
 		writeError(w, http.StatusNotFound, "service not found")
 		return
+	}
+	if svc.UserID != u.ID {
+		if ok, _ := s.db.IsUserAdmin(r.Context(), u.ID); !ok {
+			writeError(w, http.StatusNotFound, "service not found")
+			return
+		}
 	}
 
 	publicHost := s.resolveServicePublicHost()

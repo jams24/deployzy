@@ -41,7 +41,7 @@ func (s *Server) resolveRedisService(r *http.Request) (*db.Service, error) {
 	u := auth.GetUser(r)
 	serviceID := chi.URLParam(r, "serviceId")
 	svc, _ := s.db.GetService(r.Context(), serviceID)
-	if svc == nil || svc.UserID != u.ID {
+	if svc == nil || (svc.UserID != u.ID && !s.editorAdmin(r.Context(), u.ID)) {
 		return nil, fmt.Errorf("service not found")
 	}
 	if svc.Type != "redis" {

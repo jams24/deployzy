@@ -53,7 +53,7 @@ func (s *Server) handleProjectDatabaseQuery(w http.ResponseWriter, r *http.Reque
 	projectID := chi.URLParam(r, "projectId")
 
 	project, _ := s.db.GetProject(r.Context(), projectID)
-	if project == nil || project.UserID != u.ID {
+	if project == nil || (project.UserID != u.ID && !s.editorAdmin(r.Context(), u.ID)) {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
@@ -76,7 +76,7 @@ func (s *Server) handleServiceQuery(w http.ResponseWriter, r *http.Request) {
 	serviceID := chi.URLParam(r, "serviceId")
 
 	svc, _ := s.db.GetService(r.Context(), serviceID)
-	if svc == nil || svc.UserID != u.ID {
+	if svc == nil || (svc.UserID != u.ID && !s.editorAdmin(r.Context(), u.ID)) {
 		writeError(w, http.StatusNotFound, "service not found")
 		return
 	}
@@ -369,11 +369,19 @@ func (s *Server) handleProjectDatabaseTableRows(w http.ResponseWriter, r *http.R
 
 // ── DSN resolvers (reusable across query + browse endpoints) ─────────────
 
+// editorAdmin reports whether userID is a platform admin. Admins may browse and
+// run CRUD on ANY user's database from the admin console; everyone else is
+// restricted to services/projects they own.
+func (s *Server) editorAdmin(ctx context.Context, userID string) bool {
+	ok, _ := s.db.IsUserAdmin(ctx, userID)
+	return ok
+}
+
 func (s *Server) resolveServiceForEditor(r *http.Request) (*db.Service, error) {
 	u := auth.GetUser(r)
 	serviceID := chi.URLParam(r, "serviceId")
 	svc, _ := s.db.GetService(r.Context(), serviceID)
-	if svc == nil || svc.UserID != u.ID {
+	if svc == nil || (svc.UserID != u.ID && !s.editorAdmin(r.Context(), u.ID)) {
 		return nil, fmt.Errorf("service not found")
 	}
 	if svc.Type != "postgres" && svc.Type != "mysql" {
@@ -386,7 +394,7 @@ func (s *Server) resolveProjectDSN(r *http.Request) (string, error) {
 	u := auth.GetUser(r)
 	projectID := chi.URLParam(r, "projectId")
 	project, _ := s.db.GetProject(r.Context(), projectID)
-	if project == nil || project.UserID != u.ID {
+	if project == nil || (project.UserID != u.ID && !s.editorAdmin(r.Context(), u.ID)) {
 		return "", fmt.Errorf("project not found")
 	}
 	pdb, _ := s.db.GetProjectDatabase(r.Context(), projectID)
