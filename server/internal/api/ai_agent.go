@@ -331,10 +331,24 @@ func (s *Server) runAgentTool(ctx context.Context, u *auth.AuthenticatedUser, na
 
 // agentBuildProject: generate + deploy (or report needs_setup) synchronously
 // enough to return a URL/summary the model can relay.
+// agentProjectGate enforces the plan's project cap for agent-created projects.
+// The agent tools used to call CreateProject directly, which skipped the cap
+// entirely (free users could create unlimited projects through chat).
+func (s *Server) agentProjectGate(ctx context.Context, u *auth.AuthenticatedUser) string {
+	if err := billing.EnsureCanCreate(ctx, s.db, u, billing.DimProject); err != nil {
+		return jsonStr(map[string]any{"error": "plan_limit", "note": err.Error() + " Tell the user, and offer to delete an existing project or upgrade."})
+	}
+	return ""
+}
+
 func (s *Server) agentBuildProject(ctx context.Context, u *auth.AuthenticatedUser, kind, desc string) string {
 	g, ok := aiGenerators[kind]
 	if !ok || !g.codegen {
 		return jsonStr(map[string]any{"error": "kind must be web, api, telegram-bot, discord-bot, or worker"})
+	}
+	// Check the project cap before spending AI credits on generation.
+	if msg := s.agentProjectGate(ctx, u); msg != "" {
+		return msg
 	}
 	res, err := s.deepseekCodegen(ctx, s.agentKey(ctx), g.kind+" — "+desc)
 	if err != nil {
@@ -403,6 +417,9 @@ func (s *Server) agentDeployGithub(ctx context.Context, u *auth.AuthenticatedUse
 		repoName = fullName[i+1:]
 	}
 
+	if msg := s.agentProjectGate(ctx, u); msg != "" {
+		return msg
+	}
 	sub := s.freeSubdomain(ctx, sanitizeSubdomain(repoName))
 	project, err := s.db.CreateProject(ctx, u.ID, sub, sub, "node") // engine re-detects at build
 	if err != nil || project == nil {
@@ -493,6 +510,9 @@ func (s *Server) agentDeployTemplate(ctx context.Context, u *auth.AuthenticatedU
 	name := t.Name
 	if subdomain == "" {
 		subdomain = name
+	}
+	if msg := s.agentProjectGate(ctx, u); msg != "" {
+		return msg
 	}
 	subdomain = s.uniqueSubdomain(ctx, subdomain, u.ID)
 	project, err := s.db.CreateProject(ctx, u.ID, name, subdomain, "docker")

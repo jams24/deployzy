@@ -501,6 +501,15 @@ func (s *Server) provisionDBForBuild(ctx context.Context, project *db.Project, d
 	if !valid[dbType] {
 		return "", "", fmt.Errorf("unsupported database %q", dbType)
 	}
+	// Plan gates — this path used to provision databases with no checks at all,
+	// so AI-built apps could give free users extra services and Redis/Mongo/MySQL.
+	owner := &auth.AuthenticatedUser{ID: project.UserID}
+	if dbType != "postgres" && !billing.IsFeatureAllowed(ctx, s.db, owner, "advanced_databases") {
+		return "", "", fmt.Errorf("%s databases aren't included in your plan — use postgres, or upgrade to unlock %s", dbType, dbType)
+	}
+	if err := billing.EnsureCanCreate(ctx, s.db, owner, billing.DimService); err != nil {
+		return "", "", err
+	}
 	// Ensure the project has a server, then put the DB on that same server.
 	if project.WorkerServerID == "" {
 		if srv, _ := s.db.SelectServerForProject(ctx, nil); srv != nil {

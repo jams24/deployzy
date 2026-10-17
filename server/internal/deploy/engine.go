@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,14 +23,14 @@ import (
 
 // Engine handles building and deploying projects as Docker containers.
 type Engine struct {
-	db          *db.DB
-	Domain      string
-	AppDomain   string // user-facing domain for deployed app URLs (e.g. deployzy.app), isolated from the brand Domain (deployzy.com). Falls back to Domain.
-	ServiceHost string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
-	GitHub      *GitHubApp
-	emailSvc    notify.Mailer
+	db           *db.DB
+	Domain       string
+	AppDomain    string // user-facing domain for deployed app URLs (e.g. deployzy.app), isolated from the brand Domain (deployzy.com). Falls back to Domain.
+	ServiceHost  string // public IP/host for raw TCP services (DB, Redis) — may differ from Domain when domain is behind Cloudflare
+	GitHub       *GitHubApp
+	emailSvc     notify.Mailer
 	log          zerolog.Logger
-	deployLocks  sync.Map // per-project mutex to prevent concurrent deploys
+	deployLocks  sync.Map      // per-project mutex to prevent concurrent deploys
 	buildLimiter *buildLimiter // caps platform-wide concurrent docker builds
 	idle         *idleManager  // idle sleep/wake tracker for free-tier apps
 }
@@ -232,6 +233,17 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		}
 		buildCtx = cloneDir
 	} else if project.RepoURL != "" && !imageSource {
+		// Private-repo plan gate. Every deploy path (dashboard, push webhook,
+		// PR preview, AI agent, admin redeploy) embeds the owner's GitHub token
+		// in RepoURL, and that token is what grants access to private repos —
+		// the UI's repo-picker filter alone was bypassable by pasting a URL.
+		// Plans without private repos clone anonymously: public repos still
+		// work, private ones fail below with an upgrade hint.
+		strippedToken := false
+		if strings.Contains(project.RepoURL, "@github.com") && !e.ownerAllowsPrivateRepos(ctx, project.UserID) {
+			project.RepoURL = stripRepoCreds(project.RepoURL)
+			strippedToken = true
+		}
 		e.logMsg(ctx, project.ID, fmt.Sprintf("Cloning %s (branch: %s)...", maskToken(project.RepoURL), project.Branch), "build")
 
 		cloneDir := buildDir + "/app"
@@ -243,6 +255,9 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 		output, err := runner.Run(ctx, "git", cloneArgs...)
 		if err != nil {
 			e.logMsg(ctx, project.ID, fmt.Sprintf("Clone failed: %s", string(output)), "error")
+			if strippedToken {
+				e.logMsg(ctx, project.ID, "This looks like a private repository. Private GitHub repos aren't included in your plan — make the repo public, or upgrade to Hobby or higher to deploy private repos.", "error")
+			}
 			restoreOldState()
 			return fmt.Errorf("git clone: %w", err)
 		}
@@ -1017,9 +1032,9 @@ func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
 // zero when the host or container can't be reached.
 type ContainerDiagnostics struct {
 	ContainerName string `json:"container_name"`
-	Host          string `json:"host"`           // "platform" or the worker label
-	State         string `json:"state"`          // running | exited | restarting | dead | missing
-	Health        string `json:"health"`         // healthy | unhealthy | starting | ""
+	Host          string `json:"host"`   // "platform" or the worker label
+	State         string `json:"state"`  // running | exited | restarting | dead | missing
+	Health        string `json:"health"` // healthy | unhealthy | starting | ""
 	ExitCode      int    `json:"exit_code"`
 	OOMKilled     bool   `json:"oom_killed"`
 	RestartCount  int    `json:"restart_count"`
@@ -1315,7 +1330,7 @@ func (e *Engine) detectFramework(dir string) string {
 // for the Dockerfile case — used when build_mode=ignore_dockerfile so we fall
 // back to our auto-generated Dockerfile instead of the repo's.
 func (e *Engine) detectFrameworkIgnoreDocker(dir string) string {
-	if fileExists(dir + "/next.config.js") || fileExists(dir + "/next.config.ts") || fileExists(dir + "/next.config.mjs") {
+	if fileExists(dir+"/next.config.js") || fileExists(dir+"/next.config.ts") || fileExists(dir+"/next.config.mjs") {
 		return "nextjs"
 	}
 	if fileExists(dir + "/package.json") {
@@ -1327,13 +1342,13 @@ func (e *Engine) detectFrameworkIgnoreDocker(dir string) string {
 		}
 		return "node"
 	}
-	if fileExists(dir + "/requirements.txt") || fileExists(dir + "/Pipfile") {
+	if fileExists(dir+"/requirements.txt") || fileExists(dir+"/Pipfile") {
 		return "python"
 	}
 	if fileExists(dir + "/go.mod") {
 		return "docker"
 	}
-	if fileExists(dir + "/index.html") || hasAnyFile(dir, "*.html") {
+	if fileExists(dir+"/index.html") || hasAnyFile(dir, "*.html") {
 		return "static"
 	}
 	return "node"
@@ -2133,4 +2148,41 @@ func (e *Engine) planBuildMemoryMB(ctx context.Context, userID string) int {
 		return 0
 	}
 	return limits.MaxBuildMemoryMB
+}
+
+// ownerAllowsPrivateRepos reports whether the project owner's plan includes
+// private GitHub repos. Fails OPEN on lookup errors so a transient DB hiccup
+// never breaks a legitimate deploy.
+func (e *Engine) ownerAllowsPrivateRepos(ctx context.Context, userID string) bool {
+	if userID == "" {
+		return true
+	}
+	// Rollout switch (app_settings.enforce_private_repos = "true"). Off by
+	// default: some free projects already deploy private repos, and turning
+	// this on makes their next redeploy fail — an operator decision.
+	if v, _ := e.db.GetSetting(ctx, "enforce_private_repos"); v != "true" {
+		return true
+	}
+	if ok, _ := e.db.IsUserAdmin(ctx, userID); ok {
+		return true
+	}
+	u, err := e.db.GetUserByID(ctx, userID)
+	if err != nil || u == nil {
+		return true
+	}
+	l, err := e.db.GetPlanLimits(ctx, u.Plan)
+	if err != nil || l == nil {
+		return true
+	}
+	return l.AllowPrivateRepos
+}
+
+// stripRepoCreds removes userinfo (an embedded access token) from a clone URL.
+func stripRepoCreds(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	u.User = nil
+	return u.String()
 }
