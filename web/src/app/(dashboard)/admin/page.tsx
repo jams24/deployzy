@@ -11,12 +11,13 @@ import { Pager, FilterChip, fmtBytes, timeAgo } from "@/components/admin/pager";
 import { SuspendDialog, type SuspendRequest } from "@/components/admin/suspend-dialog";
 import { WebsiteAnalytics } from "@/components/website-analytics";
 import { OverviewDashboard } from "@/components/admin/overview-dashboard";
+import { EmailValidatorDashboard, type EmailAnalytics as EmailAnalyticsData } from "@/components/admin/email-validator-dashboard";
 import {
-  Users, Key, Globe, Activity, Search, Trash2, Shield, Crown,
+  Users, Globe, Activity, Search, Trash2, Shield, Crown,
   Server, Plus, Loader2, Rocket, BarChart3, Database, Link2,
   Radio, WifiOff, ExternalLink, RefreshCw, X, Zap, Square,
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
-  HardDrive, Cpu, MemoryStick, CheckCircle2, AlertCircle,
+  HardDrive, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
   Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles,
 } from "lucide-react";
@@ -279,15 +280,6 @@ interface TunnelOverview {
 }
 
 interface EvPeriod { total: number; users: number; valid: number; risky: number; invalid: number; unknown: number; }
-interface EmailAnalytics {
-  today: EvPeriod; week: EvPeriod; month: EvPeriod;
-  all_time: number; disposable_30d: number; role_based_30d: number; no_mx_30d: number;
-  smtp_probed_30d: number; batch_share_30d: number;
-  daily: { day: string; total: number; valid: number; invalid: number; risky: number }[];
-  top_users: { user_id: string; email: string; total: number; invalid: number; last_used: string }[];
-  top_domains: { key: string; count: number }[];
-  top_reasons: { key: string; count: number }[];
-}
 
 // Human duration between two instants (end defaults to now): "3h 12m", "45s".
 function fmtDuration(fromIso: string, toIso?: string | null): string {
@@ -414,7 +406,7 @@ export default function AdminPage() {
   const [sessionsRefresh, setSessionsRefresh] = useState<Date | null>(null);
   const [tunnelOverview, setTunnelOverview] = useState<TunnelOverview | null>(null);
   const [historyFilter, setHistoryFilter] = useState("");
-  const [emailAnalytics, setEmailAnalytics] = useState<EmailAnalytics | null>(null);
+  const [emailAnalytics, setEmailAnalytics] = useState<EmailAnalyticsData | null>(null);
 
   // Infrastructure state
   const [servers, setServers] = useState<WorkerServer[]>([]);
@@ -2990,159 +2982,10 @@ export default function AdminPage() {
         );
       })()}
 
-      {tab === "email" && (() => {
-        const ev = emailAnalytics;
-        const maxDay = Math.max(1, ...(ev?.daily ?? []).map(d => d.total));
-        const pct = (part: number, whole: number) => whole > 0 ? Math.round((part / whole) * 100) : 0;
-        const scoreCls: Record<string, string> = {
-          valid: "bg-emerald-500", risky: "bg-amber-500", invalid: "bg-red-500", unknown: "bg-zinc-400",
-        };
-        return (
-        <div className="space-y-5">
-          {/* KPI row */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-            <KpiCard label="Verified today" value={ev?.today.total ?? "—"} sub={ev ? `${ev.today.users} user${ev.today.users !== 1 ? "s" : ""}` : undefined}
-              icon={<CheckCircle2 className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20" bar="bg-emerald-500" />
-            <KpiCard label="Verified (7d)" value={ev?.week.total ?? "—"} sub={ev ? `${ev.week.users} unique user${ev.week.users !== 1 ? "s" : ""}` : undefined}
-              icon={<BarChart3 className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20" bar="bg-blue-500" delay={40} />
-            <KpiCard label="Verified (30d)" value={ev?.month.total ?? "—"} sub={ev ? `${pct(ev.month.valid, ev.month.total)}% valid` : undefined}
-              icon={<Activity className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20" bar="bg-violet-500" delay={80} />
-            <KpiCard label="Disposable (30d)" value={ev?.disposable_30d ?? "—"} sub={ev ? `${pct(ev.disposable_30d, ev.month.total)}% of checks` : undefined}
-              icon={<Ban className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20" bar="bg-amber-500" delay={120} />
-            <KpiCard label="No MX (30d)" value={ev?.no_mx_30d ?? "—"} sub={ev ? `${pct(ev.no_mx_30d, ev.month.total)}% dead domains` : undefined}
-              icon={<WifiOff className="h-4 w-4" />} color="text-red-600 dark:text-red-400 bg-red-500/20" bar="bg-red-500" delay={160} />
-            <KpiCard label="SMTP probed (30d)" value={ev?.smtp_probed_30d ?? "—"} sub={ev ? `${ev.batch_share_30d}% via batch` : undefined}
-              icon={<Radio className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20" bar="bg-cyan-500" delay={200} />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            {/* 30-day volume */}
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2"><BarChart3 className="h-4 w-4 text-muted-foreground" /> Verifications · last 30 days</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {ev ? (
-                  <div className="flex h-32 items-end gap-1">
-                    {ev.daily.map(d => (
-                      <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end gap-px">
-                        <div className="w-full rounded-t-sm bg-red-500/70" style={{ height: `${d.total ? (d.invalid / maxDay) * 100 : 0}%` }} />
-                        <div className="w-full bg-amber-500/70" style={{ height: `${d.total ? (d.risky / maxDay) * 100 : 0}%` }} />
-                        <div className="w-full rounded-b-sm bg-emerald-500/70" style={{ height: `${d.total ? (d.valid / maxDay) * 100 : (d.total === 0 ? 0 : 2)}%`, minHeight: d.total ? 2 : 0 }} />
-                        <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] shadow-sm group-hover:block">
-                          <div className="font-medium">{new Date(d.day + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
-                          <div className="text-muted-foreground">{d.total} checks · {d.valid} valid · {d.risky} risky · {d.invalid} invalid</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : <div className="h-32 animate-pulse rounded-md bg-muted/20" />}
-                <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500/70" /> valid</span>
-                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-500/70" /> risky</span>
-                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-red-500/70" /> invalid</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quality breakdown (30d) */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-muted-foreground" /> Result mix · 30 days</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!ev ? <div className="h-40 animate-pulse rounded-md bg-muted/20" /> : ev.month.total === 0 ? (
-                  <p className="py-8 text-center text-xs text-muted-foreground">No verifications in the last 30 days.</p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex h-3 w-full overflow-hidden rounded-full">
-                      {(["valid", "risky", "invalid", "unknown"] as const).map(k => {
-                        const v = ev.month[k]; const p = pct(v, ev.month.total);
-                        return p > 0 ? <div key={k} className={scoreCls[k]} style={{ width: `${p}%` }} title={`${k}: ${v} (${p}%)`} /> : null;
-                      })}
-                    </div>
-                    <div className="space-y-1.5">
-                      {(["valid", "risky", "invalid", "unknown"] as const).map(k => (
-                        <div key={k} className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5 capitalize"><span className={`h-2 w-2 rounded-full ${scoreCls[k]}`} />{k}</span>
-                          <span className="font-mono tabular-nums text-muted-foreground">{ev.month[k].toLocaleString()} · {pct(ev.month[k], ev.month.total)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="border-t border-border/50 pt-2 space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Role-based</span><span className="font-mono tabular-nums">{ev.role_based_30d.toLocaleString()} · {pct(ev.role_based_30d, ev.month.total)}%</span></div>
-                      <div className="flex items-center justify-between"><span className="text-muted-foreground">Disposable</span><span className="font-mono tabular-nums">{ev.disposable_30d.toLocaleString()} · {pct(ev.disposable_30d, ev.month.total)}%</span></div>
-                      <div className="flex items-center justify-between"><span className="text-muted-foreground">All-time checks</span><span className="font-mono tabular-nums">{ev.all_time.toLocaleString()}</span></div>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-3">
-            {/* Top users */}
-            <Card className="xl:col-span-2">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /> Top users · 30 days</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!ev ? <div className="h-40 animate-pulse rounded-md bg-muted/20" />
-                : ev.top_users.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No one has used the validator in the last 30 days.</p>
-                : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <tr className="text-left"><th className="px-2 py-1.5 font-medium">User</th><th className="px-2 py-1.5 font-medium text-right">Checks</th><th className="px-2 py-1.5 font-medium text-right">Invalid</th><th className="px-2 py-1.5 font-medium text-right">Last used</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/40">
-                        {ev.top_users.map((u, i) => (
-                          <tr key={(u.user_id || "anon") + i} className="hover:bg-accent/30">
-                            <td className="px-2 py-1.5 truncate max-w-[220px] font-medium">{u.email || "anonymous"}</td>
-                            <td className="px-2 py-1.5 text-right font-mono tabular-nums">{u.total.toLocaleString()}</td>
-                            <td className="px-2 py-1.5 text-right font-mono tabular-nums text-red-600 dark:text-red-400">{u.invalid.toLocaleString()}</td>
-                            <td className="px-2 py-1.5 text-right text-muted-foreground whitespace-nowrap" title={new Date(u.last_used).toLocaleString()}>{agoShort(u.last_used)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Top domains */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2"><Globe className="h-4 w-4 text-muted-foreground" /> Top domains · 30 days</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!ev ? <div className="h-40 animate-pulse rounded-md bg-muted/20" />
-                : ev.top_domains.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No data yet.</p>
-                : (
-                  <div className="space-y-1">
-                    {ev.top_domains.map(d => {
-                      const maxC = Math.max(1, ev.top_domains[0]?.count ?? 1);
-                      return (
-                        <div key={d.key} className="relative overflow-hidden rounded-md">
-                          <div className="absolute inset-y-0 left-0 bg-blue-500/10" style={{ width: `${(d.count / maxC) * 100}%` }} />
-                          <div className="relative flex items-center justify-between gap-2 px-2 py-1 text-xs">
-                            <span className="truncate font-mono">{d.key}</span>
-                            <span className="font-mono tabular-nums text-muted-foreground shrink-0">{d.count.toLocaleString()}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <p className="text-[10px] text-muted-foreground/60">Privacy: only the email domain and verdict are logged, never the full address. History starts when logging was enabled.</p>
-        </div>
-        );
-      })()}
+      {tab === "email" && (
+        <EmailValidatorDashboard a={emailAnalytics}
+          onOpenUser={(email) => { setUserSearch(email); setUserStatus("all"); setUserPlanFilter("all"); setTab("users"); }} />
+      )}
 
       {/* ── INFRASTRUCTURE TAB ───────────────────────────────────────────── */}
       {tab === "infra" && (
@@ -4215,25 +4058,6 @@ function KpiCard({ icon, label, value, sub, trend, color, bar, delay = 0 }: {
   );
 }
 
-// Ring — a thin SVG donut used for success-rate / percentage stats. Reliable in
-// both themes (no conic-gradient quirks) and animates on value change.
-function Ring({ pct, cls, children }: { pct: number; cls: string; children?: React.ReactNode }) {
-  const r = 26, c = 2 * Math.PI * r;
-  const off = c - (Math.max(0, Math.min(100, pct)) / 100) * c;
-  return (
-    <div className="relative h-[72px] w-[72px] shrink-0">
-      <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
-        <circle cx="32" cy="32" r={r} fill="none" strokeWidth="6" className="stroke-muted/60" />
-        <circle
-          cx="32" cy="32" r={r} fill="none" strokeWidth="6" strokeLinecap="round"
-          className={cls}
-          style={{ strokeDasharray: c, strokeDashoffset: off, transition: "stroke-dashoffset .7s cubic-bezier(.4,0,.2,1)" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
-    </div>
-  );
-}
 
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "bad" }) {
   const color = tone === "warn" ? "text-amber-600 dark:text-amber-400" : tone === "bad" ? "text-red-600 dark:text-red-400" : "text-foreground";
@@ -4306,26 +4130,3 @@ function UtilBar({ label, used, total, pct, unit, large }: {
   );
 }
 
-function StackBar({ counts, colors }: { counts: Record<string, number>; colors: Record<string, string> }) {
-  const entries = Object.entries(counts).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  if (total === 0) return <p className="text-xs text-muted-foreground">No data.</p>;
-  return (
-    <div className="space-y-3">
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted/40">
-        {entries.map(([k, v]) => (
-          <div key={k} className={colors[k] || "bg-muted"} style={{ width: `${(v / total) * 100}%` }} title={`${k}: ${v}`} />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {entries.map(([k, v]) => (
-          <div key={k} className="flex items-center gap-1.5 text-[11px]">
-            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${colors[k] || "bg-muted"}`} />
-            <span className="font-medium">{k}</span>
-            <span className="text-muted-foreground">{v} <span className="text-muted-foreground/60">({Math.round((v / total) * 100)}%)</span></span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
