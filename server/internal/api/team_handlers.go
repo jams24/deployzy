@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/serverme/serverme/server/internal/auth"
+	"github.com/serverme/serverme/server/internal/db"
 	"github.com/serverme/serverme/server/internal/notify"
 )
 
@@ -62,6 +63,13 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request) {
 
 	members, _ := s.db.ListTeamMembers(r.Context(), teamID)
 	invitations, _ := s.db.ListPendingInvitations(r.Context(), teamID)
+	// Always send arrays: a nil slice marshals to null, which crashed the page.
+	if members == nil {
+		members = []db.TeamMemberFull{}
+	}
+	if invitations == nil {
+		invitations = []db.TeamInvitation{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"team":        team,

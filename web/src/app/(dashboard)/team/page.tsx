@@ -57,7 +57,7 @@ export default function TeamPage() {
   const loadTeams = useCallback(async (select?: string) => {
     try {
       const res = await fetch(`${API}/api/v1/teams`, { headers: headers() });
-      const list: Team[] = res.ok ? await res.json() : [];
+      const list: Team[] = (res.ok ? await res.json() : null) ?? [];
       setTeams(list);
       setSelId((cur) => select || (cur && list.some((t) => t.id === cur) ? cur : list[0]?.id || ""));
     } catch { setTeams([]); }
@@ -66,7 +66,11 @@ export default function TeamPage() {
     if (!id) { setDetail(null); return; }
     try {
       const res = await fetch(`${API}/api/v1/teams/${id}`, { headers: headers() });
-      if (res.ok) setDetail(await res.json());
+      if (res.ok) {
+        const d = await res.json();
+        // Defensive: the API used to send null for empty lists.
+        setDetail({ ...d, members: d.members ?? [], invitations: d.invitations ?? [] });
+      }
     } catch { /* keep */ }
   }, []);
 
