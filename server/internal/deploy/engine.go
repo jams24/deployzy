@@ -1176,6 +1176,9 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 		e.log.Warn().Err(err).Msg("crash sweep: list running projects failed")
 		return
 	}
+	// One `docker ps -a` per host (not one docker inspect per project): the
+	// per-project SSH logins were a large share of a worker's load average.
+	byHost := map[string][]*db.Project{}
 	for i := range projects {
 		p := &projects[i]
 		// A container we deliberately stopped for idleness is 'exited' but NOT
@@ -1183,15 +1186,26 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 		if e.idle != nil && e.idle.isSleeping(p.ID) {
 			continue
 		}
-		containerName := fmt.Sprintf("sm-%s", p.ID[:8])
-		runner := e.getRunner(ctx, p)
-		out, err := runner.RunShell(ctx,
-			fmt.Sprintf("docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing", containerName))
-		if err != nil {
+		byHost[p.WorkerServerID] = append(byHost[p.WorkerServerID], p)
+	}
+	for _, group := range byHost {
+		runner := e.getRunner(ctx, group[0])
+		out, err := runner.RunShell(ctx, "docker ps -a --filter name=^sm- --format '{{.Names}}|{{.State}}' 2>/dev/null")
+		if err != nil && len(out) == 0 {
 			continue // host unreachable — worker health monitor handles that
 		}
-		state := strings.TrimSpace(string(out))
-		if state == "exited" || state == "dead" {
+		states := map[string]string{}
+		for _, line := range strings.Split(string(out), "\n") {
+			if name, st, ok := strings.Cut(strings.TrimSpace(line), "|"); ok {
+				states[name] = st
+			}
+		}
+		for _, p := range group {
+			containerName := fmt.Sprintf("sm-%s", p.ID[:8])
+			state := states[containerName] // "" when missing — not a crash
+			if state != "exited" && state != "dead" {
+				continue
+			}
 			logs := ""
 			if lout, lerr := runner.RunShell(ctx, "docker logs --tail 5 "+containerName+" 2>&1"); lerr == nil {
 				logs = strings.TrimSpace(string(lout))

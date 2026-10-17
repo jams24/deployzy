@@ -317,7 +317,11 @@ func (d *DB) SelectServerForProject(ctx context.Context, userID *string) (*Worke
 			    OR (used_memory_mb = 0
 			        AND allocated_memory_mb::float / NULLIF(total_memory_mb, 0) < 0.85)
 			  )
-			ORDER BY COALESCE(priority, 100) ASC, (total_memory_mb - allocated_memory_mb) DESC
+			-- CPU-saturated hosts (1-min load >= cores, measured by the heartbeat)
+			-- sort last: still usable if nothing else qualifies, but a busy box
+			-- stops winning placement just because of its priority.
+			ORDER BY (COALESCE(load_avg, 0) >= COALESCE(NULLIF(total_cpu, 0), 1)) ASC,
+			         COALESCE(priority, 100) ASC, (total_memory_mb - allocated_memory_mb) DESC
 			LIMIT 1`
 	}
 
