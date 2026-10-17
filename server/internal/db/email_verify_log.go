@@ -204,3 +204,46 @@ func (d *DB) evTopList(ctx context.Context, col, cond string) ([]EvNameCount, er
 	}
 	return out, rows.Err()
 }
+
+// EmailVerifyUserUsage is one user's own validator usage (last 30 days).
+type EmailVerifyUserUsage struct {
+	Month   EmailVerifyPeriod `json:"month"`
+	Today   int64             `json:"today"`
+	AllTime int64             `json:"all_time"`
+	Daily   []EvDay           `json:"daily"`
+}
+
+func (d *DB) GetEmailVerifyUserUsage(ctx context.Context, userID string) (*EmailVerifyUserUsage, error) {
+	u := &EmailVerifyUserUsage{Daily: []EvDay{}}
+	if err := d.Pool.QueryRow(ctx, `
+		SELECT COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days'),
+		       COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days' AND score = 'valid'),
+		       COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days' AND score = 'risky'),
+		       COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days' AND score = 'invalid'),
+		       COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days' AND score NOT IN ('valid','risky','invalid')),
+		       COUNT(*) FILTER (WHERE created_at >= date_trunc('day', now())),
+		       COUNT(*)
+		  FROM email_verifications WHERE user_id = $1`, userID).
+		Scan(&u.Month.Total, &u.Month.Valid, &u.Month.Risky, &u.Month.Invalid, &u.Month.Unknown, &u.Today, &u.AllTime); err != nil {
+		return nil, err
+	}
+	rows, err := d.Pool.Query(ctx, `
+		SELECT to_char(g.day, 'YYYY-MM-DD'), COUNT(ev.id),
+		       COUNT(ev.id) FILTER (WHERE ev.score = 'valid'), COUNT(ev.id) FILTER (WHERE ev.score = 'invalid'),
+		       COUNT(ev.id) FILTER (WHERE ev.score = 'risky')
+		  FROM generate_series(date_trunc('day', now()) - interval '29 days', date_trunc('day', now()), interval '1 day') g(day)
+		  LEFT JOIN email_verifications ev ON ev.user_id = $1 AND ev.created_at >= g.day AND ev.created_at < g.day + interval '1 day'
+		 GROUP BY g.day ORDER BY g.day`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e EvDay
+		if err := rows.Scan(&e.Day, &e.Total, &e.Valid, &e.Invalid, &e.Risky); err != nil {
+			return nil, err
+		}
+		u.Daily = append(u.Daily, e)
+	}
+	return u, rows.Err()
+}

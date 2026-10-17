@@ -10,38 +10,38 @@ import (
 // PlanLimit holds every per-plan cap and feature flag. -1 in any int field
 // means "unlimited" — caller logic should check Unlimited(n) before comparing.
 type PlanLimit struct {
-	Plan                    string  `json:"plan"`
-	MaxSubdomains           int     `json:"max_subdomains"`
-	MaxTunnels              int     `json:"max_tunnels"`
-	MaxRate                 int     `json:"max_rate"`
-	MaxProjects             int     `json:"max_projects"`
-	MaxCustomDomains        int     `json:"max_custom_domains"`
-	MaxDatabases            int     `json:"max_databases"`
-	MaxServices             int     `json:"max_services"`
-	MaxCrons                int     `json:"max_crons"`
-	MaxBYOCServers          int     `json:"max_byoc_servers"`
-	MaxPreviewDeploys       int     `json:"max_preview_deploys"`
-	MaxMemoryMB             int     `json:"max_memory_mb"`
-	MaxCPUs                 float64 `json:"max_cpus"`
-	MaxBandwidthGB          int     `json:"max_bandwidth_gb"`
-	MaxBuildMinutesMonthly  int     `json:"max_build_minutes_monthly"`
-	MonthlyAICredits        int     `json:"monthly_ai_credits"` // free AI-builder credits per month; -1 = unlimited
-	MaxBuildMemoryMB        int     `json:"max_build_memory_mb"`
-	MaxDBSizeMB             int     `json:"max_db_size_mb"`
-	AnalyticsRetentionDays  int     `json:"analytics_retention_days"`
-	MetricsRetentionDays    int     `json:"metrics_retention_days"`
-	DeployLogRetentionDays  int     `json:"deploy_log_retention_days"`
-	BackupRetentionDays     int     `json:"backup_retention_days"`
-	AllowPreviews           bool    `json:"allow_previews"`
-	AllowReleaseCmd         bool    `json:"allow_release_cmd"`
-	AllowHealthChecks       bool    `json:"allow_health_checks"`
-	AllowPrivateRepos       bool    `json:"allow_private_repos"`
-	AllowTCPTunnels         bool    `json:"allow_tcp_tunnels"`
-	AllowCustomEvents       bool    `json:"allow_custom_events"`
-	AllowLiveLogs           bool    `json:"allow_live_logs"`
-	AllowTelegram           bool    `json:"allow_telegram"`
-	AllowAdvancedDatabases  bool    `json:"allow_advanced_databases"`
-	AllowDBMigration        bool    `json:"allow_db_migration"`
+	Plan                   string  `json:"plan"`
+	MaxSubdomains          int     `json:"max_subdomains"`
+	MaxTunnels             int     `json:"max_tunnels"`
+	MaxRate                int     `json:"max_rate"`
+	MaxProjects            int     `json:"max_projects"`
+	MaxCustomDomains       int     `json:"max_custom_domains"`
+	MaxDatabases           int     `json:"max_databases"`
+	MaxServices            int     `json:"max_services"`
+	MaxCrons               int     `json:"max_crons"`
+	MaxBYOCServers         int     `json:"max_byoc_servers"`
+	MaxPreviewDeploys      int     `json:"max_preview_deploys"`
+	MaxMemoryMB            int     `json:"max_memory_mb"`
+	MaxCPUs                float64 `json:"max_cpus"`
+	MaxBandwidthGB         int     `json:"max_bandwidth_gb"`
+	MaxBuildMinutesMonthly int     `json:"max_build_minutes_monthly"`
+	MonthlyAICredits       int     `json:"monthly_ai_credits"` // free AI-builder credits per month; -1 = unlimited
+	MaxBuildMemoryMB       int     `json:"max_build_memory_mb"`
+	MaxDBSizeMB            int     `json:"max_db_size_mb"`
+	AnalyticsRetentionDays int     `json:"analytics_retention_days"`
+	MetricsRetentionDays   int     `json:"metrics_retention_days"`
+	DeployLogRetentionDays int     `json:"deploy_log_retention_days"`
+	BackupRetentionDays    int     `json:"backup_retention_days"`
+	AllowPreviews          bool    `json:"allow_previews"`
+	AllowReleaseCmd        bool    `json:"allow_release_cmd"`
+	AllowHealthChecks      bool    `json:"allow_health_checks"`
+	AllowPrivateRepos      bool    `json:"allow_private_repos"`
+	AllowTCPTunnels        bool    `json:"allow_tcp_tunnels"`
+	AllowCustomEvents      bool    `json:"allow_custom_events"`
+	AllowLiveLogs          bool    `json:"allow_live_logs"`
+	AllowTelegram          bool    `json:"allow_telegram"`
+	AllowAdvancedDatabases bool    `json:"allow_advanced_databases"`
+	AllowDBMigration       bool    `json:"allow_db_migration"`
 }
 
 // Unlimited reports whether a numeric limit field is set to "unlimited" (-1).
@@ -213,10 +213,40 @@ func (d *DB) ListUserSubdomains(ctx context.Context, userID string) ([]ReservedS
 	var subs []ReservedSubdomain
 	for rows.Next() {
 		var s ReservedSubdomain
-		rows.Scan(&s.ID, &s.UserID, &s.Subdomain, &s.CreatedAt)
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Subdomain, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan reserved subdomain: %w", err)
+		}
 		subs = append(subs, s)
 	}
-	return subs, nil
+	return subs, rows.Err()
+}
+
+// SubdomainProjectUse maps a user's project subdomains to the project using
+// each (for the "used by app" badge on the Subdomains page).
+type SubdomainProjectUse struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+func (d *DB) ProjectsBySubdomain(ctx context.Context, userID string) (map[string]SubdomainProjectUse, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT subdomain, id::text, name, COALESCE(status, '') FROM projects
+		  WHERE user_id = $1 AND parent_project_id IS NULL AND subdomain <> ''`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]SubdomainProjectUse{}
+	for rows.Next() {
+		var sub string
+		var p SubdomainProjectUse
+		if err := rows.Scan(&sub, &p.ID, &p.Name, &p.Status); err != nil {
+			return nil, fmt.Errorf("scan project subdomain: %w", err)
+		}
+		out[sub] = p
+	}
+	return out, rows.Err()
 }
 
 // ReleaseSubdomain releases a reserved subdomain.

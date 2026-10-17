@@ -499,3 +499,20 @@ func evRecord(r EmailVerifyResult, source string) db.EmailVerifyRecord {
 		Source:         source,
 	}
 }
+
+// GET /api/v1/email/verify/usage — the caller's own validator usage (30 days)
+// plus the per-check price, for the Email Verify page.
+func (s *Server) handleEmailVerifyUsage(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	usage, err := s.db.GetEmailVerifyUserUsage(r.Context(), u.ID)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("email verify usage")
+		writeError(w, http.StatusInternalServerError, "failed to load usage")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"usage":          usage,
+		"cost_per_check": emailVerifyCost,
+		"batch_max":      emailVerifyBatchMax,
+	})
+}

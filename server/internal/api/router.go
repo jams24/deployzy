@@ -209,6 +209,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Email verification API (metered by credits)
 			r.Post("/email/verify", s.handleEmailVerify)
 			r.Post("/email/verify/batch", s.handleEmailVerifyBatch)
+			r.Get("/email/verify/usage", s.handleEmailVerifyUsage)
 			// Per-user BYOK: bring your own AI provider key
 			r.Get("/ai/keys", s.handleGetUserAIKeys)
 			r.With(fullScope).Put("/ai/keys", s.handleSetUserAIKey)
