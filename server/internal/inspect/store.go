@@ -172,3 +172,16 @@ func generateID() string {
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// OwnerOf returns the user who owns a tunnel's captured traffic, taken from
+// the newest buffered request ("" when nothing is buffered). Used to authorize
+// inspector reads after a tunnel has disconnected.
+func (s *Store) OwnerOf(tunnelURL string) string {
+	reqs := s.List(tunnelURL)
+	for i := len(reqs) - 1; i >= 0; i-- {
+		if reqs[i].UserID != "" {
+			return reqs[i].UserID
+		}
+	}
+	return ""
+}

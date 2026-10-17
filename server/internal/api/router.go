@@ -177,6 +177,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			// Inspection
 			r.Get("/tunnels/{url}/requests", s.handleListRequests)
 			r.Get("/tunnels/{url}/requests/{reqId}", s.handleGetRequest)
+			r.Delete("/tunnels/{url}/requests", s.handleClearRequests)
 			r.Post("/tunnels/{url}/replay/{reqId}", s.handleReplayRequest)
 
 			// Analytics

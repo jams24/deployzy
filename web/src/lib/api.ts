@@ -238,8 +238,25 @@ class ApiClient {
   // Inspection
   listRequests(tunnelUrl: string) {
     return this.request<CapturedRequest[]>(
-      `/api/v1/tunnels/${encodeURIComponent(tunnelUrl)}/requests`
+      `/api/v1/tunnels/${encodeURIComponent(tunnelUrl)}/requests${this.teamQ()}`
     );
+  }
+
+  clearRequests(tunnelUrl: string) {
+    return this.request<{ status: string }>(
+      `/api/v1/tunnels/${encodeURIComponent(tunnelUrl)}/requests${this.teamQ()}`,
+      { method: "DELETE" }
+    );
+  }
+
+  // Live traffic socket URL (JWT + team in the query: browsers can't set
+  // headers on a WebSocket).
+  trafficSocketURL(tunnelUrl: string): string {
+    const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081").replace(/^http/, "ws");
+    const q = new URLSearchParams({ token: this.getToken() || "" });
+    const teamId = typeof window !== "undefined" ? localStorage.getItem("sm_team_id") : null;
+    if (teamId) q.set("team_id", teamId);
+    return `${base}/api/v1/ws/traffic/${encodeURIComponent(tunnelUrl)}?${q}`;
   }
 
   // Templates
@@ -460,6 +477,8 @@ export interface WorkerServer {
 
 export interface CapturedRequest {
   id: string;
+  request_body?: string;  // base64 (first 10 KB)
+  response_body?: string; // base64 (first 10 KB)
   tunnel_url: string;
   timestamp: string;
   duration_ms: number;
