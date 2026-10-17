@@ -62,14 +62,19 @@ func (ms *MetricsScraper) scrape(ctx context.Context) {
 	if err != nil || len(projects) == 0 {
 		return
 	}
+	// Group by host so each worker is probed with ONE SSH round-trip per cycle.
+	// The old code ran 2 SSH logins per project (docker stats + docker inspect)
+	// concurrently every 30s — ~170 logins per cycle on an 84-project worker,
+	// which showed up as a load average of 20+ on an otherwise idle box.
+	byHost := map[string][]db.Project{}
 	for _, p := range projects {
 		if p.ContainerID == "" {
 			continue
 		}
-		// Remote workers use the same runner abstraction as local, so we no
-		// longer skip them — getRunner() transparently SSHs for remote
-		// projects and runs docker commands there.
-		go ms.scrapeOne(ctx, p)
+		byHost[p.WorkerServerID] = append(byHost[p.WorkerServerID], p)
+	}
+	for _, group := range byHost {
+		go ms.scrapeHost(ctx, group)
 	}
 }
 
@@ -81,67 +86,88 @@ type dockerStatsJSON struct {
 	NetIO    string `json:"NetIO"`    // "1.2kB / 800B"
 }
 
-func (ms *MetricsScraper) scrapeOne(ctx context.Context, p db.Project) {
-	containerName := fmt.Sprintf("sm-%s", p.ID[:8])
-	runner := ms.engine.getRunner(ctx, &p)
-
-	runCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	out, err := runner.Run(runCtx, "docker", "stats", "--no-stream", "--format", "{{json .}}", containerName)
-	if err != nil {
-		return
-	}
-	line := strings.TrimSpace(string(out))
-	if line == "" {
-		return
-	}
-
-	var stats dockerStatsJSON
-	if err := json.Unmarshal([]byte(line), &stats); err != nil {
-		return
-	}
-
-	cpu := parseCPUPerc(stats.CPUPerc)
-	memMB, memLimitMB := parseMemUsage(stats.MemUsage)
-	rx, tx := parseNetIO(stats.NetIO)
-
-	if err := ms.db.InsertMetric(ctx, p.ID, cpu, memMB, memLimitMB, rx, tx); err != nil {
-		ms.log.Debug().Err(err).Str("project", p.ID).Msg("insert metric failed")
-	}
-
-	ms.checkOOM(ctx, p, runner, containerName)
+type containerState struct {
+	oom          bool
+	restartCount int
+	exitCode     int
 }
 
-// checkOOM inspects the container and, if it was OOM-killed since the last
-// observation, writes a visible log line so users understand why their app is
-// crash-looping. Without this, an OOM'd app silently restarts and the user
-// only sees "restarted N times" with no cause.
-func (ms *MetricsScraper) checkOOM(ctx context.Context, p db.Project, runner *Runner, containerName string) {
-	inspectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	out, err := runner.Run(inspectCtx, "docker", "inspect", "--format",
-		"{{.State.OOMKilled}}|{{.RestartCount}}|{{.State.ExitCode}}", containerName)
-	if err != nil {
-		return
-	}
-	parts := strings.Split(strings.TrimSpace(string(out)), "|")
-	if len(parts) != 3 {
-		return
-	}
-	oom := parts[0] == "true"
-	restartCount, _ := strconv.Atoi(parts[1])
-	exitCode, _ := strconv.Atoi(parts[2])
+const inspectMarker = "@@SM-INSPECT@@"
 
-	if !oom && exitCode != 137 {
+// scrapeHost samples every project container on one host in a single shell
+// call: `docker stats` for all running containers, then one bulk `docker
+// inspect` for the OOM/restart state, separated by a marker line.
+func (ms *MetricsScraper) scrapeHost(ctx context.Context, group []db.Project) {
+	runner := ms.engine.getRunner(ctx, &group[0])
+	runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	script := `docker stats --no-stream --format '{{json .}}' 2>/dev/null; echo '` + inspectMarker + `'; ` +
+		`ids=$(docker ps -q --filter name=^sm-); [ -n "$ids" ] && docker inspect --format '{{.Name}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.State.ExitCode}}' $ids 2>/dev/null; true`
+	out, err := runner.RunShell(runCtx, script)
+	if err != nil && len(out) == 0 {
+		ms.log.Debug().Err(err).Str("host", runner.Host()).Msg("metrics probe failed")
+		return
+	}
+
+	stats := map[string]dockerStatsJSON{}
+	states := map[string]containerState{}
+	inInspect := false
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if line == inspectMarker {
+			inInspect = true
+			continue
+		}
+		if !inInspect {
+			var st dockerStatsJSON
+			if json.Unmarshal([]byte(line), &st) == nil && st.Name != "" {
+				stats[st.Name] = st
+			}
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) != 4 {
+			continue
+		}
+		rc, _ := strconv.Atoi(parts[2])
+		ec, _ := strconv.Atoi(parts[3])
+		states[strings.TrimPrefix(parts[0], "/")] = containerState{oom: parts[1] == "true", restartCount: rc, exitCode: ec}
+	}
+
+	for _, p := range group {
+		name := fmt.Sprintf("sm-%s", p.ID[:8])
+		if st, ok := stats[name]; ok {
+			cpu := parseCPUPerc(st.CPUPerc)
+			memMB, memLimitMB := parseMemUsage(st.MemUsage)
+			rx, tx := parseNetIO(st.NetIO)
+			if err := ms.db.InsertMetric(ctx, p.ID, cpu, memMB, memLimitMB, rx, tx); err != nil {
+				ms.log.Debug().Err(err).Str("project", p.ID).Msg("insert metric failed")
+			}
+		}
+		if cs, ok := states[name]; ok {
+			ms.checkOOM(ctx, p, cs)
+		}
+	}
+}
+
+// checkOOM writes a visible log line when a container was OOM-killed since the
+// last observation, so users understand why their app is crash-looping.
+// Without this, an OOM'd app silently restarts and the user only sees
+// "restarted N times" with no cause.
+func (ms *MetricsScraper) checkOOM(ctx context.Context, p db.Project, cs containerState) {
+	if !cs.oom && cs.exitCode != 137 {
 		return
 	}
 	prev, _ := ms.oomSeen.Load(p.ID)
 	prevCount, _ := prev.(int)
-	if restartCount <= prevCount {
+	if cs.restartCount <= prevCount {
 		return
 	}
-	ms.oomSeen.Store(p.ID, restartCount)
+	ms.oomSeen.Store(p.ID, cs.restartCount)
 	ms.engine.logMsg(ctx, p.ID, fmt.Sprintf(
 		"Container OOM-killed — exceeded memory limit (%d MB). Exit 137. Increase Memory MB in project settings, or upgrade your plan for a higher ceiling.",
 		planMemLimitFromID(ctx, ms.db, p.ID),

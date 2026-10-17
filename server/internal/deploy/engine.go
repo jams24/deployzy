@@ -721,7 +721,11 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 
 	// Run new container under a temp name — old container keeps serving until health check passes
 	e.logMsg(ctx, project.ID, "Starting container...", "deploy")
-	args := []string{"run", "-d", "--name", newContainerName}
+	// --init runs a tiny init (tini) as PID 1 that reaps orphaned child
+	// processes. Without it an app that spawns children (shell execs, workers)
+	// becomes PID 1 and never reaps them — one container had leaked 4,700+
+	// zombie processes on a worker.
+	args := []string{"run", "-d", "--init", "--name", newContainerName}
 
 	// Map primary port
 	args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
