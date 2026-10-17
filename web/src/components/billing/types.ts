@@ -22,6 +22,11 @@ export interface BillingStatus {
 }
 
 export interface PlanLimits {
+  // Also returned by /users/me/limits (used by the usage view):
+  max_db_size_mb: number;
+  max_build_memory_mb: number;
+  allow_telegram: boolean;
+  allow_advanced_databases: boolean;
   plan: string;
   max_subdomains: number; max_tunnels: number;
   max_projects: number; max_databases: number; max_services: number;
@@ -38,6 +43,8 @@ export interface UsageResponse {
   is_admin: boolean;
   limits: PlanLimits;
   usage: Record<string, number>; // projects, databases, services, custom_domains, crons, byoc_servers, subdomains, preview_deploys
+  build_usage?: { minutes_used: number; minutes_limit: number; builds: number; exceeded: boolean };
+  consumption?: { bandwidth_bytes: number; largest_db_mb: number }; // this calendar month
 }
 
 export interface PlanCardData {

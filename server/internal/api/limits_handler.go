@@ -58,6 +58,16 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 
 	buildUsage, _ := s.db.GetBuildUsage(r.Context(), u.ID)
 
+	// This month's consumption, for the Billing usage view (plan caps alone
+	// don't tell a user how close they are).
+	var bandwidthBytes int64
+	var largestDBMB int
+	_ = s.db.Pool.QueryRow(ctx, `
+		SELECT COALESCE((SELECT SUM(bu.bytes) FROM bandwidth_usage bu JOIN projects p ON p.id::text = bu.project_id
+		                  WHERE p.user_id = $1 AND bu.month = date_trunc('month', now())::date), 0),
+		       COALESCE((SELECT MAX(size_mb) FROM services WHERE user_id = $1), 0)`, u.ID).
+		Scan(&bandwidthBytes, &largestDBMB)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"plan":     plan,
 		"is_admin": isAdmin,
@@ -65,6 +75,10 @@ func (s *Server) handleGetMyLimits(w http.ResponseWriter, r *http.Request) {
 		// Build minutes are consumption, not a count of objects, so they ride
 		// alongside the usage map rather than inside it.
 		"build_usage": buildUsage,
+		"consumption": map[string]int64{
+			"bandwidth_bytes": bandwidthBytes, // this calendar month
+			"largest_db_mb":   int64(largestDBMB),
+		},
 		"usage": map[string]int{
 			"projects":         projects,
 			"preview_deploys":  previews,

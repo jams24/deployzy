@@ -187,7 +187,11 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	memberID := chi.URLParam(r, "userId")
 
 	role, isMember := s.db.IsTeamMember(r.Context(), teamID, u.ID)
-	if !isMember || (role != "owner" && role != "admin") {
+	// Owners/admins remove others; any member may remove themselves (leave).
+	// The owner can't be removed (enforced in RemoveTeamMember) — they delete
+	// the team instead.
+	leaving := memberID == u.ID
+	if !isMember || (!leaving && role != "owner" && role != "admin") {
 		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
