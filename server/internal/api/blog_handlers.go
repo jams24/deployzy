@@ -15,7 +15,7 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
-const blogUploadDir = "/opt/serverme-blog-uploads"
+const blogUploadDir = "/opt/deployzy-blog-uploads"
 
 // ── Public blog endpoints ────────────────────────────────────────────────────
 

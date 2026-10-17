@@ -13,18 +13,13 @@ import (
 )
 
 // Admin-only platform backup management. Backups are written to
-// /var/backups/serverme/ by /opt/serverme/backup.sh, fired nightly by the
-// serverme-backup.timer systemd unit. Filenames share a timestamp suffix
+// /var/backups/deployzy/ by /opt/deployzy/backup.sh, fired nightly by the
+// deployzy-backup.timer systemd unit (installed by deploy/install-backup.sh). Filenames share a timestamp suffix
 // (e.g. pg-20260415-220844.sql.gz) so we group them per run.
 
 // platformBackupDir returns the backup directory, preferring the post-rename
 // path. Both are checked so older installs keep working.
-func platformBackupDir() string {
-	if _, err := os.Stat("/var/backups/deployzy"); err == nil {
-		return "/var/backups/deployzy"
-	}
-	return "/var/backups/serverme"
-}
+func platformBackupDir() string { return "/var/backups/deployzy" }
 
 type platformBackupRun struct {
 	Timestamp  string               `json:"timestamp"`
@@ -95,11 +90,7 @@ func (s *Server) handleListPlatformBackups(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleRunPlatformBackup(w http.ResponseWriter, r *http.Request) {
-	unit := "deployzy-backup.service"
-	if out, _ := exec.Command("systemctl", "is-enabled", unit).Output(); strings.TrimSpace(string(out)) == "not-found" {
-		unit = "serverme-backup.service"
-	}
-	cmd := exec.Command("systemctl", "start", "--no-block", unit)
+	cmd := exec.Command("systemctl", "start", "--no-block", "deployzy-backup.service")
 	if err := cmd.Run(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to trigger backup: "+err.Error())
 		return
@@ -187,9 +178,6 @@ func validPlatformBackupTimestamp(s string) bool {
 
 func nextPlatformBackupRun() string {
 	out, err := exec.Command("systemctl", "show", "deployzy-backup.timer", "--property=NextElapseUSecRealtime", "--value").Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
-		out, err = exec.Command("systemctl", "show", "serverme-backup.timer", "--property=NextElapseUSecRealtime", "--value").Output()
-	}
 	if err != nil {
 		return ""
 	}
@@ -197,22 +185,12 @@ func nextPlatformBackupRun() string {
 }
 
 func platformTimerActive() bool {
-	// Unit was renamed serverme-backup → deployzy-backup (2026-07-18); check
-	// the new name first, fall back to the old for older installs.
-	for _, unit := range []string{"deployzy-backup.timer", "serverme-backup.timer"} {
-		out, _ := exec.Command("systemctl", "is-active", unit).Output()
-		if strings.TrimSpace(string(out)) == "active" {
-			return true
-		}
-	}
-	return false
+	out, _ := exec.Command("systemctl", "is-active", "deployzy-backup.timer").Output()
+	return strings.TrimSpace(string(out)) == "active"
 }
 
 func offsiteRemoteName() string {
 	b, err := os.ReadFile("/etc/deployzy/backup-remote.env")
-	if err != nil {
-		b, err = os.ReadFile("/etc/serverme/backup-remote.env")
-	}
 	if err != nil {
 		return ""
 	}

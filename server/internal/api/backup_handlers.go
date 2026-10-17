@@ -14,7 +14,7 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
-const backupDir = "/opt/serverme/backups"
+const backupDir = "/opt/deployzy/backups"
 
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)

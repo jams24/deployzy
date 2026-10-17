@@ -2,13 +2,13 @@
 # Disaster-recovery restore for ServerMe.
 #
 # Assumes `install.sh` has already run on this host (Postgres + Docker + Caddy
-# + serverme services exist and are healthy). The restore wipes the platform's
+# + deployzy services exist and are healthy). The restore wipes the platform's
 # SaaS state (users, projects, env vars, configs) and replaces it with the
 # contents of a nightly backup. Project CONTAINERS are NOT restored — they're
 # rebuilt on demand by redeploying each project from its GitHub repo.
 #
 # Usage:
-#   restore.sh latest                         # use newest backup in /var/backups/serverme
+#   restore.sh latest                         # use newest backup in /var/backups/deployzy
 #   restore.sh 20260418-050000                # use exact backup TS
 #   restore.sh /path/to/backup/dir            # use a directory (for R2-pulled backups)
 #   restore.sh latest --redeploy-all          # also call admin API to redeploy every project
@@ -19,11 +19,11 @@
 
 set -euo pipefail
 
-LOG_TAG="serverme-restore"
+LOG_TAG="deployzy-restore"
 log() { logger -t "$LOG_TAG" "$1" 2>/dev/null || true; echo "[$(date -u +%FT%TZ)] $1"; }
 die() { log "FATAL: $1"; exit 1; }
 
-BACKUP_DIR_DEFAULT="/var/backups/serverme"
+BACKUP_DIR_DEFAULT="/var/backups/deployzy"
 TARGET=""
 DO_REDEPLOY="no"
 
@@ -80,23 +80,23 @@ log "config tar : $CONFIG_FILE    ($([ -f "$CONFIG_FILE" ] && stat -c%s "$CONFIG
 log "data tar   : $DATA_FILE      ($([ -f "$DATA_FILE"   ] && stat -c%s "$DATA_FILE" || echo missing) bytes)"
 
 # ── Stop services to avoid writes during restore ──────────────────────────
-log "stopping serverme services"
-systemctl stop serverme serverme-web serverme-texis 2>/dev/null || true
-# Pause the backup timer so a cron run doesn't race with the restore.
-systemctl stop serverme-backup.timer 2>/dev/null || true
+log "stopping deployzy services"
+systemctl stop deployzy-web deployzy-texis deployzy 2>/dev/null || true
+# Pause the backup timer so a scheduled run doesn't race with the restore.
+systemctl stop deployzy-backup.timer 2>/dev/null || true
 
 # ── 1. Restore Postgres cluster ───────────────────────────────────────────
 # pg_dumpall was run with --clean --if-exists, so it DROP-then-CREATEs
 # everything. We just pipe it into `psql` as the postgres superuser.
 log "restoring Postgres cluster from $PG_FILE (this may take a while)"
-gunzip -c "$PG_FILE" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q >/var/log/serverme-restore-pg.log 2>&1 \
-    || die "psql restore failed — see /var/log/serverme-restore-pg.log"
+gunzip -c "$PG_FILE" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q >/var/log/deployzy-restore-pg.log 2>&1 \
+    || die "psql restore failed — see /var/log/deployzy-restore-pg.log"
 log "postgres restore done"
 
-# ── 2. Restore /etc/serverme, systemd units, Caddyfile ────────────────────
+# ── 2. Restore /etc/deployzy, systemd units, Caddyfile ────────────────────
 if [ -f "$CONFIG_FILE" ]; then
     log "restoring config from $CONFIG_FILE"
-    # Extract to / — tar was created with absolute paths (/etc/serverme/, etc.)
+    # Extract to / — tar was created with absolute paths (/etc/deployzy/, etc.)
     tar xzf "$CONFIG_FILE" -C / 2>/dev/null || log "config extract had warnings (continuing)"
     systemctl daemon-reload
     # Caddy may need a reload too
@@ -109,8 +109,8 @@ fi
 # ── 3. Restore project-data (deploy logs, transient state) ────────────────
 if [ -f "$DATA_FILE" ]; then
     log "restoring project-data from $DATA_FILE"
-    mkdir -p /opt/serverme
-    tar xzf "$DATA_FILE" -C /opt/serverme 2>/dev/null || log "data extract had warnings (continuing)"
+    mkdir -p /opt/deployzy
+    tar xzf "$DATA_FILE" -C /opt/deployzy 2>/dev/null || log "data extract had warnings (continuing)"
     log "project-data restore done"
 else
     log "no data tar — skipping"
@@ -118,22 +118,23 @@ fi
 
 # ── 4. Restart services ───────────────────────────────────────────────────
 log "starting services"
-systemctl start serverme
-# Wait for serverme to be listening before starting the others — they depend
+systemctl start deployzy
+# Wait for the API to be listening before starting the others — they depend
 # on the API being up to register with it.
 for i in $(seq 1 20); do
-    if curl -fsS --max-time 2 http://127.0.0.1:9081/health >/dev/null 2>&1; then break; fi
+    if curl -fsS --max-time 2 http://127.0.0.1:9081/api/v1/health >/dev/null 2>&1; then break; fi
     sleep 1
 done
-systemctl start serverme-web serverme-texis serverme-backup.timer 2>/dev/null || true
+systemctl start deployzy-texis deployzy-backup.timer 2>/dev/null || true
+systemctl restart deployzy-web 2>/dev/null || true
 
 sleep 3
-for s in serverme serverme-web serverme-texis; do
+for s in deployzy deployzy-texis deployzy-web; do
     log "$s: $(systemctl is-active $s 2>/dev/null || echo unknown)"
 done
 
 # ── 5. Post-restore reconciliation notes ──────────────────────────────────
-PROJECT_COUNT=$(PGPASSWORD=$(awk -F'database-url=postgres://[^:]+:' '/database-url=/{print}' /etc/systemd/system/serverme.service 2>/dev/null | head -1 | sed 's/@.*//') psql -h localhost -U serverme -d serverme -tAc "SELECT COUNT(*) FROM projects WHERE github_repo IS NOT NULL AND github_repo <> '';" 2>/dev/null || echo "?")
+PROJECT_COUNT=$(PGPASSWORD=$(awk -F'database-url=postgres://[^:]+:' '/database-url=/{print}' /etc/systemd/system/deployzy.service 2>/dev/null | head -1 | sed 's/@.*//') psql -h localhost -U serverme -d serverme -tAc "SELECT COUNT(*) FROM projects WHERE github_repo IS NOT NULL AND github_repo <> '';" 2>/dev/null || echo "?")
 
 log "restore complete."
 log "projects with a github_repo : $PROJECT_COUNT (each needs a redeploy to rebuild its container)"
@@ -143,7 +144,7 @@ if [ "$DO_REDEPLOY" = "yes" ]; then
     # The admin API requires an admin JWT. Emit a one-shot token via a small
     # helper inside the server binary — this is scoped so the script can
     # drive the API without requiring the operator to log in first.
-    TOKEN=$(/usr/local/bin/servermesrv admin-token 2>/dev/null || true)
+    TOKEN=$(/usr/local/bin/deployzysrv admin-token 2>/dev/null || true)
     if [ -n "$TOKEN" ]; then
         curl -fsS -X POST "http://127.0.0.1:9081/api/v1/admin/redeploy-all" \
             -H "Authorization: Bearer $TOKEN" \

@@ -33,14 +33,17 @@ log "pg_dumpall done: $PG_FILE ($PG_BYTES bytes)"
 
 # ── 2. Project data volumes ──────────────────────────────────────────────
 DATA_FILE="data-${TS}.tar.gz"
-if [ -d /opt/deployzy/project-data ]; then
-    log "tarring project data volumes"
-    tar czf "$DATA_FILE.tmp" -C /opt/deployzy project-data 2>/dev/null || true
+# Hosts provisioned before the rename keep data in /opt/serverme (the deploy
+# engine links /opt/deployzy to it); read whichever actually exists.
+DATA_ROOT=/opt/deployzy; [ -d "$DATA_ROOT/project-data" ] || DATA_ROOT=/opt/serverme
+if [ -d "$DATA_ROOT/project-data" ]; then
+    log "tarring project data volumes from $DATA_ROOT"
+    tar czf "$DATA_FILE.tmp" -C "$DATA_ROOT" project-data 2>/dev/null || true
     mv "$DATA_FILE.tmp" "$DATA_FILE"
     DATA_BYTES=$(stat -c%s "$DATA_FILE" 2>/dev/null || echo 0)
     log "project data done: $DATA_FILE ($DATA_BYTES bytes)"
 else
-    log "no /opt/deployzy/project-data — skipping"
+    log "no project-data directory — skipping"
 fi
 
 # ── 2a. Standalone service volumes (Redis / MongoDB / MySQL) ──────────────
@@ -97,7 +100,7 @@ for row in "${POOL_ROWS[@]}"; do
     if [ -n "$SSH_PW" ]; then
         sshpass -p "$SSH_PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "$SSH_USER@$HOST" -p "$PORT" \
-            'tar czf - -C /opt/deployzy project-data 2>/dev/null || true' \
+            'D=/opt/deployzy; [ -d "$D/project-data" ] || D=/opt/serverme; tar czf - -C "$D" project-data 2>/dev/null || true' \
             > "$REMOTE_FILE.tmp" 2>/dev/null
     elif [ -n "$SSH_KEY" ]; then
         KEYFILE=$(mktemp)
@@ -105,7 +108,7 @@ for row in "${POOL_ROWS[@]}"; do
         chmod 600 "$KEYFILE"
         ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
             "$SSH_USER@$HOST" -p "$PORT" \
-            'tar czf - -C /opt/deployzy project-data 2>/dev/null || true' \
+            'D=/opt/deployzy; [ -d "$D/project-data" ] || D=/opt/serverme; tar czf - -C "$D" project-data 2>/dev/null || true' \
             > "$REMOTE_FILE.tmp" 2>/dev/null
         rm -f "$KEYFILE"
     else

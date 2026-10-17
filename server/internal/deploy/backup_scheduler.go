@@ -13,7 +13,7 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
-const backupBasePath = "/opt/serverme/backups"
+const backupBasePath = DataRoot + "/backups"
 
 // BackupScheduler runs periodic database backups.
 type BackupScheduler struct {

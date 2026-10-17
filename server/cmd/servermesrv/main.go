@@ -181,7 +181,7 @@ func main() {
 			// (Subscription dunning runs in its own goroutine below — it needs
 			// the mailer, which is initialised after this loop starts.)
 			// Abandoned build dirs — cleaned on successful deploy, but a
-			// crashed/interrupted build leaves /tmp/serverme-build/<id>/
+			// crashed/interrupted build leaves /tmp/deployzy-build/<id>/
 			// behind. Remove anything older than 24h on the control plane
 			// AND on every active worker (both platform and BYOC).
 			pruneAbandonedBuildDirs(log)
@@ -610,10 +610,10 @@ func pruneAbandonedBuildDirsOnWorkers(ctx context.Context, database *db.DB, log 
 	for i := range workers {
 		w := workers[i]
 		runner := deploy.NewRemoteRunner(&w)
-		// find /tmp/serverme-build -maxdepth 1 -type d -mmin +1440 -exec rm -rf {} +
+		// find /tmp/deployzy-build -maxdepth 1 -type d -mmin +1440 -exec rm -rf {} +
 		// 1440 min = 24h. Older than our control-plane retention keeps things
 		// in sync across the whole fleet.
-		if _, err := runner.RunShell(ctx, "find /tmp/serverme-build -maxdepth 1 -mindepth 1 -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true"); err != nil {
+		if _, err := runner.RunShell(ctx, "find /tmp/deployzy-build -maxdepth 1 -mindepth 1 -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true"); err != nil {
 			log.Debug().Err(err).Str("worker", w.Label).Msg("remote build dir cleanup failed")
 		}
 	}
@@ -758,12 +758,12 @@ func monitorWorkerHealth(ctx context.Context, database *db.DB, log zerolog.Logge
 	}
 }
 
-// pruneAbandonedBuildDirs removes any /tmp/serverme-build/<project-id>/
+// pruneAbandonedBuildDirs removes any /tmp/deployzy-build/<project-id>/
 // directory that hasn't been touched in 24h. The happy-path deploy cleans
 // up its own dir, so anything left this long was interrupted mid-build
 // (server restart, OOM, crashed docker daemon).
 func pruneAbandonedBuildDirs(log zerolog.Logger) {
-	const base = "/tmp/serverme-build"
+	const base = "/tmp/deployzy-build"
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		return // dir doesn't exist yet — nothing to clean

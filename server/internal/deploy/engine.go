@@ -180,12 +180,16 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	runner.Exec(ctx, "docker", "stop", "-t", "2", newContainerName)
 	runner.Exec(ctx, "docker", "rm", "-f", newContainerName)
 
-	// Ensure data directory exists for persistence
-	runner.Exec(ctx, "mkdir", "-p", fmt.Sprintf("/opt/serverme/project-data/%s", project.ID[:8]))
+	// Ensure data directory exists for persistence. ensureDataRoot first makes
+	// /opt/deployzy usable on hosts that still only have the legacy
+	// /opt/serverme tree (France, BYOC boxes), so the mount below keeps
+	// pointing at the same data.
+	ensureDataRoot(ctx, runner)
+	runner.Exec(ctx, "mkdir", "-p", fmt.Sprintf("%s/project-data/%s", DataRoot, project.ID[:8]))
 
 	// Clean build directory — defer ensures temp files are always removed,
 	// even when an early failure path returns before the bottom of Deploy.
-	buildDir := fmt.Sprintf("/tmp/serverme-build/%s", project.ID)
+	buildDir := fmt.Sprintf("%s/%s", BuildTmpRoot, project.ID)
 	runner.Exec(ctx, "rm", "-rf", buildDir)
 	runner.Exec(ctx, "mkdir", "-p", buildDir)
 	defer runner.Exec(ctx, "rm", "-rf", buildDir)
@@ -829,7 +833,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	)
 
 	// Add data volume for persistence
-	args = append(args, "-v", fmt.Sprintf("/opt/serverme/project-data/%s:/app/data", project.ID[:8]))
+	args = append(args, "-v", fmt.Sprintf("%s/project-data/%s:/app/data", DataRoot, project.ID[:8]))
 	args = append(args, envFlags...)
 
 	// Release command: runs once before the app container starts (e.g. migrations).
