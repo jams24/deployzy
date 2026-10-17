@@ -8,8 +8,9 @@ import (
 )
 
 // GET /api/v1/admin/seo — SEO & LLM insight for deployzy.com. Aggregates the
-// crawler + referral data collected by the Caddy-log ingester into a shape the
-// admin UI can render directly, plus a few data-driven tips.
+// page-view-level counts from the Caddy-log ingester (seo_daily2: successful
+// page views only; scanners and scripts kept apart as probes) into a shape the
+// admin UI renders directly, plus a few data-driven tips.
 
 type seoNameCount struct {
 	Name    string `json:"name"`
@@ -30,36 +31,49 @@ func (s *Server) handleAdminSEO(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cutoff7 := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
-	crawlers := map[string]*seoNameCount{}   // name → agg
-	referrals := map[string]*seoNameCount{}  // name → agg
-	channelTotals := map[string]int64{}      // channel → hits (crawlers + referrals)
-	var totalCrawler, totalReferral int64
-
+	// kind → name → aggregate. Kinds: crawler, referral, human, probe.
+	groups := map[string]map[string]*seoNameCount{
+		"crawler": {}, "referral": {}, "human": {}, "probe": {},
+	}
+	daily := map[string]*seoDay{} // day → human page views + crawls, for the trend
 	for _, row := range rows {
-		target := crawlers
-		if row.Kind == "referral" {
-			target = referrals
-			totalReferral += row.Hits
-		} else {
-			totalCrawler += row.Hits
+		g := groups[row.Kind]
+		if g == nil {
+			continue
 		}
-		agg := target[row.Name]
+		agg := g[row.Channel+"/"+row.Name]
 		if agg == nil {
 			agg = &seoNameCount{Name: row.Name, Channel: row.Channel}
-			target[row.Name] = agg
+			g[row.Channel+"/"+row.Name] = agg
 		}
 		agg.Hits += row.Hits
 		if row.Day >= cutoff7 {
 			agg.Recent += row.Hits
 		}
-		channelTotals[row.Kind+":"+row.Channel] += row.Hits
+		d := daily[row.Day]
+		if d == nil {
+			d = &seoDay{Day: row.Day}
+			daily[row.Day] = d
+		}
+		switch row.Kind {
+		case "human":
+			d.Pageviews += row.Hits
+		case "crawler":
+			if row.Channel == "ai" {
+				d.AICrawls += row.Hits
+			} else if row.Channel == "search" {
+				d.SearchCrawls += row.Hits
+			}
+		case "referral":
+			d.Referrals += row.Hits
+		}
 	}
 
-	crawlerList := sortedCounts(crawlers)
-	referralList := sortedCounts(referrals)
+	crawlerList := sortedCounts(groups["crawler"])
+	referralList := sortedCounts(groups["referral"])
+	probeList := sortedCounts(groups["probe"])
 
-	// Split crawlers into AI vs search vs other for the headline cards.
-	var aiCrawlerHits, searchCrawlerHits int64
+	var aiCrawlerHits, searchCrawlerHits, llmReferralHits, searchReferralHits, pageviews, probeHits, scriptHits int64
 	aiSeen, searchSeen := map[string]bool{}, map[string]bool{}
 	for _, c := range crawlerList {
 		switch c.Channel {
@@ -71,7 +85,6 @@ func (s *Server) handleAdminSEO(w http.ResponseWriter, r *http.Request) {
 			searchSeen[c.Name] = true
 		}
 	}
-	var llmReferralHits, searchReferralHits int64
 	for _, ref := range referralList {
 		switch ref.Channel {
 		case "llm":
@@ -80,24 +93,55 @@ func (s *Server) handleAdminSEO(w http.ResponseWriter, r *http.Request) {
 			searchReferralHits += ref.Hits
 		}
 	}
+	for _, h := range groups["human"] {
+		pageviews += h.Hits
+	}
+	for _, p := range probeList {
+		if p.Channel == "script" {
+			scriptHits += p.Hits
+		} else {
+			probeHits += p.Hits
+		}
+	}
+	trend := make([]seoDay, 0, len(daily))
+	for _, d := range daily {
+		trend = append(trend, *d)
+	}
+	sort.Slice(trend, func(i, j int) bool { return trend[i].Day < trend[j].Day })
 
+	state, _ := s.db.GetSEOIngestState(r.Context())
 	tips := buildSEOTips(len(rows) == 0, aiSeen, searchSeen, aiCrawlerHits, llmReferralHits, searchReferralHits, crawlerList)
+	if probeHits > 0 && pageviews > 0 && probeHits > pageviews {
+		tips = append(tips, map[string]string{"tone": "info", "text": "Vulnerability scanners make more requests than real visitors (probes for /.git, /wp-admin, .env files…). They're excluded from every number above and all hit 404 — nothing to fix unless a probed path ever returns 200."})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"days":          days,
-		"has_data":      len(rows) > 0,
-		"crawlers":      crawlerList,
-		"referrals":     referralList,
+		"days":       days,
+		"has_data":   len(rows) > 0,
+		"data_since": state.SinceDay, // oldest day the accurate counts cover
+		"crawlers":   crawlerList,
+		"referrals":  referralList,
+		"probes":     probeList,
+		"trend":      trend,
 		"totals": map[string]int64{
-			"crawler_hits":         totalCrawler,
-			"referral_hits":        totalReferral,
+			"human_pageviews":      pageviews,
 			"ai_crawler_hits":      aiCrawlerHits,
 			"search_crawler_hits":  searchCrawlerHits,
 			"llm_referral_hits":    llmReferralHits,
 			"search_referral_hits": searchReferralHits,
+			"probe_hits":           probeHits,
+			"script_hits":          scriptHits,
 		},
 		"tips": tips,
 	})
+}
+
+type seoDay struct {
+	Day          string `json:"day"`
+	Pageviews    int64  `json:"pageviews"`
+	AICrawls     int64  `json:"ai_crawls"`
+	SearchCrawls int64  `json:"search_crawls"`
+	Referrals    int64  `json:"referrals"`
 }
 
 func sortedCounts(m map[string]*seoNameCount) []seoNameCount {

@@ -52,6 +52,13 @@ function TopList({ title, field, rows }: { title: string; field: string; rows: R
   );
 }
 
+function fmtTick(ts: string, range: string) {
+  const d = new Date(ts);
+  return range === "24h"
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export function WebsiteAnalytics() {
   const [range, setRange] = useState<(typeof RANGES)[number]>("7d");
   const [ov, setOv] = useState<Overview | null>(null);
@@ -90,13 +97,19 @@ export function WebsiteAnalytics() {
   const maxPv = Math.max(1, ...series.map((p) => p.pageviews));
 
   return (
-    <Card className="mt-6">
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-        <div className="flex items-center gap-2">
-          <Globe className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">Website Traffic <span className="text-muted-foreground font-normal">· deployzy.com</span></CardTitle>
+    <Card>
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 space-y-0">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Website Traffic <span className="text-muted-foreground font-normal">· deployzy.com</span></CardTitle>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Real visitors to the marketing site and dashboard, counted by an in-page script (so most bots never show up here).
+            Crawlers, AI bots and referral sources from server logs are under <span className="font-medium text-foreground">SEO &amp; LLM</span>.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-500">
             <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span>
             {live} online now
@@ -131,11 +144,19 @@ export function WebsiteAnalytics() {
             {series.length === 0 ? (
               <div className="flex h-full w-full items-center justify-center text-[12px] text-muted-foreground/60">No traffic in this range yet</div>
             ) : series.map((p, i) => (
-              <div key={i} className="group relative flex-1" title={`${new Date(p.ts).toLocaleString()} · ${p.pageviews} views · ${p.visitors} visitors`}>
-                <div className="w-full rounded-t bg-foreground/70 transition-colors group-hover:bg-foreground" style={{ height: `${(p.pageviews / maxPv) * 100}%`, minHeight: p.pageviews > 0 ? 2 : 0 }} />
+              <div key={i} className="group relative flex h-full flex-1 items-end" title={`${new Date(p.ts).toLocaleString()} · ${p.pageviews} views · ${p.visitors} visitors`}>
+                <div className={`w-full rounded-t transition-colors ${p.pageviews > 0 ? "bg-foreground/70 group-hover:bg-foreground" : "bg-foreground/10"}`}
+                  style={{ height: p.pageviews > 0 ? `${Math.max(3, (p.pageviews / maxPv) * 100)}%` : "2px" }} />
               </div>
             ))}
           </div>
+          {series.length > 0 && (
+            <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+              <span>{fmtTick(series[0].ts, range)}</span>
+              <span>peak {maxPv.toLocaleString()} views</span>
+              <span>{fmtTick(series[series.length - 1].ts, range)}</span>
+            </div>
+          )}
         </div>
 
         {/* Breakdowns */}

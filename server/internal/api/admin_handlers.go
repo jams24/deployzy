@@ -666,3 +666,15 @@ func (s *Server) handleAdminMoveProject(w http.ResponseWriter, r *http.Request) 
 		"status": "moving", "target": targetLabel,
 	})
 }
+
+// handleAdminOverview powers the Admin Overview: 28-day daily series for the
+// trend cards plus a current platform snapshot and recent activity.
+func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
+	o, err := s.db.AdminOverview(r.Context())
+	if err != nil {
+		s.log.Error().Err(err).Msg("admin overview")
+		writeError(w, http.StatusInternalServerError, "failed to load overview")
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
+}

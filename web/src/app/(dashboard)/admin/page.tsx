@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Pager, FilterChip, fmtBytes, timeAgo } from "@/components/admin/pager";
 import { SuspendDialog, type SuspendRequest } from "@/components/admin/suspend-dialog";
+import { WebsiteAnalytics } from "@/components/website-analytics";
+import { OverviewDashboard } from "@/components/admin/overview-dashboard";
 import {
   Users, Key, Globe, Activity, Search, Trash2, Shield, Crown,
   Server, Plus, Loader2, Rocket, BarChart3, Database, Link2,
@@ -21,7 +23,7 @@ import {
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "density" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse" | "email";
+type Tab = "overview" | "analytics" | "density" | "website" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse" | "email";
 
 // Grouped sidebar navigation — the 17 tabs organised into labelled sections so
 // the console is scannable instead of a single long scroll of pills.
@@ -33,6 +35,7 @@ const NAV_GROUPS: { group: string; items: { id: Tab; label: string; icon: NavIco
     { id: "sessions", label: "Tunnels", icon: Radio },
   ] },
   { group: "Growth", items: [
+    { id: "website", label: "Website Traffic", icon: Globe },
     { id: "seo", label: "SEO & LLM", icon: TrendingUp },
     { id: "density", label: "Density", icon: Layers },
     { id: "email", label: "Email Validator", icon: CheckCircle2 },
@@ -153,12 +156,16 @@ interface SEONameCount { name: string; channel: string; hits: number; recent: nu
 interface SEOInsight {
   days: number;
   has_data: boolean;
+  data_since?: string;
   crawlers: SEONameCount[];
   referrals: SEONameCount[];
+  probes: SEONameCount[];
+  trend: { day: string; pageviews: number; ai_crawls: number; search_crawls: number; referrals: number }[];
   totals: {
-    crawler_hits: number; referral_hits: number;
+    human_pageviews: number;
     ai_crawler_hits: number; search_crawler_hits: number;
     llm_referral_hits: number; search_referral_hits: number;
+    probe_hits: number; script_hits: number;
   };
   tips: { tone: string; text: string }[];
 }
@@ -1381,11 +1388,13 @@ export default function AdminPage() {
             variant="outline"
             className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
             onClick={() => setAutoRefresh(v => !v)}
+            title={autoRefresh ? "Auto-refresh is on: stats update every 15 seconds. Click to pause." : "Auto-refresh is paused. Click to update stats every 15 seconds."}
+            aria-pressed={autoRefresh}
           >
             <Radio className={`h-3 w-3 ${autoRefresh ? "animate-pulse" : ""}`} />
             <span className="hidden sm:inline">{autoRefresh ? "Live" : "Paused"}</span>
           </Button>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => { loadStats(); loadSessions(); }}>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" title="Refresh now" aria-label="Refresh now" onClick={() => { loadStats(); loadSessions(); }}>
             <RefreshCw className={`h-3.5 w-3.5 ${statsLoading ? "animate-spin" : ""}`} />
           </Button>
           <Link href="/admin/blog">
@@ -1538,152 +1547,7 @@ export default function AdminPage() {
       {/* ── OVERVIEW TAB ─────────────────────────────────────────────────── */}
       {tab === "overview" && (
         <div className="space-y-6">
-          {/* KPI row */}
-          {stats ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <KpiCard
-                label="Total Users" value={stats.total_users}
-                sub={`+${stats.users_today} today`} trend={stats.users_today > 0 ? "up" : undefined}
-                icon={<Users className="h-4 w-4" />} color="text-blue-600 dark:text-blue-400 bg-blue-500/20" bar="bg-blue-500" delay={0}
-              />
-              <KpiCard
-                label="New This Week" value={stats.users_this_week}
-                sub={`${stats.users_this_month} this month`} trend={stats.users_this_week > 0 ? "up" : undefined}
-                icon={<TrendingUp className="h-4 w-4" />} color="text-emerald-600 dark:text-emerald-400 bg-emerald-500/20" bar="bg-emerald-500" delay={40}
-              />
-              <KpiCard
-                label="Projects" value={stats.projects_total}
-                sub={`${runningCount} running`}
-                icon={<Rocket className="h-4 w-4" />} color="text-violet-600 dark:text-violet-400 bg-violet-500/20" bar="bg-violet-500" delay={80}
-              />
-              <KpiCard
-                label="Deploys Today" value={stats.deploys_today}
-                sub={`${stats.deploys_this_week} this week`} trend={stats.deploys_today > 0 ? "up" : undefined}
-                icon={<Zap className="h-4 w-4" />} color="text-amber-600 dark:text-amber-400 bg-amber-500/20" bar="bg-amber-500" delay={120}
-              />
-              <KpiCard
-                label="Databases" value={stats.services_total}
-                sub={`${stats.tunnels_total} tunnels`}
-                icon={<Database className="h-4 w-4" />} color="text-cyan-600 dark:text-cyan-400 bg-cyan-500/20" bar="bg-cyan-500" delay={160}
-              />
-              <KpiCard
-                label="API Keys" value={stats.total_keys}
-                sub={`${stats.total_domains} domains`}
-                icon={<Key className="h-4 w-4" />} color="text-pink-600 dark:text-pink-400 bg-pink-500/20" bar="bg-pink-500" delay={200}
-              />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i}><CardContent className="p-4 h-[84px] animate-pulse bg-muted/20" /></Card>
-              ))}
-            </div>
-          )}
-
-          {/* Deploy health + traffic + stack */}
-          {stats && (
-            <div className="grid gap-4 lg:grid-cols-3">
-              {/* Deploy health */}
-              <Card className="animate-fade-in-up" style={{ animationDelay: "240ms" }}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-muted-foreground" />
-                    Platform Health
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <Ring
-                      pct={deploySuccessRate ?? 0}
-                      cls={deploySuccessRate === null ? "stroke-muted" : deploySuccessRate >= 90 ? "stroke-emerald-500" : deploySuccessRate >= 70 ? "stroke-amber-500" : "stroke-red-500"}
-                    >
-                      <div className="text-center leading-none">
-                        <div className="text-lg font-bold tabular-nums">{deploySuccessRate ?? "—"}<span className="text-[10px] font-medium text-muted-foreground">%</span></div>
-                      </div>
-                    </Ring>
-                    <div className="min-w-0 flex-1 grid grid-cols-1 gap-1 text-xs">
-                      {[
-                        { label: "Running", count: runningCount, cls: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
-                        { label: "Building", count: buildingCount, cls: "text-sky-600 dark:text-sky-400", dot: "bg-sky-500" },
-                        { label: "Failed", count: failedCount, cls: "text-red-600 dark:text-red-400", dot: "bg-red-500" },
-                        { label: "Stopped", count: stats.projects_by_status?.["stopped"] ?? 0, cls: "text-muted-foreground", dot: "bg-zinc-500" },
-                      ].map(({ label, count, cls, dot }) => (
-                        <div key={label} className="flex items-center justify-between gap-2 rounded-md bg-muted/20 px-2.5 py-1">
-                          <span className="flex items-center gap-1.5 text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dot}`} />{label}</span>
-                          <span className={`font-mono font-semibold tabular-nums ${cls}`}>{count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground/70">Success = running ÷ (running + failed)</p>
-                  {sessions.length > 0 && (
-                    <div className="flex items-center gap-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                        {sessions.length} active tunnel session{sessions.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Traffic — surfaces request volume that was loaded but never shown */}
-              <Card className="animate-fade-in-up" style={{ animationDelay: "280ms" }}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                    Traffic
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <div className="flex items-end gap-2">
-                      <span className="text-2xl font-bold tracking-tight tabular-nums">{stats.requests_today.toLocaleString()}</span>
-                      <span className="mb-1 text-[11px] text-muted-foreground">requests today</span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">{stats.total_requests.toLocaleString()} captured all-time</div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
-                      <div className="text-sm font-semibold tabular-nums">{stats.total_teams}</div>
-                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">teams</div>
-                    </div>
-                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
-                      <div className="text-sm font-semibold tabular-nums">{stats.subdomains_total}</div>
-                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">subdomains</div>
-                    </div>
-                    <div className="rounded-md bg-muted/20 px-2 py-1.5 text-center">
-                      <div className="text-sm font-semibold tabular-nums">{stats.worker_servers_total}</div>
-                      <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">servers</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Stack breakdown */}
-              <Card className="animate-fade-in-up" style={{ animationDelay: "320ms" }}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-muted-foreground" />
-                    Stack Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {stats.projects_by_stack && Object.keys(stats.projects_by_stack).length > 0 ? (
-                    <StackBar
-                      counts={stats.projects_by_stack}
-                      colors={{
-                        nextjs: "bg-white", node: "bg-emerald-500", python: "bg-blue-500",
-                        static: "bg-amber-500", docker: "bg-violet-500", unknown: "bg-muted",
-                      }}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No projects yet.</p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
+          <OverviewDashboard apiBase={API} headers={headers} refreshKey={lastRefresh?.getTime()} onNavigate={(t) => setTab(t as Tab)} />
 
           {/* Server utilization */}
           {servers.length > 0 && (
@@ -2507,13 +2371,16 @@ export default function AdminPage() {
       )}
 
       {/* ── SEO & LLM TAB ────────────────────────────────────────────────── */}
+      {tab === "website" && <WebsiteAnalytics />}
+
       {tab === "seo" && (
         <div className="space-y-5">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <p className="text-xs text-muted-foreground max-w-2xl">
               How <span className="font-medium text-foreground">deployzy.com</span> is doing on search engines and with AI
-              assistants — which crawlers fetch us (Google, GPTBot, ClaudeBot…) and where our human visitors come from
-              (Google, ChatGPT, Perplexity…). Collected live from the web server access log. Last 30 days.
+              assistants — which crawlers read our pages and where human visitors come from. From the web server log,
+              counting <span className="font-medium text-foreground">successful page views only</span> (no assets, redirects or 404s);
+              scanners and scripts are kept separate. Last 30 days{seo?.data_since ? <> · accurate data since {new Date(seo.data_since + "T00:00:00").toLocaleDateString()}</> : null}.
             </p>
             <Button size="sm" variant="outline" className="h-9 text-xs gap-1 shrink-0"
               onClick={loadSEO} disabled={seoLoading}>
@@ -2533,12 +2400,13 @@ export default function AdminPage() {
           ) : (
             <>
               {/* Headline cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 {[
-                  { label: "AI crawler hits", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-600 dark:text-violet-400 bg-violet-500/15" },
-                  { label: "Search crawler hits", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-600 dark:text-sky-400 bg-sky-500/15" },
-                  { label: "LLM referrals", value: seo.totals.llm_referral_hits, hint: "clicks from AI answers", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15" },
-                  { label: "Search referrals", value: seo.totals.search_referral_hits, hint: "organic search clicks", color: "text-amber-600 dark:text-amber-400 bg-amber-500/15" },
+                  { label: "Human page views", value: seo.totals.human_pageviews, hint: "real visitors, all sources", color: "text-foreground bg-muted" },
+                  { label: "AI crawler page reads", value: seo.totals.ai_crawler_hits, hint: "GPTBot, ClaudeBot, PerplexityBot…", color: "text-violet-600 dark:text-violet-400 bg-violet-500/15" },
+                  { label: "Search crawler page reads", value: seo.totals.search_crawler_hits, hint: "Googlebot, Bingbot…", color: "text-sky-600 dark:text-sky-400 bg-sky-500/15" },
+                  { label: "Visits from AI answers", value: seo.totals.llm_referral_hits, hint: "ChatGPT, Perplexity, Claude…", color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/15" },
+                  { label: "Visits from search", value: seo.totals.search_referral_hits, hint: "Google, Bing, DuckDuckGo…", color: "text-amber-600 dark:text-amber-400 bg-amber-500/15" },
                 ].map(c => (
                   <div key={c.label} className="rounded-xl border border-border/60 p-4">
                     <div className={`inline-flex h-7 w-7 items-center justify-center rounded-lg mb-2 ${c.color}`}>
@@ -2550,6 +2418,38 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Daily trend: human page views vs crawler reads */}
+              {seo.trend.length > 1 && (() => {
+                const max = Math.max(1, ...seo.trend.map(d => Math.max(d.pageviews, d.ai_crawls + d.search_crawls)));
+                return (
+                  <div className="rounded-xl border border-border/60 p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                      <p className="text-xs font-semibold">Daily activity</p>
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-foreground/70" /> human page views</span>
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-violet-500/70" /> AI crawls</span>
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-sky-500/70" /> search crawls</span>
+                      </div>
+                    </div>
+                    <div className="flex h-28 items-end gap-1">
+                      {seo.trend.map(d => (
+                        <div key={d.day} className="flex h-full flex-1 items-end gap-px" title={`${d.day}: ${d.pageviews} page views · ${d.ai_crawls} AI · ${d.search_crawls} search crawls · ${d.referrals} referrals`}>
+                          <div className="flex-1 rounded-t bg-foreground/70" style={{ height: `${Math.max(d.pageviews ? 3 : 1, (d.pageviews / max) * 100)}%` }} />
+                          <div className="flex-1 flex flex-col justify-end h-full">
+                            <div className="rounded-t bg-violet-500/70" style={{ height: `${(d.ai_crawls / max) * 100}%` }} />
+                            <div className="bg-sky-500/70" style={{ height: `${(d.search_crawls / max) * 100}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                      <span>{new Date(seo.trend[0].day + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}</span>
+                      <span>{new Date(seo.trend[seo.trend.length - 1].day + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Tips */}
               {seo.tips.length > 0 && (
@@ -2572,8 +2472,8 @@ export default function AdminPage() {
               {/* Two columns: crawlers + referrals */}
               <div className="grid md:grid-cols-2 gap-4">
                 {[
-                  { title: "Crawlers fetching us", rows: seo.crawlers, empty: "No crawlers recorded yet." },
-                  { title: "Traffic sources (humans)", rows: seo.referrals, empty: "No referral traffic recorded yet." },
+                  { title: "Crawlers reading our pages", rows: seo.crawlers, empty: "No crawlers recorded yet." },
+                  { title: "Where human visitors come from", rows: seo.referrals, empty: "No referral traffic recorded yet." },
                 ].map(col => (
                   <div key={col.title} className="rounded-xl border border-border/60 overflow-hidden">
                     <div className="px-3 py-2.5 border-b border-border/60 text-xs font-semibold">{col.title}</div>
@@ -2582,7 +2482,7 @@ export default function AdminPage() {
                     ) : (
                       <div className="divide-y divide-border/40">
                         {col.rows.map(row => (
-                          <div key={row.name} className="flex items-center gap-2 px-3 py-2">
+                          <div key={row.channel + row.name} className="flex items-center gap-2 px-3 py-2">
                             <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-medium shrink-0 ${
                               row.channel === "ai" || row.channel === "llm" ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
                               : row.channel === "search" ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
@@ -2600,6 +2500,26 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+              {/* Scanners & scripts — excluded from everything above */}
+              {(seo.probes?.length ?? 0) > 0 && (
+                <details className="rounded-xl border border-border/60 overflow-hidden group">
+                  <summary className="flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer text-xs">
+                    <span className="font-semibold">Scanners &amp; scripts <span className="font-normal text-muted-foreground">— excluded from the numbers above</span></span>
+                    <span className="text-muted-foreground tabular-nums">{(seo.totals.probe_hits + seo.totals.script_hits).toLocaleString()} requests</span>
+                  </summary>
+                  <div className="divide-y divide-border/40 border-t border-border/60">
+                    {seo.probes.slice(0, 12).map(row => (
+                      <div key={row.channel + row.name} className="flex items-center gap-2 px-3 py-2">
+                        <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-medium shrink-0 ${row.channel === "scanner" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-muted text-muted-foreground"}`}>
+                          {row.channel === "scanner" ? "404 probe" : "script"}
+                        </span>
+                        <span className="text-sm flex-1 min-w-0 truncate">{row.name}</span>
+                        <span className="text-sm font-medium tabular-nums">{row.hits.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </>
           )}
         </div>

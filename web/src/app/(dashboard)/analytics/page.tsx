@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { WebsiteAnalytics } from "@/components/website-analytics";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity,
@@ -125,9 +124,6 @@ export default function AnalyticsPage() {
           </Button>
         </div>
       </div>
-
-      {/* First-party website traffic (deployzy.com) — self-hides for non-admins */}
-      <WebsiteAnalytics />
 
       {loading && !data ? (
         <div className="mt-12 text-center text-sm text-muted-foreground animate-pulse">Loading analytics…</div>

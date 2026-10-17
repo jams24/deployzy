@@ -95,13 +95,13 @@ func (d *DB) AdminGetStats(ctx context.Context) (*AdminStats, error) {
 		}
 	}
 
-	// Deploys — use deploy_logs.created_at when available, falling back to
-	// last_deploy_at on the project itself.
+	// Deploys: one "Starting deployment..." marker per deploy. Counting every
+	// deploy_logs row overstated deploys ~30x (each deploy logs dozens of lines).
 	d.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1`, today,
+		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1 AND message LIKE 'Starting deployment%'`, today,
 	).Scan(&s.DeploysToday)
 	d.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1`, weekAgo,
+		`SELECT COUNT(*) FROM deploy_logs WHERE created_at >= $1 AND message LIKE 'Starting deployment%'`, weekAgo,
 	).Scan(&s.DeploysThisWeek)
 
 	// Services (standalone DBs), subdomains, active tunnels (last 24h), worker servers
