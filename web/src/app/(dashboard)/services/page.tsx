@@ -476,7 +476,7 @@ export default function ServicesPage() {
                                   style={{ width: `${unlimited ? Math.min(100, mb > 0 ? 6 : 0) : Math.max(mb > 0 ? 1.5 : 0, pct)}%` }} />
                               </div>
                               <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                                {typeof s.size_mb === "number" ? fmtMB(mb) : "measuring…"}{!unlimited && typeof s.size_mb === "number" ? ` / ${fmtMB(cap)}` : ""}
+                                {typeof s.size_mb === "number" ? fmtMB(mb) : "not measured"}{!unlimited && typeof s.size_mb === "number" ? ` / ${fmtMB(cap)}` : ""}
                               </span>
                             </div>
                           );

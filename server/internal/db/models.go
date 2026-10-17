@@ -416,3 +416,13 @@ func (d *DB) GetReservedSubdomain(ctx context.Context, subdomain string) (*Reser
 	}
 	return &rs, nil
 }
+
+// SetUserPassword replaces a user's password hash (bcrypt).
+func (d *DB) SetUserPassword(ctx context.Context, userID, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = d.Pool.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, userID, string(hash))
+	return err
+}

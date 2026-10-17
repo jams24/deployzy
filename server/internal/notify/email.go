@@ -574,3 +574,10 @@ func AccountSuspendedEmail(name string, apps []string) string {
 
 	return brandShell(card, "You're receiving this because your Deployzy account was suspended.")
 }
+
+// SecurityNoticeEmail wraps an account-security notice (password changed,
+// etc.) in the brand shell, without the marketing "Unsubscribe" footer —
+// these can't be opted out of.
+func SecurityNoticeEmail(bodyHTML string) string {
+	return brandShell(bodyHTML, "This is a security notice about your Deployzy account.")
+}

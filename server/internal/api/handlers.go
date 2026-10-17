@@ -878,3 +878,51 @@ func (s *Server) handleReserveSubdomain(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusCreated, rs)
 }
+
+// POST /api/v1/users/me/password — change password. Requires the current
+// password (Google sign-ups have a random one they never saw, so this is
+// email/password accounts only). Notifies the account email afterwards.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	u := auth.GetUser(r)
+	var req struct {
+		Current string `json:"current_password"`
+		New     string `json:"new_password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if len(req.New) < 8 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+	if len(req.New) > 72 { // bcrypt's input limit
+		writeError(w, http.StatusBadRequest, "new password must be at most 72 characters")
+		return
+	}
+	user, err := s.db.GetUserByID(r.Context(), u.ID)
+	if err != nil || user == nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if !user.CheckPassword(req.Current) {
+		writeError(w, http.StatusForbidden, "current password is incorrect")
+		return
+	}
+	if req.Current == req.New {
+		writeError(w, http.StatusBadRequest, "new password must be different from the current one")
+		return
+	}
+	if err := s.db.SetUserPassword(r.Context(), u.ID, req.New); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update password")
+		return
+	}
+	if s.emailSvc != nil {
+		go func(to string) {
+			body := `<p style="margin:0 0 12px;font-size:16px;color:#ffffff;font-weight:600;">Your password was changed</p>
+<p style="margin:0;font-size:14px;color:#888888;line-height:1.6;">The password for your Deployzy account was just changed. If this was you, there's nothing else to do. If it wasn't, contact <a href="mailto:support@deployzy.com" style="color:#a5b4fc;">support@deployzy.com</a> right away.</p>`
+			_ = s.emailSvc.SendOne(to, "Your Deployzy password was changed", notify.SecurityNoticeEmail(body))
+		}(user.Email)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}

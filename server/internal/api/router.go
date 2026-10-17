@@ -148,6 +148,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.Get("/users/me/limits", s.handleGetMyLimits)
 			r.With(fullScope).Put("/users/me", s.handleUpdateMe)
 			r.With(fullScope).Delete("/users/me", s.handleDeleteMe)
+			r.With(fullScope).Post("/users/me/password", s.handleChangePassword)
 
 			// Referrals
 			r.Get("/referrals", s.handleGetReferrals)

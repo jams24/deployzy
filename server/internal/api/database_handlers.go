@@ -143,6 +143,9 @@ func (s *Server) handleListAllDatabases(w http.ResponseWriter, r *http.Request) 
 			"connection_url":          svc.ConnectionURL(),
 			"external_connection_url": svc.ExternalConnectionURL(publicHost),
 			"created_at":              svc.CreatedAt,
+			// Measured every 5 min by the quota sweeper (0 until first pass).
+			"size_mb":    svc.SizeMB,
+			"over_quota": svc.OverQuota,
 		})
 	}
 
@@ -155,7 +158,15 @@ func (s *Server) handleListAllDatabases(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		ph := s.resolveDBPublicHost(ctx, &p)
+		// Project-attached DBs live in the platform Postgres cluster; size
+		// them on the spot (cheap catalog lookup). nil when unreadable.
+		var sizeMB interface{}
+		var sizeBytes int64
+		if err := s.db.Pool.QueryRow(ctx, `SELECT pg_database_size($1)`, pdb.DBName).Scan(&sizeBytes); err == nil {
+			sizeMB = int((sizeBytes + 1024*1024 - 1) / (1024 * 1024))
+		}
 		out = append(out, map[string]interface{}{
+			"size_mb":                 sizeMB,
 			"kind":                    "project",
 			"id":                      pdb.ID,
 			"project_id":              p.ID,
