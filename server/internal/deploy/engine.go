@@ -1009,8 +1009,10 @@ func (e *Engine) Delete(ctx context.Context, project *db.Project) error {
 	runner.Exec(ctx, "docker", "rmi", "-f", fmt.Sprintf("sm-project-%s", project.ID[:8]))
 	// Prune dangling images left by failed builds
 	runner.RunShell(ctx, "docker image prune -f")
-	// Remove any leftover exited containers from failed builds
-	runner.RunShell(ctx, "docker container prune -f")
+	// Remove leftover exited containers from failed builds. NOT `docker
+	// container prune`: that also deletes every idle-slept sm-* container on the
+	// host, turning their next wake into a full rebuild.
+	runner.RunShell(ctx, `docker ps -a --filter status=exited --filter status=created --format '{{.ID}} {{.Names}}' | awk '$2 !~ /^sm-/ {print $1}' | xargs -r docker rm >/dev/null 2>&1; true`)
 	return stopErr
 }
 

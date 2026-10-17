@@ -556,16 +556,27 @@ func (s *Server) handleAdminSetServerBackups(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleAdminUpdateServer(w http.ResponseWriter, r *http.Request) {
 	serverID := chi.URLParam(r, "serverId")
 	var req struct {
-		Label  string `json:"label"`
-		Region string `json:"region"`
+		Label       string `json:"label"`
+		Region      string `json:"region"`
+		MaxProjects *int   `json:"max_projects"` // nil = unchanged, 0 = back to auto
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	if req.MaxProjects != nil && (*req.MaxProjects < 0 || *req.MaxProjects > 10000) {
+		writeError(w, http.StatusBadRequest, "max_projects must be between 0 and 10000")
+		return
+	}
 	if err := s.db.UpdateWorkerServerMeta(r.Context(), serverID, req.Label, req.Region); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update server: "+err.Error())
 		return
+	}
+	if req.MaxProjects != nil {
+		if err := s.db.SetWorkerServerMaxProjects(r.Context(), serverID, *req.MaxProjects); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to set project limit: "+err.Error())
+			return
+		}
 	}
 	updated, _ := s.db.GetWorkerServer(r.Context(), serverID)
 	writeJSON(w, http.StatusOK, updated)

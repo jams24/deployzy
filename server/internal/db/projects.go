@@ -186,13 +186,19 @@ type SleepCandidate struct {
 	ContainerName string // "sm-" + id[:8]
 	ContainerPort int
 	NeverVisited  bool // no last_request_at — must pass an HTTP probe before sleeping
+	// WorkerServerID / ServerHost locate the container. ServerHost is "" for
+	// the local platform host, else the platform worker's address (BYOC hosts
+	// are never candidates).
+	WorkerServerID string
+	ServerHost     string
 }
 
 // ListSleepEligibleProjects returns free-tier, platform-local, HTTP-serving
 // projects that have been idle (no forwarded request) for at least idleMinutes
 // and aren't already asleep. Eligibility rules, all required:
 //   - status 'running' with a real container port
-//   - lives on a platform-local host (no BYOC/remote — we only manage local docker)
+//   - lives on a platform host: the local one, or an active platform worker
+//     (never BYOC — those are the customer's own servers)
 //   - owner is on the free plan (paid apps are never slept)
 //   - sleep_enabled (per-project opt-out is off)
 //   - EITHER it has served HTTP before (last_request_at set) and gone idle past
@@ -203,7 +209,10 @@ type SleepCandidate struct {
 //     slept. A project can always opt out via sleep_enabled = false.
 func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]SleepCandidate, error) {
 	rows, err := d.Pool.Query(ctx,
-		`SELECT p.id, p.container_port, (p.last_request_at IS NULL) AS never_visited
+		`SELECT p.id, p.container_port, (p.last_request_at IS NULL) AS never_visited,
+		        COALESCE(ws.id::text, ''),
+		        CASE WHEN ws.id IS NULL OR ws.is_local OR ws.host IN ('localhost', '127.0.0.1', '') THEN ''
+		             ELSE ws.host END AS server_host
 		   FROM projects p
 		   JOIN users u ON u.id = p.user_id
 		   LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
@@ -211,8 +220,11 @@ func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]
 		    AND p.container_port > 0
 		    AND p.sleeping = false
 		    AND p.sleep_enabled = true
-		    AND (p.worker_server_id IS NULL OR COALESCE(ws.is_local, false) = true)
+		    AND (p.worker_server_id IS NULL
+		         OR COALESCE(ws.is_local, false) = true
+		         OR (ws.user_id IS NULL AND ws.status = 'active'))
 		    AND COALESCE(u.plan, 'free') IN ('', 'free')
+		    AND COALESCE(u.pro_until > now(), false) = false
 		    AND u.is_admin = false
 		    AND p.parent_project_id IS NULL
 		    AND (
@@ -228,7 +240,7 @@ func (d *DB) ListSleepEligibleProjects(ctx context.Context, idleMinutes int) ([]
 	var out []SleepCandidate
 	for rows.Next() {
 		var c SleepCandidate
-		if err := rows.Scan(&c.ID, &c.ContainerPort, &c.NeverVisited); err != nil {
+		if err := rows.Scan(&c.ID, &c.ContainerPort, &c.NeverVisited, &c.WorkerServerID, &c.ServerHost); err != nil {
 			return nil, err
 		}
 		if len(c.ID) >= 8 {

@@ -1105,11 +1105,17 @@ export default function AdminPage() {
   const [editingServer, setEditingServer] = useState<string | null>(null);
   const [srvLabel, setSrvLabel] = useState("");
   const [srvRegion, setSrvRegion] = useState("");
+  const [srvMaxProj, setSrvMaxProj] = useState("");
+  const [srvMaxProjOrig, setSrvMaxProjOrig] = useState("");
 
   const saveServerMeta = async (id: string) => {
     if (await adminFetch(`${API}/api/v1/admin/servers/${id}`, {
-      method: "PUT", body: JSON.stringify({ label: srvLabel, region: srvRegion }),
-    }, "Renaming server")) {
+      method: "PUT",
+      body: JSON.stringify({
+        label: srvLabel, region: srvRegion,
+        ...(srvMaxProj.trim() !== "" && srvMaxProj !== srvMaxProjOrig ? { max_projects: Math.max(0, parseInt(srvMaxProj, 10) || 0) } : {}),
+      }),
+    }, "Updating server")) {
       setEditingServer(null);
       loadServers();
     }
@@ -3097,11 +3103,13 @@ export default function AdminPage() {
                           {!s.user_id && (
                             <Button
                               variant="outline" size="sm" className="h-7 text-xs"
-                              title="Rename & set region"
+                              title="Rename, set region & project limit"
                               onClick={() => {
                                 setEditingServer(editingServer === s.id ? null : s.id);
                                 setSrvLabel(s.label || "");
                                 setSrvRegion(s.region || "");
+                                setSrvMaxProj(String(s.max_projects ?? ""));
+                                setSrvMaxProjOrig(String(s.max_projects ?? ""));
                               }}
                             >
                               Edit
@@ -3136,7 +3144,7 @@ export default function AdminPage() {
                       </div>
                       {editingServer === s.id && (
                         <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                             <div>
                               <label className="mb-1 block text-[11px] text-muted-foreground">Display name</label>
                               <input
@@ -3159,7 +3167,19 @@ export default function AdminPage() {
                                 ))}
                               </select>
                             </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] text-muted-foreground">Max projects (0 = auto)</label>
+                              <input
+                                type="number" min={0} max={10000} inputMode="numeric"
+                                value={srvMaxProj}
+                                onChange={(e) => setSrvMaxProj(e.target.value)}
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs tabular-nums"
+                              />
+                            </div>
                           </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Counts awake projects only — idle-sleeping apps hold no RAM and don&apos;t use a slot. RAM headroom is still checked separately at placement.
+                          </p>
                           <div className="flex gap-2">
                             <Button size="sm" className="h-7 text-xs" onClick={() => saveServerMeta(s.id)}>Save</Button>
                             <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingServer(null)}>Cancel</Button>

@@ -80,8 +80,8 @@ type BandwidthGate interface {
 
 // SleepAware is optionally implemented by the project provider to support idle
 // sleep/wake. The proxy wakes a slept container before forwarding, and records
-// activity so the sweeper knows the app is in use. Only exercised for local
-// platform projects.
+// activity so the sweeper knows the app is in use. Covers local and platform
+// worker projects; BYOC projects are never slept, so their wake is a no-op.
 type SleepAware interface {
 	WakeIfSleeping(projectID string, port int) error
 	NoteRequest(projectID string)
@@ -683,11 +683,11 @@ func (p *HTTPProxy) proxyToProject(w http.ResponseWriter, r *http.Request, serve
 		return
 	}
 
-	// Idle sleep/wake (local platform projects only). Wake a slept container
-	// before forwarding; record activity so the sweeper keeps it awake while in
-	// use. If the wake can't complete in time, serve a friendly "starting" page
-	// rather than a raw connection-refused 502.
-	if serverHost == "" && projectID != "" {
+	// Idle sleep/wake (local and platform-worker projects). Wake a slept
+	// container before forwarding; record activity so the sweeper keeps it awake
+	// while in use. If the wake can't complete in time, serve a friendly
+	// "starting" page rather than a raw connection-refused 502.
+	if projectID != "" {
 		if sa, ok := p.projects.(SleepAware); ok {
 			if err := sa.WakeIfSleeping(projectID, port); err != nil {
 				writeErrorPage(w, http.StatusServiceUnavailable, errorPageData{

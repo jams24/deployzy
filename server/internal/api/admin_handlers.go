@@ -69,7 +69,7 @@ func (s *Server) requireVerifiedEmail(next http.Handler) http.Handler {
 	})
 }
 
-// handleAdminSleepProject force-sleeps a platform-local project (admin/ops).
+// handleAdminSleepProject force-sleeps a platform (local or worker) project (admin/ops).
 func (s *Server) handleAdminSleepProject(w http.ResponseWriter, r *http.Request) {
 	if s.deployer == nil {
 		writeError(w, http.StatusServiceUnavailable, "deploy engine not available")

@@ -171,7 +171,9 @@ func (d *DB) ReconcileServerAllocation(ctx context.Context, serverID string) err
 		  SELECT
 		    COALESCE(SUM(CASE WHEN cpus     > 0 THEN cpus     ELSE 0.5 END), 0)::numeric AS cpu_sum,
 		    COALESCE(SUM(CASE WHEN memory_mb > 0 THEN memory_mb ELSE 512 END), 0)::int    AS mem_sum,
-		    COUNT(*)::int AS proj_count
+		    -- Idle-slept projects hold no RAM, so they don't count toward the
+		    -- server's project ceiling (allocation sums above stay conservative).
+		    COUNT(*) FILTER (WHERE NOT sleeping)::int AS proj_count
 		  FROM projects
 		  WHERE status IN ('running', 'building')
 		    AND (worker_server_id = $1
@@ -437,6 +439,19 @@ func (d *DB) ListSelectableServers(ctx context.Context, userID string) ([]Availa
 func (d *DB) SetServerUserSelectable(ctx context.Context, id string, selectable bool) error {
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE worker_servers SET user_selectable = $2 WHERE id = $1`, id, selectable)
+	return err
+}
+
+// SetWorkerServerMaxProjects sets an admin-chosen project ceiling and pins it
+// so the startup RAM-based recompute (local server) won't overwrite it. A value
+// of 0 clears the pin; the next startup recomputes the local ceiling from RAM.
+func (d *DB) SetWorkerServerMaxProjects(ctx context.Context, id string, max int) error {
+	if max <= 0 {
+		_, err := d.Pool.Exec(ctx, `UPDATE worker_servers SET max_projects_manual = false WHERE id = $1`, id)
+		return err
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE worker_servers SET max_projects = $2, max_projects_manual = true WHERE id = $1`, id, max)
 	return err
 }
 

@@ -39,7 +39,7 @@ type DensityStats struct {
 	// Idle sleep summary.
 	SleepingCount     int               `json:"sleeping_count"`
 	SleepingMemoryMB  int               `json:"sleeping_memory_mb"`  // reserved RAM freed by sleeping
-	EligibleAwake     int               `json:"eligible_awake"`      // free/local apps idle >30m but still awake (e.g. admin-owned)
+	EligibleAwake     int               `json:"eligible_awake"`      // free platform apps idle >30m but still awake (e.g. admin-owned)
 	TotalRunning      int               `json:"total_running"`
 	SleepingProjects  []SleepingProject `json:"sleeping_projects"`
 
@@ -123,7 +123,7 @@ func (d *DB) AdminDensityStats(ctx context.Context) (*DensityStats, error) {
 		return nil, err
 	}
 
-	// Counts: total running, and free/local apps idle >30m still awake (would be
+	// Counts: total running, and free platform apps idle >30m still awake (would be
 	// slept if not admin-owned) — a hint at further reclaimable capacity.
 	d.Pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE status = 'running'`).Scan(&out.TotalRunning)
 	d.Pool.QueryRow(ctx, `
@@ -132,8 +132,10 @@ func (d *DB) AdminDensityStats(ctx context.Context) (*DensityStats, error) {
 		  LEFT JOIN worker_servers ws ON ws.id = p.worker_server_id
 		 WHERE p.status = 'running' AND p.container_port > 0 AND p.sleeping = false
 		   AND p.sleep_enabled = true
-		   AND (p.worker_server_id IS NULL OR COALESCE(ws.is_local, false) = true)
+		   AND (p.worker_server_id IS NULL OR COALESCE(ws.is_local, false) = true
+		        OR (ws.user_id IS NULL AND ws.status = 'active'))
 		   AND COALESCE(u.plan, 'free') IN ('', 'free')
+		   AND COALESCE(u.pro_until > now(), false) = false
 		   AND p.parent_project_id IS NULL
 		   AND p.last_request_at IS NOT NULL
 		   AND p.last_request_at < now() - interval '30 minutes'`).Scan(&out.EligibleAwake)

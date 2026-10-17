@@ -650,7 +650,8 @@ func refreshLocalServerCapacity(ctx context.Context, database *db.DB, log zerolo
 	}
 	if _, err := database.Pool.Exec(ctx,
 		`UPDATE worker_servers
-		 SET total_cpu = $1, total_memory_mb = $2, max_projects = $3
+		 SET total_cpu = $1, total_memory_mb = $2,
+		     max_projects = CASE WHEN max_projects_manual THEN max_projects ELSE $3 END
 		 WHERE is_local = true`, cpus, memMB, maxProj); err != nil {
 		log.Warn().Err(err).Msg("refreshLocalServerCapacity: update failed")
 		return
