@@ -15,7 +15,7 @@ import (
 
 // MetricsScraper samples `docker stats` every 30 seconds for every running
 // project and records CPU, memory, and network to project_metrics. It also
-// prunes rows older than 7 days each run so the table stays small.
+// prunes rows past each owner's plan metrics_retention_days (PruneMetricsPerPlan).
 type MetricsScraper struct {
 	db     *db.DB
 	engine *Engine
@@ -50,8 +50,10 @@ func (ms *MetricsScraper) Start(ctx context.Context) {
 		case <-ticker.C:
 			ms.scrape(ctx)
 		case <-pruneTicker.C:
-			if err := ms.db.PruneOldMetrics(ctx, time.Now().AddDate(0, 0, -7)); err != nil {
+			if n, err := ms.db.PruneMetricsPerPlan(ctx); err != nil {
 				ms.log.Warn().Err(err).Msg("prune old metrics failed")
+			} else if n > 0 {
+				ms.log.Debug().Int64("rows", n).Msg("pruned metrics past plan retention")
 			}
 		}
 	}

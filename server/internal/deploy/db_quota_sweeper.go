@@ -11,6 +11,10 @@ import (
 	"github.com/serverme/serverme/server/internal/db"
 )
 
+// effectivePlanSQL resolves a user's plan like db.effectivePlan: an active
+// referral reward (pro_until) on a free account counts as Pro.
+const effectivePlanSQL = `CASE WHEN COALESCE(NULLIF(u.plan, ''), 'free') = 'free' AND u.pro_until > now() THEN 'pro' ELSE COALESCE(NULLIF(u.plan, ''), 'free') END`
+
 // DBQuotaSweeper enforces per-plan Postgres disk caps on standalone services.
 // Every 5 minutes it queries pg_database_size for each user-owned DB, compares
 // against the plan's max_db_size_mb, and toggles INSERT/UPDATE grants on the
@@ -49,23 +53,23 @@ func (s *DBQuotaSweeper) Start(ctx context.Context) {
 }
 
 type dbRow struct {
-	serviceID  string
-	dbName     string
-	dbUser     string
-	userPlan   string
-	overQuota  bool
-	sizeMB     int
-	planMaxMB  int
+	serviceID string
+	dbName    string
+	dbUser    string
+	userPlan  string
+	overQuota bool
+	sizeMB    int
+	planMaxMB int
 }
 
 func (s *DBQuotaSweeper) sweep(ctx context.Context) {
 	rows, err := s.db.Pool.Query(ctx, `
 		SELECT svc.id, svc.db_name, svc.db_user, u.plan, svc.over_quota,
-		       COALESCE(pl.max_db_size_mb, 1024) AS plan_max_mb
+		       CASE WHEN COALESCE(u.is_admin, false) THEN -1 ELSE COALESCE(pl.max_db_size_mb, 1024) END AS plan_max_mb
 		FROM services svc
 		JOIN users u ON u.id = svc.user_id
-		LEFT JOIN plan_limits pl ON pl.plan = u.plan
-		WHERE svc.type = 'postgres'`)
+		LEFT JOIN plan_limits pl ON pl.plan = `+effectivePlanSQL+`
+		WHERE svc.type = 'postgres' AND COALESCE(svc.container_name, '') = ''`)
 	if err != nil {
 		s.log.Warn().Err(err).Msg("list services failed")
 		return
@@ -76,6 +80,7 @@ func (s *DBQuotaSweeper) sweep(ctx context.Context) {
 	for rows.Next() {
 		var d dbRow
 		if err := rows.Scan(&d.serviceID, &d.dbName, &d.dbUser, &d.userPlan, &d.overQuota, &d.planMaxMB); err != nil {
+			s.log.Warn().Err(err).Msg("scan quota service")
 			continue
 		}
 		items = append(items, d)
@@ -93,7 +98,9 @@ func (s *DBQuotaSweeper) sweep(ctx context.Context) {
 // pg_database_size on s.db.Pool can't see them; they must be measured on the
 // host that runs them.
 type containerSvc struct {
-	id, typ, container, dbName, dbUser string
+	id, typ, container, dbName, dbUser, dbPassword string
+	capMB                                          int  // plan max_db_size_mb; -1 = unlimited
+	overQuota                                      bool // current recorded state
 }
 
 // sweepContainers records size_mb for container-hosted databases by probing
@@ -101,15 +108,17 @@ type containerSvc struct {
 // Postgres reports its exact pg_database_size via docker exec; other engines
 // (redis/mongo/mysql) report their data volume's on-disk size.
 //
-// Size only — no write-revoke enforcement: in the official postgres image the
-// app user IS the superuser, which bypasses GRANT/REVOKE, so a soft cap can't
-// be enforced the way it is for central managed DBs.
+// The official postgres image runs the app user as superuser, which bypasses
+// GRANT/REVOKE, so container DBs are capped differently (see enforceContainer).
 func (s *DBQuotaSweeper) sweepContainers(ctx context.Context) {
 	rows, err := s.db.Pool.Query(ctx, `
-		SELECT id, type, container_name, COALESCE(db_name, ''), COALESCE(db_user, ''),
-		       COALESCE(worker_server_id::text, '')
-		FROM services
-		WHERE container_name IS NOT NULL AND container_name <> ''`)
+		SELECT svc.id, svc.type, svc.container_name, COALESCE(svc.db_name, ''), COALESCE(svc.db_user, ''),
+		       COALESCE(svc.db_password, ''), COALESCE(svc.worker_server_id::text, ''), COALESCE(svc.over_quota, false),
+		       CASE WHEN COALESCE(u.is_admin, false) THEN -1 ELSE COALESCE(pl.max_db_size_mb, 1024) END
+		FROM services svc
+		JOIN users u ON u.id = svc.user_id
+		LEFT JOIN plan_limits pl ON pl.plan = `+effectivePlanSQL+`
+		WHERE svc.container_name IS NOT NULL AND svc.container_name <> ''`)
 	if err != nil {
 		s.log.Warn().Err(err).Msg("list container services failed")
 		return
@@ -118,7 +127,7 @@ func (s *DBQuotaSweeper) sweepContainers(ctx context.Context) {
 	for rows.Next() {
 		var c containerSvc
 		var serverID string
-		if err := rows.Scan(&c.id, &c.typ, &c.container, &c.dbName, &c.dbUser, &serverID); err != nil {
+		if err := rows.Scan(&c.id, &c.typ, &c.container, &c.dbName, &c.dbUser, &c.dbPassword, &serverID, &c.overQuota, &c.capMB); err != nil {
 			s.log.Warn().Err(err).Msg("scan container service")
 			continue
 		}
@@ -146,6 +155,10 @@ func (s *DBQuotaSweeper) sweepContainers(ctx context.Context) {
 }
 
 func (s *DBQuotaSweeper) measureOn(ctx context.Context, runner *Runner, svcs []containerSvc) {
+	byID := make(map[string]containerSvc, len(svcs))
+	for _, c := range svcs {
+		byID[c.id] = c
+	}
 	var script strings.Builder
 	for _, c := range svcs {
 		vol := shellQuote("sm-svc-" + c.dbName + "-data")
@@ -180,6 +193,75 @@ func (s *DBQuotaSweeper) measureOn(ctx context.Context, runner *Runner, svcs []c
 		mb := int((b + 1024*1024 - 1) / (1024 * 1024))
 		s.db.Pool.Exec(ctx,
 			`UPDATE services SET size_mb = $1, size_checked_at = NOW() WHERE id = $2`, mb, f[1])
+		if c, ok := byID[f[1]]; ok {
+			s.enforceContainer(ctx, runner, c, mb)
+		}
+	}
+}
+
+// enforceContainer applies the plan's storage cap to a container-hosted
+// database. Container Postgres runs the app as superuser, so GRANT/REVOKE (the
+// central-DB mechanism) can't work; instead:
+//   - postgres: over the cap → ALTER DATABASE … SET default_transaction_read_only
+//     and reset other sessions so they reconnect read-only; back under → RESET.
+//     Soft cap: a session can still `SET default_transaction_read_only = off`
+//     to delete data and recover (the dashboard explains this).
+//   - redis: keep maxmemory = cap with noeviction on every sweep (idempotent),
+//     so writes past the cap fail with OOM instead of growing.
+//
+// Unlimited (-1) caps are never enforced; a DB that was locked is unlocked.
+func (s *DBQuotaSweeper) enforceContainer(ctx context.Context, runner *Runner, c containerSvc, sizeMB int) {
+	ectx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	switch c.typ {
+	case "redis":
+		if c.capMB < 0 || c.dbPassword == "" {
+			return
+		}
+		cmd := fmt.Sprintf(`docker exec -e REDISCLI_AUTH=%s %s sh -c 'redis-cli CONFIG SET maxmemory %dmb >/dev/null && redis-cli CONFIG SET maxmemory-policy noeviction >/dev/null'`,
+			shellQuote(c.dbPassword), shellQuote(c.container), c.capMB)
+		if out, err := runner.RunShell(ectx, cmd); err != nil {
+			s.log.Debug().Err(err).Str("service", c.id).Str("out", string(out)).Msg("redis maxmemory set failed")
+		}
+		s.setOverQuota(ctx, c, c.capMB >= 0 && sizeMB > c.capMB)
+	case "postgres":
+		if c.dbUser == "" || c.dbName == "" {
+			return
+		}
+		over := c.capMB >= 0 && sizeMB > c.capMB
+		if over == c.overQuota {
+			return // no transition
+		}
+		db := `"` + strings.ReplaceAll(c.dbName, `"`, `""`) + `"`
+		sql := `ALTER DATABASE ` + db + ` RESET default_transaction_read_only`
+		if over {
+			sql = `ALTER DATABASE ` + db + ` SET default_transaction_read_only = on; ` +
+				`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`
+		}
+		// PGOPTIONS starts this admin session writable: once the database
+		// default is read-only, a plain session couldn't run the RESET that
+		// unlocks it (caught in testing — the DB would stay locked forever).
+		cmd := fmt.Sprintf(`docker exec -e PGOPTIONS='-c default_transaction_read_only=off' %s psql -U %s -d %s -v ON_ERROR_STOP=1 -tAc %s`,
+			shellQuote(c.container), shellQuote(c.dbUser), shellQuote(c.dbName), shellQuote(sql))
+		if out, err := runner.RunShell(ectx, cmd); err != nil {
+			s.log.Warn().Err(err).Str("service", c.id).Str("out", strings.TrimSpace(string(out))).Msg("container quota toggle failed")
+			return
+		}
+		s.setOverQuota(ctx, c, over)
+		if over {
+			s.log.Warn().Str("service", c.id).Str("db", c.dbName).Int("size_mb", sizeMB).Int("cap_mb", c.capMB).Msg("container db over quota — read-only")
+		} else {
+			s.log.Info().Str("service", c.id).Str("db", c.dbName).Int("size_mb", sizeMB).Msg("container db back under quota — writable")
+		}
+	}
+}
+
+func (s *DBQuotaSweeper) setOverQuota(ctx context.Context, c containerSvc, over bool) {
+	if over == c.overQuota {
+		return
+	}
+	if _, err := s.db.Pool.Exec(ctx, `UPDATE services SET over_quota = $1 WHERE id = $2`, over, c.id); err != nil {
+		s.log.Warn().Err(err).Str("service", c.id).Msg("set over_quota failed")
 	}
 }
 

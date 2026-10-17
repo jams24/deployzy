@@ -14,6 +14,13 @@ import (
 func (s *Server) handleTelegramLinkCode(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
+	// Plan-gated (plan_limits.allow_telegram — off on Free). Already-linked
+	// accounts keep working; only new links are refused.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin && !s.isFeatureAllowedForUser(r.Context(), u.ID, "telegram") {
+		writeError(w, http.StatusPaymentRequired, "Telegram notifications require a paid plan — upgrade to Hobby or higher")
+		return
+	}
+
 	code, err := s.db.CreateLinkCode(r.Context(), u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create link code")

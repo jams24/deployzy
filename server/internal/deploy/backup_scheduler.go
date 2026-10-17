@@ -81,11 +81,40 @@ func (bs *BackupScheduler) runDueBackups(ctx context.Context) {
 		if retention < 1 {
 			retention = 7
 		}
+		// Cap at the owner's plan (plan_limits.backup_retention_days). Free (0)
+		// can no longer enable schedules; ones enabled before that keep running
+		// (grandfathered) with at most a week of history.
+		if planDays := bs.planBackupRetention(ctx, pdb.ProjectID); planDays > 0 && retention > planDays {
+			retention = planDays
+		} else if planDays == 0 && retention > 7 {
+			retention = 7
+		}
 		oldFiles, _ := bs.db.CleanOldBackups(ctx, pdb.ProjectID, retention)
 		for _, fn := range oldFiles {
 			os.Remove(filepath.Join(backupBasePath, pdb.ProjectID, fn))
 		}
 	}
+}
+
+// planBackupRetention returns the project owner's plan backup_retention_days:
+// -1 for admins/unlimited (or on lookup failure, so we never over-delete).
+func (bs *BackupScheduler) planBackupRetention(ctx context.Context, projectID string) int {
+	p, err := bs.db.GetProject(ctx, projectID)
+	if err != nil || p == nil {
+		return -1
+	}
+	if isAdmin, _ := bs.db.IsUserAdmin(ctx, p.UserID); isAdmin {
+		return -1
+	}
+	u, err := bs.db.GetUserByID(ctx, p.UserID)
+	if err != nil || u == nil {
+		return -1
+	}
+	pl, err := bs.db.GetPlanLimits(ctx, u.Plan)
+	if err != nil || pl == nil {
+		return -1
+	}
+	return pl.BackupRetentionDays
 }
 
 func (bs *BackupScheduler) isDue(schedule *db.BackupSchedule) bool {

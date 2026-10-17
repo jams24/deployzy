@@ -27,7 +27,6 @@ import (
 	"github.com/serverme/serverme/server/internal/deploy"
 	"github.com/serverme/serverme/server/internal/inspect"
 	"github.com/serverme/serverme/server/internal/notify"
-	"github.com/serverme/serverme/server/internal/policy"
 	"github.com/serverme/serverme/server/internal/proxy"
 	"github.com/serverme/serverme/server/internal/tunnel"
 	"github.com/xtaci/smux"
@@ -97,7 +96,6 @@ func main() {
 	var httpProxy *proxy.HTTPProxy  // initialized after inspectStore
 	tcpProxy := proxy.NewTCPProxy(registry, manager, log)
 	_ = proxy.NewTLSProxy(registry, manager, log)
-	_ = policy.NewRateLimiter(20, 40) // default rate limiter
 	startTime := time.Now()
 
 	// Determine scheme and server host
@@ -136,6 +134,24 @@ func main() {
 	analyticsCollector := analytics.New(database.Pool, log)
 	go analyticsCollector.Start(context.Background())
 	httpProxy.SetAnalytics(analyticsCollector)
+	// Per-plan tunnel request rate (plan_limits.max_rate, req/s). Admins and
+	// -1 plans are unlimited; lookups are cached per user for a minute.
+	httpProxy.SetTunnelRateLookup(func(userID string) int {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if isAdmin, _ := database.IsUserAdmin(ctx, userID); isAdmin {
+			return -1
+		}
+		u, err := database.GetUserByID(ctx, userID)
+		if err != nil || u == nil {
+			return -1 // fail open: never block traffic on a lookup error
+		}
+		pl, err := database.GetPlanLimits(ctx, u.Plan)
+		if err != nil || pl == nil {
+			return -1
+		}
+		return pl.MaxRate
+	})
 	// Unified retention sweeper — runs every hour, covers everything that
 	// can grow unboundedly (analytics events, deploy logs, captured tunnel
 	// requests, abandoned build dirs). Keeps disk/DB usage predictable

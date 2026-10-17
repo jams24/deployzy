@@ -97,6 +97,8 @@ type HTTPProxy struct {
 	analytics  *analytics.Collector
 	baseDomain string
 	log        zerolog.Logger
+
+	tunnelRates *tunnelRateLimiter // per-plan req/s cap on tunnels (nil = off)
 }
 
 // NewHTTPProxy creates a new HTTP proxy handler.
@@ -256,6 +258,23 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+	}
+
+	// Plan rate limit (plan_limits.max_rate, req/s per tunnel).
+	if !p.tunnelRates.allow(tun.URL, tun.UserID) {
+		w.Header().Set("Retry-After", "1")
+		writeErrorPage(w, http.StatusTooManyRequests, errorPageData{
+			Code:      "429",
+			Title:     "Too many requests",
+			BadgeText: "Rate limited",
+			DotColor:  "#f59e0b",
+			Heading:   "This tunnel is receiving too many requests",
+			Body:      "It has hit its plan's request-per-second limit. Wait a moment and try again; the owner can upgrade for a higher limit.",
+			Host:      hostname,
+			Reason:    "rate_limited",
+			DashURL:   "https://deployzy.com/billing",
+		})
+		return
 	}
 
 	// Anti-abuse interstitial: on the first HTML navigation to a tunnel host,

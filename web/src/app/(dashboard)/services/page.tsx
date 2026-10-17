@@ -32,6 +32,16 @@ interface DBRow {
   over_quota?: boolean;
 }
 
+interface MyLimits {
+  plan: string; is_admin: boolean;
+  limits: { max_db_size_mb: number; max_databases: number; max_services: number };
+  usage: { databases: number; services: number };
+}
+
+function fmtMB(mb: number) {
+  return mb >= 1024 ? `${(mb / 1024).toFixed(mb >= 10240 ? 0 : 1)} GB` : `${mb} MB`;
+}
+
 interface Backup {
   id: string;
   file_name: string;
@@ -47,6 +57,9 @@ interface Schedule {
 }
 
 export default function ServicesPage() {
+  const [myLimits, setMyLimits] = useState<MyLimits | null>(null);
+  const [dbSearch, setDbSearch] = useState("");
+  const [dbType, setDbType] = useState("all");
   const [rows, setRows] = useState<DBRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPass, setShowPass] = useState<Record<string, boolean>>({});
@@ -103,6 +116,8 @@ export default function ServicesPage() {
 
   async function load() {
     try {
+      fetch(`${API}/api/v1/users/me/limits`, { headers: headers() })
+        .then((r) => (r.ok ? r.json() : null)).then((d) => d && setMyLimits(d)).catch(() => {});
       const res = await fetch(`${API}/api/v1/databases`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
@@ -359,13 +374,69 @@ export default function ServicesPage() {
           </div>
         </div>
       ) : (
+        <>
+        {(() => {
+          const cap = myLimits?.limits.max_db_size_mb ?? 0;
+          const unlimited = !!myLimits?.is_admin || cap < 0;
+          const total = rows.reduce((n, r) => n + (r.size_mb ?? 0), 0);
+          const biggest = rows.reduce((m, r) => Math.max(m, r.size_mb ?? 0), 0);
+          const over = rows.filter((r) => r.over_quota);
+          const near = unlimited || cap <= 0 ? [] : rows.filter((r) => !r.over_quota && (r.size_mb ?? 0) >= cap * 0.8);
+          return (
+            <div className="mb-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  ["Databases", String(rows.length), `${rows.filter((r) => r.kind === "service").length} standalone · ${rows.filter((r) => r.kind === "project").length} attached`],
+                  ["Storage used", fmtMB(total), "across all databases"],
+                  ["Largest", fmtMB(biggest), unlimited ? "no size cap" : `cap ${fmtMB(cap)} each`],
+                  ["Size cap per DB", unlimited ? "Unlimited" : fmtMB(cap), `${myLimits?.plan ?? "…"} plan`],
+                ].map(([k, v, sub]) => (
+                  <div key={k} className="rounded-2xl border border-border/60 bg-card/60 p-4 dark:bg-[#0c0d0f]/40">
+                    <p className="text-[11px] text-muted-foreground">{k}</p>
+                    <p className="mt-1 text-xl font-semibold tabular-nums">{v}</p>
+                    <p className="mt-0.5 truncate text-[11px] capitalize text-muted-foreground">{sub}</p>
+                  </div>
+                ))}
+              </div>
+              {over.length > 0 && (
+                <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-red-700 dark:text-red-400">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">{over.map((r) => r.name).join(", ")} {over.length === 1 ? "is" : "are"} over your plan&apos;s {fmtMB(cap)} size cap and now read-only.</p>
+                    <p className="mt-0.5 text-red-700/80 dark:text-red-400/80">Reads keep working. Delete data to get back under the cap (in a SQL session run <span className="font-mono">SET default_transaction_read_only = off;</span> first), or <Link href="/billing" className="font-medium underline">upgrade</Link> for more space. Writes re-enable automatically within 5 minutes.</p>
+                  </div>
+                </div>
+              )}
+              {near.length > 0 && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{near.map((r) => r.name).join(", ")} {near.length === 1 ? "is" : "are"} above 80% of the {fmtMB(cap)} cap. Over the cap, a database becomes read-only.</p>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[12rem] flex-1">
+                  <Input value={dbSearch} onChange={(e) => setDbSearch(e.target.value)} placeholder="Search databases…" className="h-9 pl-3 text-sm" />
+                </div>
+                <div className="flex flex-wrap rounded-lg border border-border/60 p-0.5">
+                  {["all", ...Array.from(new Set(rows.map((r) => r.type)))].map((t) => (
+                    <button key={t} onClick={() => setDbType(t)}
+                      className={`rounded-md px-2.5 py-1 text-[11px] font-medium capitalize ${dbType === t ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                      {t === "all" ? `All ${rows.length}` : `${typeLabel(t).replace(/ \d+$/, "")} ${rows.filter((r) => r.type === t).length}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         <div className="rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40">
           {/* table header */}
           <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 bg-muted/40">
             <span className="flex-1">Database</span>
             <span className="w-28 text-right pr-2">Actions</span>
           </div>
-          {rows.map((s) => {
+          {rows.filter((r) => (dbType === "all" || r.type === dbType) &&
+            (!dbSearch.trim() || [r.name, r.db_name, r.project_name ?? "", r.host].some((v) => v.toLowerCase().includes(dbSearch.trim().toLowerCase())))).map((s) => {
             const isProj = s.kind === "project" && !!s.project_id;
             const rowBackups = isProj && s.project_id ? (backups[s.project_id] || []) : [];
             const isOpen = !!expanded[s.id];
@@ -388,13 +459,28 @@ export default function ServicesPage() {
                               {s.project_name}
                             </Badge>
                           )}
-                          {typeof s.size_mb === "number" && (
-                            <Badge variant="outline" className={`text-[10px] shrink-0 hidden lg:inline-flex ${s.over_quota ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/40" : "text-muted-foreground"}`}>
-                              {s.size_mb} MB{s.over_quota ? " · over quota" : ""}
-                            </Badge>
+                          {s.over_quota && (
+                            <Badge variant="outline" className="text-[10px] shrink-0 bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/40">read-only · over cap</Badge>
                           )}
                         </div>
                         <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
+                        {(() => {
+                          const cap = myLimits?.limits.max_db_size_mb ?? 0;
+                          const unlimited = !!myLimits?.is_admin || cap <= 0;
+                          const mb = s.size_mb ?? 0;
+                          const pct = unlimited ? 0 : Math.min(100, (mb / cap) * 100);
+                          return (
+                            <div className="mt-1.5 flex max-w-sm items-center gap-2" title={unlimited ? `${fmtMB(mb)} used` : `${fmtMB(mb)} of ${fmtMB(cap)} (${pct.toFixed(1)}%)`}>
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                <div className={`h-full rounded-full transition-all duration-700 ${s.over_quota || pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                                  style={{ width: `${unlimited ? Math.min(100, mb > 0 ? 6 : 0) : Math.max(mb > 0 ? 1.5 : 0, pct)}%` }} />
+                              </div>
+                              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                                {typeof s.size_mb === "number" ? fmtMB(mb) : "measuring…"}{!unlimited && typeof s.size_mb === "number" ? ` / ${fmtMB(cap)}` : ""}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -657,6 +743,7 @@ export default function ServicesPage() {
             );
           })}
         </div>
+        </>
       )}
     </div>
   );

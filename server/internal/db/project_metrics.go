@@ -86,6 +86,36 @@ func (d *DB) PruneOldMetrics(ctx context.Context, cutoff time.Time) error {
 	return err
 }
 
+// PruneMetricsPerPlan applies each owner's plan_limits.metrics_retention_days
+// (Free 1, Hobby 3, Pro 7, Team 30 by default). Previously every plan kept a
+// flat 7 days, so Team got far less history than its plan promised.
+// Unlimited (-1) and admins keep metricsMaxDays; 0 is treated as 1 day.
+// Metrics of deleted projects fall under the global metricsMaxDays sweep.
+const metricsMaxDays = 90
+
+func (d *DB) PruneMetricsPerPlan(ctx context.Context) (int64, error) {
+	tag, err := d.Pool.Exec(ctx, `
+		DELETE FROM project_metrics m
+		 USING projects p
+		 JOIN users u ON u.id = p.user_id
+		 LEFT JOIN plan_limits pl ON pl.plan = CASE
+		      WHEN COALESCE(NULLIF(u.plan, ''), 'free') = 'free' AND u.pro_until > now() THEN 'pro'
+		      ELSE COALESCE(NULLIF(u.plan, ''), 'free') END
+		 WHERE m.project_id = p.id
+		   AND m.ts < now() - make_interval(days => CASE
+		       WHEN COALESCE(u.is_admin, false) OR COALESCE(pl.metrics_retention_days, 7) < 0 THEN $1
+		       WHEN COALESCE(pl.metrics_retention_days, 7) = 0 THEN 1
+		       ELSE LEAST(pl.metrics_retention_days, $1) END)`, metricsMaxDays)
+	if err != nil {
+		return 0, err
+	}
+	n := tag.RowsAffected()
+	if err := d.PruneOldMetrics(ctx, time.Now().AddDate(0, 0, -metricsMaxDays)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 // GetProjectMonthlyBandwidthBytes returns bytes transferred out for a single
 // project during the current calendar month.
 func (d *DB) GetProjectMonthlyBandwidthBytes(ctx context.Context, projectID string) (int64, error) {

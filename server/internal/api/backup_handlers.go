@@ -248,8 +248,25 @@ func (s *Server) handleUpdateBackupSchedule(w http.ResponseWriter, r *http.Reque
 		req.Retention = 30
 	}
 
+	// Plan cap (plan_limits.backup_retention_days): 0 = no scheduled backups
+	// (Free), otherwise the maximum days kept. Admins and -1 are uncapped.
+	if isAdmin, _ := s.db.IsUserAdmin(r.Context(), u.ID); !isAdmin {
+		if user, err := s.db.GetUserByID(r.Context(), u.ID); err == nil && user != nil {
+			if pl, err := s.db.GetPlanLimits(r.Context(), user.Plan); err == nil && pl != nil {
+				switch {
+				case pl.BackupRetentionDays == 0 && req.Enabled:
+					// Disabling is always allowed; enabling needs a paid plan.
+					writeError(w, http.StatusPaymentRequired, "scheduled backups require a paid plan — upgrade to Hobby or higher")
+					return
+				case pl.BackupRetentionDays > 0 && req.Retention > pl.BackupRetentionDays:
+					req.Retention = pl.BackupRetentionDays
+				}
+			}
+		}
+	}
+
 	s.db.UpdateBackupSchedule(r.Context(), projectID, req.Enabled, req.Schedule, req.Time, req.Retention)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "updated", "retention": req.Retention})
 }
 
 // handleServiceBackup streams an on-demand dump of a standalone database
