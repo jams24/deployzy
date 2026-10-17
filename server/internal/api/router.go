@@ -356,6 +356,7 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				// Live sessions
 				r.Get("/sessions", s.handleAdminListSessions)
 				r.Get("/tunnels/overview", s.handleAdminTunnelOverview)
+				r.Get("/email-verify/analytics", s.handleAdminEmailVerifyAnalytics)
 				r.Delete("/sessions/{clientId}", s.handleAdminKillSession)
 				r.Delete("/tunnels/{encodedURL}", s.handleAdminKillTunnel)
 

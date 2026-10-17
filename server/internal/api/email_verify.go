@@ -413,7 +413,15 @@ func (s *Server) handleEmailVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusPaymentRequired, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.deepVerify(r.Context(), body.Email))
+	res := s.deepVerify(r.Context(), body.Email)
+	uid := u.ID
+	rec := evRecord(res, "single")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s.db.RecordEmailVerifications(ctx, uid, []db.EmailVerifyRecord{rec})
+	}()
+	writeJSON(w, http.StatusOK, res)
 }
 
 // POST /api/v1/email/verify/batch — verify up to 100 addresses. Body: {emails:[]}.
@@ -463,5 +471,31 @@ func (s *Server) handleEmailVerifyBatch(w http.ResponseWriter, r *http.Request) 
 		}(i)
 	}
 	wg.Wait()
+	uid := u.ID
+	recs := make([]db.EmailVerifyRecord, len(results))
+	for i := range results {
+		recs[i] = evRecord(results[i], "batch")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		s.db.RecordEmailVerifications(ctx, uid, recs)
+	}()
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
+}
+
+// evRecord maps a verification result to a privacy-preserving log row (domain
+// + verdict only, never the local part).
+func evRecord(r EmailVerifyResult, source string) db.EmailVerifyRecord {
+	return db.EmailVerifyRecord{
+		Domain:         r.Domain,
+		Score:          r.Score,
+		Reason:         r.Reason,
+		Disposable:     r.Disposable,
+		RoleBased:      r.RoleBased,
+		HasMX:          r.HasMX,
+		FreeProvider:   r.FreeProvider,
+		MailboxChecked: r.MailboxCheck,
+		Source:         source,
+	}
 }

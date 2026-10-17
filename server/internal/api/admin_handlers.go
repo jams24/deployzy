@@ -466,6 +466,18 @@ func (s *Server) handleAdminListSessions(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, sessions)
 }
 
+// handleAdminEmailVerifyAnalytics returns email-validator usage + list-health
+// aggregates for the admin console.
+func (s *Server) handleAdminEmailVerifyAnalytics(w http.ResponseWriter, r *http.Request) {
+	a, err := s.db.GetEmailVerifyAnalytics(r.Context())
+	if err != nil {
+		s.log.Warn().Err(err).Msg("email verify analytics")
+		writeError(w, http.StatusInternalServerError, "failed to load email analytics")
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
+}
+
 // handleAdminTunnelOverview returns tunnel-session history aggregates: today /
 // 7-day totals, a 14-day series, top users by traffic, and recent sessions.
 func (s *Server) handleAdminTunnelOverview(w http.ResponseWriter, r *http.Request) {
