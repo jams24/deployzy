@@ -688,7 +688,13 @@ function ProjectsContent() {
                   >
                     {p.status !== "running" && p.status !== "building" && (
                       p.deploy_source === "upload" ? (
-                        <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
+                        <>
+                          <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy the last uploaded build" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                            {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                            <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Redeploy"}</span>
+                          </Button>
+                          <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
+                        </>
                       ) : (
                         <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                           {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -701,13 +707,12 @@ function ProjectsContent() {
                         <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                           <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
                         </Button>
-                        {p.deploy_source === "upload" ? (
+                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.deploy_source === "upload" ? "Redeploy the last uploaded build" : "Redeploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                          {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          <span className="hidden sm:inline"> Redeploy</span>
+                        </Button>
+                        {p.deploy_source === "upload" && (
                           <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
-                        ) : (
-                          <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                            {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                            <span className="hidden sm:inline"> Redeploy</span>
-                          </Button>
                         )}
                         <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Stop" onClick={() => stop(p.id)}>
                           <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>

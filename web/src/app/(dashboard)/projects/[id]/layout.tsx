@@ -99,7 +99,16 @@ function ProjectHeader() {
           {building && <Badge className="text-[10px] animate-pulse h-8 px-3">Building…</Badge>}
           {!running && !building && (
             p.deploy_source === "upload" ? (
-              <ReuploadButton projectId={p.id} onDeployed={afterReupload} />
+              <>
+                {/* Redeploy reuses the already-uploaded build context (no need to
+                    re-pick the folder) — the quick way to recover a crashed or
+                    failed upload. Re-upload is for pushing changed code. */}
+                <Button size="sm" className="btn-shine gap-1 h-8 text-xs" title="Redeploy the last uploaded build" onClick={() => deploy()} disabled={deploying}>
+                  {deploying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                  <span>{p.status === "stopped" ? "Start" : "Redeploy"}</span>
+                </Button>
+                <ReuploadButton projectId={p.id} onDeployed={afterReupload} />
+              </>
             ) : (
               <Button size="sm" className="btn-shine gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy()} disabled={deploying}>
                 {deploying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -112,13 +121,12 @@ function ProjectHeader() {
               <Button size="sm" className="btn-shine gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                 <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
               </Button>
-              {p.deploy_source === "upload" ? (
+              <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.deploy_source === "upload" ? "Redeploy the last uploaded build" : "Redeploy"} onClick={() => deploy()} disabled={deploying}>
+                {deploying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                <span className="hidden sm:inline">Redeploy</span>
+              </Button>
+              {p.deploy_source === "upload" && (
                 <ReuploadButton projectId={p.id} onDeployed={afterReupload} />
-              ) : (
-                <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy" onClick={() => deploy()} disabled={deploying}>
-                  {deploying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  <span className="hidden sm:inline">Redeploy</span>
-                </Button>
               )}
               <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Stop" onClick={() => stop()}>
                 <Square className="h-3 w-3" /><span className="hidden sm:inline">Stop</span>
