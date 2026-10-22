@@ -43,8 +43,25 @@ git -C "$ROOT" archive "$REF" "${PUBLIC_DIRS[@]}" | tar -x -C "$OUT"
 git -C "$ROOT" archive "$REF" public | tar -x -C "$OUT" --strip-components=1
 
 # Guard: nothing private may ride along. Fail closed.
-leaks="$(grep -rIlE -- '-----BEGIN [A-Z ]*PRIVATE KEY|PGPASSWORD=|sk_live_|wk_live_' "$OUT" --exclude-dir=.git || true)"
-if [[ -n "$leaks" ]]; then
+# grep exits 0 = match, 1 = clean, 2 = error; an error must not read as clean.
+set +e
+leaks="$(grep -rIlE --exclude-dir=.git -e '-----BEGIN [A-Z ]*PRIVATE KEY|PGPASSWORD=|sk_live_|wk_live_' "$OUT")"
+rc=$?
+# Any IPv4 literal other than loopback / 0.0.0.0 (server IPs belong in private infra only).
+ips="$(grep -rIohE --exclude-dir=.git -e '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' "$OUT")"
+irc=$?
+set -e
+if (( irc > 1 )); then rc=$irc; fi
+ips="$(printf '%s\n' "$ips" | grep -vE '^(127\.|0\.0\.0\.0$)' | grep -v '^$' || true)"
+if [[ -n "$ips" ]]; then
+  echo "refusing to publish — IP address literal(s): $(echo $ips | tr '\n' ' ')" >&2
+  exit 1
+fi
+if (( rc > 1 )); then
+  echo "refusing to publish — the leak scan itself failed (grep exit $rc)" >&2
+  exit 1
+fi
+if (( rc == 0 )); then
   echo "refusing to publish — secret-looking content in:" >&2
   echo "$leaks" >&2
   exit 1
