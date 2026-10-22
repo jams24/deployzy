@@ -28,7 +28,7 @@ export const posts: BlogPost[] = [
     description:
       "Railway changed its pricing and free tier in 2025. Here are the best Railway alternatives — self-hosted, open-source, and free options for deploying your apps.",
     excerpt:
-      "Railway changed its pricing model and cut the free tier. Here are 5 solid alternatives — including one you can self-host on your own VPS for free.",
+      "Railway changed its pricing model and cut the free tier. Here are 5 solid alternatives — including a free tier and options that run on your own VPS.",
     date: "2025-06-15",
     author: "Deployzy Team",
     readTime: "7 min read",
@@ -43,10 +43,10 @@ export const posts: BlogPost[] = [
         type: "p",
         text: "In this post we compare the five best Railway alternatives in 2025, covering self-hosted options, managed PaaS platforms, and open-source tools you can run on your own server.",
       },
-      { type: "h2", text: "1. Deployzy (Self-Hosted, Free)" },
+      { type: "h2", text: "1. Deployzy (Free Tier + Bring Your Own Server)" },
       {
         type: "p",
-        text: "Deployzy is an open-source deployment platform you install on any Linux VPS. It gives you the Railway experience — GitHub auto-deploy, managed databases, localhost tunneling, environment variables, live logs — but on infrastructure you own and control.",
+        text: "Deployzy gives you the Railway experience — GitHub auto-deploy, managed databases, localhost tunneling, environment variables, live logs — with a free tier on its cloud, and the option to attach your own VPS so projects run on infrastructure you control.",
       },
       {
         type: "ul",
@@ -55,12 +55,12 @@ export const posts: BlogPost[] = [
           "Managed PostgreSQL, Redis, MongoDB, MySQL — all one-click",
           "Built-in localhost tunnel (like ngrok, no extra subscription)",
           "Bring Your Own Cloud (BYOC): deploy projects onto any VPS",
-          "Free to self-host; no per-seat pricing",
+          "Free tier with no credit card; no per-seat pricing",
         ],
       },
       {
         type: "p",
-        text: "The main trade-off: you manage the VPS. A $6/month Hetzner or DigitalOcean droplet is plenty for most hobby projects. The upside is that you pay a flat VPS fee instead of per-resource Railway pricing that can spike unexpectedly.",
+        text: "Start on the free tier; when you outgrow it, attach a $6/month Hetzner or DigitalOcean droplet as a BYOC server. You pay a flat VPS fee instead of per-resource pricing that can spike unexpectedly, and Deployzy still handles builds, routing, and TLS.",
       },
       {
         type: "cta",
@@ -137,7 +137,7 @@ export const posts: BlogPost[] = [
       {
         type: "ul",
         items: [
-          "Want free hosting + full control → self-host Deployzy or Coolify on a cheap VPS",
+          "Want free hosting + full control → Deployzy (free tier + BYOC) or self-host Coolify on a cheap VPS",
           "Want managed, no-ops → Render or Fly.io (pay as you grow)",
           "Have an established team with budget → Heroku or Railway paid plans",
           "Need global edge performance → Fly.io",
@@ -145,7 +145,7 @@ export const posts: BlogPost[] = [
       },
       {
         type: "p",
-        text: "For solo developers and small startups, self-hosting on a $6/month VPS with Deployzy gives you Railway-level developer experience at a fraction of the cost — with no vendor lock-in.",
+        text: "For solo developers and small startups, Deployzy's free tier — plus a $6/month VPS attached as your own server when you need more — gives you Railway-level developer experience at a fraction of the cost.",
       },
     ],
   },

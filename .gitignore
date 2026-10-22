@@ -85,3 +85,4 @@ video/node_modules/.remotion/
 # a .env, user records and ~200 payment receipts. It must not enter this repo's
 # history — give it its own repository.
 texis-bot/
+**/__pycache__/

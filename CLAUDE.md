@@ -16,6 +16,7 @@ Everything an agent needs to work in this repo without asking the user for conte
 | `sdk-python/` | Python SDK (`deployzy` on PyPI) | PyPI via CI |
 | `proto/` | Shared Go protocol types (used by both `server/` and `cli/`) | n/a |
 | `homebrew-tap/` | Homebrew formula stub — **not the live tap**; GoReleaser pushes to `jams24/homebrew-deployzy` | separate repo |
+| `public/` | Files that exist only in the public mirror `jams24/deployzy-cli` (README, LICENSE, go.work, install.sh, `.goreleaser.yml`, release workflow) | synced on release |
 | `.github/workflows/` | CI/CD — see Release Flow below | GitHub Actions |
 
 ---
@@ -42,16 +43,23 @@ git push origin main --tags
 
 ### What the pipeline does automatically
 
-| Job | Trigger | Output |
-|-----|---------|--------|
-| `release` (GoReleaser) | tag push | Builds 10 binaries (CLI + server, 5 platforms), creates GitHub release with archives + checksums, **updates `jams24/homebrew-deployzy` Formula** |
-| `npm-cli` | after `release` | Publishes `deployzy@X.Y.Z` to npm (the CLI wrapper) |
-| `npm-sdk` | after `release` | Publishes `deployzy-sdk@X.Y.Z` to npm |
-| `pypi` | after `release` | Publishes `deployzy@X.Y.Z` to PyPI |
+**This monorepo (`jams24/deployzy`) is PRIVATE.** Only the client side is public,
+in the mirror **`jams24/deployzy-cli`**. Releases are cut there.
 
-### Required GitHub secrets (already set)
-- `HOMEBREW_TAP_TOKEN` — write access to `jams24/homebrew-deployzy`
-- `NPM_TOKEN` — npm publish token
+| Where | Job | Output |
+|-------|-----|--------|
+| private `deployzy` | `sync-public` | `scripts/sync-public.sh vX.Y.Z` copies `cli/ proto/ npm-package/ sdk-js/ sdk-python/` + `public/*` into `deployzy-cli`, commits, pushes the same tag |
+| public `deployzy-cli` | `release` (GoReleaser) | CLI binaries only (5 platforms) → GitHub release + checksums, **updates `jams24/homebrew-deployzy` Formula** |
+| public `deployzy-cli` | `npm-cli` / `npm-sdk` | `deployzy@X.Y.Z` + `deployzy-sdk@X.Y.Z` on npm (OIDC trusted publishing → deployzy-cli) |
+| public `deployzy-cli` | `pypi` | `deployzy@X.Y.Z` on PyPI (OIDC trusted publishing → deployzy-cli) |
+
+Server binaries are **never** published — the server is deployed by hand (below).
+`scripts/sync-public.sh` refuses to publish if `server/`, `web/`, `deploy/` etc.
+end up in the tree or anything secret-looking appears. `DRY_RUN=1` previews.
+
+### Required GitHub secrets
+- private `deployzy`: `PUBLIC_REPO_TOKEN` — fine-grained PAT on `deployzy-cli` (Contents + Workflows: read & write)
+- public `deployzy-cli`: `HOMEBREW_TAP_TOKEN` — write access to `jams24/homebrew-deployzy`
 
 ### Archive naming (GoReleaser)
 GoReleaser produces archives named `deployzy_<os>_<arch>.tar.gz` (or `.zip` on Windows).
@@ -219,6 +227,7 @@ Use this in all user-facing content (footer, billing page, landing page Team CTA
 ## What NOT to Do
 
 - **Don't publish npm/PyPI/Homebrew manually** — use the tag-based CI pipeline.
+- **Don't put platform code, abuse-detection rules, or infra details in `cli/`, `proto/`, `npm-package/`, `sdk-*/` or `public/`** — those are published to the public `deployzy-cli` repo on every release.
 - **Don't use `tar` to deploy the web build** — `--strip-components` silently drops `.next/` on Linux. Use `rsync`.
 - **Don't restart only one service** — always restart all 3 (`deployzy`, `deployzy-texis`, `deployzy-web`).
 - **Don't `systemctl start` deployzy-web after a deploy — use `restart`.** `start` on a running unit is a no-op; the old Node process keeps serving the old `.next`. Verify the served bundle, not the files on disk.

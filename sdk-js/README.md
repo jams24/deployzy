@@ -1,6 +1,6 @@
 # deployzy
 
-Official JavaScript/TypeScript SDK for [Deployzy](https://deployzy.com) — open-source tunneling platform.
+Official JavaScript/TypeScript SDK for [Deployzy](https://deployzy.com) — deploy apps, tunnels, and managed databases.
 
 ## Install
 
@@ -89,12 +89,12 @@ try {
 }
 ```
 
-## Self-Hosted
+## Custom server URL
 
 ```typescript
 const client = new Deployzy({
   authtoken: 'sm_live_...',
-  serverUrl: 'https://tunnel.mycompany.com',
+  serverUrl: 'https://api.deployzy.com', // the default
 });
 ```
 

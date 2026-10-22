@@ -1,7 +1,7 @@
 {
   "name": "deployzy",
   "version": "1.1.6",
-  "description": "CLI for Deployzy — open-source tunnel to expose localhost to the internet",
+  "description": "CLI for Deployzy — deploy apps, tunnel localhost to the internet, and manage databases",
   "bin": {
     "deployzy": "bin/cli.js"
   },
@@ -24,7 +24,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jams24/deployzy"
+    "url": "https://github.com/jams24/deployzy-cli"
   },
   "homepage": "https://deployzy.com",
   "engines": {

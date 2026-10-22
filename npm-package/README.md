@@ -1,6 +1,6 @@
 # deployzy
 
-CLI for [Deployzy](https://deployzy.com) — open-source tunnel to expose your local servers to the internet.
+CLI for [Deployzy](https://deployzy.com) — deploy apps, expose your local servers to the internet, and manage databases.
 
 ## Install
 
@@ -31,19 +31,16 @@ deployzy start
 
 ```bash
 # Homebrew (macOS/Linux)
-brew install deployzy/tap/deployzy
+brew install jams24/deployzy/deployzy
 
-# Go
-go install github.com/jams24/deployzy/cli/cmd/deployzy@latest
-
-# Shell script
-curl -fsSL https://get.deployzy.com | sh
+# Shell script (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/jams24/deployzy-cli/main/install.sh | sh
 ```
 
 ## Links
 
 - Website: https://deployzy.com
-- GitHub: https://github.com/jams24/deployzy
+- GitHub: https://github.com/jams24/deployzy-cli
 - Docs: https://deployzy.com/docs
 
 ## License

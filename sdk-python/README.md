@@ -83,12 +83,12 @@ except ApiError as e:
     print(f"API error {e.status_code}: {e}")
 ```
 
-## Self-Hosted
+## Custom server URL
 
 ```python
 client = Deployzy(
     authtoken="sm_live_...",
-    server_url="https://tunnel.mycompany.com",
+    server_url="https://api.deployzy.com",  # the default
 )
 ```
 

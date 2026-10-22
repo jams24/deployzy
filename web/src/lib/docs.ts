@@ -69,7 +69,7 @@ export const categories: DocCategory[] = [
       { slug: "guides/custom-domains", title: "Custom Domains" },
       { slug: "guides/webhooks", title: "Webhook Testing" },
       { slug: "guides/deploy-from-ci", title: "Deploy from CI" },
-      { slug: "guides/self-hosting", title: "Self-Hosting" },
+      { slug: "guides/byoc", title: "Bring Your Own Server" },
     ],
   },
 ];
@@ -99,9 +99,9 @@ const docs: Record<string, DocPage> = {
   introduction: {
     slug: "introduction",
     title: "Introduction",
-    description: "Deployzy is an open-source tunneling platform that exposes your local servers to the internet.",
+    description: "Deployzy deploys your apps, runs managed databases, and exposes your local servers to the internet.",
     category: "Getting Started",
-    content: `Deployzy creates secure, encrypted tunnels from the public internet to your local machine. Think of it as an open-source alternative to ngrok — fully self-hostable with a generous free tier.
+    content: `Deployzy creates secure, encrypted tunnels from the public internet to your local machine. Think of it as ngrok and Railway in one — with a generous free tier and an open-source CLI.
 
 ## What can you do with Deployzy?
 
@@ -137,8 +137,8 @@ Internet → Deployzy Server → Encrypted Tunnel (smux/TLS) → CLI → Your Lo
 - **Custom domains** — Bring your own domain with automatic TLS
 - **Google OAuth** — Log in with your Google account
 - **SDKs** — JavaScript/TypeScript and Python
-- **Self-hostable** — Deploy your own server with one command
-- **Open source** — MIT licensed, all code on [GitHub](https://github.com/jams24/deployzy)`,
+- **Bring your own server** — Run projects on your own VPS ([BYOC](/docs/guides/byoc))
+- **Open-source CLI & SDKs** — MIT licensed, on [GitHub](https://github.com/jams24/deployzy-cli)`,
   },
 
   quickstart: {
@@ -156,7 +156,7 @@ npm install -g deployzy
 brew install jams24/deployzy/deployzy
 
 # Or download directly
-curl -fsSL https://raw.githubusercontent.com/jams24/deployzy/main/deploy/get.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jams24/deployzy-cli/main/install.sh | sh
 \`\`\`
 
 ## 2. Log in
@@ -226,20 +226,12 @@ brew install jams24/deployzy/deployzy
 Auto-detects your OS and architecture:
 
 \`\`\`bash
-curl -fsSL https://raw.githubusercontent.com/jams24/deployzy/main/deploy/get.sh | sh
-\`\`\`
-
-## Go install
-
-If you have Go 1.24+:
-
-\`\`\`bash
-go install github.com/jams24/deployzy/cli/cmd/deployzy@latest
+curl -fsSL https://raw.githubusercontent.com/jams24/deployzy-cli/main/install.sh | sh
 \`\`\`
 
 ## Manual download
 
-Download pre-built binaries from [GitHub Releases](https://github.com/jams24/deployzy/releases):
+Download pre-built binaries from [GitHub Releases](https://github.com/jams24/deployzy-cli/releases):
 
 | Platform | Architecture | File |
 |----------|-------------|------|
@@ -1359,12 +1351,12 @@ try {
 }
 \`\`\`
 
-## Self-hosted
+## Custom API URL
 
 \`\`\`typescript
 const client = new Deployzy({
   authtoken: 'sm_live_...',
-  serverUrl: 'https://api.yourdomain.com',
+  serverUrl: 'https://api.deployzy.com', // the default
 });
 \`\`\``,
   },
@@ -1442,12 +1434,12 @@ except RateLimitError as e:
     print(f"Retry in {e.retry_after}s")
 \`\`\`
 
-## Self-hosted
+## Custom API URL
 
 \`\`\`python
 client = Deployzy(
     authtoken="sm_live_...",
-    server_url="https://api.yourdomain.com",
+    server_url="https://api.deployzy.com",  # the default
 )
 \`\`\``,
   },
@@ -1548,81 +1540,51 @@ curl -X POST https://api.deployzy.com/api/v1/tunnels/{url}/replay/{requestId} \\
 \`\`\``,
   },
 
-  "guides/self-hosting": {
-    slug: "guides/self-hosting",
-    title: "Self-Hosting",
-    description: "Deploy your own Deployzy server.",
+  "guides/byoc": {
+    slug: "guides/byoc",
+    title: "Bring Your Own Server",
+    description: "Run your Deployzy projects and databases on your own VPS.",
     category: "Guides",
-    content: `## One-command install
+    content: `BYOC (bring your own cloud) lets you attach your own Linux server to your
+Deployzy account. Projects and databases you place on it run on **your**
+hardware, while Deployzy handles builds, routing, TLS, logs, and the dashboard.
 
-On a fresh Ubuntu 22.04+ VPS:
+BYOC servers are available on paid plans — see [Pricing](/#pricing).
 
-\`\`\`bash
-curl -fsSL https://raw.githubusercontent.com/jams24/deployzy/main/deploy/install.sh | bash -s -- \\
-  --domain tunnel.yourdomain.com \\
-  --email you@example.com
-\`\`\`
+## Requirements
 
-This installs PostgreSQL, Caddy (for TLS), and Deployzy. Takes about 2 minutes.
+- A VPS running Ubuntu 22.04+ or Debian 12+
+- Root (or sudo) SSH access with a password
+- A public IP address
 
-## DNS setup
+## 1. Add the server
 
-Before or after install, add these DNS records:
+In the dashboard, open **Servers** → **Add Server** and enter:
 
-| Type | Name | Target |
-|------|------|--------|
-| A | \`tunnel.yourdomain.com\` | \`<your-server-ip>\` |
-| CNAME | \`*.tunnel.yourdomain.com\` | \`tunnel.yourdomain.com\` |
-| CNAME | \`api.tunnel.yourdomain.com\` | \`tunnel.yourdomain.com\` |
+| Field | Example |
+|------|---------|
+| Label | \`hetzner-1\` |
+| Host | \`203.0.113.10\` |
+| Port | \`22\` |
+| SSH user | \`root\` |
+| Password | your server's SSH password |
 
-## Docker Compose
+## 2. Install Docker
 
-\`\`\`yaml
-services:
-  serverme:
-    image: ghcr.io/jams24/deployzysrv:latest
-    ports:
-      - "8443:8443"
-      - "9080:9080"
-      - "9081:9081"
-    environment:
-      SM_DOMAIN: tunnel.yourdomain.com
-      SM_DATABASE_URL: postgres://serverme:pass@postgres:5432/serverme
-      SM_JWT_SECRET: your-secret-here
-    depends_on:
-      - postgres
+If Docker isn't already installed, click **Install Docker** on the server card.
+Deployzy installs and configures it over SSH; a **Docker** badge appears on the
+card when it's done.
 
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: serverme
-      POSTGRES_USER: serverme
-      POSTGRES_PASSWORD: pass
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+## 3. Deploy to it
 
-volumes:
-  pgdata:
-\`\`\`
+When you create a project, pick your server in the **Region** picker — it's
+listed as *"(your server)"*. Its traffic is still served from your \`*.deployzy.app\` subdomain (or
+your custom domain) with automatic HTTPS.
 
-## Connect clients
+## Removing a server
 
-Point clients to your server:
-
-\`\`\`bash
-deployzy http 3000 --server tunnel.yourdomain.com:8443
-\`\`\`
-
-## Options
-
-| Flag | Description |
-|------|-------------|
-| \`--domain\` | Base domain (required) |
-| \`--email\` | For Let's Encrypt certs (required) |
-| \`--google-id\` | Google OAuth Client ID |
-| \`--google-secret\` | Google OAuth Client Secret |
-| \`--skip-caddy\` | Skip Caddy install |
-| \`--skip-db\` | Skip PostgreSQL install |`,
+Move or delete the projects on it first, then remove it from **Servers**.
+Deployzy stops connecting to it; nothing else on the machine is touched.`,
   },
 
   "cli/deploy": {
@@ -1677,9 +1639,7 @@ deployzy projects rm api        # delete (by name, subdomain, or id)
 deployzy logs api --follow      # stream deploy logs
 deployzy env set api KEY=value  # set an env var (redeploy to apply)
 deployzy env ls api             # list env vars
-\`\`\`
-
-> Self-hosted? Point the CLI at your API with \`SERVERME_API_URL=https://api.yourdomain.com\`.`,
+\`\`\``,
   },
 
   "guides/deploy-from-ci": {
@@ -1709,7 +1669,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Deployzy CLI
-        run: curl -fsSL https://deployzy.com/install.sh | sh
+        run: npm install -g deployzy
       - name: Deploy
         env:
           SERVERME_API_KEY: \${{ secrets.SERVERME_API_KEY }}

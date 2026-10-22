@@ -287,7 +287,7 @@ export function Hero() {
               transition={{ duration: 0.9, delay: 0.85 }}
               className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-muted-foreground"
             >
-              {["Free tier", "No credit card", "Self-hostable", "MIT license"].map((t) => (
+              {["Free tier", "No credit card", "Bring your own server", "Open-source CLI"].map((t) => (
                 <span key={t} className="flex items-center gap-1.5">
                   <Check className="h-3 w-3 shrink-0 text-emerald-500" />{t}
                 </span>

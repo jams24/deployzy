@@ -1,30 +1,16 @@
 version: 2
 
+# Public CLI releases for jams24/deployzy-cli.
+# Synced from the private monorepo (public/.goreleaser.yml) — edit it there.
+# Only the CLI is released; the platform server is not distributed.
+
 project_name: deployzy
 
 before:
   hooks:
-    - go mod tidy -C server
     - go mod tidy -C cli
 
 builds:
-  - id: servermesrv
-    main: ./cmd/servermesrv
-    dir: server
-    binary: servermesrv
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ldflags:
-      - -s -w
-      - -X github.com/serverme/serverme/proto.Version={{ .Version }}
-
   - id: deployzy
     main: ./cmd/deployzy
     dir: cli
@@ -43,25 +29,16 @@ builds:
       - -X github.com/serverme/serverme/proto.Version={{ .Version }}
 
 archives:
-  - id: server
-    builds:
-      - servermesrv
-    name_template: "servermesrv_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
-    format_overrides:
-      - goos: windows
-        format: zip
-
   - id: cli
     builds:
       - deployzy
+    # npm-package/bin/install.js and install.sh download exactly this name.
     name_template: "deployzy_{{ .Os }}_{{ .Arch }}"
     format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
 
-# Auto-update the Homebrew tap formula on each release (CLI only).
 # Needs a HOMEBREW_TAP_TOKEN secret with write access to jams24/homebrew-deployzy.
 brews:
   - name: deployzy
@@ -74,7 +51,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: "https://deployzy.com"
-    description: "Open-source, free platform to deploy apps, expose localhost (tunnels) & run databases"
+    description: "Deployzy CLI — deploy apps, expose localhost (tunnels) & manage databases"
     license: "MIT"
     install: |
       bin.install "deployzy"
@@ -87,14 +64,11 @@ checksum:
 release:
   github:
     owner: jams24
-    name: deployzy
+    name: deployzy-cli
   draft: false
   prerelease: auto
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
+  # The public repo's history is one sync commit per release, so its
+  # commit log carries no useful changelog.
+  disable: true

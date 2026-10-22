@@ -28,16 +28,16 @@ export const metadata: Metadata = {
     template: "%s | Deployzy",
   },
   description:
-    "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, Redis, MongoDB, MySQL — bring your own VPS. The open-source Railway + ngrok + Supabase alternative.",
+    "Deploy apps from GitHub, tunnel your localhost, attach managed Postgres, Redis, MongoDB, MySQL — or bring your own VPS. The Railway + ngrok + Supabase alternative with a generous free tier.",
   keywords: [
     "railway alternative",
     "heroku alternative",
     "ngrok alternative",
     "deploy nodejs",
-    "self-hosted deployment",
+    "bring your own server",
     "managed postgresql",
     "BYOC",
-    "open source PaaS",
+    "PaaS",
     "deployzy",
   ],
   metadataBase: new URL("https://deployzy.com"),
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     url: "https://deployzy.com",
     title: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
     description:
-      "The open-source Railway + ngrok + Supabase alternative. Deploy apps from GitHub, manage databases, and tunnel localhost — all on your own VPS.",
+      "The Railway + ngrok + Supabase alternative. Deploy apps from GitHub, manage databases, and tunnel localhost — on our cloud or your own VPS.",
     siteName: "Deployzy",
     images: [
       {
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
     creator: "@itsjamsltn",
     title: "Deployzy — Deploy Apps, Tunnel Localhost, Manage Databases",
     description:
-      "Open-source Railway + ngrok + Supabase alternative. Deploy from GitHub, manage databases, tunnel localhost — on your own VPS.",
+      "Railway + ngrok + Supabase alternative. Deploy from GitHub, manage databases, tunnel localhost — on our cloud or your own VPS.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -102,7 +102,7 @@ export default function RootLayout({
                 url: "https://deployzy.com",
                 logo: "https://deployzy.com/icon-512.png",
                 description:
-                  "Open-source Railway + ngrok + Supabase alternative — deploy apps, tunnel localhost, and manage databases on your own VPS.",
+                  "Railway + ngrok + Supabase alternative — deploy apps, tunnel localhost, and manage databases on our cloud or your own VPS.",
                 sameAs: ["https://x.com/itsjamsltn"],
               },
               {

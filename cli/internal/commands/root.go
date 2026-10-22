@@ -18,9 +18,9 @@ var (
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "deployzy",
-		Short: "Deployzy — expose your local servers to the internet",
-		Long: `Deployzy is an open-source tunnel that exposes local servers to the internet.
-Similar to ngrok, but open source and self-hostable.
+		Short: "Deployzy — deploy apps and expose your local servers to the internet",
+		Long: `Deployzy deploys apps and exposes local servers to the internet through
+secure tunnels — like ngrok and Railway in one CLI. https://deployzy.com
 
 Examples:
   deployzy http 8080              # HTTP tunnel to localhost:8080

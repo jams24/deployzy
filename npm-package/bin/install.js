@@ -10,7 +10,7 @@ const zlib = require("zlib");
 // Track this package's own version → downloads the matching vX.Y.Z release, so a
 // version bump + tag automatically points the wrapper at the right binaries.
 const VERSION = require("../package.json").version;
-const GITHUB_REPO = "jams24/deployzy";
+const GITHUB_REPO = "jams24/deployzy-cli";
 
 function getPlatform() {
   const platform = os.platform();
@@ -178,8 +178,8 @@ async function install() {
     console.error(`Failed to download deployzy: ${err.message}`);
     console.error("");
     console.error("You can install manually:");
-    console.error("  go install github.com/jams24/deployzy/cli/cmd/deployzy@latest");
-    console.error("  or download from: https://github.com/jams24/deployzy/releases");
+    console.error("  curl -fsSL https://raw.githubusercontent.com/jams24/deployzy-cli/main/install.sh | sh");
+    console.error("  or download from: https://github.com/jams24/deployzy-cli/releases");
     process.exit(1);
   }
 }

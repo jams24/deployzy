@@ -1,0 +1,8 @@
+# Build output
+dist/
+node_modules/
+__pycache__/
+*.egg-info/
+/deployzy
+*.exe
+.DS_Store

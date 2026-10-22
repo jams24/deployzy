@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-brew tap deployzy/tap https://github.com/jams24/deployzy
+brew tap jams24/deployzy  # live tap: github.com/jams24/homebrew-deployzy
 brew install deployzy/tap/serverme
 ```
 

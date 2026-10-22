@@ -30,7 +30,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://deployzy.com"
-Repository = "https://github.com/jams24/deployzy"
+Repository = "https://github.com/jams24/deployzy-cli"
 Documentation = "https://deployzy.com/docs/sdks/python"
 
 [tool.setuptools.packages.find]
