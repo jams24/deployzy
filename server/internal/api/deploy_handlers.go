@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -942,7 +943,13 @@ func (s *Server) handleGetDeployLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs, _ := s.db.GetDeployLogs(r.Context(), projectID, 200)
+	// The page groups lines into deploys, so it asks for enough history to
+	// cover several whole deploys rather than cutting the oldest one mid-way.
+	limit := 200
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, 2000)
+	}
+	logs, _ := s.db.GetDeployLogs(r.Context(), projectID, limit)
 	if logs == nil {
 		writeJSON(w, http.StatusOK, []struct{}{}); return
 	}

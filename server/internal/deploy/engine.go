@@ -1344,7 +1344,7 @@ func (e *Engine) handleStoppedContainer(ctx context.Context, runner *Runner, p *
 		if !seen || time.Since(last.(time.Time)) > time.Hour {
 			if _, serr := runner.Run(ctx, "docker", "start", containerName); serr == nil {
 				autoRestarts.Store(p.ID, time.Now())
-				e.logMsg(ctx, p.ID, "Container was stopped from outside the app (most likely a server or Docker restart) and has been restarted automatically.\n"+x.describe(), "deploy")
+				e.logMsg(ctx, p.ID, "Container was stopped from outside the app (most likely a server or Docker restart) and has been restarted automatically.\n"+x.describe(), "event")
 				e.log.Warn().Str("project", fresh.Name).Str("container", containerName).Int("exit", x.ExitCode).Msg("crash sweep: restarted externally stopped container")
 				return
 			}

@@ -211,10 +211,12 @@ func (e *Engine) WakeIfSleeping(projectID string, port int) error {
 			resp.Body.Close()
 			e.idle.setSleeping(projectID, false)
 			e.NoteRequest(projectID)
+			took := time.Since(deadline.Add(-wakeTimeout)).Round(100 * time.Millisecond)
 			go func() {
 				c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				_ = e.db.SetProjectSleeping(c, projectID, false)
+				e.db.AddDeployLog(c, projectID, fmt.Sprintf("Woke up for an incoming request (ready in %s).", took), "event")
 			}()
 			e.log.Info().Str("project", projectID).Bool("remote", runner.IsRemote()).Msg("woke idle project")
 			return nil
@@ -397,6 +399,9 @@ func (e *Engine) sleepBatch(ctx context.Context, runner *Runner, cands []db.Slee
 		if err := e.db.SetProjectSleeping(ctx, c.ID, true); err != nil {
 			e.log.Error().Err(err).Str("project", c.ID).Msg("idle sweeper: mark sleeping failed")
 		}
+		// Recorded in the project's logs so a stopped container is never a
+		// mystery to its owner (it used to show only in our server journal).
+		e.db.AddDeployLog(ctx, c.ID, fmt.Sprintf("Asleep — no traffic for %d minutes. The next visit wakes it automatically (usually a few seconds).", int(idleThreshold/time.Minute)), "event")
 		slept++
 	}
 	// Whatever is left in byName didn't stop — it's still running, not asleep.

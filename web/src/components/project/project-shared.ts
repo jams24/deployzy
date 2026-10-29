@@ -29,6 +29,7 @@ export interface Project {
   last_deploy_at: string | null; created_at: string;
   worker_server_id?: string | null;
   deploy_source?: string; // "git" | "upload" | "image"
+  container_id?: string;
 }
 
 export interface BuildConfig {

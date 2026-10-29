@@ -6,28 +6,29 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Loader2, ScrollText, Terminal, TerminalSquare } from "lucide-react";
+import { ChevronDown, ScrollText, Terminal, TerminalSquare } from "lucide-react";
 import { TerminalModal } from "@/components/terminal-modal";
 import { useProject } from "@/components/project/project-context";
 import { API, headers, type DeployLog, type LiveLog } from "@/components/project/project-shared";
+import { DeployLogConsole } from "@/components/project/deploy-log-console";
 
 type Mode = "deploy" | "live";
 
 export default function ProjectLogsPage() {
   const { project: p } = useProject();
+  // A crashed or sleeping project still has its (stopped) container, and
+  // `docker logs` on it shows the output from right before it stopped.
+  const hasContainer = !!p.container_id && (p.status === "running" || p.status === "crashed");
   const [mode, setMode] = useState<Mode>("deploy");
   const [terminalOpen, setTerminalOpen] = useState(false);
 
   // ── Deploy logs (polled) ──
   const [logs, setLogs] = useState<DeployLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
-  const deployRef = useRef<HTMLDivElement>(null);
-  // Only auto-pin to the newest line when the user is already at the bottom, so
-  // scrolling up to read old logs isn't yanked back down on every poll.
-  const deployAtBottom = useRef(true);
 
+  // Enough history to show several whole deploys (each is ~30–60 lines).
   const loadLogs = useCallback(async () => {
-    const res = await fetch(`${API}/api/v1/projects/${p.id}/logs`, { headers: headers() });
+    const res = await fetch(`${API}/api/v1/projects/${p.id}/logs?limit=1500`, { headers: headers() });
     if (res.ok) setLogs(await res.json());
     setLoadingLogs(false);
   }, [p.id]);
@@ -50,14 +51,11 @@ export default function ProjectLogsPage() {
     return () => clearInterval(t);
   }, [p.status, loadLogs]);
 
-  useEffect(() => {
-    const el = deployRef.current;
-    if (el && deployAtBottom.current) el.scrollTop = el.scrollHeight;
-  }, [logs]);
-
   // ── Live container logs (WebSocket) ──
   const [liveLogs, setLiveLogs] = useState<LiveLog[]>([]);
   const [liveOn, setLiveOn] = useState(false);
+  // "ended" = the stream closed after connecting; "failed" = it never connected.
+  const [liveEnded, setLiveEnded] = useState<"" | "ended" | "failed">("");
   const [liveAutoscroll, setLiveAutoscroll] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
   const liveScrollRef = useRef<HTMLDivElement | null>(null);
@@ -71,10 +69,14 @@ export default function ProjectLogsPage() {
     wsRef.current = ws;
     setLiveLogs([]);
     setLiveOn(true);
+    setLiveEnded("");
+    let connected = false;
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
+        if (msg.type === "status") connected = true;
         if (msg.line !== undefined) {
+          connected = true;
           setLiveLogs((prev) => {
             const next = prev.length >= 500 ? prev.slice(-499) : prev;
             return [...next, { t: msg.t, line: msg.line }];
@@ -82,7 +84,8 @@ export default function ProjectLogsPage() {
         }
       } catch {}
     };
-    ws.onclose = () => { setLiveOn(false); wsRef.current = null; };
+    // docker logs -f returns once a stopped container's output is printed.
+    ws.onclose = () => { setLiveOn(false); setLiveEnded(connected ? "ended" : "failed"); wsRef.current = null; };
     ws.onerror = () => { setLiveOn(false); };
   }, [p.id]);
 
@@ -97,11 +100,11 @@ export default function ProjectLogsPage() {
   // effect must not do directly.
   useEffect(() => {
     const t = setTimeout(() => {
-      if (mode === "live" && p.status === "running") startLive();
+      if (mode === "live" && hasContainer) startLive();
       if (mode !== "live") stopLive();
     }, 0);
     return () => clearTimeout(t);
-  }, [mode, p.status, startLive, stopLive]);
+  }, [mode, hasContainer, startLive, stopLive]);
   useEffect(() => () => { wsRef.current?.close(); }, []);
 
   useEffect(() => {
@@ -142,45 +145,8 @@ export default function ProjectLogsPage() {
         )}
       </div>
 
-      {/* Deploy logs console */}
-      {mode === "deploy" && (
-        <div
-          ref={deployRef}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            deployAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-          }}
-          className="rounded-xl border border-white/[0.08] bg-[#0d1117] overflow-y-auto h-[62vh]"
-        >
-          <div className="border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] text-muted-foreground font-mono flex items-center gap-2 sticky top-0 z-10">
-            <ScrollText className="h-3 w-3 text-[#58a6ff]" /> <span className="text-[#c9d1d9]">Deploy Logs</span>
-            {p.status === "building" && (
-              <span className="flex items-center gap-1 text-[#d29922]"><Loader2 className="h-3 w-3 animate-spin" /> building…</span>
-            )}
-            <span className="ml-auto">kept 14 days</span>
-          </div>
-          {logs.length > 0 ? (
-            <div className="p-2 font-mono text-[11px] space-y-0.5">
-              {/* API returns newest-first; render oldest→newest so the build
-                  reads top-to-bottom like a terminal. */}
-              {[...logs].reverse().map((l, i) => (
-                <div key={i} className={`px-2 py-0.5 rounded hover:bg-white/[0.03] ${
-                  l.level === "error" ? "text-[#f85149]" :
-                  l.level === "build" ? "text-[#d29922]" :
-                  l.level === "deploy" ? "text-[#3fb950]" : "text-[#e6edf3]"
-                }`}>
-                  <span className="text-[#58a6ff] select-none">{new Date(l.created_at).toLocaleTimeString()}</span>{" "}
-                  {l.message}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-4 text-[11px] text-muted-foreground font-mono italic">
-              {loadingLogs ? "Loading logs…" : "No deploy logs yet. Logs are kept for 14 days — redeploy to generate fresh logs."}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Deploy history */}
+      {mode === "deploy" && <DeployLogConsole logs={logs} status={p.status} loading={loadingLogs} />}
 
       {/* Live container logs console */}
       {mode === "live" && (
@@ -195,7 +161,7 @@ export default function ProjectLogsPage() {
               {liveOn ? (
                 <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={stopLive} title="Stop streaming (keeps buffer)">Pause</Button>
               ) : (
-                <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={startLive} disabled={!running} title="Resume streaming">Resume</Button>
+                <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={startLive} disabled={!hasContainer} title="Resume streaming">Resume</Button>
               )}
               <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={() => setLiveLogs([])} title="Clear buffer">Clear</Button>
               <label className="flex items-center gap-1 text-[10px] text-muted-foreground select-none cursor-pointer" title="Auto-scroll to bottom on new output">
@@ -210,7 +176,7 @@ export default function ProjectLogsPage() {
               </Button>
             </div>
           </div>
-          {running ? (
+          {hasContainer ? (
             <div
               ref={liveScrollRef}
               className="p-2 font-mono text-[11px] space-y-0.5 h-[58vh] overflow-y-auto"
@@ -221,21 +187,32 @@ export default function ProjectLogsPage() {
               }}
             >
               {liveLogs.map((l, i) => (
-                <div key={i} className="px-2 py-0.5 text-[#e6edf3] hover:bg-white/[0.03] rounded">
-                  <span className="text-[#58a6ff] select-none">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span>{" "}
-                  {l.line}
+                <div key={i} className="flex gap-3 px-2 py-0.5 text-[#e6edf3] hover:bg-white/[0.03] rounded">
+                  <span className="text-[#58a6ff] select-none shrink-0 tabular-nums">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span>
+                  <span className="whitespace-pre-wrap break-words min-w-0">{l.line}</span>
                 </div>
               ))}
+              {liveEnded === "ended" && !liveOn && liveLogs.length > 0 && (
+                <div className="px-2 py-1.5 text-[#d29922] italic">
+                  {running
+                    ? "Stream ended. If the app is asleep, the lines above are its most recent output — it wakes on the next visit. Click Resume to reconnect."
+                    : "The container is stopped. The lines above are its output from right before it stopped."}
+                </div>
+              )}
               {liveLogs.length === 0 && liveOn && (
                 <div className="px-2 py-1 text-muted-foreground italic">Waiting for output…</div>
               )}
               {liveLogs.length === 0 && !liveOn && (
-                <div className="px-2 py-1 text-muted-foreground italic">Stream paused. Click Resume to start again.</div>
+                <div className="px-2 py-1 text-muted-foreground italic">
+                  {liveEnded === "failed" ? "Couldn't open the log stream. Click Resume to try again."
+                    : liveEnded === "ended" ? "This container hasn't written any output."
+                    : "Stream paused. Click Resume to start again."}
+                </div>
               )}
             </div>
           ) : (
             <div className="p-8 text-center text-[11px] text-muted-foreground font-mono italic">
-              Live logs are available while the project is running. Deploy or start it first.
+              No container yet — deploy the project to see its output here.
             </div>
           )}
         </div>
