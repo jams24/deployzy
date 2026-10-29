@@ -370,10 +370,20 @@ func (e *Engine) sleepBatch(ctx context.Context, runner *Runner, cands []db.Slee
 	if len(names) == 0 {
 		return
 	}
+	// Mark asleep BEFORE stopping. `docker stop` takes up to -t seconds, and the
+	// crash sweeper treats an exited container that isn't marked asleep as a
+	// crash — marking afterwards let it flag (and take offline) healthy apps that
+	// were merely being slept. Undone below for anything that didn't stop.
+	for _, c := range byName {
+		e.idle.setSleeping(c.ID, true)
+	}
 	stopCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	out, err := runner.RunShell(stopCtx, "docker stop -t 5 "+strings.Join(names, " ")+" 2>/dev/null; true")
 	if err != nil {
+		for _, c := range byName {
+			e.idle.setSleeping(c.ID, false)
+		}
 		e.log.Warn().Err(err).Str("host", runner.Host()).Msg("idle sweeper: batch docker stop failed")
 		return
 	}
@@ -384,11 +394,14 @@ func (e *Engine) sleepBatch(ctx context.Context, runner *Runner, cands []db.Slee
 			continue
 		}
 		delete(byName, c.ContainerName) // count each once
-		e.idle.setSleeping(c.ID, true)
 		if err := e.db.SetProjectSleeping(ctx, c.ID, true); err != nil {
 			e.log.Error().Err(err).Str("project", c.ID).Msg("idle sweeper: mark sleeping failed")
 		}
 		slept++
+	}
+	// Whatever is left in byName didn't stop — it's still running, not asleep.
+	for _, c := range byName {
+		e.idle.setSleeping(c.ID, false)
 	}
 	if slept > 0 {
 		e.log.Info().Int("count", slept).Str("host", runner.Host()).Msg("slept idle projects")

@@ -1220,18 +1220,150 @@ func (e *Engine) SweepCrashedContainers(ctx context.Context) {
 			if state != "exited" && state != "dead" {
 				continue
 			}
-			logs := ""
-			if lout, lerr := runner.RunShell(ctx, "docker logs --tail 5 "+containerName+" 2>&1"); lerr == nil {
-				logs = strings.TrimSpace(string(lout))
-			}
-			e.db.UpdateProjectStatus(ctx, p.ID, "crashed", p.ContainerID, p.ContainerPort)
-			e.logMsg(ctx, p.ID, "Container crashed and exhausted its restart budget (5 failed starts). Marked as crashed — check logs and redeploy after fixing. Last output:\n"+logs, "deploy")
-			e.log.Warn().Str("project", p.Name).Str("container", containerName).Msg("crash sweep: marked project crashed")
-			// Notify the owner (Railway-style). Fires once: the project leaves
-			// the 'running' set after this, so the sweep won't re-email it.
-			go e.sendDeployFailedEmail(p, logs, fmt.Sprintf("Your app crashed — %s is offline", p.Name))
+			e.handleStoppedContainer(ctx, runner, p, containerName)
 		}
 	}
+}
+
+// containerExit is how a stopped container ended, read from docker inspect.
+type containerExit struct {
+	ID           string
+	ExitCode     int
+	OOMKilled    bool
+	RestartCount int
+	StartedAt    time.Time
+	FinishedAt   time.Time
+	Error        string
+	MemoryBytes  int64
+}
+
+func inspectExit(ctx context.Context, runner *Runner, name string) (*containerExit, error) {
+	out, err := runner.RunShell(ctx, "docker inspect -f '{{.Id}}|{{.State.ExitCode}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.HostConfig.Memory}}|{{.State.Error}}' "+shellQuote(name)+" 2>/dev/null")
+	if err != nil {
+		return nil, err
+	}
+	f := strings.SplitN(strings.TrimSpace(string(out)), "|", 8)
+	if len(f) < 8 {
+		return nil, fmt.Errorf("unexpected inspect output %q", strings.TrimSpace(string(out)))
+	}
+	x := &containerExit{ID: f[0], OOMKilled: f[2] == "true", Error: f[7]}
+	x.ExitCode, _ = strconv.Atoi(f[1])
+	x.RestartCount, _ = strconv.Atoi(f[3])
+	x.StartedAt, _ = time.Parse(time.RFC3339Nano, f[4])
+	x.FinishedAt, _ = time.Parse(time.RFC3339Nano, f[5])
+	x.MemoryBytes, _ = strconv.ParseInt(f[6], 10, 64)
+	return x, nil
+}
+
+// restartBudget mirrors the `--restart on-failure:5` every app runs with.
+const restartBudget = 5
+
+// externalStop reports whether the process was ended by a signal from outside
+// the app (SIGTERM 143 / SIGKILL 137 without an OOM kill) before Docker's
+// restart policy ever kicked in — e.g. a host reboot or a Docker restart,
+// after which on-failure containers are not brought back.
+func (x *containerExit) externalStop() bool {
+	return !x.OOMKilled && x.RestartCount == 0 && (x.ExitCode == 143 || x.ExitCode == 137)
+}
+
+// describe is the owner-facing explanation of why the container stopped.
+func (x *containerExit) describe() string {
+	var b strings.Builder
+	switch {
+	case x.OOMKilled:
+		fmt.Fprintf(&b, "Killed for running out of memory")
+		if x.MemoryBytes > 0 {
+			fmt.Fprintf(&b, " (limit %d MB)", x.MemoryBytes/(1<<20))
+		}
+		b.WriteString(". Reduce memory use or move to a plan with more memory.")
+	case x.RestartCount >= restartBudget:
+		fmt.Fprintf(&b, "Crashed %d times in a row (restarted automatically %d times), so it was stopped.", x.RestartCount+1, x.RestartCount)
+	case x.ExitCode == 0:
+		b.WriteString("The app's process exited on its own (exit code 0). A web app must keep running — check that your start command starts a server rather than a one-off script.")
+	case x.ExitCode == 143:
+		b.WriteString("Stopped by SIGTERM from outside the app (exit code 143).")
+	case x.ExitCode == 137:
+		b.WriteString("Killed by SIGKILL from outside the app (exit code 137), not by the app's memory limit.")
+	default:
+		fmt.Fprintf(&b, "Exited with code %d.", x.ExitCode)
+	}
+	fmt.Fprintf(&b, "\nExit code: %d · OOM-killed: %t · Automatic restarts: %d/%d", x.ExitCode, x.OOMKilled, x.RestartCount, restartBudget)
+	if !x.StartedAt.IsZero() && !x.FinishedAt.IsZero() && x.FinishedAt.After(x.StartedAt) {
+		fmt.Fprintf(&b, " · Last run: %s (stopped %s UTC)", x.FinishedAt.Sub(x.StartedAt).Round(time.Second), x.FinishedAt.UTC().Format("2006-01-02 15:04:05"))
+	}
+	if x.Error != "" {
+		fmt.Fprintf(&b, "\nDocker error: %s", x.Error)
+	}
+	return b.String()
+}
+
+// autoRestarts limits recovery from external stops to one per project per
+// hour, so something that keeps killing an app ends up reported as a crash
+// instead of being restarted forever.
+var autoRestarts sync.Map // projectID → time.Time of last auto-restart
+
+// handleStoppedContainer decides what an exited/dead container means and acts:
+// skip it when it's ours (asleep, mid-deploy, a replaced blue-green container),
+// restart it after an external stop, otherwise mark the project crashed with
+// the real exit reason and the app's last output persisted in its logs.
+func (e *Engine) handleStoppedContainer(ctx context.Context, runner *Runner, p *db.Project, containerName string) {
+	// Re-check with fresh state: the project list was read before `docker ps`.
+	if e.idle != nil && e.idle.isSleeping(p.ID) {
+		return
+	}
+	if v, ok := e.deployLocks.Load(p.ID); ok {
+		mu := v.(*sync.Mutex)
+		if !mu.TryLock() {
+			return // a deploy is swapping containers right now
+		}
+		mu.Unlock()
+	}
+	fresh, err := e.db.GetProject(ctx, p.ID)
+	if err != nil || fresh == nil || fresh.Status != "running" {
+		return
+	}
+	x, err := inspectExit(ctx, runner, containerName)
+	if err != nil {
+		e.log.Warn().Err(err).Str("container", containerName).Msg("crash sweep: inspect failed")
+		return
+	}
+	// Blue-green cutover: the old container is stopped before it's removed and
+	// the new one renamed in. If the stopped container isn't the one the
+	// project currently runs, it's the replaced version, not a crash.
+	if fresh.ContainerID != "" && !strings.HasPrefix(x.ID, fresh.ContainerID) {
+		return
+	}
+
+	logs := ""
+	if lout, lerr := runner.RunShell(ctx, "docker logs --tail 40 --timestamps "+shellQuote(containerName)+" 2>&1"); lerr == nil {
+		logs = strings.TrimSpace(string(lout))
+	}
+
+	if x.externalStop() {
+		last, seen := autoRestarts.Load(p.ID)
+		if !seen || time.Since(last.(time.Time)) > time.Hour {
+			if _, serr := runner.Run(ctx, "docker", "start", containerName); serr == nil {
+				autoRestarts.Store(p.ID, time.Now())
+				e.logMsg(ctx, p.ID, "Container was stopped from outside the app (most likely a server or Docker restart) and has been restarted automatically.\n"+x.describe(), "deploy")
+				e.log.Warn().Str("project", fresh.Name).Str("container", containerName).Int("exit", x.ExitCode).Msg("crash sweep: restarted externally stopped container")
+				return
+			}
+		}
+	}
+
+	reason := x.describe()
+	e.db.UpdateProjectStatus(ctx, p.ID, "crashed", fresh.ContainerID, fresh.ContainerPort)
+	msg := "App stopped and is offline. " + reason + "\nRedeploy after fixing the cause."
+	if logs != "" {
+		// Persisted here so the output survives the container being replaced
+		// by the next deploy (Live Logs only shows the current container).
+		msg += "\n\nLast output before it stopped:\n" + trimLogs(logs, 4000)
+	}
+	e.logMsg(ctx, p.ID, msg, "error")
+	e.log.Warn().Str("project", fresh.Name).Str("container", containerName).Int("exit", x.ExitCode).Bool("oom", x.OOMKilled).Int("restarts", x.RestartCount).Msg("crash sweep: marked project crashed")
+	// Notify the owner (Railway-style). Fires once: the project leaves the
+	// 'running' set after this, so the sweep won't re-email it.
+	go e.sendDeployFailedEmail(fresh, reason+"\n\n"+logs, fmt.Sprintf("Your app crashed — %s is offline", fresh.Name))
 }
 
 // LogStreamCmd returns an *exec.Cmd (not yet started) that streams live
