@@ -1,6 +1,9 @@
 package deploy
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -75,6 +78,8 @@ func TestClassifyProxyHit(t *testing.T) {
 		want    proxyVerdict
 		says    []string
 	}{
+		{"vless written in the app's own JS (node-ws)", "src:vless-ws@index.js,bin:nezhahq/agent@-", 8080, verdictServer,
+			[]string{"VLESS-over-WebSocket server written in the app's own code (index.js)", "app's public port", "Nezha"}},
 		{"vless on the app port", "bin:xtls/xray-core@*:3000;", 3000, verdictServer,
 			[]string{"Xray on *:3000", "app's public port"}},
 		{"argo kit: sing-box public + tunnel + nezha",
@@ -114,5 +119,50 @@ func TestProxyKitEnvHit(t *testing.T) {
 	}
 	if got := proxyKitEnvHit(map[string]string{"S5_PORT": "1080", "DATABASE_URL": "x"}); got != "" {
 		t.Errorf("a single generic knob should not block, got %q", got)
+	}
+}
+
+// Runs the real shell fragment against fixtures shaped like what we found in
+// production (2026-11-09) and like legit apps that must not match.
+func TestVlessSourceCmd(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	write := func(dir, name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(dir string) string {
+		out, _ := exec.Command("bash", "-c", vlessSourceCmd(shellQuote(dir))).Output()
+		return strings.TrimSpace(string(out))
+	}
+
+	kit := t.TempDir() // obfuscated node-ws: identifiers renamed, protocol isn't
+	write(kit, "index.js", "const { WebSocketServer } = require('ws');\nconst net = require('net');\n"+
+		"const p = 'vl' + 'ess';\nw.on('connection', s => s.once('message', m => {\n  const id = m.slice(1, 17);\n"+
+		"  const n = m.readUInt8(17);\n  const r = net.createConnection({ host: h, port: m.readUInt16BE(o) });\n}));\n")
+	if got := run(kit); !strings.HasSuffix(got, "index.js") {
+		t.Errorf("node-ws kit not detected, got %q", got)
+	}
+
+	py := t.TempDir() // FastAPI relay
+	write(py, "relay_vless.py", "from fastapi import WebSocket\nimport asyncio\nasync def relay(ws: WebSocket):\n"+
+		"    data = await ws.receive_bytes()\n    uid = data[1:17]\n    r, w = await asyncio.open_connection(host, port)\n")
+	if got := run(py); !strings.HasSuffix(got, "relay_vless.py") {
+		t.Errorf("python relay not detected, got %q", got)
+	}
+
+	legit := t.TempDir()
+	write(legit, "chat.js", "const { WebSocketServer } = require('ws');\nconst net = require('net');\n"+
+		"wss.on('connection', s => s.send(name.slice(1, 5)));\nconst db = net.createConnection(5432);\n")
+	write(legit, "util.py", "def short(s):\n    return s[1:17]\n") // slice but no dial, no websocket
+	write(legit, "proxy.js", "const http = require('http');\nconst c = net.connect(80, host); // plain HTTP proxy, no UUID handshake\n")
+	if err := os.MkdirAll(filepath.Join(legit, "node_modules", "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(legit, "node_modules", "lib"), "vless.js", "WebSocket; x.slice(1, 17); net.createConnection()") // deps are skipped
+	if got := run(legit); got != "" {
+		t.Errorf("legit app flagged: %q", got)
 	}
 }

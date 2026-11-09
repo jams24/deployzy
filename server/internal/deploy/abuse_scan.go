@@ -42,6 +42,28 @@ var proxyKitEnvKeys = []string{"NEZHA_SERVER", "NEZHA_KEY", "NEZHA_PORT", "ARGO_
 // read from /proc/<pid>/exe even after the kit deletes the file on disk.
 const proxyBinarySigs = `github.com/xtls/xray-core|github.com/v2fly/v2ray-core|github.com/sagernet/sing-box|github.com/apernet/hysteria|github.com/cloudflare/cloudflared|github.com/nezhahq/agent|github.com/go-gost/|github.com/ginuerzh/gost`
 
+// Script kits skip the binaries entirely: a VLESS server written in the app's
+// own JavaScript or Python ("node-ws", FastAPI relays), served over WebSocket
+// on the app's public port, with identifiers obfuscated so nothing says
+// "vless" or "xray". What can't be renamed is the protocol: the handshake
+// reads the client UUID from bytes 1..17 of the first frame and then dials the
+// requested host over raw TCP. A file with that slice, a raw TCP dial, and a
+// WebSocket server is a VLESS server; panels and ordinary WS apps have no
+// reason to contain all three.
+const (
+	vlessUUIDSlice  = `slice\(1, ?17\)|subarray\(1, ?17\)|\[1:17\]`
+	rawDialPattern  = `createConnection|net\.connect|open_connection|create_connection`
+	appSourceFilter = `--include='*.js' --include='*.mjs' --include='*.cjs' --include='*.ts' --include='*.py' ` +
+		`--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=dist --exclude-dir=.venv --exclude-dir=site-packages`
+)
+
+// vlessSourceCmd prints the first file under dir (a shell expression) that
+// implements a VLESS-over-WebSocket server, or nothing.
+func vlessSourceCmd(dir string) string {
+	return `grep -rlsE ` + appSourceFilter + ` '` + vlessUUIDSlice + `' ` + dir + ` 2>/dev/null | head -5 | ` +
+		`while IFS= read -r f; do grep -qE '` + rawDialPattern + `' "$f" && grep -qi websocket "$f" && { echo "$f"; break; }; done`
+}
+
 // proxyKitProcPattern matches process command lines of the kit's components.
 const proxyKitProcPattern = `edge-ip-version|tunnel .*run --token|xray|v2ray|sing-box|hysteria|nezha|-s [a-z0-9.-]+:443 -p `
 
@@ -86,6 +108,13 @@ func (e *Engine) proxyKitGuard(ctx context.Context, runner *Runner, project *db.
 		if line := strings.TrimSpace(string(out)); line != "" {
 			f, sig, _ := strings.Cut(line, "|")
 			hit = fmt.Sprintf("binary %s (%s)", strings.TrimPrefix(strings.TrimPrefix(f, buildCtx), "/"), strings.TrimPrefix(sig, "github.com/"))
+		}
+	}
+	if hit == "" && buildCtx != "" {
+		// VLESS server written in the app's own JS/Python (node-ws etc.).
+		out, _ := runner.RunShell(ctx, vlessSourceCmd(shellQuote(buildCtx))+"; true")
+		if f := strings.TrimSpace(string(out)); f != "" {
+			hit = "VLESS server code in " + strings.TrimPrefix(strings.TrimPrefix(f, buildCtx), "/")
 		}
 	}
 	if hit == "" {
@@ -162,6 +191,9 @@ var proxyScanScript = `for c in $(docker ps -q --filter name=^sm-); do ` +
 	`[ -z "$got" ] && { got=1; lst=$(nsenter -t $p -n ss -Htulnp 2>/dev/null | awk '{for(i=6;i<=NF;i++){n=split($i,a,"pid=");for(j=2;j<=n;j++){split(a[j],q,",");print q[1]" "$5}}}'); }; ` +
 	`a=$(echo "$lst" | awk -v p=$p '$1==p{print $2}' | sort -u | tr '\n' ';'); ` +
 	`b="${b}bin:${s#github.com/}@${a:--},"; done; ` +
+	`wd=$(docker inspect -f '{{.Config.WorkingDir}}' "$c" 2>/dev/null); case "$wd" in ""|/) wd=/app ;; esac; ` +
+	`if [ -n "$p0" ]; then R="/proc/$p0/root$wd"; sf=$(` + vlessSourceCmd(`"$R"`) + `); ` +
+	`[ -n "$sf" ] && b="${b}src:vless-ws@${sf#$R/},"; fi; ` +
 	`[ -z "$m$b" ] && continue; est=""; rx=""; tx=""; ` +
 	`if [ -n "$b" ] && [ -n "$p0" ]; then est=$(nsenter -t $p0 -n ss -Htn state established 2>/dev/null | wc -l); ` +
 	`set -- $(awk '/eth0:/{print $2, $10}' /proc/$p0/net/dev 2>/dev/null); rx=$1; tx=$2; fi; ` +
@@ -261,6 +293,11 @@ func classifyProxyHit(h proxyHit, appPort int) proxyFinding {
 		tok = strings.TrimSpace(tok)
 		if strings.Contains(tok, "edge-ip-version") || strings.Contains(tok, "run --token") {
 			tunnel = true
+		}
+		if file, ok := strings.CutPrefix(tok, "src:vless-ws@"); ok {
+			servingOn = append(servingOn, "a VLESS-over-WebSocket server written in the app's own code ("+file+")")
+			viaAppPort = true
+			continue
 		}
 		mod, ok := strings.CutPrefix(tok, "bin:")
 		if !ok {
