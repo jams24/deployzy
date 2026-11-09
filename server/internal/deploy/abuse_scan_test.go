@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,68 @@ func TestProxyKitProcPattern(t *testing.T) {
 		if re.MatchString(l) {
 			t.Errorf("should NOT match: %s", l)
 		}
+	}
+}
+
+func TestParseProxyScanEvidence(t *testing.T) {
+	hits := parseProxyScan("SMHIT /sm-6247e037|bin:xtls/xray-core@*:3000;,|2|841318777|677796578\n")
+	if len(hits) != 1 {
+		t.Fatalf("want 1 hit, got %+v", hits)
+	}
+	h := hits[0]
+	if h.signatures != "bin:xtls/xray-core@*:3000;" || h.established != 2 || h.rxBytes != 841318777 || h.txBytes != 677796578 {
+		t.Fatalf("bad parse: %+v", h)
+	}
+}
+
+// Cases are the shapes seen on our hosts (2026-11-09) plus the legit ones the
+// scanner must leave alone: panels, proxy clients, plain cloudflared.
+func TestClassifyProxyHit(t *testing.T) {
+	cases := []struct {
+		name    string
+		sigs    string
+		appPort int
+		want    proxyVerdict
+		says    []string
+	}{
+		{"vless on the app port", "bin:xtls/xray-core@*:3000;", 3000, verdictServer,
+			[]string{"Xray on *:3000", "app's public port"}},
+		{"argo kit: sing-box public + tunnel + nezha",
+			"edge-ip-version,bin:sagernet/sing-box@0.0.0.0:59499;*:8001;,bin:cloudflare/cloudflared@127.0.0.1:20241;,bin:nezhahq/agent@-", 3000, verdictServer,
+			[]string{"sing-box on *:8001", "Nezha"}},
+		{"proxy on loopback behind a tunnel", "bin:sagernet/sing-box@127.0.0.1:8001;,bin:cloudflare/cloudflared@127.0.0.1:20241;", 3000, verdictServer,
+			[]string{"exposed through a Cloudflare tunnel"}},
+		{"nezha agent alone", "bin:nezhahq/agent@-", 8080, verdictKitAgent,
+			[]string{"not a VPN", "Review"}},
+		{"3x-ui panel, no inbounds yet (xray API on loopback)", "xray,bin:xtls/xray-core@127.0.0.1:62789;", 2053, verdictNone, nil},
+		{"app routes its own traffic via a local xray client", "bin:xtls/xray-core@127.0.0.1:10808;[::1]:10808;", 3000, verdictNone, nil},
+		{"plain cloudflared tunnel", "edge-ip-version,bin:cloudflare/cloudflared@127.0.0.1:20241;", 3000, verdictNone, nil},
+		{"name-only match", "xray", 3000, verdictNone, nil},
+		{"old-format evidence without listen info", "bin:xtls/xray-core", 3000, verdictNone, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := classifyProxyHit(proxyHit{signatures: c.sigs, rxBytes: 5 << 20, txBytes: 7 << 20}, c.appPort)
+			if f.verdict != c.want {
+				t.Fatalf("verdict = %v, want %v (summary %q)", f.verdict, c.want, f.summary)
+			}
+			for _, s := range c.says {
+				if !strings.Contains(f.summary, s) {
+					t.Errorf("summary missing %q: %s", s, f.summary)
+				}
+			}
+		})
+	}
+}
+
+func TestProxyKitEnvHit(t *testing.T) {
+	if proxyKitEnvHit(map[string]string{"NEZHA_SERVER": "x"}) == "" {
+		t.Error("NEZHA_SERVER alone should block")
+	}
+	if proxyKitEnvHit(map[string]string{"HY2_PORT": "1", "TUIC_PORT": "2"}) == "" {
+		t.Error("two kit port knobs should block")
+	}
+	if got := proxyKitEnvHit(map[string]string{"S5_PORT": "1080", "DATABASE_URL": "x"}); got != "" {
+		t.Errorf("a single generic knob should not block, got %q", got)
 	}
 }

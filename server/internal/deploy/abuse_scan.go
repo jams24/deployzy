@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,17 +64,15 @@ func (e *Engine) proxyKitGuard(ctx context.Context, runner *Runner, project *db.
 			return nil
 		}
 	}
-	hit := ""
-	for _, k := range proxyKitEnvKeys {
-		if _, ok := project.EnvVars[k]; ok {
-			hit = "environment variable " + k
-			break
-		}
-	}
+	hit := proxyKitEnvHit(project.EnvVars)
 	if hit == "" && buildCtx != "" {
+		// A file must carry at least two different kit keys: kits ship a
+		// config block (NEZHA_SERVER + NEZHA_KEY + ARGO_DOMAIN …), while a
+		// legit project that mentions one name in passing deploys normally.
+		keys := strings.Join(proxyKitEnvKeys, "|")
 		out, _ := runner.RunShell(ctx, fmt.Sprintf(
-			`grep -rIlE --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.venv -m1 '%s' %s 2>/dev/null | head -1; true`,
-			strings.Join(proxyKitEnvKeys, "|"), shellQuote(buildCtx)))
+			`grep -rIlE --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.venv '%s' %s 2>/dev/null | head -20 | while IFS= read -r f; do n=$(grep -oE '%s' "$f" 2>/dev/null | sort -u | wc -l); [ "$n" -ge 2 ] && { echo "$f"; break; }; done; true`,
+			keys, shellQuote(buildCtx), keys))
 		if f := strings.TrimSpace(string(out)); f != "" {
 			hit = "file " + strings.TrimPrefix(strings.TrimPrefix(f, buildCtx), "/")
 		}
@@ -96,6 +95,24 @@ func (e *Engine) proxyKitGuard(ctx context.Context, runner *Runner, project *db.
 	e.fileProxyAbuseReport(ctx, project, "Deploy blocked: argo/proxy kit configuration found ("+hit+").")
 	e.logMsg(ctx, project.ID, "Deploy blocked: this project looks like a VPN/proxy node (argo/Nezha kit). Running proxies or tunnels isn't allowed on Deployzy's shared servers. If you believe this is a mistake, contact support@deployzy.com.", "error")
 	return fmt.Errorf("deploy blocked: proxy-node kit detected (%s)", hit)
+}
+
+// proxyKitEnvHit flags env vars only kits set: one of the Nezha/Argo
+// credentials, or two or more of the kit's port/config knobs together.
+func proxyKitEnvHit(env map[string]string) string {
+	var found []string
+	for _, k := range proxyKitEnvKeys {
+		if _, ok := env[k]; ok {
+			if k == "NEZHA_SERVER" || k == "NEZHA_KEY" || k == "ARGO_AUTH" {
+				return "environment variable " + k
+			}
+			found = append(found, k)
+		}
+	}
+	if len(found) >= 2 {
+		return "environment variables " + strings.Join(found, ", ")
+	}
+	return ""
 }
 
 // StartAbuseScanner scans running containers on every platform host for
@@ -121,23 +138,34 @@ func (e *Engine) StartAbuseScanner(ctx context.Context) {
 	}()
 }
 
-// proxyScanScript lists "SMHIT <container>|<signatures>" for every app
-// container with a matching process. Two signals per container:
-//   - command lines matching proxyKitProcPattern
-//   - "bin:<module>" for any process whose executable embeds a proxy module
-//     path. System executables (/usr, /bin, /sbin, /lib) are skipped unless
-//     deleted, so node/python/sh aren't read; kit binaries live in app or
-//     hidden dirs and are usually deleted after launch.
+// proxyScanScript prints one line per app container with a proxy-like process:
 //
-// `docker top` requires a pid column.
+//	SMHIT <container>|<signatures>|<established conns>|<rx bytes>|<tx bytes>
+//
+// Signatures are command-line matches of proxyKitProcPattern plus
+// "bin:<module>@<listen addrs>" for every process whose executable embeds a
+// proxy module path, with the sockets that process listens on ("-" if none).
+// The listen addresses are what tell a VPN server (a proxy core accepting
+// connections) apart from a panel or an app that merely uses a proxy.
+//
+// Executables in system dirs (/usr, /bin, /sbin, /lib) are only read when
+// their command line already looks like a proxy (e.g. /usr/local/bin/xray), so
+// node/python aren't grepped; kit binaries live in app or hidden dirs and are
+// usually deleted after launch. `docker top` requires a pid column.
 var proxyScanScript = `for c in $(docker ps -q --filter name=^sm-); do ` +
 	`pids=$(docker top "$c" -eo pid 2>/dev/null | tail -n +2); ` +
 	`m=$(docker top "$c" -eo pid,args 2>/dev/null | grep -oE '` + proxyKitProcPattern + `' | sort -u | tr '\n' ','); ` +
-	`for p in $pids; do x=$(readlink /proc/$p/exe 2>/dev/null) || continue; ` +
-	`case "$x" in *deleted*) ;; /usr/*|/bin/*|/sbin/*|/lib/*) continue ;; esac; ` +
-	`b=$(grep -aoE -m1 '` + proxyBinarySigs + `' /proc/$p/exe 2>/dev/null | head -1); ` +
-	`[ -n "$b" ] && m="${m}bin:${b#github.com/},"; done; ` +
-	`[ -n "$m" ] && echo "SMHIT $(docker inspect --format '{{.Name}}' "$c")|$m"; done; true`
+	`b=""; lst=""; got=""; p0=""; ` +
+	`for p in $pids; do x=$(readlink /proc/$p/exe 2>/dev/null) || continue; [ -z "$p0" ] && p0=$p; ` +
+	`case "$x" in *deleted*) ;; /usr/*|/bin/*|/sbin/*|/lib/*) tr '\0' ' ' </proc/$p/cmdline 2>/dev/null | grep -qE '` + proxyKitProcPattern + `' || continue ;; esac; ` +
+	`s=$(grep -aoE -m1 '` + proxyBinarySigs + `' /proc/$p/exe 2>/dev/null | head -1); [ -z "$s" ] && continue; ` +
+	`[ -z "$got" ] && { got=1; lst=$(nsenter -t $p -n ss -Htulnp 2>/dev/null | awk '{for(i=6;i<=NF;i++){n=split($i,a,"pid=");for(j=2;j<=n;j++){split(a[j],q,",");print q[1]" "$5}}}'); }; ` +
+	`a=$(echo "$lst" | awk -v p=$p '$1==p{print $2}' | sort -u | tr '\n' ';'); ` +
+	`b="${b}bin:${s#github.com/}@${a:--},"; done; ` +
+	`[ -z "$m$b" ] && continue; est=""; rx=""; tx=""; ` +
+	`if [ -n "$b" ] && [ -n "$p0" ]; then est=$(nsenter -t $p0 -n ss -Htn state established 2>/dev/null | wc -l); ` +
+	`set -- $(awk '/eth0:/{print $2, $10}' /proc/$p0/net/dev 2>/dev/null); rx=$1; tx=$2; fi; ` +
+	`echo "SMHIT $(docker inspect --format '{{.Name}}' "$c")|$m$b|$est|$rx|$tx"; done; true`
 
 // AbuseScanStatus is what the admin console shows about the scanner.
 type AbuseScanStatus struct {
@@ -183,16 +211,151 @@ func (e *Engine) ScanProxyAbuseNow() bool {
 // AbuseAutoSuspendSetting is the app_settings key for automatic suspension.
 const AbuseAutoSuspendSetting = "abuse_auto_suspend"
 
-// highConfidenceProxy reports whether a hit is certain enough to act on
-// without a human: a proxy core or Nezha agent identified by its compiled-in
-// module path. A bare cloudflared tunnel is NOT enough (legit apps use it).
-func highConfidenceProxy(signatures string) bool {
-	for _, sig := range []string{"bin:xtls/xray-core", "bin:v2fly/v2ray-core", "bin:sagernet/sing-box", "bin:apernet/hysteria", "bin:nezhahq/agent"} {
-		if strings.Contains(signatures, sig) {
-			return true
+// What a scan hit actually is. Only proven behaviour is reported: a process
+// name or a bundled binary is not enough, because VPN *panels* (ours, 3x-ui
+// before any inbound is set up, Cloudflare-Worker config panels) and apps
+// that route their own traffic through a proxy are allowed.
+type proxyVerdict int
+
+const (
+	// verdictNone: name-only matches, a bare cloudflared tunnel, or a proxy
+	// core with no inbound reachable from outside (a client). Not reported.
+	verdictNone proxyVerdict = iota
+	// verdictKitAgent: a Nezha agent (the remote-control part of the argo
+	// kits) with no proxy serving. Reported for review, never auto-suspended.
+	verdictKitAgent
+	// verdictServer: a proxy core accepting connections on a public socket,
+	// or on loopback behind a tunnel — the app is a VPN/proxy server.
+	verdictServer
+)
+
+var proxyCoreNames = []struct{ module, name string }{
+	{"xtls/xray-core", "Xray"}, {"v2fly/v2ray-core", "V2Ray"}, {"sagernet/sing-box", "sing-box"},
+	{"apernet/hysteria", "Hysteria"}, {"go-gost/", "GOST"}, {"ginuerzh/gost", "GOST"},
+}
+
+type proxyFinding struct {
+	verdict proxyVerdict
+	summary string // shown in the Abuse Report; plain language for the admin
+}
+
+func isLoopbackAddr(addr string) bool {
+	a := strings.TrimPrefix(addr, "[")
+	return strings.HasPrefix(a, "127.") || strings.HasPrefix(a, "::1]") || strings.HasPrefix(a, "::ffff:127.") || a == "::1"
+}
+
+func addrPort(addr string) string {
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		return addr[i+1:]
+	}
+	return ""
+}
+
+// classifyProxyHit decides what a container is doing from its scan line.
+// appPort is the port our HTTP proxy sends the app's public traffic to.
+func classifyProxyHit(h proxyHit, appPort int) proxyFinding {
+	var cores, servingOn []string
+	tunnel, nezha, viaAppPort := false, false, false
+	loopbackOnly := map[string][]string{}
+	for _, tok := range strings.Split(h.signatures, ",") {
+		tok = strings.TrimSpace(tok)
+		if strings.Contains(tok, "edge-ip-version") || strings.Contains(tok, "run --token") {
+			tunnel = true
+		}
+		mod, ok := strings.CutPrefix(tok, "bin:")
+		if !ok {
+			continue
+		}
+		mod, addrs, _ := strings.Cut(mod, "@")
+		switch {
+		case strings.HasPrefix(mod, "cloudflare/cloudflared"):
+			tunnel = true
+			continue
+		case strings.HasPrefix(mod, "nezhahq/agent"):
+			nezha = true
+			continue
+		}
+		name := ""
+		for _, c := range proxyCoreNames {
+			if strings.HasPrefix(mod, c.module) {
+				name = c.name
+			}
+		}
+		if name == "" {
+			continue
+		}
+		cores = append(cores, name)
+		for _, a := range strings.Split(addrs, ";") {
+			if a == "" || a == "-" {
+				continue
+			}
+			if isLoopbackAddr(a) {
+				loopbackOnly[name] = append(loopbackOnly[name], a)
+				continue
+			}
+			servingOn = append(servingOn, name+" on "+a)
+			if appPort > 0 && addrPort(a) == fmt.Sprint(appPort) {
+				viaAppPort = true
+			}
 		}
 	}
-	return false
+	if len(servingOn) == 0 && tunnel {
+		for name, addrs := range loopbackOnly {
+			for _, a := range addrs {
+				servingOn = append(servingOn, name+" on "+a+" (exposed through a Cloudflare tunnel)")
+			}
+		}
+	}
+
+	traffic := ""
+	if h.rxBytes > 0 || h.txBytes > 0 {
+		traffic = fmt.Sprintf(" %d open connection(s); %s received / %s sent since the container started.",
+			h.established, fmtBytes(h.rxBytes), fmtBytes(h.txBytes))
+	}
+	if len(servingOn) > 0 {
+		s := "Acting as a VPN/proxy server: " + strings.Join(uniq(servingOn), ", ") + " is accepting connections."
+		if viaAppPort {
+			s += " That is the app's public port, so VPN traffic flows through our HTTP proxy."
+		}
+		s += traffic
+		if nezha {
+			s += " Also runs a Nezha remote-control agent."
+		}
+		return proxyFinding{verdict: verdictServer, summary: s}
+	}
+	if nezha {
+		s := "Runs a Nezha remote-control agent (the monitoring part of proxy-node kits; lets a third party run commands in the container)."
+		if len(cores) > 0 {
+			s += " A " + strings.Join(uniq(cores), "/") + " binary is running but not accepting outside connections."
+		} else {
+			s += " No proxy server is running, so on its own this is not a VPN."
+		}
+		return proxyFinding{verdict: verdictKitAgent, summary: s + " Review before acting." + traffic}
+	}
+	return proxyFinding{verdict: verdictNone}
+}
+
+func uniq(in []string) []string {
+	seen := map[string]bool{}
+	out := in[:0:0]
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func fmtBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
+	default:
+		return fmt.Sprintf("%d KB", n>>10)
+	}
 }
 
 func (e *Engine) scanProxyAbuse(ctx context.Context) {
@@ -205,7 +368,7 @@ func (e *Engine) scanProxyAbuse(ctx context.Context) {
 	abuseScanState = AbuseScanStatus{Running: true, LastStarted: &now, LastFinished: abuseScanState.LastFinished}
 	abuseScanMu.Unlock()
 
-	hosts, hits, filed, suspended := 0, 0, 0, 0
+	hosts, hits, filed, suspended, ignored := 0, 0, 0, 0, 0
 	defer func() {
 		done := time.Now()
 		next := done.Add(abuseScanInterval)
@@ -257,9 +420,17 @@ func (e *Engine) scanProxyAbuse(ctx context.Context) {
 			if err != nil || full == nil {
 				continue
 			}
+			f := classifyProxyHit(hit, full.ContainerPort)
+			if f.verdict == verdictNone {
+				// Name-only match, bare tunnel, or a proxy used as a client:
+				// allowed. Logged so a miss can be traced.
+				ignored++
+				e.log.Info().Str("project", full.ID).Str("signatures", hit.signatures).Msg("abuse scan: proxy-like process, not serving — not reported")
+				continue
+			}
 			hits++
-			details := "Running processes match a VPN/proxy-node kit: " + hit.signatures + " (host " + r.Host() + ")."
-			if autoSuspend && highConfidenceProxy(hit.signatures) && e.autoSuspendProxy(ctx, full, details) {
+			details := f.summary + " Evidence: " + hit.signatures + " (host " + r.Host() + ")."
+			if autoSuspend && f.verdict == verdictServer && e.autoSuspendProxy(ctx, full, details) {
 				suspended++
 				filed++
 				continue
@@ -269,7 +440,7 @@ func (e *Engine) scanProxyAbuse(ctx context.Context) {
 			}
 		}
 	}
-	e.log.Info().Int("hosts", hosts).Int("hits", hits).Int("new_reports", filed).Int("auto_suspended", suspended).Msg("proxy-node abuse scan done")
+	e.log.Info().Int("hosts", hosts).Int("hits", hits).Int("not_serving", ignored).Int("new_reports", filed).Int("auto_suspended", suspended).Msg("proxy-node abuse scan done")
 }
 
 // autoSuspendProxy blocks a FREE owner and stops the project, recording an
@@ -303,7 +474,11 @@ func (e *Engine) autoSuspendProxy(ctx context.Context, p *db.Project, details st
 	return true
 }
 
-type proxyHit struct{ id8, signatures string }
+type proxyHit struct {
+	id8, signatures  string
+	established      int
+	rxBytes, txBytes int64
+}
 
 // parseProxyScan extracts main-app hits (sm-<8 hex>) from the scan output.
 func parseProxyScan(out string) []proxyHit {
@@ -313,13 +488,19 @@ func parseProxyScan(out string) []proxyHit {
 		if !ok {
 			continue
 		}
-		name, sigs, _ := strings.Cut(rest, "|")
-		name = strings.TrimPrefix(name, "/")
+		f := strings.Split(rest, "|")
+		name := strings.TrimPrefix(f[0], "/")
 		id8 := strings.TrimPrefix(name, "sm-")
-		if !strings.HasPrefix(name, "sm-") || strings.HasPrefix(name, "sm-svc-") || len(id8) != 8 {
+		if !strings.HasPrefix(name, "sm-") || strings.HasPrefix(name, "sm-svc-") || len(id8) != 8 || len(f) < 2 {
 			continue
 		}
-		hits = append(hits, proxyHit{id8: id8, signatures: strings.TrimSuffix(sigs, ",")})
+		h := proxyHit{id8: id8, signatures: strings.TrimSuffix(f[1], ",")}
+		if len(f) >= 5 {
+			h.established, _ = strconv.Atoi(strings.TrimSpace(f[2]))
+			h.rxBytes, _ = strconv.ParseInt(strings.TrimSpace(f[3]), 10, 64)
+			h.txBytes, _ = strconv.ParseInt(strings.TrimSpace(f[4]), 10, 64)
+		}
+		hits = append(hits, h)
 	}
 	return hits
 }
