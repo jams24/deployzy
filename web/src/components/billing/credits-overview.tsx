@@ -1,30 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { Circle, Gauge, MailCheck, Plus, TrendingUp, Wallet, Wand2 } from "lucide-react";
+import { Gauge, MailCheck, Plus, TrendingUp, Wallet, Wand2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { AddFundsModal } from "./add-funds-modal";
 import { useNow } from "./use-now";
 import { fmtInt, usd, type CreditsResp, type UsageDay } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Credits overview — pay-as-you-go balance hero, rolling spend stats, the
-// included-this-month meter, the 30-day daily-spend chart and the per-product
-// split. Renders honest empty states for unmetered / fresh accounts.
+// Credits overview: the pay-as-you-go balance, rolling spend, the included
+// allowance for the month, a 30-day daily-spend chart and the split by
+// product. Honest empty states for unmetered and brand-new accounts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PRODUCT_META: Record<string, { icon: typeof Wand2; chip: string; text: string }> = {
-  ai_builder:   { icon: Wand2,     chip: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
-  email_verify: { icon: MailCheck, chip: "bg-sky-500",     text: "text-sky-600 dark:text-sky-400" },
-  other:        { icon: Gauge,     chip: "bg-zinc-400",    text: "text-zinc-500" },
+const PRODUCT_META: Record<string, { icon: typeof Wand2; chip: string }> = {
+  ai_builder:   { icon: Wand2,     chip: "bg-brand" },
+  email_verify: { icon: MailCheck, chip: "bg-brand-cyan" },
+  other:        { icon: Gauge,     chip: "bg-zinc-400" },
 };
 const FALLBACK_CHIPS = ["bg-amber-500", "bg-violet-500", "bg-rose-500"];
 
 function Stat({ label, value, sub, live }: { label: string; value: string; sub?: string; live?: boolean }) {
   return (
-    <div className="rounded-xl border border-border/50 px-3 py-2.5">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`mt-0.5 text-lg font-semibold tabular-nums tracking-tight ${live ? "text-emerald-600 dark:text-emerald-400" : ""}`}>{value}</div>
-      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
+    <div className="min-w-0 bg-card p-3.5 sm:p-4">
+      <p className="truncate text-[13px] text-muted-foreground">{label}</p>
+      <p className={cn("mt-1.5 text-[19px] font-semibold leading-none tracking-tight tabular-nums transition-colors", live && "text-[var(--dz-green-strong)] dark:text-brand")}>{value}</p>
+      {sub && <p className="mt-1.5 truncate text-[12.5px] text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -59,78 +60,75 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
 
   const dayLabel = (iso: string) => iso ? new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
+  const note = unlimited
+    ? (st.unlimited && data.enabled ? "Unlimited on your account, so nothing is deducted." : "Metering is switched off right now, so usage is free.")
+    : "One balance pays for the AI builder, the agent and the email verifier.";
+
   return (
-    <>
-      {/* ── Balance + rolling totals ── */}
-      <section className="overflow-hidden rounded-2xl surface">
-        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <p className="flex items-center gap-2 eyebrow">
-            <Wallet className="h-3.5 w-3.5" /> AI &amp; email balance
-          </p>
-          <div className="flex items-center gap-2">
-            {!unlimited && (
-              <span className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${pulse ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-border/60 text-muted-foreground"}`}>
-                <Circle className={`h-1.5 w-1.5 fill-current ${pulse ? "animate-ping" : ""}`} /> Live
-              </span>
-            )}
-            {canTopUp && (
-              <button
-                onClick={() => setBuyOpen(true)}
-                className="flex items-center gap-1 rounded-lg bg-foreground px-2.5 py-1.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-85"
-              >
-                <Plus className="h-3 w-3" /> Add funds
-              </button>
-            )}
-          </div>
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 pt-3">
+        <p className="eyebrow">AI &amp; email</p>
+        {!unlimited && (
+          <span className={cn("flex items-center gap-1.5 text-[13.5px] transition-colors", pulse ? "text-[var(--dz-green-strong)] dark:text-brand" : "text-muted-foreground")}>
+            <span className={cn("live-dot", !pulse && "opacity-70")} aria-hidden /> Updates live
+          </span>
+        )}
+      </div>
 
-        <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)] lg:items-center">
-          <div>
-            <div className="flex items-end gap-2">
-              <span className="text-[40px] font-bold leading-none tracking-tight tabular-nums">
-                {unlimited ? "∞" : usd(st.available)}
-              </span>
-              <span className="mb-1 text-sm text-muted-foreground">{unlimited ? "unlimited" : "available"}</span>
+      {/* Balance + rolling totals */}
+      <section className="surface overflow-hidden rounded-[20px]">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-5">
+          <div className="flex items-start gap-3.5">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand">
+              <Wallet className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[13.5px] text-muted-foreground">{unlimited ? "Balance" : "Available balance"}</p>
+              <p className="mt-1 text-[34px] font-semibold leading-none tracking-[-0.04em] tabular-nums">
+                {unlimited ? "Unlimited" : usd(st.available)}
+              </p>
+              <p className="mt-2 max-w-sm text-[13.5px] leading-snug text-muted-foreground">{note}</p>
             </div>
-            <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
-              Pay-as-you-go for the AI builder, agent and email verifier — billed to one balance.
-              {unlimited && (st.unlimited && data.enabled ? " Unlimited on your plan." : " Metering is currently off — usage is free.")}
-            </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat label="Spent today" value={usd(usage?.spent_today ?? 0)} live={pulse} />
-            <Stat label="This month" value={usd(usage?.spent_month ?? 0)} />
-            <Stat
-              label="Included / mo"
-              value={st.free_allotment < 0 ? "∞" : usd(st.free_remaining)}
-              sub={st.free_allotment < 0 ? "unlimited" : `of ${usd(st.free_allotment)} left`}
-            />
-            <Stat label="Added funds" value={unlimited ? "∞" : usd(st.wallet)} sub={unlimited ? undefined : "never expires"} />
-          </div>
+          {canTopUp && (
+            <button type="button" onClick={() => setBuyOpen(true)} className="pill pill-ink pill-sm w-full sm:w-auto">
+              <Plus className="h-4 w-4" /> Add funds
+            </button>
+          )}
         </div>
 
-        {!unlimited && st.free_allotment >= 0 && st.free_allotment > 0 && (
-          <div className="border-t border-border/60 px-4 py-3.5 sm:px-5">
-            <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="grid grid-cols-2 gap-px border-t border-[var(--dz-hairline)] bg-[var(--dz-hairline)] sm:grid-cols-4">
+          <Stat label="Spent today" value={usd(usage?.spent_today ?? 0)} live={pulse} />
+          <Stat label="This month" value={usd(usage?.spent_month ?? 0)} />
+          <Stat
+            label="Included / month"
+            value={st.free_allotment < 0 ? "No cap" : usd(st.free_remaining)}
+            sub={st.free_allotment < 0 ? "unlimited" : `left of ${usd(st.free_allotment)}`}
+          />
+          <Stat label="Added funds" value={unlimited ? "n/a" : usd(st.wallet)} sub={unlimited ? undefined : "never expires"} />
+        </div>
+
+        {!unlimited && st.free_allotment > 0 && (
+          <div className="border-t border-[var(--dz-hairline)] px-4 py-3.5 sm:px-5">
+            <div className="mb-2 flex items-center justify-between gap-3 text-[13.5px] text-muted-foreground">
               <span>Included usage this month</span>
-              <span className="tabular-nums">{usd(st.free_used)} / {usd(st.free_allotment)}</span>
+              <span className="tabular-nums">{usd(st.free_used)} of {usd(st.free_allotment)}</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700" style={{ width: `${freeUsedPct}%` }} />
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.07]">
+              <div className="h-full rounded-full bg-gradient-to-r from-brand to-brand-cyan transition-all duration-700" style={{ width: `${freeUsedPct}%` }} />
             </div>
           </div>
         )}
       </section>
 
-      {/* ── Chart + product split ── */}
-      <div className="grid gap-4 lg:grid-cols-5">
-        {/* Daily spend */}
-        <section className="overflow-hidden rounded-2xl surface lg:col-span-3">
-          <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-            <p className="flex items-center gap-2 eyebrow">
-              <TrendingUp className="h-3.5 w-3.5" /> Daily spend
+      {/* Chart + product split */}
+      <div className="grid gap-3 lg:grid-cols-5">
+        <section className="surface overflow-hidden rounded-[20px] lg:col-span-3">
+          <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+            <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" /> Daily spend
             </p>
-            <span className="text-[11px] tabular-nums text-muted-foreground">{usd(windowTotal)} in {days}d</span>
+            <span className="text-[13.5px] tabular-nums text-muted-foreground">{usd(windowTotal)} in {days} days</span>
           </div>
           <div className="relative p-4 sm:p-5">
             <div className="flex h-28 items-end gap-[3px]">
@@ -140,85 +138,76 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
                 return (
                   <div key={d.day} className="group relative flex h-full flex-1 items-end">
                     <div
-                      className={`w-full rounded-t-sm transition-all duration-500 ${
+                      className={cn(
+                        "w-full rounded-t-[3px] transition-all duration-500",
                         d.credits > 0
-                          ? isToday
-                            ? "bg-emerald-500"
-                            : "bg-emerald-500/35 group-hover:bg-emerald-500/60"
-                          : "bg-muted/70"
-                      }`}
+                          ? isToday ? "bg-brand" : "bg-brand/40 group-hover:bg-brand/70"
+                          : "bg-foreground/[0.06]",
+                      )}
                       style={{ height: d.credits > 0 ? `${h}%` : "3px" }}
                     />
-                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[10px] font-medium text-background tabular-nums shadow-md group-hover:block">
+                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[12.5px] font-medium text-background tabular-nums shadow-md group-hover:block">
                       {dayLabel(d.day)} · {usd(d.credits)}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="mt-2 flex justify-between text-[10px] tabular-nums text-muted-foreground/70">
+            <div className="mt-2 flex justify-between text-[12.5px] tabular-nums text-muted-foreground/80">
               <span>{dayLabel(trend[0]?.day ?? "")}</span>
-              <span>{dayLabel(trend[Math.floor(trend.length / 2)]?.day ?? "")}</span>
+              <span className="hidden min-[420px]:inline">{dayLabel(trend[Math.floor(trend.length / 2)]?.day ?? "")}</span>
               <span>Today</span>
             </div>
             {windowTotal === 0 && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <p className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm">
-                  No spend in this window — every day shows up here
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
+                <p className="rounded-full border border-[var(--dz-hairline)] bg-background/85 px-3.5 py-1.5 text-center text-[13.5px] text-muted-foreground backdrop-blur-sm">
+                  No spend in the last {days} days
                 </p>
               </div>
             )}
           </div>
         </section>
 
-        {/* Usage by product */}
-        <section className="overflow-hidden rounded-2xl surface lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-            <p className="eyebrow">Usage by product</p>
-            <span className="text-[11px] text-muted-foreground">{days}d</span>
+        <section className="surface overflow-hidden rounded-[20px] lg:col-span-2">
+          <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+            <p className="text-[14.5px] font-semibold tracking-tight">By product</p>
+            <span className="text-[13.5px] text-muted-foreground">{days} days</span>
           </div>
           <div className="p-4 sm:p-5">
             {products.length === 0 ? (
               <div className="flex h-[132px] flex-col items-center justify-center text-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-muted/40">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.05]">
                   <Gauge className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <p className="mt-2.5 text-xs text-muted-foreground">No AI or email usage recorded yet.</p>
+                </span>
+                <p className="mt-3 max-w-[16rem] text-[13.5px] leading-snug text-muted-foreground">No AI or email usage yet. Builds, agent chats and verifications show up here.</p>
               </div>
             ) : (
               <>
-                {/* Stacked split bar */}
-                <div className="flex h-2.5 w-full overflow-hidden rounded-full">
+                <div className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full">
                   {products.map((p, i) => {
-                    const meta = PRODUCT_META[p.product] ?? PRODUCT_META.other;
-                    const chip = PRODUCT_META[p.product] ? meta.chip : FALLBACK_CHIPS[i % FALLBACK_CHIPS.length];
-                    return (
-                      <div
-                        key={p.product}
-                        className={`${chip} h-full first:rounded-l-full last:rounded-r-full transition-all duration-500`}
-                        style={{ width: `${(p.credits / productTotal) * 100}%` }}
-                      />
-                    );
+                    const chip = PRODUCT_META[p.product]?.chip ?? FALLBACK_CHIPS[i % FALLBACK_CHIPS.length];
+                    return <div key={p.product} className={cn(chip, "h-full transition-all duration-500")} style={{ width: `${(p.credits / productTotal) * 100}%` }} />;
                   })}
                 </div>
-                <div className="mt-4 space-y-2.5">
+                <ul className="mt-4 space-y-3">
                   {products.map((p, i) => {
                     const meta = PRODUCT_META[p.product] ?? PRODUCT_META.other;
                     const Icon = meta.icon;
-                    const chip = PRODUCT_META[p.product] ? meta.chip : FALLBACK_CHIPS[i % FALLBACK_CHIPS.length];
+                    const chip = PRODUCT_META[p.product]?.chip ?? FALLBACK_CHIPS[i % FALLBACK_CHIPS.length];
                     const pct = Math.round((p.credits / productTotal) * 100);
                     return (
-                      <div key={p.product} className="flex items-center gap-2.5">
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${chip}`} />
+                      <li key={p.product} className="flex items-center gap-2.5">
+                        <span className={cn("h-2 w-2 shrink-0 rounded-full", chip)} />
                         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{p.label}</span>
-                        <span className="text-[11px] tabular-nums text-muted-foreground">{fmtInt(p.count)} calls</span>
-                        <span className="w-14 text-right text-[13px] font-semibold tabular-nums">{usd(p.credits)}</span>
-                        <span className="w-8 text-right text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
-                      </div>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[14px] font-medium">{p.label}</span>
+                          <span className="block text-[12.5px] tabular-nums text-muted-foreground">{fmtInt(p.count)} call{p.count === 1 ? "" : "s"} · {pct}%</span>
+                        </span>
+                        <span className="text-[14px] font-semibold tabular-nums">{usd(p.credits)}</span>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               </>
             )}
           </div>
@@ -226,22 +215,23 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
       </div>
 
       {buyOpen && <AddFundsModal data={data} onClose={() => setBuyOpen(false)} />}
-    </>
+    </div>
   );
 }
 
 export function CreditsOverviewSkeleton() {
   return (
-    <section className="overflow-hidden rounded-2xl surface p-5 animate-pulse">
-      <div className="h-3 w-36 rounded bg-muted" />
-      <div className="mt-4 grid gap-5 lg:grid-cols-[1fr_2fr]">
-        <div className="space-y-2">
-          <div className="h-10 w-32 rounded-md bg-muted" />
-          <div className="h-3 w-56 max-w-full rounded bg-muted" />
+    <section className="surface animate-pulse overflow-hidden rounded-[20px] p-5">
+      <div className="flex items-start gap-3.5">
+        <div className="h-11 w-11 rounded-2xl bg-muted" />
+        <div className="flex-1 space-y-2.5">
+          <div className="h-3 w-28 rounded-full bg-muted" />
+          <div className="h-8 w-40 rounded-lg bg-muted" />
+          <div className="h-3 w-64 max-w-full rounded-full bg-muted" />
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-muted" />)}
-        </div>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-muted" />)}
       </div>
     </section>
   );

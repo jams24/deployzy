@@ -6,12 +6,13 @@ import {
   MailCheck, MessageSquare, Pencil, Receipt, SlidersHorizontal, Undo2,
   Wand2, XCircle,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { fmtDate, fmtInt, reasonLabel, timeAgo, usd, type LedgerRow, type Subscription } from "./types";
 import { useNow } from "./use-now";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Activity tab — two ledgers: subscription invoices (with dead-invoice
-// filtering) and the metered AI/email activity feed. Both paginated in place.
+// Activity tab: subscription invoices (dead crypto invoices hidden by default)
+// and the metered AI/email ledger. Both paginate in place.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Tone = "paid" | "pending" | "dead";
@@ -32,51 +33,59 @@ function derive(s: Subscription, now: number | null): { label: string; tone: Ton
 }
 
 const TONE_STYLE: Record<Tone, { cls: string; icon: typeof CheckCircle2 }> = {
-  paid:    { cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
-  pending: { cls: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",         icon: Clock },
-  dead:    { cls: "border-border/60 bg-muted text-muted-foreground",                                 icon: XCircle },
+  paid:    { cls: "bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand", icon: CheckCircle2 },
+  pending: { cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400",          icon: Clock },
+  dead:    { cls: "bg-foreground/[0.05] text-muted-foreground",                  icon: XCircle },
 };
 
 function StatusPill({ tone, label }: { tone: Tone; label: string }) {
   const { cls, icon: Icon } = TONE_STYLE[tone];
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-      <Icon className="h-2.5 w-2.5" /> {label}
+    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-[12.5px] font-medium", cls)}>
+      <Icon className="h-3 w-3" /> {label}
     </span>
   );
 }
 
 function Pager({ page, pages, total, pageSize, onPage }: { page: number; pages: number; total: number; pageSize: number; onPage: (p: number) => void }) {
   if (pages <= 1) return null;
+  const btn = "flex h-8 w-8 items-center justify-center rounded-full border border-[var(--dz-hairline)] transition-colors hover:border-foreground/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
   return (
-    <div className="flex items-center justify-between px-1 pt-2.5 text-xs text-muted-foreground">
+    <div className="flex items-center justify-between border-t border-[var(--dz-hairline)] px-4 py-3 text-[13.5px] text-muted-foreground sm:px-5">
       <span className="tabular-nums">{page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}</span>
-      <div className="flex items-center gap-1">
-        <button
-          disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page"
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 transition-colors hover:border-foreground/30 disabled:opacity-40"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
+      <div className="flex items-center gap-1.5">
+        <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page" className={btn}>
+          <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="px-1 tabular-nums">{page + 1}/{pages}</span>
-        <button
-          disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page"
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-border/60 transition-colors hover:border-foreground/30 disabled:opacity-40"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
+        <span className="min-w-[3rem] text-center tabular-nums">{page + 1} / {pages}</span>
+        <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page" className={btn}>
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>
   );
 }
 
-function EmptyNote({ icon: Icon, children }: { icon: typeof Receipt; children: ReactNode }) {
+function EmptyNote({ icon: Icon, title, children }: { icon: typeof Receipt; title: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col items-center py-10 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 bg-muted/40">
-        <Icon className="h-4 w-4 text-muted-foreground" />
+    <div className="flex flex-col items-center px-6 py-12 text-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground/[0.05]">
+        <Icon className="h-4.5 w-4.5 text-muted-foreground" />
+      </span>
+      <p className="mt-3 text-[14.5px] font-semibold">{title}</p>
+      <p className="mt-1 max-w-xs text-[13.5px] leading-snug text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
+function Header({ title, meta, action }: { title: string; meta?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex min-h-[53px] flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-[var(--dz-hairline)] px-4 py-2.5 sm:px-5">
+      <p className="text-[14.5px] font-semibold tracking-tight">{title}</p>
+      <div className="flex items-center gap-3 text-[13.5px] text-muted-foreground">
+        {meta}
+        {action}
       </div>
-      <p className="mt-3 max-w-xs text-xs leading-relaxed text-muted-foreground">{children}</p>
     </div>
   );
 }
@@ -94,6 +103,7 @@ export function Invoices({ history }: { history: Subscription[] }) {
 
   const all = history.map((s) => ({ s, d: derive(s, now) }));
   const paidCount = all.filter((x) => x.d.tone === "paid").length;
+  const deadCount = all.length - all.filter((x) => x.d.tone !== "dead").length;
   const rows = hideDead ? all.filter((x) => x.d.tone !== "dead") : all;
   const pageSize = 6;
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -101,50 +111,47 @@ export function Invoices({ history }: { history: Subscription[] }) {
   const slice = rows.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="overflow-hidden rounded-2xl surface">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
-        <p className="flex items-center gap-2 eyebrow">
-          <Receipt className="h-3.5 w-3.5" /> Invoices
-        </p>
-        {history.length > 0 && (
-          <div className="flex items-center gap-3 text-[11px]">
-            <span className="tabular-nums text-muted-foreground">{paidCount} paid · {history.length} total</span>
-            <button
-              onClick={() => { setHideDead((v) => !v); setPage(0); }}
-              className="text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
-            >
-              {hideDead ? "Show expired" : "Hide expired"}
-            </button>
-          </div>
-        )}
-      </div>
+    <section className="surface overflow-hidden rounded-[20px]">
+      <Header
+        title="Invoices"
+        meta={history.length > 0 ? <span className="tabular-nums">{paidCount} paid</span> : undefined}
+        action={deadCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => { setHideDead((v) => !v); setPage(0); }}
+            className="rounded-full border border-[var(--dz-hairline)] px-2.5 py-1 text-[12.5px] font-medium transition-colors hover:border-foreground/30 hover:text-foreground"
+          >
+            {hideDead ? `Show ${deadCount} expired` : "Hide expired"}
+          </button>
+        ) : undefined}
+      />
 
-      <div className="p-3">
-        {rows.length === 0 ? (
-          <EmptyNote icon={Receipt}>
-            {history.length === 0
-              ? "No payments yet — receipts for subscriptions land here."
-              : `No ${hideDead ? "paid or pending" : ""} payments.`}
-          </EmptyNote>
-        ) : (
-          <div className="divide-y divide-border/40">
-            {slice.map(({ s, d }) => (
-              <div key={s.id} className="flex items-center gap-3 px-2 py-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground">
-                  <Receipt className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium capitalize">{s.plan} subscription</div>
-                  <div className="text-[11px] tabular-nums text-muted-foreground">{fmtDate(s.created_at)}</div>
-                </div>
-                <span className="text-[13px] font-semibold tabular-nums">${s.amount} {s.currency}</span>
+      {rows.length === 0 ? (
+        <EmptyNote icon={Receipt} title={history.length === 0 ? "No payments yet" : "Nothing paid or pending"}>
+          {history.length === 0
+            ? "Receipts for your subscription land here after your first upgrade."
+            : "Only expired or cancelled checkouts so far."}
+        </EmptyNote>
+      ) : (
+        <ul className="divide-y divide-[var(--dz-hairline)]">
+          {slice.map(({ s, d }) => (
+            <li key={s.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground">
+                <Receipt className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-medium"><span className="capitalize">{s.plan}</span> plan</p>
+                <p className="text-[12.5px] tabular-nums text-muted-foreground">{fmtDate(s.created_at)}</p>
+              </div>
+              <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-[14px] font-semibold tabular-nums">${s.amount} <span className="font-normal text-muted-foreground">{s.currency}</span></span>
                 <StatusPill tone={d.tone} label={d.label} />
               </div>
-            ))}
-          </div>
-        )}
-        <Pager page={cur} pages={pages} total={rows.length} pageSize={pageSize} onPage={setPage} />
-      </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Pager page={cur} pages={pages} total={rows.length} pageSize={pageSize} onPage={setPage} />
     </section>
   );
 }
@@ -158,46 +165,42 @@ export function CreditsLedger({ ledger }: { ledger: LedgerRow[] }) {
   const slice = ledger.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="overflow-hidden rounded-2xl surface">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-        <p className="flex items-center gap-2 eyebrow">
-          <Wand2 className="h-3.5 w-3.5" /> AI usage activity
-        </p>
-        {ledger.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{ledger.length} events</span>}
-      </div>
+    <section className="surface overflow-hidden rounded-[20px]">
+      <Header title="AI & email activity" meta={ledger.length > 0 ? <span className="tabular-nums">{ledger.length} events</span> : undefined} />
 
-      <div className="p-3">
-        {ledger.length === 0 ? (
-          <EmptyNote icon={Wand2}>
-            Nothing yet — AI builder runs, agent chats, email verifications and top-ups will appear here.
-          </EmptyNote>
-        ) : (
-          <div className="divide-y divide-border/40">
-            {slice.map((row, i) => {
-              const isGrant = row.delta >= 0;
-              const Icon = REASON_ICON[row.reason] ?? SlidersHorizontal;
-              return (
-                <div key={i} className="flex items-center gap-3 px-2 py-2.5">
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${isGrant ? "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-600 dark:text-emerald-400" : "border-border/60 bg-muted/40 text-muted-foreground"}`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium">{reasonLabel[row.reason] || row.reason}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {row.model || (isGrant ? "payment" : "—")}
-                      {(row.tokens_in > 0 || row.tokens_out > 0) ? ` · ${fmtInt(row.tokens_in + row.tokens_out)} tokens` : ""} · {timeAgo(row.created_at, now)}
-                    </div>
-                  </div>
-                  <span className={`text-[13px] font-semibold tabular-nums ${isGrant ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}>
-                    {isGrant ? "+" : "−"}{usd(Math.abs(row.delta))}
-                  </span>
+      {ledger.length === 0 ? (
+        <EmptyNote icon={Wand2} title="No activity yet">
+          AI builder runs, agent chats, email verifications and top-ups appear here.
+        </EmptyNote>
+      ) : (
+        <ul className="divide-y divide-[var(--dz-hairline)]">
+          {slice.map((row, i) => {
+            const isGrant = row.delta >= 0;
+            const Icon = REASON_ICON[row.reason] ?? SlidersHorizontal;
+            const tokens = row.tokens_in + row.tokens_out;
+            return (
+              <li key={i} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                <span className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                  isGrant ? "bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand" : "bg-foreground/[0.05] text-muted-foreground",
+                )}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium">{reasonLabel[row.reason] || row.reason}</p>
+                  <p className="truncate text-[12.5px] text-muted-foreground">
+                    {[row.model || (row.reason === "topup" ? "Payment" : ""), tokens > 0 ? `${fmtInt(tokens)} tokens` : "", timeAgo(row.created_at, now)].filter(Boolean).join(" · ")}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        <Pager page={cur} pages={pages} total={ledger.length} pageSize={pageSize} onPage={setPage} />
-      </div>
+                <span className={cn("shrink-0 text-[14px] font-semibold tabular-nums", isGrant && "text-[var(--dz-green-strong)] dark:text-brand")}>
+                  {isGrant ? "+" : "−"}{usd(Math.abs(row.delta))}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Pager page={cur} pages={pages} total={ledger.length} pageSize={pageSize} onPage={setPage} />
     </section>
   );
 }
