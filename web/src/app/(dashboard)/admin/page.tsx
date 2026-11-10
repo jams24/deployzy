@@ -19,7 +19,7 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles,
+  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles, ChevronsUpDown,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -62,6 +62,100 @@ const NAV_GROUPS: { group: string; items: { id: Tab; label: string; icon: NavIco
     { id: "vpn", label: "VPN Panel", icon: Globe },
   ] },
 ];
+
+const NAV_ITEMS = NAV_GROUPS.flatMap(g => g.items.map(it => ({ ...it, group: g.group })));
+
+// One grouped list for both the desktop rail and the phone section sheet, so
+// the two can never drift apart (the old phone chip row skipped two tabs).
+function AdminNavList({ tab, onSelect, query = "", badges, size = "md" }: {
+  tab: Tab;
+  onSelect: (t: Tab) => void;
+  query?: string;
+  badges: Partial<Record<Tab, number>>;
+  size?: "md" | "lg";
+}) {
+  const q = query.trim().toLowerCase();
+  return (
+    <>
+      {NAV_GROUPS.map(group => {
+        const items = q ? group.items.filter(it => it.label.toLowerCase().includes(q) || group.group.toLowerCase().includes(q)) : group.items;
+        if (!items.length) return null;
+        return (
+          <div key={group.group}>
+            <p className="eyebrow mb-1.5 px-2.5">{group.group}</p>
+            <div className="space-y-0.5">
+              {items.map(it => {
+                const Icon = it.icon;
+                const active = tab === it.id;
+                const badge = badges[it.id];
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => onSelect(it.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={`group flex w-full items-center gap-2.5 rounded-xl px-2.5 font-medium transition-colors ${
+                      size === "lg" ? "py-2.5 text-[14.5px]" : "py-[7px] text-[13.5px]"
+                    } ${active ? "bg-foreground/[0.06] text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"}`}
+                  >
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? "text-[var(--dz-green-strong)] dark:text-brand" : "text-muted-foreground/70 group-hover:text-foreground"}`} />
+                    <span className="flex-1 truncate text-left">{it.label}</span>
+                    {badge !== undefined && badge > 0 && (
+                      <span className={`figure rounded-full px-1.5 py-px text-[11.5px] font-medium ${
+                        it.id === "sessions" || it.id === "abuse"
+                          ? it.id === "abuse" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand"
+                          : "bg-foreground/[0.06] text-muted-foreground"
+                      }`}>
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// Phone section picker: a sticky trigger showing where you are, opening a
+// bottom sheet with every section grouped exactly like the desktop rail.
+function AdminSectionSheet({ open, onClose, tab, onSelect, badges }: {
+  open: boolean;
+  onClose: () => void;
+  tab: Tab;
+  onSelect: (t: Tab) => void;
+  badges: Partial<Record<Tab, number>>;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true" aria-label="Admin sections">
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-[2px] animate-[dz-fade_160ms_ease-out]" />
+      <div className="absolute inset-x-0 bottom-0 flex max-h-[80dvh] flex-col rounded-t-3xl border-t border-[var(--dz-hairline)] bg-background shadow-2xl animate-[dz-pop_200ms_cubic-bezier(0.2,0.8,0.2,1)]">
+        <div className="flex items-center justify-between px-5 pb-2 pt-3">
+          <span className="mx-auto h-1 w-10 rounded-full bg-foreground/15" aria-hidden />
+        </div>
+        <div className="flex items-center justify-between px-5 pb-3">
+          <p className="text-[15px] font-semibold tracking-tight">Admin sections</p>
+          <button type="button" onClick={onClose} aria-label="Close sections" className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav className="space-y-4 overflow-y-auto overscroll-contain px-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <AdminNavList tab={tab} badges={badges} size="lg" onSelect={(t) => { onSelect(t); onClose(); document.querySelector("main")?.scrollTo({ top: 0 }); }} />
+        </nav>
+      </div>
+    </div>
+  );
+}
 
 interface DensityServer {
   id: string; label: string; region: string; is_local: boolean; status: string;
@@ -325,6 +419,8 @@ function formatTs(ts: string) {
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [navSearch, setNavSearch] = useState("");
+  const [sectionsOpen, setSectionsOpen] = useState(false);
+  const closeSections = useCallback(() => setSectionsOpen(false), []);
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1353,52 +1449,51 @@ export default function AdminPage() {
     { id: "vpn", label: "VPN Panel" },
     { id: "ai", label: "AI Model" },
   ];
-  const badgeOf = (id: Tab): number | undefined => TABS.find(t => t.id === id)?.badge;
+  const badges: Partial<Record<Tab, number>> = Object.fromEntries(TABS.map(t => [t.id, t.badge]));
+  const current = NAV_ITEMS.find(it => it.id === tab) ?? NAV_ITEMS[0];
+  const CurrentIcon = current.icon;
+  const headerBtn = "h-9 gap-1.5 px-3.5 text-[13.5px]";
 
   return (
     <div>
       {/* Page Header */}
-      <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
-        <div>
-          <p className="eyebrow">System</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px] flex items-center gap-2">
-            <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            Admin Console
-          </h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
+      <div className="rise mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="eyebrow flex items-center gap-1.5">
+            <Shield className="h-3.5 w-3.5 text-[var(--dz-green-strong)] dark:text-brand" />
+            System
+          </p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Admin Console</h1>
+          <p className="mt-2 text-[14.5px] leading-relaxed text-muted-foreground">
             Platform operations center
             {lastRefresh && (
-              <span className="ml-2 text-[11px] text-muted-foreground/60">
-                · refreshed {lastRefresh.toLocaleTimeString()}
+              <span className="block text-[12.5px] tabular-nums text-muted-foreground/70 sm:ml-2 sm:inline">
+                <span className="hidden sm:inline">· </span>refreshed {lastRefresh.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
               </span>
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
-            className={`h-8 gap-1.5 text-xs ${autoRefresh ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
+            className={`${headerBtn} ${autoRefresh ? "border-brand/30 bg-brand/10 text-[var(--dz-green-strong)] hover:bg-brand/15 dark:border-brand/30 dark:bg-brand/10 dark:text-brand" : ""}`}
             onClick={() => setAutoRefresh(v => !v)}
             title={autoRefresh ? "Auto-refresh is on: stats update every 15 seconds. Click to pause." : "Auto-refresh is paused. Click to update stats every 15 seconds."}
             aria-pressed={autoRefresh}
           >
-            <Radio className={`h-3 w-3 ${autoRefresh ? "animate-pulse" : ""}`} />
-            <span className="hidden sm:inline">{autoRefresh ? "Live" : "Paused"}</span>
+            <Radio className={`h-3.5 w-3.5 ${autoRefresh ? "animate-pulse" : ""}`} />
+            {autoRefresh ? "Live" : "Paused"}
           </Button>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" title="Refresh now" aria-label="Refresh now" onClick={() => { loadStats(); loadSessions(); }}>
+          <Button size="sm" variant="outline" className="h-9 w-9 px-0" title="Refresh now" aria-label="Refresh now" onClick={() => { loadStats(); loadSessions(); }}>
             <RefreshCw className={`h-3.5 w-3.5 ${statsLoading ? "animate-spin" : ""}`} />
           </Button>
-          <Link href="/admin/blog">
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-              <FileText className="h-3.5 w-3.5" /><span className="hidden sm:inline">Blog</span>
-            </Button>
-          </Link>
-          <Link href="/admin/templates">
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-              <LayoutTemplate className="h-3.5 w-3.5" /><span className="hidden sm:inline">Templates</span>
-            </Button>
-          </Link>
+          <Button size="sm" variant="outline" className={headerBtn} nativeButton={false} render={<Link href="/admin/blog" />}>
+            <FileText className="h-3.5 w-3.5" />Blog
+          </Button>
+          <Button size="sm" variant="outline" className={headerBtn} nativeButton={false} render={<Link href="/admin/templates" />}>
+            <LayoutTemplate className="h-3.5 w-3.5" />Templates
+          </Button>
         </div>
       </div>
 
@@ -1415,118 +1510,77 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Mobile tab bar — horizontal scroll of chips (sidebar is desktop-only) */}
-      <div className="lg:hidden flex gap-1 mb-4 overflow-x-auto pb-1 border-b border-border/50">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t whitespace-nowrap transition-colors ${
-              tab === t.id
-                ? "text-foreground border-b-2 border-emerald-500 -mb-px"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-            {t.badge !== undefined && t.badge > 0 && (
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                t.id === "sessions" && t.badge > 0
-                  ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                  : "bg-muted text-muted-foreground"
-              }`}>
-                {t.badge}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Phone section picker — sticky, shows where you are; the sheet lists
+          every section grouped like the desktop rail. */}
+      <div className="frost sticky top-0 z-10 -mx-4 mb-5 border-b border-[var(--dz-hairline)] px-4 py-2.5 sm:-mx-6 sm:px-6 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setSectionsOpen(true)}
+          aria-haspopup="dialog"
+          className="surface flex h-11 w-full items-center gap-3 rounded-2xl px-3.5 text-left transition-colors hover:border-foreground/15"
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/10">
+            <CurrentIcon className="h-4 w-4 text-[var(--dz-green-strong)] dark:text-brand" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="eyebrow block leading-none">{current.group}</span>
+            <span className="mt-1 block truncate text-[14.5px] font-semibold leading-none tracking-tight">{current.label}</span>
+          </span>
+          {(badges.abuse ?? 0) > 0 && tab !== "abuse" && (
+            <span className="figure rounded-full bg-red-500/10 px-2 py-0.5 text-[12px] font-medium text-red-600 dark:text-red-400" title="Open abuse reports">
+              {badges.abuse}
+            </span>
+          )}
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </button>
       </div>
+      <AdminSectionSheet open={sectionsOpen} onClose={closeSections} tab={tab} onSelect={setTab} badges={badges} />
 
       {/* Two-column shell: grouped sidebar nav + content */}
       <div className="flex gap-6 items-start">
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         <aside className="hidden lg:block w-56 shrink-0 sticky top-4 self-start">
-          <div className="relative mb-3">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <input
               value={navSearch}
               onChange={(e) => setNavSearch(e.target.value)}
               placeholder="Jump to…"
-              className="w-full rounded-lg border border-border/60 bg-background/60 pl-8 pr-2 py-1.5 text-[13px] outline-none focus:border-foreground/30"
+              className="h-9 w-full rounded-xl border border-[var(--dz-hairline)] bg-background/70 pl-8 pr-2 text-[13.5px] outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-foreground/20 dark:bg-white/[0.03]"
             />
           </div>
-          <nav className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1">
-            {NAV_GROUPS.map(group => {
-              const q = navSearch.trim().toLowerCase();
-              const items = q ? group.items.filter(it => it.label.toLowerCase().includes(q) || group.group.toLowerCase().includes(q)) : group.items;
-              if (!items.length) return null;
-              return (
-                <div key={group.group}>
-                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">{group.group}</p>
-                  <div className="space-y-0.5">
-                    {items.map(it => {
-                      const Icon = it.icon;
-                      const active = tab === it.id;
-                      const badge = badgeOf(it.id);
-                      return (
-                        <button
-                          key={it.id}
-                          onClick={() => setTab(it.id)}
-                          className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
-                            active
-                              ? "bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                          }`}
-                        >
-                          <Icon className={`h-4 w-4 shrink-0 ${active ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/70 group-hover:text-foreground"}`} />
-                          <span className="flex-1 text-left truncate">{it.label}</span>
-                          {badge !== undefined && badge > 0 && (
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                              it.id === "sessions"
-                                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                                : active ? "bg-background text-muted-foreground" : "bg-muted text-muted-foreground"
-                            }`}>
-                              {badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+          <nav className="max-h-[calc(100vh-7rem)] space-y-4 overflow-y-auto pr-1">
+            <AdminNavList tab={tab} onSelect={setTab} query={navSearch} badges={badges} />
           </nav>
 
           {/* Live platform pulse — uses already-loaded stats, no extra fetch */}
-          <div className="mt-4 rounded-xl surface p-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">Pulse</p>
-              <span className={`inline-flex items-center gap-1 text-[10px] ${autoRefresh ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
-                <Radio className={`h-2.5 w-2.5 ${autoRefresh ? "animate-pulse" : ""}`} />
+          <div className="surface mt-5 rounded-2xl p-3">
+            <div className="mb-2.5 flex items-center justify-between">
+              <p className="eyebrow">Pulse</p>
+              <span className={`inline-flex items-center gap-1.5 text-[12.5px] ${autoRefresh ? "text-[var(--dz-green-strong)] dark:text-brand" : "text-muted-foreground"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? "bg-brand animate-pulse" : "bg-zinc-400"}`} />
                 {autoRefresh ? "live" : "paused"}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1.5 text-center">
-              <div className="rounded-lg bg-background/50 py-1.5">
-                <div className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{runningCount}</div>
-                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">running</div>
-              </div>
-              <div className="rounded-lg bg-background/50 py-1.5">
-                <div className={`text-sm font-bold tabular-nums ${failedCount > 0 ? "text-red-500" : "text-muted-foreground"}`}>{failedCount}</div>
-                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">failed</div>
-              </div>
-              <div className="rounded-lg bg-background/50 py-1.5">
-                <div className="text-sm font-bold tabular-nums">{sessions.length}</div>
-                <div className="text-[9px] uppercase tracking-wide text-muted-foreground/70">live</div>
-              </div>
+              {[
+                { n: runningCount, label: "running", cls: "text-[var(--dz-green-strong)] dark:text-brand" },
+                { n: failedCount, label: "failed", cls: failedCount > 0 ? "text-red-500" : "text-muted-foreground" },
+                { n: sessions.length, label: "tunnels", cls: "" },
+              ].map(s => (
+                <div key={s.label} className="rounded-xl bg-foreground/[0.03] py-2">
+                  <div className={`figure text-[15px] font-semibold ${s.cls}`}>{s.n}</div>
+                  <div className="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground/80">{s.label}</div>
+                </div>
+              ))}
             </div>
             {deploySuccessRate !== null && (
-              <div className="mt-2">
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                  <span>Deploy health</span><span className="tabular-nums">{deploySuccessRate}%</span>
+              <div className="mt-3">
+                <div className="mb-1.5 flex items-center justify-between text-[12.5px] text-muted-foreground">
+                  <span>Deploy health</span><span className="figure">{deploySuccessRate}%</span>
                 </div>
-                <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-                  <div className={`h-full rounded-full ${deploySuccessRate >= 90 ? "bg-emerald-500" : deploySuccessRate >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${deploySuccessRate}%` }} />
+                <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
+                  <div className={`h-full rounded-full ${deploySuccessRate >= 90 ? "bg-brand" : deploySuccessRate >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${deploySuccessRate}%` }} />
                 </div>
               </div>
             )}
@@ -3340,7 +3394,7 @@ export default function AdminPage() {
                 <CardContent className="space-y-4">
                   {/* Build + runtime resources — the levers that actually cost money */}
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <p className="eyebrow mb-2">
                       Build &amp; runtime
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -3354,7 +3408,7 @@ export default function AdminPage() {
 
                   {/* Quotas */}
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Quotas</p>
+                    <p className="eyebrow mb-2">Quotas</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       {numField("Projects", "max_projects")}
                       {numField("Databases", "max_databases")}
@@ -3373,7 +3427,7 @@ export default function AdminPage() {
 
                   {/* Retention */}
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Retention (days)</p>
+                    <p className="eyebrow mb-2">Retention (days)</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       {numField("Analytics", "analytics_retention_days")}
                       {numField("Deploy logs", "deploy_log_retention_days")}
@@ -3384,7 +3438,7 @@ export default function AdminPage() {
 
                   {/* Feature flags */}
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Features</p>
+                    <p className="eyebrow mb-2">Features</p>
                     <div className="flex flex-wrap gap-1.5">
                       {([
                         ["allow_previews", "PR previews"],

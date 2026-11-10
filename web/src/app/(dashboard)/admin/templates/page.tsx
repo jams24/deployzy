@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/brand-logos";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/dashboard/kit";
 import {
   Dialog,
   DialogContent,
@@ -534,23 +535,22 @@ export default function AdminTemplatesPage() {
   );
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin">
-          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground h-8">
-            <ArrowLeft className="h-3.5 w-3.5" /> Admin
+      <Link href="/admin" className="inline-flex items-center gap-1 text-[13.5px] text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="h-3.5 w-3.5" /> Admin
+      </Link>
+      <PageHeader
+        className="mb-6 mt-3"
+        eyebrow="Admin · Catalog"
+        title="Templates"
+        description={<>{templates.length} templates in the one-click catalog</>}
+        actions={
+          <Button className="h-9 gap-1.5 px-3.5 text-[13.5px]" onClick={() => setEditing({ ...EMPTY_TEMPLATE })}>
+            <Plus className="h-3.5 w-3.5" /> New template
           </Button>
-        </Link>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-foreground">Templates</h1>
-          <p className="text-xs text-muted-foreground">{templates.length} total</p>
-        </div>
-        <Button className="gap-1.5 h-8 text-sm" onClick={() => setEditing({ ...EMPTY_TEMPLATE })}>
-          <Plus className="h-3.5 w-3.5" /> New template
-        </Button>
-      </div>
+        }
+      />
 
       {/* Search */}
       <div className="relative mb-4">
@@ -564,16 +564,16 @@ export default function AdminTemplatesPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
+      <div className="surface overflow-x-auto rounded-2xl">
+        <table className="w-full text-sm sm:min-w-[640px]">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Template</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Category</th>
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">Source</th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden lg:table-cell">Stats</th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
-              <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Actions</th>
+              <th className="text-left px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground">Template</th>
+              <th className="text-left px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Category</th>
+              <th className="text-left px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">Source</th>
+              <th className="text-center px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden lg:table-cell">Stats</th>
+              <th className="text-center px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
+              <th className="text-right px-3 sm:px-4 py-2.5 text-xs font-semibold text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -581,7 +581,7 @@ export default function AdminTemplatesPage() {
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i}>
                   {Array.from({ length: 6 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3">
+                    <td key={j} className="px-3 sm:px-4 py-3">
                       <div className="h-4 rounded bg-muted/40 animate-pulse" />
                     </td>
                   ))}
@@ -596,7 +596,7 @@ export default function AdminTemplatesPage() {
             ) : filtered.map((t) => (
               <tr key={t.id} className="hover:bg-muted/20 transition-colors">
                 {/* Name */}
-                <td className="px-4 py-3">
+                <td className="px-3 sm:px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div
                       className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
@@ -605,7 +605,7 @@ export default function AdminTemplatesPage() {
                       <BrandLogo logoSlug={t.logo_slug} slug={t.slug} name={t.name} color={t.color} className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="font-medium text-foreground flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5 font-medium text-foreground">
                         {t.name}
                         {t.is_featured && (
                           <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">FEATURED</span>
@@ -620,14 +620,14 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Category */}
-                <td className="px-4 py-3 hidden sm:table-cell">
+                <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">
                   <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground capitalize">
                     {t.category}
                   </span>
                 </td>
 
                 {/* Source */}
-                <td className="px-4 py-3 hidden md:table-cell">
+                <td className="px-3 sm:px-4 py-3 hidden md:table-cell">
                   <span className="text-xs text-muted-foreground font-mono truncate max-w-[160px] block">
                     {t.docker_image
                       ? `🐳 ${t.docker_image}`
@@ -638,7 +638,7 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Stats */}
-                <td className="px-4 py-3 text-center hidden lg:table-cell">
+                <td className="px-3 sm:px-4 py-3 text-center hidden lg:table-cell">
                   <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Download className="h-3 w-3" />{t.deploy_count}
@@ -650,7 +650,7 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Active toggle */}
-                <td className="px-4 py-3 text-center">
+                <td className="px-3 sm:px-4 py-3 text-center">
                   <button
                     onClick={() => toggleActive(t)}
                     className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
@@ -665,7 +665,7 @@ export default function AdminTemplatesPage() {
                 </td>
 
                 {/* Actions */}
-                <td className="px-4 py-3 text-right">
+                <td className="px-3 sm:px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"

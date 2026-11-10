@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/dashboard/kit";
 import {
   Plus,
   Pencil,
@@ -17,6 +18,7 @@ import {
   FileText,
   Globe,
   Clock,
+  ArrowLeft,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -107,46 +109,49 @@ export default function BlogAdminPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Blog Posts</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {totalPublished} published · {totalDraft} draft
-          </p>
-        </div>
-        <Button size="sm" className="gap-2" nativeButton={false} render={<Link href="/admin/blog/new" />}>
-          <Plus className="h-4 w-4" />
-          New Post
-        </Button>
-      </div>
+      <Link href="/admin" className="inline-flex items-center gap-1 text-[13.5px] text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="h-3.5 w-3.5" /> Admin
+      </Link>
+      <PageHeader
+        className="mt-3"
+        eyebrow="Admin · Content"
+        title="Blog posts"
+        description={<>{totalPublished} published · {totalDraft} draft</>}
+        actions={
+          <Button size="sm" className="h-9 gap-1.5 px-3.5 text-[13.5px]" nativeButton={false} render={<Link href="/admin/blog/new" />}>
+            <Plus className="h-4 w-4" />
+            New post
+          </Button>
+        }
+      />
 
       {/* Stats */}
       <div className="mt-6 grid grid-cols-3 gap-3">
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Total</span>
+              <span className="eyebrow">Total</span>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </div>
-            <p className="mt-1 text-xl font-bold">{posts.length}</p>
+            <p className="figure mt-1 text-[22px] font-semibold tracking-tight">{posts.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Published</span>
+              <span className="eyebrow">Published</span>
               <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{totalPublished}</p>
+            <p className="figure mt-1 text-[22px] font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{totalPublished}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Drafts</span>
+              <span className="eyebrow">Drafts</span>
               <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             </div>
-            <p className="mt-1 text-xl font-bold text-amber-600 dark:text-amber-400">{totalDraft}</p>
+            <p className="figure mt-1 text-[22px] font-semibold tracking-tight text-amber-600 dark:text-amber-400">{totalDraft}</p>
           </CardContent>
         </Card>
       </div>
