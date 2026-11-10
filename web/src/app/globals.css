@@ -687,3 +687,10 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
   .marquee-track { animation: none; }
   .marquee { overflow-x: auto; }
 }
+
+/* Dashboard overlays: command menu and mobile drawer. */
+@keyframes dz-fade { from { opacity: 0; } }
+@keyframes dz-pop { from { opacity: 0; transform: translateY(-6px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-[dz-fade"], [class*="animate-[dz-pop"] { animation: none !important; }
+}

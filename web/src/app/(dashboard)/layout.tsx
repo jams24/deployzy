@@ -1,110 +1,72 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { UpgradeDialogHost } from "@/components/upgrade-dialog";
-import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/dashboard/sidebar";
-import { AuthGuard } from "@/components/dashboard/auth-guard";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Menu, X, Bell } from "lucide-react";
 import Link from "next/link";
+import { useCallback, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Bell, BookOpen, Menu, Search } from "lucide-react";
+import { UpgradeDialogHost } from "@/components/upgrade-dialog";
+import { AuthGuard } from "@/components/dashboard/auth-guard";
+import { Sidebar } from "@/components/dashboard/sidebar";
+import { CommandMenu, openCommandMenu } from "@/components/dashboard/command-menu";
+import { MobileDrawer, MobileTabBar, showsTabBar } from "@/components/dashboard/mobile-nav";
+import { pageTitle } from "@/components/dashboard/nav-config";
+import { initials, useModKey, useSession } from "@/lib/use-me";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Dashboard shell — slim glass topbar + subtle aurora/grid backdrop behind the
-// content. All decorative layers are pointer-events-none and use theme tokens
-// so light and dark modes stay clean.
-// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard shell: sidebar on desktop; topbar + bottom tab bar + drawer on
+// phones; ⌘K command menu everywhere. Decoration is pointer-events-none and
+// built from theme tokens so light and dark both stay clean.
 
-const PAGE_TITLES: Record<string, string> = {
-  "/overview":      "Overview",
-  "/projects":      "Projects",
-  "/services":      "Databases",
-  "/tunnels":       "Tunnels",
-  "/servers":       "Servers",
-  "/analytics":     "Analytics",
-  "/subdomains":    "Subdomains",
-  "/domains":       "Domains",
-  "/inspector":     "Inspector",
-  "/api-keys":      "API Keys",
-  "/notifications": "Notifications",
-  "/team":          "Team",
-  "/billing":       "Billing",
-  "/settings":      "Settings",
-  "/admin":         "Admin Console",
-  "/new":           "New Project",
-};
+const iconBtn =
+  "flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground";
 
-function getPageTitle(pathname: string) {
-  for (const [prefix, title] of Object.entries(PAGE_TITLES)) {
-    if (pathname.startsWith(prefix)) return title;
-  }
-  return "Dashboard";
-}
-
-function DashboardTopbar({ onMenuClick }: { onMenuClick: () => void }) {
+function Topbar({ onMenu }: { onMenu: () => void }) {
   const pathname = usePathname();
-  const title = getPageTitle(pathname);
-  const [initials, setInitials] = useState("U");
-  const [userEmail, setUserEmail] = useState("");
-
-  useEffect(() => {
-    const token = localStorage.getItem("sm_token");
-    if (!token) return;
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
-    fetch(`${base}/api/v1/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(u => {
-        if (!u) return;
-        const name: string = u.name || u.email || "";
-        setInitials(name.split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase() || "U");
-        setUserEmail(u.email || "");
-      })
-      .catch(() => {});
-  }, []);
+  const mod = useModKey();
+  const { me } = useSession();
 
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] items-center gap-4 border-b border-border/60 bg-background/80 px-4 shrink-0 backdrop-blur-xl backdrop-saturate-150">
-      {/* Mobile menu toggle */}
-      <button
-        onClick={onMenuClick}
-        className="md:hidden flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-      >
-        <Menu className="h-4 w-4" />
-      </button>
-
-      {/* Mobile logo */}
-      <Link href="/" className="md:hidden flex items-center gap-2">
-        <img src="/logo-mark.png" alt="Deployzy" className="h-5 w-5 rounded" />
-        <span className="font-semibold text-[14px]">Deployzy</span>
+    <header className="frost sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--dz-hairline)] px-3 sm:gap-3 sm:px-5">
+      {/* Phones get "More" in the tab bar; full-height routes hide it, so the menu lives here. */}
+      {!showsTabBar(pathname) && (
+        <button type="button" onClick={onMenu} aria-label="Open menu" className={`${iconBtn} md:hidden`}>
+          <Menu className="h-[18px] w-[18px]" />
+        </button>
+      )}
+      <Link href="/overview" aria-label="Deployzy home" className="shrink-0 md:hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-mark.png" alt="" className="h-7 w-7 rounded-lg" />
       </Link>
 
-      {/* Page title — desktop */}
-      <span className="hidden md:flex items-center gap-2 text-[14px] font-semibold text-foreground tracking-tight">
-        {title}
-      </span>
+      <span className="min-w-0 flex-1 truncate pl-1.5 text-[15px] font-semibold tracking-tight text-foreground md:pl-0">{pageTitle(pathname)}</span>
 
-      <div className="flex-1" />
+      <button
+        type="button"
+        onClick={openCommandMenu}
+        className="hidden h-9 w-[clamp(200px,24vw,300px)] items-center gap-2 rounded-xl border border-[var(--dz-hairline)] bg-background/70 px-3 text-[13.5px] text-muted-foreground transition-colors hover:border-foreground/15 hover:text-foreground md:flex dark:bg-white/[0.03]"
+      >
+        <Search className="h-3.5 w-3.5" />
+        <span className="flex-1 text-left">Search or jump to…</span>
+        <kbd className="rounded-md border px-1.5 font-mono text-[11px]">{mod}K</kbd>
+      </button>
 
-      {/* Right actions */}
-      <div className="flex items-center gap-1">
-        {/* Notifications */}
-        <Link
-          href="/notifications"
-          title="Notifications"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-        >
-          <Bell className="h-4 w-4" />
+      <div className="flex items-center gap-0.5">
+        <button type="button" onClick={openCommandMenu} aria-label="Search" className={`${iconBtn} md:hidden`}>
+          <Search className="h-[18px] w-[18px]" />
+        </button>
+        <a href="/docs" target="_blank" rel="noopener" className={`${iconBtn} hidden w-auto gap-1.5 px-2.5 text-[13.5px] lg:flex`}>
+          <BookOpen className="h-4 w-4" />
+          Docs
+        </a>
+        <Link href="/notifications" aria-label="Notifications" title="Notifications" className={iconBtn}>
+          <Bell className="h-[18px] w-[18px]" />
         </Link>
-
-        <ThemeToggle />
-
-        {/* User avatar */}
         <Link
           href="/settings"
-          title={userEmail}
-          className="ml-1 flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background text-[11px] font-bold ring-1 ring-border transition-shadow hover:ring-2 hover:ring-emerald-500/40"
+          title={me?.email}
+          aria-label="Account settings"
+          className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-[11.5px] font-bold text-background ring-1 ring-border transition-shadow hover:ring-2 hover:ring-brand/50"
         >
-          {initials}
+          {initials(me?.name || me?.email || "")}
         </Link>
       </div>
     </header>
@@ -112,54 +74,34 @@ function DashboardTopbar({ onMenuClick }: { onMenuClick: () => void }) {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
     <AuthGuard>
-      <div className="flex h-screen overflow-hidden">
-        {/* Desktop sidebar */}
-        <div className="hidden md:flex">
-          <Sidebar />
-        </div>
+      <div className="flex h-[100dvh] overflow-hidden bg-background">
+        <Sidebar className="hidden md:flex" />
+        <MobileDrawer open={drawerOpen} onClose={closeDrawer} />
 
-        {/* Mobile sidebar overlay */}
-        {mobileOpen && (
-          <div className="fixed inset-0 z-50 md:hidden">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-              onClick={() => setMobileOpen(false)}
-            />
-            <div className="relative h-full w-[220px] bg-background shadow-xl" onClick={e => e.stopPropagation()}>
-              <Sidebar onNavigate={() => setMobileOpen(false)} />
-            </div>
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-lg bg-background border border-border text-muted-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Main column */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <DashboardTopbar onMenuClick={() => setMobileOpen(o => !o)} />
-          <main className="relative flex-1 overflow-y-auto">
-            {/* Subtle aurora + masked grid behind the content — pure decoration */}
-            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 overflow-hidden">
-              <div className="animate-aurora-a absolute -top-28 left-1/2 h-56 w-[560px] -translate-x-1/2 rounded-full bg-emerald-500/[0.05] blur-[110px] dark:bg-emerald-400/[0.06]" />
-              <div className="animate-aurora-b absolute -top-20 right-[10%] h-44 w-[380px] rounded-full bg-cyan-500/[0.035] blur-[110px] dark:bg-cyan-400/[0.04]" />
-              <div className="mask-fade-b absolute inset-0 text-foreground/[0.028] dark:text-white/[0.03]">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Topbar onMenu={openDrawer} />
+          <main className="relative flex-1 overflow-y-auto overscroll-contain">
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-80 overflow-hidden">
+              <div className="animate-aurora-a absolute -top-40 left-1/2 h-72 w-[720px] -translate-x-1/2 rounded-full bg-brand/[0.06] blur-[120px]" />
+              <div className="animate-aurora-b absolute -top-24 right-[8%] h-48 w-[420px] rounded-full bg-brand-cyan/[0.045] blur-[110px]" />
+              <div className="mask-fade-b absolute inset-0 text-foreground/[0.03]">
                 <div className="bg-grid absolute inset-0" />
               </div>
             </div>
 
-            <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-              {children}
-            </div>
+            <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
             <UpgradeDialogHost />
           </main>
+          <MobileTabBar onMore={openDrawer} />
         </div>
+
+        <CommandMenu />
       </div>
     </AuthGuard>
   );
