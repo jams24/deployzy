@@ -36,7 +36,7 @@ const langColor: Record<string, string> = {
 const options = [
   { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-600 dark:text-violet-400 bg-violet-500/10", category: "deploy" },
   { id: "upload", title: "Upload Project", desc: "Deploy a folder from your computer", icon: FolderUp, color: "text-teal-600 dark:text-teal-400 bg-teal-500/10", category: "deploy" },
-  { id: "database", title: "Database", desc: "PostgreSQL instance with connection URL", icon: Database, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10", category: "infra" },
+  { id: "database", title: "Database", desc: "PostgreSQL, Redis, MongoDB or MySQL with a connection URL", icon: Database, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10", category: "infra" },
   { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-600 dark:text-amber-400 bg-amber-500/10", category: "deploy" },
   { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-600 dark:text-blue-400 bg-blue-500/10", category: "deploy" },
   { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-600 dark:text-pink-400 bg-pink-500/10", category: "infra" },

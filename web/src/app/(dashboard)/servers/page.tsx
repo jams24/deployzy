@@ -24,6 +24,10 @@ interface WorkerServer {
   docker_install_status?: string; docker_install_error?: string | null;
 }
 
+
+function fmtMem(mb: number): string {
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+}
 export default function ServersPage() {
   const [servers, setServers] = useState<WorkerServer[]>([]);
   const [notice, setNotice] = useState("");
@@ -208,10 +212,10 @@ export default function ServersPage() {
         <p className="text-sm text-muted-foreground animate-pulse">Loading servers…</p>
       ) : servers.length === 0 ? (
         <div className="relative rounded-2xl border border-dashed border-border overflow-hidden">
-          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-orange-500/[0.07] blur-[80px] dark:bg-orange-400/[0.08]" />
+          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-brand/[0.08] blur-[80px]" />
           <div className="relative flex flex-col items-center py-16 px-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
-              <Server className="h-5 w-5 text-orange-500 dark:text-orange-400" />
+              <Server className="h-5 w-5 text-brand" />
             </div>
             <h3 className="mt-4 font-semibold">No servers yet</h3>
             <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
@@ -229,7 +233,7 @@ export default function ServersPage() {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/10 text-orange-500 dark:text-orange-400 shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--dz-hairline)] bg-background text-foreground/80 shrink-0 dark:bg-white/[0.03]">
                     <Server className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
@@ -259,14 +263,19 @@ export default function ServersPage() {
                       )}
                     </div>
                     <p className="text-[11px] text-muted-foreground font-mono mt-1 truncate">{s.ssh_user}@{s.host}:{s.port}</p>
+                    {/* Phones: the stats column below is hidden, so show a compact line here. */}
+                    <p className="mt-1 text-[12.5px] text-muted-foreground sm:hidden">
+                      {s.current_projects}/{s.max_projects} projects · {fmtMem(s.used_memory_mb)} / {fmtMem(s.total_memory_mb)} RAM · load {(s.load_avg ?? 0).toFixed(1)}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right text-[11px] text-muted-foreground space-y-1 min-w-[140px] hidden sm:block">
                     <div><span className="text-foreground font-mono">{s.current_projects}</span>/{s.max_projects} projects</div>
                     <div>
-                      <span className="text-foreground font-mono">{s.used_memory_mb}</span>
-                      <span>/{s.total_memory_mb >= 1024 ? `${(s.total_memory_mb / 1024).toFixed(1)} GB` : `${s.total_memory_mb} MB`} RAM used</span>
+                      {/* Both sides in the same unit (used was raw MB next to GB). */}
+                      <span className="text-foreground font-mono">{fmtMem(s.used_memory_mb)}</span>
+                      <span> / {fmtMem(s.total_memory_mb)} RAM used</span>
                     </div>
                     <div>
                       load <span className="text-foreground font-mono">{(s.load_avg ?? 0).toFixed(1)}</span>/<span className="font-mono">{s.total_cpu.toFixed(0)}</span> cores

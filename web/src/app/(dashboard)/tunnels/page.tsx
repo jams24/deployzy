@@ -1,8 +1,9 @@
 "use client";
 
+import { StackIcon } from "@/components/dashboard/kit";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Waypoints, Globe, Terminal as TermIcon, Rocket, ArrowUpRight, Copy, Check, Eye, Moon, ArrowRight, Clock } from "lucide-react";
+import { RefreshCw, Waypoints, Globe, Terminal as TermIcon, ArrowUpRight, Copy, Check, Eye, Moon, ArrowRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { DashMotion } from "@/components/admin/dash-kit";
@@ -198,8 +199,8 @@ export default function TunnelsPage() {
                     const asleep = a.status === "sleeping";
                     return (
                       <div key={a.url} className="ov-rise flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
-                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${asleep ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" : "border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400"}`}>
-                          {asleep ? <Moon className="h-3.5 w-3.5" /> : <Rocket className="h-3.5 w-3.5" />}
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${asleep ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" : "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]"}`}>
+                          {asleep ? <Moon className="h-3.5 w-3.5" /> : <StackIcon stack={a.framework} />}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
