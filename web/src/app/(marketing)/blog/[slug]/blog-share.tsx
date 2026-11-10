@@ -57,7 +57,7 @@ export function DiscussRail({ title }: { title: string }) {
     "grid h-9 w-9 place-items-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/50";
   return (
     <div>
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+      <p className="eyebrow mb-3">
         Discuss online
       </p>
       <div className="flex flex-wrap gap-2">

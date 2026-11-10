@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Clock, Tag } from "lucide-react";
+import { ArrowRight, Clock } from "lucide-react";
+import { categoryTone, formatPostDate as formatDate } from "@/lib/blog-ui";
 
 export const revalidate = 60; // ISR: revalidate every 60s
 
@@ -18,14 +19,6 @@ export const metadata: Metadata = {
   },
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  Comparisons: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  Tutorials:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  Databases:   "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  Tools:       "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  General:     "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-};
-
 interface BlogPost {
   id: string;
   slug: string;
@@ -37,11 +30,6 @@ interface BlogPost {
   author: string;
   read_time: string;
   published_at: string | null;
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
 async function getPosts(): Promise<BlogPost[]> {
@@ -87,24 +75,24 @@ export default async function BlogIndexPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-20">
+    <div className="mx-auto max-w-[1200px] px-5 py-14 sm:px-6 sm:py-20">
       {/* JSON-LD */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* Header */}
-      <div className="mb-14">
-        <p className="text-sm font-semibold text-primary mb-3 uppercase tracking-wider">Blog</p>
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-          Deployment guides & tutorials
+      <header className="mb-12 max-w-3xl sm:mb-16">
+        <p className="eyebrow rise">Blog</p>
+        <h1 className="rise mt-4 text-[clamp(2.4rem,6vw,4.25rem)] font-semibold leading-[1] tracking-[-0.045em]" style={{ animationDelay: "0.06s" }}>
+          Deployment guides <span className="accent-serif whitespace-nowrap">&amp; tutorials</span>
         </h1>
-        <p className="mt-4 text-lg text-muted-foreground max-w-2xl">
-          Practical guides on deploying apps, managing databases, localhost tunneling, and DevOps — written by the Deployzy team.
+        <p className="rise mt-5 max-w-2xl text-[16px] leading-relaxed text-muted-foreground sm:text-[17.5px]" style={{ animationDelay: "0.12s" }}>
+          Practical guides on deploying apps, managing databases, localhost tunnels and DevOps, written by the Deployzy team.
         </p>
-      </div>
+      </header>
 
       {posts.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <p className="text-lg">No posts yet — check back soon.</p>
+        <div className="panel py-20 text-center text-muted-foreground">
+          <p className="text-[17px]">No posts yet. Check back soon.</p>
         </div>
       ) : (
         <>
@@ -112,26 +100,25 @@ export default async function BlogIndexPage() {
           {featured && (
             <Link
               href={`/blog/${featured.slug}`}
-              className="group block mb-12 rounded-2xl border border-border/60 bg-card/40 hover:bg-card/70 transition-colors overflow-hidden"
+              className="dark grain group relative mb-6 block overflow-hidden rounded-[22px] bg-[#0b0c10] text-white sm:mb-8"
             >
-              <div className="p-8 sm:p-10">
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${CATEGORY_COLORS[featured.category] ?? "bg-zinc-500/10 text-zinc-400"}`}>
-                    <Tag className="h-2.5 w-2.5" /> {featured.category}
+              <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand/20 blur-3xl transition-opacity duration-500 group-hover:opacity-80" />
+              <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:linear-gradient(to_right,#fff_1px,transparent_1px),linear-gradient(to_bottom,#fff_1px,transparent_1px)] [background-size:44px_44px] [mask-image:radial-gradient(ellipse_at_80%_0%,#000_20%,transparent_70%)]" />
+              <div className="relative p-7 sm:p-10 lg:p-12">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded-full border border-brand/30 bg-brand/15 px-2.5 py-0.5 text-[12px] font-medium text-brand">Latest</span>
+                  <span className={`rounded-full border px-2.5 py-0.5 text-[12px] font-medium ${categoryTone(featured.category)}`}>{featured.category}</span>
+                  <span className="flex items-center gap-1 text-[12.5px] text-white/50">
+                    <Clock className="h-3.5 w-3.5" /> {featured.read_time}
                   </span>
-                  <span className="text-[12px] text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> {featured.read_time}
-                  </span>
-                  <span className="text-[12px] text-muted-foreground">{formatDate(featured.published_at)}</span>
+                  <span className="text-[12.5px] text-white/50">{formatDate(featured.published_at)}</span>
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-bold leading-tight group-hover:text-primary transition-colors mb-3">
+                <h2 className="mt-5 max-w-4xl text-[clamp(1.6rem,3.6vw,2.6rem)] font-semibold leading-[1.08] tracking-[-0.035em] text-balance">
                   {featured.title}
                 </h2>
-                <p className="text-muted-foreground text-base leading-relaxed mb-6 max-w-3xl">
-                  {featured.excerpt || featured.description}
-                </p>
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                  Read article <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                <p className="mt-4 max-w-3xl text-[16px] leading-relaxed text-white/60">{featured.excerpt || featured.description}</p>
+                <span className="pill pill-sm pill-launch mt-7">
+                  Read article <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </span>
               </div>
             </Link>
@@ -139,29 +126,25 @@ export default async function BlogIndexPage() {
 
           {/* Rest of posts */}
           {rest.length > 0 && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
               {rest.map((post) => (
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
-                  className="group flex flex-col rounded-xl border border-border/60 bg-card/30 hover:bg-card/60 transition-colors p-6"
+                  className="panel reveal-up group flex flex-col p-6 transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-brand/40"
                 >
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${CATEGORY_COLORS[post.category] ?? "bg-zinc-500/10 text-zinc-400"}`}>
-                      {post.category}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-2.5 w-2.5" /> {post.read_time}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full border px-2 py-0.5 text-[11.5px] font-medium ${categoryTone(post.category)}`}>{post.category}</span>
+                    <span className="flex items-center gap-1 text-[12.5px] text-muted-foreground">
+                      <Clock className="h-3 w-3" /> {post.read_time}
                     </span>
                   </div>
-                  <h3 className="text-lg font-bold leading-snug group-hover:text-primary transition-colors mb-2 flex-1">
-                    {post.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{post.excerpt || post.description}</p>
-                  <div className="flex items-center justify-between mt-auto pt-3 border-t border-border/30">
-                    <span className="text-[11px] text-muted-foreground">{formatDate(post.published_at)}</span>
-                    <span className="text-sm font-medium text-primary flex items-center gap-1">
-                      Read <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  <h3 className="mt-4 flex-1 text-[18px] font-semibold leading-snug tracking-[-0.015em]">{post.title}</h3>
+                  <p className="mt-2 line-clamp-3 text-[14.5px] leading-relaxed text-muted-foreground">{post.excerpt || post.description}</p>
+                  <div className="mt-5 flex items-center justify-between border-t pt-4">
+                    <span className="text-[12.5px] text-muted-foreground">{formatDate(post.published_at)}</span>
+                    <span className="flex items-center gap-1 text-[13.5px] font-medium">
+                      Read <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                     </span>
                   </div>
                 </Link>

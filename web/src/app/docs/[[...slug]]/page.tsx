@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { use, useState, useEffect, type ReactNode } from "react";
+import { use, useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   categories,
@@ -24,14 +24,16 @@ import {
   ArrowLeft,
   ArrowRight,
   Hash,
+  ChevronDown,
+  Info,
 } from "lucide-react";
 
 const categoryIcons: Record<string, React.ReactNode> = {
-  rocket: <Rocket className="h-4 w-4" />,
-  terminal: <Terminal className="h-4 w-4" />,
-  code: <Code className="h-4 w-4" />,
-  package: <Package className="h-4 w-4" />,
-  book: <BookOpen className="h-4 w-4" />,
+  rocket: <Rocket className="h-3.5 w-3.5" />,
+  terminal: <Terminal className="h-3.5 w-3.5" />,
+  code: <Code className="h-3.5 w-3.5" />,
+  package: <Package className="h-3.5 w-3.5" />,
+  book: <BookOpen className="h-3.5 w-3.5" />,
 };
 
 export default function DocsPage({
@@ -50,100 +52,108 @@ export default function DocsPage({
   return (
     <>
       <Navbar />
-      <div className="mx-auto flex w-full max-w-full lg:max-w-[1400px] overflow-hidden">
-        {/* Desktop Sidebar */}
-        <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 overflow-y-auto border-r border-border/40 py-8 lg:block">
-          <DocsSidebar pathname={pathname} />
-        </aside>
-
-        {/* Content */}
-        <main className="min-w-0 flex-1 overflow-hidden px-4 sm:px-8 py-6 sm:py-8 lg:px-16 lg:py-12">
-          {/* Mobile nav toggle */}
+      <div className="pt-16">
+        {/* Mobile: current section bar that opens the full docs nav */}
+        <div className="frost sticky top-16 z-30 border-b lg:hidden">
           <button
-            onClick={() => setMobileNav(!mobileNav)}
-            className="mb-4 flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent lg:hidden"
+            type="button"
+            onClick={() => setMobileNav((v) => !v)}
+            aria-expanded={mobileNav}
+            className="flex w-full items-center gap-2 px-5 py-3 text-left text-[14px]"
           >
-            <BookOpen className="h-3.5 w-3.5" />
-            {doc?.category || "Navigation"}
-            <ChevronRight className={cn("h-3 w-3 transition-transform", mobileNav && "rotate-90")} />
+            <BookOpen className="h-4 w-4 shrink-0 text-brand" />
+            <span className="shrink-0 text-muted-foreground">{doc?.category || "Docs"}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+            <span className="truncate font-medium">{doc?.title || "Navigation"}</span>
+            <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 transition-transform duration-200", mobileNav && "rotate-180")} />
           </button>
-
-          {/* Mobile nav dropdown */}
           {mobileNav && (
-            <div className="mb-6 rounded-lg border border-border/40 bg-card/50 p-3 lg:hidden" onClick={() => setMobileNav(false)}>
+            <div className="max-h-[calc(100dvh-8rem)] overflow-y-auto border-t pb-6 pt-4" onClick={() => setMobileNav(false)}>
               <DocsSidebar pathname={pathname} />
             </div>
           )}
-          {doc ? (
-            <>
-              {/* Breadcrumb */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
-                <Link href="/docs" className="hover:text-foreground">
-                  Docs
+        </div>
+
+        <div className="mx-auto flex w-full max-w-[1400px] overflow-x-clip">
+          {/* Desktop sidebar */}
+          <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 overflow-y-auto border-r py-8 lg:block">
+            <DocsSidebar pathname={pathname} />
+          </aside>
+
+          {/* Content */}
+          <main className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-14 lg:py-12 xl:px-16">
+            {doc ? (
+              <>
+                {/* Breadcrumb */}
+                <nav aria-label="Breadcrumb" className="mb-6 hidden items-center gap-1.5 text-[13px] text-muted-foreground lg:flex">
+                  <Link href="/docs" className="transition-colors hover:text-foreground">
+                    Docs
+                  </Link>
+                  <ChevronRight className="h-3.5 w-3.5 opacity-50" />
+                  <span>{doc.category}</span>
+                  <ChevronRight className="h-3.5 w-3.5 opacity-50" />
+                  <span className="text-foreground">{doc.title}</span>
+                </nav>
+
+                <DocContent doc={doc} />
+
+                {/* Prev / next */}
+                <div className="mt-14 grid gap-3 border-t pt-8 sm:grid-cols-2">
+                  {adjacent.prev ? (
+                    <Link
+                      href={`/docs/${adjacent.prev.slug}`}
+                      className="panel group flex flex-col p-5 transition-colors hover:border-brand/40"
+                    >
+                      <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                        <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
+                        Previous
+                      </span>
+                      <span className="mt-1.5 text-[15.5px] font-medium">{adjacent.prev.title}</span>
+                    </Link>
+                  ) : (
+                    <div className="hidden sm:block" />
+                  )}
+                  {adjacent.next && (
+                    <Link
+                      href={`/docs/${adjacent.next.slug}`}
+                      className="panel group flex flex-col items-end p-5 text-right transition-colors hover:border-brand/40"
+                    >
+                      <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                        Next
+                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                      <span className="mt-1.5 text-[15.5px] font-medium">{adjacent.next.title}</span>
+                    </Link>
+                  )}
+                </div>
+
+                <p className="mt-10 text-[13.5px] text-muted-foreground">
+                  Stuck? Email{" "}
+                  <a href="mailto:support@deployzy.com" className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 hover:decoration-brand">
+                    support@deployzy.com
+                  </a>{" "}
+                  or ask on{" "}
+                  <a href="https://t.me/deployzy" target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 hover:decoration-brand">
+                    Telegram
+                  </a>
+                  .
+                </p>
+              </>
+            ) : (
+              <div className="py-24 text-center">
+                <p className="eyebrow">404</p>
+                <h1 className="mt-3 text-[32px] font-semibold tracking-[-0.03em]">Page not found</h1>
+                <p className="mt-2 text-muted-foreground">This page doesn&apos;t exist yet.</p>
+                <Link href="/docs/introduction" className="pill pill-sm pill-ink mt-6">
+                  Go to Introduction <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
-                <ChevronRight className="h-3 w-3" />
-                <span className="text-foreground">{doc.category}</span>
-                <ChevronRight className="h-3 w-3" />
-                <span className="text-foreground">{doc.title}</span>
               </div>
+            )}
+          </main>
 
-              <DocContent doc={doc} />
-
-              {/* Prev/Next Navigation */}
-              <div className="mt-10 sm:mt-16 flex flex-col sm:flex-row items-stretch gap-3 sm:gap-4 border-t border-border/40 pt-6 sm:pt-8">
-                {adjacent.prev ? (
-                  <Link
-                    href={`/docs/${adjacent.prev.slug}`}
-                    className="group flex flex-1 flex-col rounded-xl border border-border/60 p-5 transition-colors hover:border-primary/30 hover:bg-accent/20"
-                  >
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <ArrowLeft className="h-3 w-3" />
-                      Previous
-                    </span>
-                    <span className="mt-1 text-sm font-medium group-hover:text-primary">
-                      {adjacent.prev.title}
-                    </span>
-                  </Link>
-                ) : (
-                  <div className="flex-1" />
-                )}
-                {adjacent.next ? (
-                  <Link
-                    href={`/docs/${adjacent.next.slug}`}
-                    className="group flex flex-1 flex-col items-end rounded-xl border border-border/60 p-5 transition-colors hover:border-primary/30 hover:bg-accent/20"
-                  >
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      Next
-                      <ArrowRight className="h-3 w-3" />
-                    </span>
-                    <span className="mt-1 text-sm font-medium group-hover:text-primary">
-                      {adjacent.next.title}
-                    </span>
-                  </Link>
-                ) : (
-                  <div className="flex-1" />
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-20">
-              <h1 className="text-2xl font-bold">Page not found</h1>
-              <p className="mt-2 text-muted-foreground">
-                This page doesn&apos;t exist yet.
-              </p>
-              <Link
-                href="/docs/introduction"
-                className="mt-4 inline-flex items-center gap-1 text-primary hover:underline"
-              >
-                Go to Introduction
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-          )}
-        </main>
-
-        {/* Table of Contents */}
-        {doc && <TableOfContents content={doc.content} />}
+          {/* Table of contents */}
+          {doc && <TableOfContents content={doc.content} />}
+        </div>
       </div>
     </>
   );
@@ -151,28 +161,27 @@ export default function DocsPage({
 
 function DocsSidebar({ pathname }: { pathname: string }) {
   return (
-    <div className="px-1 lg:px-4">
+    <nav aria-label="Documentation" className="px-3 lg:px-4">
       {categories.map((cat) => (
-        <div key={cat.name} className="mb-4 lg:mb-6">
-          <h3 className="flex items-center gap-2 mb-1.5 lg:mb-2 px-2 lg:px-3 text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {categoryIcons[cat.icon]}
+        <div key={cat.name} className="mb-6">
+          <p className="eyebrow mb-2 flex items-center gap-2 px-3">
+            <span className="text-brand">{categoryIcons[cat.icon]}</span>
             {cat.name}
-          </h3>
-          <ul className="space-y-0.5">
+          </p>
+          <ul className="space-y-px">
             {cat.pages.map((page) => {
               const href = `/docs/${page.slug}`;
-              const active =
-                pathname === href ||
-                (page.slug === "introduction" && pathname === "/docs");
+              const active = pathname === href || (page.slug === "introduction" && pathname === "/docs");
               return (
                 <li key={page.slug}>
                   <Link
                     href={href}
+                    aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex items-center rounded-lg px-2 lg:px-3 py-1.5 text-xs lg:text-[13px] transition-colors",
+                      "relative flex items-center rounded-lg px-3 py-2 text-[14.5px] transition-colors lg:py-1.5 lg:text-[13.5px]",
                       active
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        ? "bg-muted font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[2px] before:rounded-full before:bg-brand"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     )}
                   >
                     {page.title}
@@ -183,65 +192,58 @@ function DocsSidebar({ pathname }: { pathname: string }) {
           </ul>
         </div>
       ))}
-    </div>
+    </nav>
   );
 }
 
 function TableOfContents({ content }: { content: string }) {
-  const [headings, setHeadings] = useState<{ id: string; text: string; level: number }[]>([]);
+  const headings = useMemo(
+    () =>
+      content
+        .split("\n")
+        .filter((l) => l.startsWith("## ") || l.startsWith("### "))
+        .map((l) => {
+          const level = l.startsWith("### ") ? 3 : 2;
+          const text = l.replace(/^#{2,3}\s+/, "");
+          const id = text.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+          return { id, text, level };
+        }),
+    [content],
+  );
   const [active, setActive] = useState("");
-
-  useEffect(() => {
-    const h = content
-      .split("\n")
-      .filter((l) => l.startsWith("## ") || l.startsWith("### "))
-      .map((l) => {
-        const level = l.startsWith("### ") ? 3 : 2;
-        const text = l.replace(/^#{2,3}\s+/, "");
-        const id = text.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-        return { id, text, level };
-      });
-    setHeadings(h);
-  }, [content]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActive(entry.target.id);
-          }
+          if (entry.isIntersecting) setActive(entry.target.id);
         }
       },
-      { rootMargin: "-80px 0px -80% 0px" }
+      { rootMargin: "-80px 0px -80% 0px" },
     );
-
     headings.forEach((h) => {
       const el = document.getElementById(h.id);
       if (el) observer.observe(el);
     });
-
     return () => observer.disconnect();
   }, [headings]);
 
   if (headings.length < 2) return null;
 
   return (
-    <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-56 shrink-0 overflow-y-auto py-12 xl:block">
-      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        On this page
-      </h4>
-      <ul className="space-y-1">
+    <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-60 shrink-0 overflow-y-auto py-12 pr-6 xl:block">
+      <p className="eyebrow mb-3">On this page</p>
+      <ul className="space-y-0.5 border-l">
         {headings.map((h) => (
           <li key={h.id}>
             <a
               href={`#${h.id}`}
               className={cn(
-                "block text-xs py-1 transition-colors",
-                h.level === 3 ? "pl-3" : "",
+                "-ml-px block border-l-2 py-1.5 text-[13.5px] leading-snug transition-colors",
+                h.level === 3 ? "pl-6" : "pl-4",
                 active === h.id
-                  ? "text-primary font-medium"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "border-brand font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
               {h.text}
@@ -256,10 +258,8 @@ function TableOfContents({ content }: { content: string }) {
 function DocContent({ doc }: { doc: DocPage }) {
   return (
     <article>
-      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{doc.title}</h1>
-      <p className="mt-2 sm:mt-3 text-base sm:text-lg text-muted-foreground leading-relaxed">
-        {doc.description}
-      </p>
+      <h1 className="text-[clamp(2rem,4.2vw,2.75rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-balance">{doc.title}</h1>
+      <p className="mt-3 text-[17px] leading-relaxed text-muted-foreground sm:text-[18px]">{doc.description}</p>
       <div className="mt-10">
         <MarkdownRenderer content={doc.content} />
       </div>
@@ -267,8 +267,48 @@ function DocContent({ doc }: { doc: DocPage }) {
   );
 }
 
+/**
+ * Split doc markdown into blocks. Fenced code stays whole even when it holds
+ * blank lines, and headings are their own block so text right under a heading
+ * still renders as a paragraph.
+ */
+function splitBlocks(content: string): string[] {
+  const blocks: string[] = [];
+  let buf: string[] = [];
+  let inFence = false;
+  const flush = () => {
+    if (buf.some((l) => l.trim())) blocks.push(buf.join("\n"));
+    buf = [];
+  };
+  for (const line of content.split("\n")) {
+    if (line.trim().startsWith("```")) {
+      if (inFence) {
+        buf.push(line);
+        flush();
+      } else {
+        flush();
+        buf.push(line);
+      }
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      buf.push(line);
+    } else if (!line.trim()) {
+      flush();
+    } else if (/^#{2,3}\s/.test(line)) {
+      flush();
+      blocks.push(line);
+    } else {
+      buf.push(line);
+    }
+  }
+  flush();
+  return blocks;
+}
+
 function MarkdownRenderer({ content }: { content: string }) {
-  const blocks = content.split("\n\n");
+  const blocks = splitBlocks(content);
 
   return (
     <div className="space-y-5">
@@ -278,7 +318,8 @@ function MarkdownRenderer({ content }: { content: string }) {
         if (trimmed.startsWith("```")) {
           const lines = trimmed.split("\n");
           const lang = lines[0].replace("```", "").trim();
-          const code = lines.slice(1, -1).join("\n");
+          const closed = lines.length > 1 && lines[lines.length - 1].trim().startsWith("```");
+          const code = lines.slice(1, closed ? -1 : undefined).join("\n");
           return <CodeBlock key={i} lang={lang} code={code} />;
         }
 
@@ -289,10 +330,10 @@ function MarkdownRenderer({ content }: { content: string }) {
             <h2
               key={i}
               id={id}
-              className="group flex items-center gap-2 text-xl font-bold mt-12 mb-2 scroll-mt-20"
+              className="group mb-1 mt-14 flex scroll-mt-32 items-center gap-2 text-[22px] font-semibold tracking-[-0.025em]"
             >
               {text}
-              <a href={`#${id}`} className="opacity-0 group-hover:opacity-50 transition-opacity">
+              <a href={`#${id}`} aria-label="Link to this section" className="text-brand opacity-0 transition-opacity group-hover:opacity-70">
                 <Hash className="h-4 w-4" />
               </a>
             </h2>
@@ -306,10 +347,10 @@ function MarkdownRenderer({ content }: { content: string }) {
             <h3
               key={i}
               id={id}
-              className="group flex items-center gap-2 text-base font-semibold mt-8 mb-2 scroll-mt-20"
+              className="group mb-1 mt-9 flex scroll-mt-32 items-center gap-2 text-[17px] font-semibold tracking-[-0.01em]"
             >
               {text}
-              <a href={`#${id}`} className="opacity-0 group-hover:opacity-50 transition-opacity">
+              <a href={`#${id}`} aria-label="Link to this section" className="text-brand opacity-0 transition-opacity group-hover:opacity-70">
                 <Hash className="h-3.5 w-3.5" />
               </a>
             </h3>
@@ -321,9 +362,12 @@ function MarkdownRenderer({ content }: { content: string }) {
           return (
             <div
               key={i}
-              className="rounded-lg border-l-4 border-primary/50 bg-primary/5 px-5 py-4 text-sm text-foreground/80"
+              className="flex gap-3 rounded-xl border border-brand/25 bg-brand/[0.06] px-4 py-3.5 text-[15px] leading-relaxed text-foreground/85 sm:px-5 sm:py-4"
             >
-              <InlineMarkdown text={text} />
+              <Info className="mt-[3px] h-4 w-4 shrink-0 text-brand" />
+              <div className="min-w-0">
+                <InlineMarkdown text={text} />
+              </div>
             </div>
           );
         }
@@ -345,15 +389,15 @@ function MarkdownRenderer({ content }: { content: string }) {
           return (
             <div
               key={i}
-              className="overflow-x-auto rounded-lg border border-border/60 max-w-full -mx-1"
+              className="max-w-full overflow-x-auto rounded-xl border"
             >
-              <table className="w-full text-sm">
+              <table className="w-full text-[14.5px]">
                 <thead>
-                  <tr className="border-b border-border/60 bg-muted/30">
+                  <tr className="border-b bg-muted/50">
                     {headers?.map((h, j) => (
                       <th
                         key={j}
-                        className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        className="whitespace-nowrap px-4 py-2.5 text-left font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
                       >
                         {h}
                       </th>
@@ -364,10 +408,10 @@ function MarkdownRenderer({ content }: { content: string }) {
                   {body.map((row, j) => (
                     <tr
                       key={j}
-                      className="border-b border-border/30 last:border-0"
+                      className="border-b last:border-0"
                     >
                       {row.map((cell, k) => (
-                        <td key={k} className="px-4 py-2.5 text-sm">
+                        <td key={k} className="px-4 py-3 align-top">
                           <InlineMarkdown text={cell} />
                         </td>
                       ))}
@@ -387,7 +431,7 @@ function MarkdownRenderer({ content }: { content: string }) {
             <Tag
               key={i}
               className={cn(
-                "space-y-2 text-sm text-foreground/80 pl-5 leading-relaxed",
+                "space-y-2 pl-5 text-[15.5px] leading-relaxed text-foreground/80 marker:text-brand",
                 ordered ? "list-decimal" : "list-disc"
               )}
             >
@@ -406,7 +450,7 @@ function MarkdownRenderer({ content }: { content: string }) {
           return (
             <p
               key={i}
-              className="text-sm leading-relaxed text-foreground/80 break-words"
+              className="break-words text-[15.5px] leading-[1.75] text-foreground/80"
             >
               <InlineMarkdown text={trimmed} />
             </p>
@@ -429,31 +473,33 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   }
 
   return (
-    <div className="group relative rounded-xl border border-border/60 bg-[#0a0a0a] max-w-full">
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-3 sm:px-4 py-2">
-        <span className="text-[10px] sm:text-[11px] font-medium text-zinc-500">
-          {lang || "code"}
-        </span>
+    <div className="group relative max-w-full overflow-hidden rounded-xl border border-black/10 bg-[#0b0c10] dark:border-white/[0.07]">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] py-1.5 pl-4 pr-2">
+        <span className="h-2 w-2 rounded-full bg-white/10" />
+        <span className="h-2 w-2 rounded-full bg-white/10" />
+        <span className="ml-1.5 font-mono text-[11.5px] text-white/40">{lang || "code"}</span>
         <button
+          type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1 sm:gap-1.5 rounded-md px-2 py-1 text-[10px] sm:text-[11px] text-zinc-500 transition-all hover:bg-white/5 hover:text-zinc-300"
+          aria-label="Copy code"
+          className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-white/45 transition-colors hover:bg-white/5 hover:text-white"
         >
           {copied ? (
             <>
-              <Check className="h-3 w-3 text-green-400" />
-              <span className="text-green-400">Copied!</span>
+              <Check className="h-3.5 w-3.5 text-brand" />
+              <span className="text-brand">Copied</span>
             </>
           ) : (
             <>
-              <Copy className="h-3 w-3" />
+              <Copy className="h-3.5 w-3.5" />
               Copy
             </>
           )}
         </button>
       </div>
       <div className="overflow-x-auto">
-        <pre className="p-3 sm:p-4 text-[11px] sm:text-[13px] leading-relaxed">
-          <code className="text-zinc-300 font-mono whitespace-pre">{code}</code>
+        <pre className="p-4 text-[13.5px] leading-relaxed">
+          <code className="whitespace-pre font-mono text-white/85">{code}</code>
         </pre>
       </div>
     </div>
@@ -496,7 +542,7 @@ function InlineMarkdown({ text }: { text: string }) {
       parts.push(
         <code
           key={key++}
-          className="rounded-md bg-muted px-1 sm:px-1.5 py-0.5 font-mono text-[10px] sm:text-[12px] text-foreground break-all"
+          className="break-words rounded-md border bg-muted/70 px-1.5 py-px font-mono text-[0.86em] text-foreground"
         >
           {first.match[1]}
         </code>
@@ -508,11 +554,11 @@ function InlineMarkdown({ text }: { text: string }) {
         <Link
           key={key++}
           href={href}
-          className="text-primary font-medium hover:underline inline-flex items-center gap-0.5"
+          className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 transition-colors hover:decoration-brand"
           {...(isExternal ? { target: "_blank", rel: "noopener" } : {})}
         >
           {first.match[1]}
-          {isExternal && <ExternalLink className="h-3 w-3" />}
+          {isExternal && <ExternalLink className="ml-0.5 inline h-3 w-3 align-[-1px]" />}
         </Link>
       );
     }

@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Check, Copy, Loader2, MailCheck } from "lucide-react";
+import { ApiKeyReveal, AuthShell, FormError, SubmitButton } from "@/components/auth/auth-shell";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 function VerifyEmailForm() {
   const router = useRouter();
@@ -20,7 +19,7 @@ function VerifyEmailForm() {
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [apiKey, setApiKey] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,124 +69,105 @@ function VerifyEmailForm() {
     }
   }
 
-  function copyKey() {
-    navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  // Verified — same API-key handoff the signup flow used to show.
+  // Verified: same API-key hand-off the sign-up flow shows.
   if (apiKey) {
     const redirect = searchParams.get("redirect");
     return (
-      <div className="flex min-h-screen items-center justify-center px-6">
-        <div className="w-full max-w-md text-center">
-          <div className="flex justify-center mb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
-              <Check className="h-6 w-6" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold">Email confirmed!</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Here&apos;s your API key. Save it now — it won&apos;t be shown again.
-          </p>
-
-          <div className="mt-6 flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3 font-mono text-sm">
-            <code className="flex-1 truncate text-left">{apiKey}</code>
-            <Button variant="ghost" size="sm" onClick={copyKey}>
-              {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-            </Button>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-border bg-[#0d1117] p-4 text-left font-mono text-sm text-[#e6edf3]">
-            <div className="text-zinc-500"># Save your token and start tunneling</div>
-            <div className="mt-1">deployzy authtoken {apiKey}</div>
-            <div className="mt-1">deployzy http 3000</div>
-          </div>
-
-          <Button
-            className="mt-6 w-full"
-            onClick={() => router.push(redirect && redirect.startsWith("/") ? redirect : "/overview")}
-          >
-            {redirect?.startsWith("/invite/") ? "Accept Invitation →" : "Go to Dashboard"}
-          </Button>
-        </div>
-      </div>
+      <ApiKeyReveal
+        apiKey={apiKey}
+        title={<>Email <span className="accent-serif text-launch">confirmed.</span></>}
+        continueLabel={redirect?.startsWith("/invite/") ? "Accept invitation" : "Go to dashboard"}
+        onContinue={() => router.push(redirect && redirect.startsWith("/") ? redirect : "/overview")}
+      />
     );
   }
 
+  const activeBox = Math.min(code.length, 5);
+
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
-      <div className="w-full max-w-sm">
-        <Link href="/" className="flex items-center justify-center gap-2 font-bold text-lg mb-8">
-          <img src="/logo-mark.png" alt="Deployzy" className="h-8 w-8 rounded-lg" />
-          Deployzy
-        </Link>
-
-        <div className="flex justify-center mb-5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
-            <MailCheck className="h-6 w-6" />
-          </div>
+    <AuthShell
+      title={<>Check your <span className="accent-serif">inbox.</span></>}
+      subtitle={
+        <>
+          We sent a 6-digit code to <span className="font-medium text-foreground">{email || "your email"}</span>.
+        </>
+      }
+      footer={
+        <div className="space-y-2">
+          <p>
+            Didn&apos;t get it?{" "}
+            <button
+              type="button"
+              onClick={resend}
+              disabled={resending || cooldown > 0}
+              className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 hover:decoration-brand disabled:no-underline disabled:opacity-50"
+            >
+              {cooldown > 0 ? `Resend in ${cooldown}s` : resending ? "Sending…" : "Resend code"}
+            </button>
+          </p>
+          <p className="text-[13px]">
+            Wrong address?{" "}
+            <Link href="/sign-up" className="underline-offset-4 hover:text-foreground hover:underline">
+              Start over
+            </Link>
+          </p>
         </div>
+      }
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (code.length === 6) submitCode(code);
+        }}
+      >
+        <FormError message={error} />
+        {notice && !error && (
+          <p role="status" className="rounded-xl border border-brand/25 bg-brand/[0.06] px-3.5 py-2.5 text-[14px] text-foreground/85">
+            {notice}
+          </p>
+        )}
 
-        <h1 className="text-2xl font-bold text-center">Confirm your email</h1>
-        <p className="mt-2 text-center text-sm text-muted-foreground">
-          We sent a 6-digit code to{" "}
-          <span className="font-medium text-foreground">{email || "your inbox"}</span>
-        </p>
-
-        <form
-          className="mt-8"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (code.length === 6) submitCode(code);
-          }}
-        >
-          <Input
+        {/* One real input (keeps paste and one-time-code autofill) under six display boxes. */}
+        <div className="relative">
+          <input
             ref={inputRef}
             value={code}
             onChange={(e) => handleChange(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             inputMode="numeric"
             autoComplete="one-time-code"
-            placeholder="000000"
+            maxLength={6}
             aria-label="Verification code"
             disabled={loading}
-            className="text-center text-2xl font-mono tracking-[0.5em] h-14"
+            className="absolute inset-0 z-10 h-full w-full cursor-text text-transparent caret-transparent opacity-0"
           />
-
-          {error && (
-            <p className="mt-3 text-center text-sm text-red-500">{error}</p>
-          )}
-          {notice && !error && (
-            <p className="mt-3 text-center text-sm text-emerald-500">{notice}</p>
-          )}
-
-          <Button type="submit" className="mt-4 w-full gap-2" disabled={loading || code.length !== 6}>
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Verify email
-          </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          Didn&apos;t get it?{" "}
-          <button
-            type="button"
-            onClick={resend}
-            disabled={resending || cooldown > 0}
-            className="font-medium text-foreground hover:underline disabled:opacity-50 disabled:no-underline"
-          >
-            {cooldown > 0 ? `Resend in ${cooldown}s` : resending ? "Sending…" : "Resend code"}
-          </button>
+          <div aria-hidden className="grid grid-cols-6 gap-2">
+            {Array.from({ length: 6 }, (_, i) => {
+              const isActive = focused && !loading && i === activeBox && code.length < 6;
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "flex h-14 items-center justify-center rounded-xl border bg-background font-mono text-[24px] font-medium shadow-xs transition-[border-color,box-shadow]",
+                    isActive && "border-brand/60 ring-4 ring-brand/15",
+                    code[i] && "border-foreground/25",
+                    error && "border-red-500/40",
+                  )}
+                >
+                  {code[i] ?? (isActive ? <span className="auth-caret h-6 w-0.5 bg-foreground/70" /> : "")}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Wrong address?{" "}
-          <Link href="/sign-up" className="hover:underline">
-            Start over
-          </Link>
-        </p>
-      </div>
-    </div>
+        <SubmitButton loading={loading} loadingText="Verifying…" disabled={code.length !== 6}>
+          Verify email
+        </SubmitButton>
+      </form>
+    </AuthShell>
   );
 }
 

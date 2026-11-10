@@ -41,7 +41,7 @@ export function BlogToc({ headings }: { headings: Heading[] }) {
 
   return (
     <nav aria-label="On this page">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+      <p className="eyebrow mb-3">
         On this page
       </p>
       <ul className="space-y-0.5 border-l border-border/50">
@@ -55,7 +55,7 @@ export function BlogToc({ headings }: { headings: Heading[] }) {
                   "block border-l-2 py-1.5 text-[13px] leading-snug transition-colors",
                   h.level === 3 ? "pl-6" : "pl-4",
                   isActive
-                    ? "border-foreground text-foreground font-medium"
+                    ? "border-brand text-foreground font-medium"
                     : "border-transparent text-muted-foreground hover:text-foreground",
                 ].join(" ")}
               >

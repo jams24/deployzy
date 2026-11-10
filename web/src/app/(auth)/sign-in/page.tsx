@@ -43,9 +43,9 @@ function SignInForm() {
 
   return (
     <AuthShell
-      title="Welcome back"
+      title={<>Welcome <span className="accent-serif">back.</span></>}
       subtitle="Sign in to deploy, tunnel and manage your apps."
-      footer={<>New to Deployzy?{" "}<Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">Create an account</Link></>}
+      footer={<>New to Deployzy?{" "}<Link href="/sign-up" className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 hover:decoration-brand">Create an account</Link></>}
     >
       <GoogleButton />
       <OrDivider />

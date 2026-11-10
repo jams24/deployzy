@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Copy, Check, Mail, Lock, User } from "lucide-react";
-import { AuthShell, GoogleButton, OrDivider, Field, FormError, SubmitButton } from "@/components/auth/auth-shell";
+import { Mail, Lock, User } from "lucide-react";
+import { ApiKeyReveal, AuthShell, GoogleButton, OrDivider, Field, FormError, SubmitButton } from "@/components/auth/auth-shell";
 import { api } from "@/lib/api";
 
 function SignUpForm() {
@@ -17,7 +16,6 @@ function SignUpForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [copied, setCopied] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,53 +43,15 @@ function SignUpForm() {
     }
   }
 
-  function copyKey() {
-    navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   if (apiKey) {
+    const redirect = searchParams.get("redirect");
     return (
-      <div className="flex min-h-screen items-center justify-center px-6">
-        <div className="w-full max-w-md text-center">
-          <div className="flex justify-center mb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-500">
-              <Check className="h-6 w-6" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold">Account created!</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Here&apos;s your API key. Save it now — it won&apos;t be shown again.
-          </p>
-
-          <div className="mt-6 flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3 font-mono text-sm">
-            <code className="flex-1 truncate text-left">{apiKey}</code>
-            <Button variant="ghost" size="sm" onClick={copyKey}>
-              {copied ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-border bg-[#0d1117] p-4 text-left font-mono text-sm text-[#e6edf3]">
-            <div className="text-zinc-500">
-              # Save your token and start tunneling
-            </div>
-            <div className="mt-1">deployzy authtoken {apiKey}</div>
-            <div className="mt-1">deployzy http 3000</div>
-          </div>
-
-          <Button className="mt-6 w-full" onClick={() => {
-            const redirect = searchParams.get("redirect");
-            router.push(redirect && redirect.startsWith("/") ? redirect : "/overview");
-          }}>
-            {searchParams.get("redirect")?.startsWith("/invite/") ? "Accept Invitation →" : "Go to Dashboard"}
-          </Button>
-        </div>
-      </div>
+      <ApiKeyReveal
+        apiKey={apiKey}
+        title={<>You&rsquo;re <span className="accent-serif text-launch">in.</span></>}
+        continueLabel={redirect?.startsWith("/invite/") ? "Accept invitation" : "Go to dashboard"}
+        onContinue={() => router.push(redirect && redirect.startsWith("/") ? redirect : "/overview")}
+      />
     );
   }
 
@@ -103,9 +63,9 @@ function SignUpForm() {
 
   return (
     <AuthShell
-      title="Create your account"
+      title={<>Start <span className="accent-serif">shipping.</span></>}
       subtitle="Free to start. Deploy your first app or tunnel in under a minute."
-      footer={<>Already have an account?{" "}<Link href="/sign-in" className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link></>}
+      footer={<>Already have an account?{" "}<Link href="/sign-in" className="font-medium text-foreground underline decoration-brand/50 underline-offset-4 hover:decoration-brand">Sign in</Link></>}
     >
       <GoogleButton />
       <OrDivider />
@@ -123,10 +83,10 @@ function SignUpForm() {
               <div className="flex flex-1 gap-1">
                 {[0, 1, 2].map((n) => (
                   <span key={n} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
-                    n < strength ? (strength === 1 ? "bg-amber-500" : "bg-emerald-500") : "bg-muted"}`} />
+                    n < strength ? (strength === 1 ? "bg-amber-500" : "bg-brand") : "bg-muted"}`} />
                 ))}
               </div>
-              <span className="w-16 text-right text-[11px] text-muted-foreground">{strengthLabel}</span>
+              <span className="w-16 text-right text-[12.5px] text-muted-foreground">{strengthLabel}</span>
             </div>
           )}
         </div>
