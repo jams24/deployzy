@@ -694,3 +694,15 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
 @media (prefers-reduced-motion: reduce) {
   [class*="animate-[dz-fade"], [class*="animate-[dz-pop"] { animation: none !important; }
 }
+
+/* Dashboard surfaces. @utility puts these in Tailwind's utilities layer, so
+   page classes like p-4 or hover:border-* still override them (plain classes
+   such as .pill/.panel are unlayered and win over utilities). */
+:root { --dz-surface: oklch(1 0 0); --dz-surface-shadow: 0 1px 2px oklch(0 0 0 / 0.04), 0 1px 0 oklch(0 0 0 / 0.02); }
+.dark { --dz-surface: oklch(1 0 0 / 0.028); --dz-surface-shadow: none; }
+@utility surface {
+  border-width: 1px;
+  border-color: var(--dz-hairline);
+  background-color: var(--dz-surface);
+  box-shadow: var(--dz-surface-shadow);
+}

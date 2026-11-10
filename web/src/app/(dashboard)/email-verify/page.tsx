@@ -192,11 +192,11 @@ export default function EmailVerifyPage() {
       <DashMotion />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Network</p>
+          <p className="eyebrow">Network</p>
           <h1 className="mt-1 flex items-center gap-2 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]"><MailCheck className="h-6 w-6" /> Email Verify</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Catch typos, dead domains, throwaway and role addresses before you send, one at a time or a whole list.</p>
         </div>
-        <Link href="/billing" className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2 text-xs hover:border-foreground/20">
+        <Link href="/billing" className="inline-flex items-center gap-2 rounded-xl surface px-3 py-2 text-xs hover:border-foreground/20">
           <Coins className="h-4 w-4 text-amber-500" />
           <span><span className="font-semibold tabular-nums">{credits ? (credits.unlimited ? "Unlimited" : credits.available.toLocaleString(undefined, { maximumFractionDigits: 2 })) : "…"}</span> credits</span>
           <span className="text-muted-foreground">· {cost} per check</span>
@@ -216,7 +216,7 @@ export default function EmailVerifyPage() {
         </div>
       )}
 
-      <div className="ov-rise overflow-hidden rounded-2xl border border-border/60 bg-card" style={{ animationDelay: "150ms" }}>
+      <div className="ov-rise overflow-hidden rounded-2xl surface" style={{ animationDelay: "150ms" }}>
         <div className="flex border-b border-border/60 px-2">
           {([["single", "Single address", Search], ["bulk", "Bulk list", ListChecks]] as const).map(([k, l, I]) => (
             <button key={k} onClick={() => { setTab(k); setErr(""); }}
@@ -306,7 +306,7 @@ export default function EmailVerifyPage() {
         </div>
       </div>
 
-      <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "220ms" }}>
+      <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "220ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-2 text-sm font-semibold"><Code2 className="h-4 w-4 text-muted-foreground" /> Use it from your code</p>
           <Link href="/api-keys" className="text-xs font-medium hover:underline">Get an API key →</Link>

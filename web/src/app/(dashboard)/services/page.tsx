@@ -343,13 +343,13 @@ export default function ServicesPage() {
 
       <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Deploy</p>
-          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Databases</h1>
-          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
+          <p className="eyebrow">Deploy</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Databases</h1>
+          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground hidden sm:block">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" onClick={load} className="h-8 w-8 p-0 rounded-lg" title="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg" nativeButton={false} render={<Link href="/new?type=database" />}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={load} className="h-9 w-9 rounded-full p-0" title="Refresh" aria-label="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4" nativeButton={false} render={<Link href="/new?type=database" />}>
             <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> New Database</span>
           </Button>
         </div>
@@ -361,7 +361,7 @@ export default function ServicesPage() {
         <div className="relative rounded-2xl border border-dashed border-border overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
           <div className="relative flex flex-col items-center py-16 px-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
               <Database className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <h3 className="mt-4 font-semibold">No databases yet</h3>
@@ -431,7 +431,7 @@ export default function ServicesPage() {
         })()}
         <div className="rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40">
           {/* table header */}
-          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 bg-muted/40">
+          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 eyebrow bg-muted/40">
             <span className="flex-1">Database</span>
             <span className="w-28 text-right pr-2">Actions</span>
           </div>

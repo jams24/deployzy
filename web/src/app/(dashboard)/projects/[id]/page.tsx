@@ -76,13 +76,13 @@ export default function ProjectOverviewPage() {
     <div className="space-y-4">
       {/* Headline stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <MousePointerClick className="h-3 w-3" /> Pageviews · 24h
           </div>
           <div className="mt-1.5 text-xl font-semibold font-mono">{fmtNum(site?.overview?.pageviews || 0)}</div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <Eye className="h-3 w-3" /> Visitors · 24h
           </div>
@@ -94,13 +94,13 @@ export default function ProjectOverviewPage() {
             ) : null}
           </div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <Cpu className="h-3 w-3" /> CPU
           </div>
           <div className="mt-1.5 text-xl font-semibold font-mono">{latest ? `${latest.cpu_pct.toFixed(1)}%` : "—"}</div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <MemoryStick className="h-3 w-3" /> Memory
           </div>
@@ -112,7 +112,7 @@ export default function ProjectOverviewPage() {
       </div>
 
       {/* Traffic */}
-      <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+      <div className="rounded-xl surface p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Activity className="h-3.5 w-3.5 text-muted-foreground" />
@@ -152,7 +152,7 @@ export default function ProjectOverviewPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Current deployment + rollback */}
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4 space-y-3">
+        <div className="rounded-xl surface p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Rocket className="h-3.5 w-3.5 text-muted-foreground" />
@@ -219,7 +219,7 @@ export default function ProjectOverviewPage() {
         </div>
 
         {/* Bandwidth */}
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4 space-y-3">
+        <div className="rounded-xl surface p-4 space-y-3">
           <div className="flex items-center gap-2">
             <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" /></svg>
             <span className="text-xs font-medium">Bandwidth</span>

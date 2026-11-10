@@ -459,9 +459,9 @@ export default function BillingPage() {
 
       {/* Header */}
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Billing</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="eyebrow">Account</p>
+        <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Billing</h1>
+        <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
           Your plan, usage and payments — all in one place.
         </p>
       </div>
@@ -485,7 +485,7 @@ export default function BillingPage() {
           </div>
           <Button
             size="sm"
-            className="shrink-0 rounded-lg"
+            className="shrink-0 rounded-full"
             disabled={checkoutLoading}
             onClick={() => checkout(status.grace!.plan as "hobby" | "pro" | "team", payMethod)}
           >

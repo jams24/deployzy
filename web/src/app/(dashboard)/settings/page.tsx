@@ -162,12 +162,12 @@ export default function SettingsPage() {
 
   return (
     <div className="animate-fade-in-up">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-      <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Your profile, sign-in, appearance and developer access.</p>
+      <p className="eyebrow">Account</p>
+      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Settings</h1>
+      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Your profile, sign-in, appearance and developer access.</p>
 
       {/* Identity banner */}
-      <div className="relative mt-6 overflow-hidden rounded-2xl border border-border/60 bg-card p-5">
+      <div className="relative mt-6 overflow-hidden rounded-2xl surface p-5">
         <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl" />
         <div className="relative flex flex-wrap items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-sky-500 text-xl font-semibold text-white shadow-lg shadow-emerald-500/20">{initials}</div>

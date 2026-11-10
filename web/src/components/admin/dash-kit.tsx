@@ -93,7 +93,7 @@ export function KpiCard({
 }) {
   return (
     <button onClick={onClick} disabled={!onClick}
-      className="ov-rise group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 text-left transition-all duration-300 enabled:hover:-translate-y-0.5 enabled:hover:border-border enabled:hover:shadow-lg enabled:hover:shadow-black/[0.04] disabled:cursor-default"
+      className="ov-rise group relative overflow-hidden rounded-2xl surface p-4 text-left transition-all duration-300 enabled:hover:-translate-y-0.5 enabled:hover:border-border enabled:hover:shadow-lg enabled:hover:shadow-black/[0.04] disabled:cursor-default"
       style={{ animationDelay: `${delay}ms` }}>
       <div className="absolute inset-x-0 top-0 h-px opacity-60" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
       <div className="flex items-center justify-between gap-2">

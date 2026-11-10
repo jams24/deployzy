@@ -109,14 +109,14 @@ export default function SubdomainsPage() {
     <div className="@container animate-fade-in-up space-y-5">
       <DashMotion />
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Network</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Subdomains</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Reserve names on <span className="font-mono">{domain}</span> so they&apos;re yours every time you start a tunnel. Nobody else can use a reserved name.</p>
+        <p className="eyebrow">Network</p>
+        <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Subdomains</h1>
+        <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Reserve names on <span className="font-mono">{domain}</span> so they&apos;re yours every time you start a tunnel. Nobody else can use a reserved name.</p>
       </div>
 
       <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Reserve */}
-        <form onSubmit={reserve} className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5">
+        <form onSubmit={reserve} className="ov-rise rounded-2xl surface p-4 sm:p-5">
           <p className="text-sm font-semibold">Reserve a subdomain</p>
           <div className={`mt-3 flex items-center overflow-hidden rounded-xl border bg-background shadow-sm transition-all focus-within:ring-4 ${
             check && !check.available ? "border-red-500/50 focus-within:ring-red-500/10" : check?.available ? "border-emerald-500/50 focus-within:ring-emerald-500/10" : "border-input focus-within:border-foreground/30 focus-within:ring-emerald-500/10"}`}>
@@ -141,7 +141,7 @@ export default function SubdomainsPage() {
         </form>
 
         {/* Usage */}
-        <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "60ms" }}>
+        <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "60ms" }}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">Usage</p>
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium capitalize">{data?.plan ?? "…"} plan</span>
@@ -164,7 +164,7 @@ export default function SubdomainsPage() {
       </div>
 
       {/* List */}
-      <div className="ov-rise rounded-2xl border border-border/60 bg-card" style={{ animationDelay: "120ms" }}>
+      <div className="ov-rise rounded-2xl surface" style={{ animationDelay: "120ms" }}>
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 p-3 sm:px-4">
           <p className="mr-auto text-sm font-semibold">Your subdomains <span className="font-normal text-muted-foreground">({data?.count ?? 0})</span></p>
           <div className="flex rounded-lg border border-border/60 p-0.5">

@@ -88,7 +88,7 @@ export function PlanHero({
   })();
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40">
+    <section className="relative overflow-hidden rounded-2xl surface">
       {/* Decorative glow tinted to the plan accent */}
       <div aria-hidden className={`pointer-events-none absolute -top-24 -right-16 h-56 w-72 rounded-full blur-[90px] ${style.glow}`} />
 
@@ -156,7 +156,7 @@ export function PlanHero({
 
 export function PlanHeroSkeleton() {
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-5 sm:p-6">
+    <section className="relative overflow-hidden rounded-2xl surface p-5 sm:p-6">
       <div className="flex items-start gap-4 animate-pulse">
         <div className="h-12 w-12 rounded-2xl bg-muted" />
         <div className="flex-1 space-y-2.5">

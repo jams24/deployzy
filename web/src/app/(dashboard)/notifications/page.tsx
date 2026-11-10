@@ -32,10 +32,10 @@ interface LinkData {
 
 function Panel({ title, icon, children, className = "" }: { title: React.ReactNode; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden ${className}`}>
+    <div className={`rounded-2xl surface overflow-hidden ${className}`}>
       <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
         {icon}
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{title}</p>
+        <p className="eyebrow">{title}</p>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -104,9 +104,9 @@ export default function NotificationsPage() {
 
   return (
     <div className="animate-fade-in-up">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-      <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Notifications</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="eyebrow">Account</p>
+      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Notifications</h1>
+      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
         Get alerts in Telegram when something happens with your tunnels.
       </p>
 
@@ -132,7 +132,7 @@ export default function NotificationsPage() {
                 </Badge>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={disconnect} className="gap-1 rounded-lg text-destructive hover:text-destructive">
+            <Button variant="outline" size="sm" onClick={disconnect} className="gap-1 rounded-full text-destructive hover:text-destructive">
               <Unlink className="h-3.5 w-3.5" />
               Disconnect
             </Button>
@@ -176,7 +176,7 @@ export default function NotificationsPage() {
                 <p className="text-xs text-muted-foreground">
                   Code expires in 10 minutes. After clicking Start in Telegram, come back here and refresh.
                 </p>
-                <Button variant="outline" size="sm" onClick={loadStatus} className="rounded-lg">
+                <Button variant="outline" size="sm" onClick={loadStatus} className="rounded-full">
                   Refresh Status
                 </Button>
               </div>

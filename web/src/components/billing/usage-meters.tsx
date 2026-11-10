@@ -122,7 +122,7 @@ export function UsageMeters({ usage }: { usage: UsageResponse }) {
     <section className="space-y-3">
       <DashMotion />
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">This month</p>
+        <p className="eyebrow">This month</p>
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><CalendarClock className="h-3.5 w-3.5" />Resets {resets}</span>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
@@ -134,9 +134,9 @@ export function UsageMeters({ usage }: { usage: UsageResponse }) {
           pct={dbUnl ? 0 : (dbMB / Math.max(1, dbCap)) * 100} delay={120} />
       </div>
 
-      <div className="ov-rise overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40" style={{ animationDelay: "160ms" }}>
+      <div className="ov-rise overflow-hidden rounded-2xl surface" style={{ animationDelay: "160ms" }}>
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Resources</p>
+          <p className="eyebrow">Resources</p>
           {unlimitedAll && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Unlimited</span>}
         </div>
         <div className="grid grid-cols-1 gap-x-4 gap-y-1 p-3 sm:grid-cols-2">

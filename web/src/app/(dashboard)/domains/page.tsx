@@ -20,9 +20,9 @@ interface Target {
 
 function Panel({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden ${className}`}>
+    <div className={`rounded-2xl surface overflow-hidden ${className}`}>
       <div className="px-4 py-3 border-b border-border/60">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{title}</p>
+        <p className="eyebrow">{title}</p>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -114,9 +114,9 @@ export default function DomainsPage() {
 
   return (
     <div className="animate-fade-in-up">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Network</p>
-      <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Custom Domains</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="eyebrow">Network</p>
+      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Custom Domains</h1>
+      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
         Bring your own domain for tunnels and deployed projects.
       </p>
 
@@ -128,7 +128,7 @@ export default function DomainsPage() {
             onChange={(e) => setNewDomain(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addDomain()}
           />
-          <Button onClick={addDomain} className="btn-shine gap-2 shrink-0 rounded-lg">
+          <Button onClick={addDomain} className="btn-shine gap-2 shrink-0 rounded-full">
             <Plus className="h-4 w-4" /> Add
           </Button>
         </div>
@@ -164,7 +164,7 @@ export default function DomainsPage() {
           <p className="text-sm text-muted-foreground animate-pulse">Loading domains…</p>
         ) : domains.length === 0 ? (
           <div className="flex flex-col items-center py-10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
               <Globe className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <p className="mt-3 text-sm text-muted-foreground">No custom domains yet</p>
@@ -193,7 +193,7 @@ export default function DomainsPage() {
                         <Badge variant="outline" className="gap-1 text-amber-600 dark:text-amber-400 border-amber-500/40">
                           <AlertCircle className="h-3 w-3" /> Pending
                         </Badge>
-                        <Button variant="outline" size="sm" onClick={() => verify(d.id)} className="gap-1 rounded-lg">
+                        <Button variant="outline" size="sm" onClick={() => verify(d.id)} className="gap-1 rounded-full">
                           <RefreshCw className="h-3 w-3" /> Verify
                         </Button>
                       </>
@@ -219,7 +219,7 @@ export default function DomainsPage() {
                         </option>
                       ))}
                     </select>
-                    <Button size="sm" className="h-8 text-xs gap-1 rounded-lg" onClick={() => bind(d.id)} disabled={!selectedTarget}>
+                    <Button size="sm" className="h-8 text-xs gap-1 rounded-full" onClick={() => bind(d.id)} disabled={!selectedTarget}>
                       <Link2 className="h-3 w-3" /> Bind
                     </Button>
                     <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setBindingId(null)}>Cancel</Button>
@@ -238,7 +238,7 @@ export default function DomainsPage() {
                     </Button>
                   </div>
                 ) : d.verified ? (
-                  <Button variant="outline" size="sm" className="gap-1 text-xs rounded-lg" onClick={() => startBinding(d.id)}>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs rounded-full" onClick={() => startBinding(d.id)}>
                     <Link2 className="h-3 w-3" /> Bind to Tunnel or Project
                   </Button>
                 ) : null}

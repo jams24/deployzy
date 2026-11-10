@@ -1360,12 +1360,12 @@ export default function AdminPage() {
       {/* Page Header */}
       <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">System</p>
-          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em] flex items-center gap-2">
+          <p className="eyebrow">System</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px] flex items-center gap-2">
             <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             Admin Console
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
             Platform operations center
             {lastRefresh && (
               <span className="ml-2 text-[11px] text-muted-foreground/60">
@@ -1498,7 +1498,7 @@ export default function AdminPage() {
           </nav>
 
           {/* Live platform pulse — uses already-loaded stats, no extra fetch */}
-          <div className="mt-4 rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-3">
+          <div className="mt-4 rounded-xl surface p-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">Pulse</p>
               <span className={`inline-flex items-center gap-1 text-[10px] ${autoRefresh ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
@@ -2818,7 +2818,7 @@ export default function AdminPage() {
                 </p>
               </div>
             ) : filteredSessions.map(session => (
-              <div key={session.client_id} className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4 space-y-3">
+              <div key={session.client_id} className="rounded-xl surface p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">

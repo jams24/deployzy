@@ -110,19 +110,19 @@ export default function ProjectAnalyticsPage() {
 
       {/* Headline metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <MousePointerClick className="h-3 w-3" /> Pageviews
           </div>
           <div className="mt-1.5 text-xl font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <Eye className="h-3 w-3" /> Unique visitors
           </div>
           <div className="mt-1.5 text-xl font-semibold font-mono text-emerald-500">{fmtNum(data?.overview?.visitors || 0)}</div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+        <div className="rounded-xl surface p-4">
           <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <Bot className="h-3 w-3" /> Bots filtered
           </div>
@@ -131,7 +131,7 @@ export default function ProjectAnalyticsPage() {
       </div>
 
       {/* Traffic over time */}
-      <div className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4">
+      <div className="rounded-xl surface p-4">
         <div className="flex items-baseline justify-between">
           <span className="text-xs font-medium">Traffic over time</span>
           <span className="text-[10px] text-muted-foreground">pageviews · visitors</span>
@@ -170,7 +170,7 @@ export default function ProjectAnalyticsPage() {
           const rows = top[field] || [];
           const maxC = rows.length ? Math.max(...rows.map((r) => r.count)) : 1;
           return (
-            <div key={field} className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 px-3 py-2.5 space-y-1">
+            <div key={field} className="rounded-xl surface px-3 py-2.5 space-y-1">
               <div className="text-[10px] text-muted-foreground">{label}</div>
               {rows.length === 0 && <div className="text-[10px] text-muted-foreground py-1">No data yet</div>}
               {rows.slice(0, 6).map((row) => (

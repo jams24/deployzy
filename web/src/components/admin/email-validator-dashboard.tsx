@@ -31,7 +31,7 @@ function DailyChart({ daily }: { daily: EmailAnalytics["daily"] }) {
   const fmt = (d: string) => new Date(d + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" });
   const h = hover !== null ? daily[hover] : null;
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold">Verifications per day</p>
@@ -98,7 +98,7 @@ function ResultMix({ m }: { m: Period }) {
     ...p, len: (p.n / total) * CIRC, offset: arr.slice(0, i).reduce((a, q) => a + (q.n / total) * CIRC, 0),
   }));
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
       <p className="text-sm font-semibold">Result mix <span className="font-normal text-muted-foreground">· 30d</span></p>
       <div className="mt-3 flex flex-wrap items-center gap-5">
         <div className="relative mx-auto h-32 w-32 shrink-0 sm:mx-0">
@@ -139,7 +139,7 @@ function Signals({ a }: { a: EmailAnalytics }) {
     { icon: Radar, label: "Mailbox (SMTP) probed", n: a.smtp_probed_30d, color: "#0ea5e9", hint: "inbox existence checked directly" },
   ];
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold">List health <span className="font-normal text-muted-foreground">· 30d</span></p>
         <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"><Layers className="h-3 w-3" />{a.batch_share_30d}% via batch</span>
@@ -164,7 +164,7 @@ function Signals({ a }: { a: EmailAnalytics }) {
 function Ranked({ title, rows, mono, delay, empty }: { title: string; rows: { key: string; count: number }[]; mono?: boolean; delay: number; empty: string }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: `${delay}ms` }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: `${delay}ms` }}>
       <p className="text-sm font-semibold">{title} <span className="font-normal text-muted-foreground">· 30d</span></p>
       {rows.length === 0 ? (
         <p className="py-8 text-center text-xs text-muted-foreground">{empty}</p>
@@ -186,7 +186,7 @@ function Ranked({ title, rows, mono, delay, empty }: { title: string; rows: { ke
 function TopUsers({ users, onOpenUser }: { users: EmailAnalytics["top_users"]; onOpenUser?: (email: string) => void }) {
   const max = Math.max(1, ...users.map((u) => u.total));
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "420ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "420ms" }}>
       <p className="text-sm font-semibold">Top users <span className="font-normal text-muted-foreground">· 30d</span></p>
       {users.length === 0 ? (
         <p className="py-8 text-center text-xs text-muted-foreground">Nobody has used the validator in this window.</p>

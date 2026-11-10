@@ -48,7 +48,7 @@ function TrafficChart({ data, range }: { data: Data["series"]; range: RangeKey }
   const empty = data.every((d) => d.requests === 0);
   const h = hover !== null ? data[hover] : null;
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-semibold">Traffic to your apps</p>
         <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
@@ -112,7 +112,7 @@ function TopList({ title, icon: Icon, rows, render, delay }: {
 }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: `${delay}ms` }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: `${delay}ms` }}>
       <p className="flex items-center gap-2 text-sm font-semibold"><Icon className="h-4 w-4 text-muted-foreground" />{title}</p>
       {rows.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No data yet</p> : (
         <div className="mt-3 space-y-1">
@@ -163,9 +163,9 @@ export default function AnalyticsPage() {
       <DashMotion />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-          <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Analytics</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Traffic to your deployed apps and tunnels, and your bandwidth this month.</p>
+          <p className="eyebrow">Account</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Analytics</h1>
+          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Traffic to your deployed apps and tunnels, and your bandwidth this month.</p>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="flex items-center rounded-lg border border-border/60 bg-card/60 p-0.5 dark:bg-[#0c0d0f]/40">
@@ -176,7 +176,7 @@ export default function AnalyticsPage() {
               </button>
             ))}
           </div>
-          <Button variant="outline" size="sm" onClick={() => load(range)} className="h-8 w-8 rounded-lg p-0" title="Refresh" aria-label="Refresh">
+          <Button variant="outline" size="sm" onClick={() => load(range)} className="h-8 w-8 rounded-full p-0" title="Refresh" aria-label="Refresh">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -192,7 +192,7 @@ export default function AnalyticsPage() {
         )
       ) : d.project_count === 0 && d.tunnels.sessions === 0 ? (
         <div className="ov-rise flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-border/60 bg-card"><Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /></div>
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl surface"><Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /></div>
           <p className="font-semibold">Nothing to measure yet</p>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">Deploy an app or open a tunnel and its traffic, visitors and bandwidth will appear here.</p>
           <Link href="/new" className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-sm font-medium text-background hover:opacity-90"><Rocket className="h-4 w-4" /> Deploy your first app</Link>
@@ -220,7 +220,7 @@ export default function AnalyticsPage() {
 
           <div className="grid gap-4 @5xl:grid-cols-3">
             <div className="min-w-0 @5xl:col-span-2"><TrafficChart data={d.series} range={range} /></div>
-            <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
+            <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
               <p className="flex items-center gap-2 text-sm font-semibold"><Radio className="h-4 w-4 text-sky-500" />Tunnels</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {[
@@ -240,7 +240,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
+          <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold">Your apps</p>
               <span className="text-[11px] text-muted-foreground">{activeApps.length} of {d.projects.length} with traffic</span>

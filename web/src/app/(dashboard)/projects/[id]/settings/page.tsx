@@ -32,7 +32,7 @@ function Section({ title, icon: Icon, children, action }: {
   action?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-4 sm:p-5 space-y-4">
+    <section className="rounded-xl surface p-4 sm:p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Icon className="h-4 w-4 text-muted-foreground" /> {title}

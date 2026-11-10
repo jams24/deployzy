@@ -218,9 +218,9 @@ export default function InspectorPage() {
       <DashMotion />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Network</p>
-          <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Traffic Inspector</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Every HTTP request through your tunnels, live: headers, bodies, status and timing.</p>
+          <p className="eyebrow">Network</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Traffic Inspector</h1>
+          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Every HTTP request through your tunnels, live: headers, bodies, status and timing.</p>
         </div>
         {sel && (
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
@@ -236,10 +236,10 @@ export default function InspectorPage() {
         <div className="h-[420px] animate-pulse rounded-2xl bg-muted/50" />
       ) : tunnels.length === 0 ? (
         <div className="ov-rise flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card"><Waypoints className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><Waypoints className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
           <h3 className="mt-4 font-semibold">No HTTP tunnels running</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">Start one and its requests stream in here. Inspection is on by default.</p>
-          <div className="mt-5 flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-2.5">
+          <div className="mt-5 flex items-center gap-3 rounded-xl surface px-4 py-2.5">
             <code className="font-mono text-[13px]"><span className="text-emerald-500">$</span> deployzy http 3000</code>
             <CopyBtn text="deployzy http 3000" label="Copy" />
           </div>
@@ -291,7 +291,7 @@ export default function InspectorPage() {
           </div>
 
           {/* List + detail */}
-          <div className="grid overflow-hidden rounded-2xl border border-border/60 bg-card lg:h-[620px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <div className="grid overflow-hidden rounded-2xl surface lg:h-[620px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <div className="flex min-h-0 flex-col border-border/60 lg:border-r">
               <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
                 <span><span className="font-medium tabular-nums text-foreground">{shown.length}</span> of {reqs.length} requests</span>

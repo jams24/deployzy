@@ -154,9 +154,9 @@ export default function TeamPage() {
     <div className="@container animate-fade-in-up space-y-5">
       <DashMotion />
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]">Teams</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Share projects, tunnels and databases with your team. Each team is its own workspace.</p>
+        <p className="eyebrow">Account</p>
+        <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Teams</h1>
+        <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Share projects, tunnels and databases with your team. Each team is its own workspace.</p>
       </div>
 
       {err && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5 text-sm text-red-600 dark:text-red-400"><X className="mt-0.5 h-4 w-4 shrink-0" />{err}</div>}
@@ -184,14 +184,14 @@ export default function TeamPage() {
 
       {teams !== null && teams.length === 0 ? (
         <div className="ov-rise flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card"><Users className="h-5 w-5 text-violet-600 dark:text-violet-400" /></div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><Users className="h-5 w-5 text-violet-600 dark:text-violet-400" /></div>
           <h3 className="mt-4 font-semibold">No teams yet</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create a team above, then invite people by email. Everyone works in a shared workspace with roles.</p>
         </div>
       ) : detail && (
         <>
           {/* Team header */}
-          <div className="ov-rise relative overflow-hidden rounded-2xl border border-border/60 bg-card p-5">
+          <div className="ov-rise relative overflow-hidden rounded-2xl surface p-5">
             <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-violet-500/10 blur-3xl" />
             <div className="relative flex flex-wrap items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-sky-500 text-lg font-semibold text-white shadow-lg shadow-violet-500/20">{initials(detail.team.name)}</div>
@@ -211,7 +211,7 @@ export default function TeamPage() {
 
           <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
             {/* Members */}
-            <div className="ov-rise rounded-2xl border border-border/60 bg-card" style={{ animationDelay: "60ms" }}>
+            <div className="ov-rise rounded-2xl surface" style={{ animationDelay: "60ms" }}>
               <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                 <p className="text-sm font-semibold">Members <span className="font-normal text-muted-foreground">({detail.members.length})</span></p>
               </div>
@@ -246,7 +246,7 @@ export default function TeamPage() {
             <div className="space-y-4">
               {/* Invite */}
               {canManage ? (
-                <form onSubmit={invite} className="ov-rise rounded-2xl border border-border/60 bg-card p-4" style={{ animationDelay: "100ms" }}>
+                <form onSubmit={invite} className="ov-rise rounded-2xl surface p-4" style={{ animationDelay: "100ms" }}>
                   <p className="text-sm font-semibold">Invite someone</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">They get an email with a link to join. You can also copy the link yourself.</p>
                   <div className="mt-3 flex flex-col gap-2">
@@ -279,7 +279,7 @@ export default function TeamPage() {
               )}
 
               {/* Pending invites */}
-              <div className="ov-rise rounded-2xl border border-border/60 bg-card" style={{ animationDelay: "140ms" }}>
+              <div className="ov-rise rounded-2xl surface" style={{ animationDelay: "140ms" }}>
                 <p className="border-b border-border/60 px-4 py-3 text-sm font-semibold">Pending invites <span className="font-normal text-muted-foreground">({detail.invitations.length})</span></p>
                 {detail.invitations.length === 0 ? <p className="px-4 py-6 text-center text-xs text-muted-foreground">No pending invites.</p> : (
                   <div className="divide-y divide-border/50">
@@ -302,7 +302,7 @@ export default function TeamPage() {
               </div>
 
               {/* Roles */}
-              <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4" style={{ animationDelay: "180ms" }}>
+              <div className="ov-rise rounded-2xl surface p-4" style={{ animationDelay: "180ms" }}>
                 <p className="flex items-center gap-2 text-sm font-semibold"><Link2 className="h-4 w-4 text-muted-foreground" />Roles</p>
                 <div className="mt-3 space-y-2">
                   {(["owner", "admin", "member"] as const).map((r) => (

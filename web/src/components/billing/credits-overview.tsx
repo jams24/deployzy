@@ -62,9 +62,9 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
   return (
     <>
       {/* ── Balance + rolling totals ── */}
-      <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40">
+      <section className="overflow-hidden rounded-2xl surface">
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+          <p className="flex items-center gap-2 eyebrow">
             <Wallet className="h-3.5 w-3.5" /> AI &amp; email balance
           </p>
           <div className="flex items-center gap-2">
@@ -125,9 +125,9 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
       {/* ── Chart + product split ── */}
       <div className="grid gap-4 lg:grid-cols-5">
         {/* Daily spend */}
-        <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 lg:col-span-3">
+        <section className="overflow-hidden rounded-2xl surface lg:col-span-3">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-            <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+            <p className="flex items-center gap-2 eyebrow">
               <TrendingUp className="h-3.5 w-3.5" /> Daily spend
             </p>
             <span className="text-[11px] tabular-nums text-muted-foreground">{usd(windowTotal)} in {days}d</span>
@@ -172,9 +172,9 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
         </section>
 
         {/* Usage by product */}
-        <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 lg:col-span-2">
+        <section className="overflow-hidden rounded-2xl surface lg:col-span-2">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Usage by product</p>
+            <p className="eyebrow">Usage by product</p>
             <span className="text-[11px] text-muted-foreground">{days}d</span>
           </div>
           <div className="p-4 sm:p-5">
@@ -232,7 +232,7 @@ export function CreditsOverview({ data, pulse }: { data: CreditsResp; pulse: boo
 
 export function CreditsOverviewSkeleton() {
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-5 animate-pulse">
+    <section className="overflow-hidden rounded-2xl surface p-5 animate-pulse">
       <div className="h-3 w-36 rounded bg-muted" />
       <div className="mt-4 grid gap-5 lg:grid-cols-[1fr_2fr]">
         <div className="space-y-2">

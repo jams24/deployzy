@@ -123,7 +123,7 @@ export default function ProjectLogsPage() {
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center rounded-lg border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-0.5">
+        <div className="flex items-center rounded-lg surface p-0.5">
           {(["deploy", "live"] as const).map((m) => (
             <button
               key={m}

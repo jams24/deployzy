@@ -59,7 +59,7 @@ function ActivityChart({ o }: { o: Overview }) {
   const fmtDay = (d: string) => new Date(d + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" });
 
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "240ms" }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">Platform activity</p>
@@ -154,7 +154,7 @@ function HealthRing({ o, onNavigate }: { o: Overview; onNavigate?: (tab: string)
   const ok14 = sum(o.series.deploys_ok.slice(14)), started14 = sum(o.series.deploys_started.slice(14));
   const rate = started14 ? Math.round((ok14 / started14) * 100) : null;
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "300ms" }}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">App health</p>
         <button onClick={() => onNavigate?.("projects")} className="text-[11px] text-muted-foreground hover:text-foreground">View apps →</button>
@@ -207,7 +207,7 @@ function Stacks({ o }: { o: Overview }) {
   const max = Math.max(1, ...top.map(([, v]) => v));
   const total = Math.max(1, sum(top.map(([, v]) => v)));
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "360ms" }}>
       <p className="text-sm font-semibold">Stacks</p>
       <div className="mt-3 space-y-2.5">
         {top.map(([k, v], i) => (
@@ -228,7 +228,7 @@ function Stacks({ o }: { o: Overview }) {
 
 function ActivityFeed({ o }: { o: Overview }) {
   return (
-    <div className="ov-rise rounded-2xl border border-border/60 bg-card p-4 sm:p-5" style={{ animationDelay: "420ms" }}>
+    <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "420ms" }}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Recent activity</p>
         <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">

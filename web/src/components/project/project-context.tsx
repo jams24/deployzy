@@ -125,7 +125,7 @@ export function ProjectProvider({ id, children }: { id: string; children: React.
 
   if (notFound) {
     return (
-      <div className="animate-fade-in-up rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-10 text-center">
+      <div className="animate-fade-in-up rounded-2xl surface p-10 text-center">
         <p className="text-sm text-muted-foreground">Project not found — it may have been deleted.</p>
         <button onClick={() => router.push("/projects")} className="mt-3 text-sm text-emerald-600 dark:text-emerald-400 hover:underline">
           ← Back to Projects

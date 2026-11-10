@@ -101,9 +101,9 @@ export function Invoices({ history }: { history: Subscription[] }) {
   const slice = rows.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40">
+    <section className="overflow-hidden rounded-2xl surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        <p className="flex items-center gap-2 eyebrow">
           <Receipt className="h-3.5 w-3.5" /> Invoices
         </p>
         {history.length > 0 && (
@@ -158,9 +158,9 @@ export function CreditsLedger({ ledger }: { ledger: LedgerRow[] }) {
   const slice = ledger.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40">
+    <section className="overflow-hidden rounded-2xl surface">
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        <p className="flex items-center gap-2 eyebrow">
           <Wand2 className="h-3.5 w-3.5" /> AI usage activity
         </p>
         {ledger.length > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{ledger.length} events</span>}

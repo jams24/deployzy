@@ -5,6 +5,7 @@
 // on the /projects/[id] routes; this page only handles browsing, importing
 // repos and quick actions (visit / redeploy / start / stop).
 
+import { StackIcon, StatusPill } from "@/components/dashboard/kit";
 import { useCallback, useEffect, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -25,7 +26,7 @@ import { ServiceCards } from "@/components/project/service-cards";
 import { ReuploadButton } from "@/components/project/reupload-button";
 import {
   API, detectFramework, detectStackFor, emptyBuildConfig, headers,
-  servicesPayload, statusDot, timeAgo,
+  servicesPayload, timeAgo,
   type BuildConfig, type GitHubRepo, type Project, type ServiceCfg, type UserServer,
 } from "@/components/project/project-shared";
 
@@ -286,30 +287,30 @@ function ProjectsContent() {
     <div className="animate-fade-in-up">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Deploy</p>
-          <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground hidden sm:block">Deploy apps from your GitHub repos.</p>
+          <p className="eyebrow">Deploy</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Projects</h1>
+          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground hidden sm:block">Deploy apps from your GitHub repos.</p>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Grid / list view toggle */}
-          <div className="flex items-center rounded-lg border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 p-0.5">
-            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === "grid" ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          <div className="flex items-center rounded-full surface p-1">
+            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${viewMode === "grid" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
-            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${viewMode === "list" ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${viewMode === "list" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
               <List className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-8 w-8 p-0 sm:w-auto sm:px-3 gap-1 rounded-lg">
+          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-9 w-9 rounded-full p-0">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           {ghConnected ? (
-            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg">
+            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4">
               <Plus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Import Repo</span>
             </Button>
           ) : (
-            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="btn-shine gap-1 h-8 px-2.5 sm:px-3 rounded-lg">
+            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4">
               <GitBranch className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Connect GitHub</span>
             </Button>
@@ -319,14 +320,14 @@ function ProjectsContent() {
 
       {/* GitHub status */}
       {ghConnected && (
-        <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 px-4 py-2.5">
+        <div className="mt-6 flex items-center justify-between gap-2 rounded-2xl surface px-4 py-2">
           <div className="flex items-center gap-2 text-sm min-w-0">
             <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
             <span className="font-medium truncate">@{ghUsername}</span>
-            <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40 shrink-0"><Check className="h-2.5 w-2.5 mr-0.5" /> Connected</Badge>
+            <span className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border border-brand/25 bg-brand/10 px-2 text-[12px] font-medium text-[var(--dz-green-strong)] dark:text-brand"><Check className="h-3 w-3" /> Connected</span>
           </div>
-          <Button variant="ghost" size="sm" onClick={disconnectGH} className="text-xs text-muted-foreground">Disconnect</Button>
+          <Button variant="ghost" size="sm" onClick={disconnectGH} className="rounded-full text-[13px] text-muted-foreground">Disconnect</Button>
         </div>
       )}
 
@@ -587,7 +588,7 @@ function ProjectsContent() {
         <div className="relative mt-8 rounded-2xl border border-dashed border-border overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
           <div className="relative flex flex-col items-center py-16 px-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
               <Rocket className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <h3 className="mt-4 font-semibold">No projects yet</h3>
@@ -611,20 +612,20 @@ function ProjectsContent() {
             if (allLabels.length === 0) return null;
             return (
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] text-muted-foreground">Filter:</span>
-                <button onClick={() => setLabelFilter("")} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${labelFilter === "" ? "border-foreground/30 bg-accent text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>All</button>
+                <span className="eyebrow">Labels</span>
+                <button onClick={() => setLabelFilter("")} className={`h-7 rounded-full border px-3 text-[12.5px] transition-colors ${labelFilter === "" ? "border-foreground bg-foreground text-background" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground"}`}>All</button>
                 {allLabels.map((l) => (
-                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${labelFilter === l ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`h-7 rounded-full border px-3 text-[12.5px] transition-colors ${labelFilter === l ? "border-brand/40 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground"}`}>{l}</button>
                 ))}
               </div>
             );
           })()}
           <div className={viewMode === "grid"
-            ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"
-            : "rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40"}>
+            ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+            : "surface rounded-3xl divide-y divide-[var(--dz-hairline)] overflow-hidden"}>
             {/* table header (list view only) */}
             {viewMode === "list" && (
-              <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70 bg-muted/40">
+              <div className="hidden md:flex items-center gap-3 px-5 py-3 eyebrow bg-foreground/[0.02]">
                 <span className="flex-1">Project</span>
                 <span className="w-44 text-right pr-2">Actions</span>
               </div>
@@ -637,33 +638,29 @@ function ProjectsContent() {
               id={`project-row-${p.id}`}
               onClick={() => router.push(`/projects/${p.id}`)}
               className={isGrid
-                ? `cursor-pointer rounded-2xl border bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden transition-all duration-300 border-border/60 hover:border-foreground/25 hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.25)]`
-                : `cursor-pointer transition-colors hover:bg-accent/40`}>
-              <div className={isGrid ? "p-5" : "px-4 py-2.5"}>
+                ? `surface group cursor-pointer overflow-hidden rounded-3xl transition-all duration-300 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.35)]`
+                : `group cursor-pointer transition-colors hover:bg-foreground/[0.025]`}>
+              <div className={isGrid ? "p-5" : "px-4 py-3 sm:px-5"}>
                 <div className={isGrid ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground shrink-0">
-                      <Rocket className="h-4 w-4" />
+                    <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]">
+                      <StackIcon stack={p.framework} className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="relative flex h-1.5 w-1.5 shrink-0" title={p.status}>
-                          {p.status === "running" && <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
-                          <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${statusDot[p.status] || "bg-zinc-500"}`} />
-                        </span>
-                        <span className="text-[15px] font-medium truncate">{p.name}</span>
-                        <span className="text-[11px] text-muted-foreground shrink-0 capitalize">{p.status}</span>
+                        <span className="truncate text-[15.5px] font-semibold tracking-tight">{p.name}</span>
+                        <StatusPill status={p.status} />
                         {(p.labels || []).map((l) => (
-                          <Badge key={l} variant="outline" className="text-[10px] shrink-0 text-blue-600 dark:text-blue-400 border-blue-500/40 bg-blue-500/5 hidden lg:inline-flex">{l}</Badge>
+                          <span key={l} className="hidden h-[22px] shrink-0 items-center rounded-full border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-[12px] text-cyan-700 lg:inline-flex dark:text-brand-cyan">{l}</span>
                         ))}
                       </div>
 
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono min-w-0">
+                      <div className="mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground font-mono min-w-0">
                         <Globe className="h-3 w-3 shrink-0" />
                         <span className="truncate">{p.subdomain}.deployzy.app</span>
                       </div>
 
-                      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground min-w-0 flex-wrap">
+                      <div className="mt-1 flex items-center gap-2 text-[12.5px] text-muted-foreground min-w-0 flex-wrap">
                         <span className="capitalize">{p.framework || "custom"}</span>
                         {p.github_repo && (
                           <>
@@ -682,21 +679,21 @@ function ProjectsContent() {
                   {/* Quick actions — stopPropagation so they don't navigate */}
                   <div
                     className={isGrid
-                      ? "flex items-center gap-1.5 flex-wrap pt-3 border-t border-border/70"
+                      ? "flex items-center gap-1.5 flex-wrap pt-4 border-t border-[var(--dz-hairline)]"
                       : "flex items-center gap-1 flex-wrap shrink-0"}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {p.status !== "running" && p.status !== "building" && (
                       p.deploy_source === "upload" ? (
                         <>
-                          <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Redeploy the last uploaded build" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Redeploy the last uploaded build" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                             {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                             <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Redeploy"}</span>
                           </Button>
                           <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
                         </>
                       ) : (
-                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                           {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                           <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Deploy"}</span>
                         </Button>
@@ -704,30 +701,33 @@ function ProjectsContent() {
                     )}
                     {p.status === "running" && (
                       <>
-                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="gap-1.5 h-8 text-xs" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
+                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
                           <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title={p.deploy_source === "upload" ? "Redeploy the last uploaded build" : "Redeploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title={p.deploy_source === "upload" ? "Redeploy the last uploaded build" : "Redeploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
                           {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                           <span className="hidden sm:inline"> Redeploy</span>
                         </Button>
                         {p.deploy_source === "upload" && (
                           <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
                         )}
-                        <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" title="Stop" onClick={() => stop(p.id)}>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Stop" onClick={() => stop(p.id)}>
                           <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>
                         </Button>
                       </>
                     )}
-                    {p.status === "building" && <Badge className="text-[10px] animate-pulse">Building...</Badge>}
-                    <Button
-                      variant="ghost" size="sm"
-                      className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                      title="Open project"
-                      onClick={() => router.push(`/projects/${p.id}`)}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    {p.status === "building" && <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-[13px] text-amber-700 dark:text-amber-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building…</span>}
+                    {/* Grid cards are clickable as a whole; only the list row needs the chevron. */}
+                    {!isGrid && (
+                      <Button
+                        variant="ghost" size="sm"
+                        className="ml-auto h-8 w-8 rounded-full p-0 text-muted-foreground hover:text-foreground"
+                        title="Open project"
+                        onClick={() => router.push(`/projects/${p.id}`)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -27,9 +27,9 @@ const authHeaders = () => {
 
 function Panel({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-border/60 bg-card/60 dark:bg-[#0c0d0f]/40 overflow-hidden ${className}`}>
+    <div className={`rounded-2xl surface overflow-hidden ${className}`}>
       <div className="px-4 py-3 border-b border-border/60">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">{title}</p>
+        <p className="eyebrow">{title}</p>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -128,9 +128,9 @@ export default function ApiKeysPage() {
 
   return (
     <div className="animate-fade-in-up">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">Account</p>
-      <h1 className="mt-1 text-[22px] sm:text-[26px] font-bold tracking-[-0.02em]">API Keys</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="eyebrow">Account</p>
+      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">API Keys</h1>
+      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
         Manage authentication keys for the CLI and SDKs.
       </p>
 
@@ -208,7 +208,7 @@ export default function ApiKeysPage() {
             <option value="deploy">Deploy (no account/key mgmt)</option>
             <option value="read">Read-only</option>
           </select>
-          <Button onClick={createKey} className="btn-shine gap-2 shrink-0 rounded-lg">
+          <Button onClick={createKey} className="btn-shine gap-2 shrink-0 rounded-full">
             <Plus className="h-4 w-4" />
             Create
           </Button>
@@ -242,7 +242,7 @@ export default function ApiKeysPage() {
           <p className="text-sm text-muted-foreground animate-pulse">Loading keys…</p>
         ) : keys.length === 0 ? (
           <div className="flex flex-col items-center py-10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
               <Key className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
