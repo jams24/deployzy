@@ -140,7 +140,7 @@ export default function ProjectMetricsPage() {
         {/* Memory */}
         <ChartCard title="Memory" icon={MemoryStick} current={latest ? `${latest.memory_mb} / ${latest.memory_limit_mb} MB` : "—"}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+            <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -6 }}>
               <defs>
                 <linearGradient id="mem" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.35} />
@@ -149,7 +149,7 @@ export default function ProjectMetricsPage() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border/40" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} minTickGap={40} />
-              <YAxis tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} unit=" MB" />
+              <YAxis tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} unit={"\u00a0MB"} width={58} />
               <Tooltip content={<ChartTooltip />} />
               <Area type="monotone" dataKey="memory_mb" name="memory MB" stroke="#60a5fa" strokeWidth={1.5} fill="url(#mem)" />
               {latest?.memory_limit_mb ? (
@@ -162,10 +162,10 @@ export default function ProjectMetricsPage() {
         {/* Network */}
         <ChartCard title="Network" icon={Network} current={latest ? `↓ ${fmtBytes(latest.net_rx_bytes)} · ↑ ${fmtBytes(latest.net_tx_bytes)}` : "—"}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+            <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -6 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border/40" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} minTickGap={40} />
-              <YAxis tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} unit=" MB" />
+              <YAxis tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} unit={"\u00a0MB"} width={58} />
               <Tooltip content={<ChartTooltip />} />
               <Line type="monotone" dataKey="rx_mb" name="in MB" stroke="#fbbf24" strokeWidth={1.5} dot={false} />
               <Line type="monotone" dataKey="tx_mb" name="out MB" stroke="#fb923c" strokeWidth={1.5} dot={false} />

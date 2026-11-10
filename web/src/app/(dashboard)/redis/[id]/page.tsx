@@ -5,12 +5,18 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ConsoleFrame, ConsoleHeader, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
 import {
-  ArrowLeft, RefreshCw, Loader2, Trash2, Plus, Search,
+  RefreshCw, Loader2, Trash2, Plus, Search,
   Terminal, Database, Check, X, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+
+const REDIS_TABS: ConsoleTab<"keys" | "cli">[] = [
+  { id: "keys", label: "Data", icon: Database },
+  { id: "cli", label: "CLI", icon: Terminal },
+];
 
 interface KeyInfo {
   key: string;
@@ -122,6 +128,7 @@ function renderValue(v: unknown, type: string): React.ReactNode {
 
 export default function RedisEditorPage() {
   const { id } = useParams<{ id: string }>();
+  const dbName = useDatabaseName(id);
   const router = useRouter();
 
   const headers = useCallback(() => {
@@ -290,32 +297,24 @@ export default function RedisEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 shrink-0">
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </Button>
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-red-500/20 text-red-600 dark:text-red-400">
-          <Database className="h-3.5 w-3.5" />
-        </div>
-        <span className="text-sm font-medium">Redis Browser</span>
-        <div className="ml-auto flex gap-1">
-          <Button variant={activeTab === "keys" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-[11px]" onClick={() => setActiveTab("keys")}>
-            <Database className="h-3 w-3 mr-1" /> Data
-          </Button>
-          <Button variant={activeTab === "cli" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-[11px]" onClick={() => setActiveTab("cli")}>
-            <Terminal className="h-3 w-3 mr-1" /> CLI
-          </Button>
-        </div>
-      </div>
+    <ConsoleFrame>
+      <ConsoleHeader
+        kind="Redis"
+        title={dbName || "Database"}
+        icon={Database}
+        tone="redis"
+        onBack={() => router.push("/services")}
+        tabs={REDIS_TABS}
+        active={activeTab}
+        onTab={setActiveTab}
+      />
 
       {/* ── Keys tab ── */}
       {activeTab === "keys" && (
         <div className="flex flex-col flex-1 overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 shrink-0">
-            <div className="relative flex-1 max-w-xs">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--dz-hairline)] px-3 py-2 sm:px-4">
+            <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 value={pattern}
@@ -332,7 +331,7 @@ export default function RedisEditorPage() {
             <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={() => { setAddingKey(true); setInsertError(""); }}>
               <Plus className="h-3 w-3" /> New Key
             </Button>
-            <span className="text-[10px] text-muted-foreground ml-auto">{keys.length} key(s){!done && " · partial"}</span>
+            <span className="figure ml-auto text-[12px] text-muted-foreground">{keys.length} key{keys.length === 1 ? "" : "s"}{!done && " · partial"}</span>
           </div>
 
           {/* Add key form */}
@@ -544,6 +543,6 @@ export default function RedisEditorPage() {
           </div>
         </div>
       )}
-    </div>
+    </ConsoleFrame>
   );
 }

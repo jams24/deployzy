@@ -4,12 +4,19 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConsoleFrame, ConsoleHeader, ConsolePicker, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
 import {
-  Database, Table2, ArrowLeft, Play, Loader2, ChevronLeft, ChevronRight,
+  Database, Table2, Play, Loader2, ChevronLeft, ChevronRight,
   ArrowUpDown, Columns3, Trash2, Plus, Check, X,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+
+const PG_TABS: ConsoleTab<"browse" | "columns" | "sql">[] = [
+  { id: "browse", label: "Browse", icon: Table2 },
+  { id: "columns", label: "Columns", icon: Columns3 },
+  { id: "sql", label: "SQL", icon: Play },
+];
 
 interface TableInfo { name: string; row_estimate: number; size_bytes: number; size_pretty: string; }
 interface ColumnInfo { name: string; data_type: string; is_nullable: string; column_default: string; is_primary_key: boolean; }
@@ -36,6 +43,7 @@ function dataTypeToSimple(pgType: string): string {
 
 export default function DatabaseEditorPage() {
   const { id } = useParams<{ id: string }>();
+  const dbName = useDatabaseName(id);
   const router = useRouter();
 
   const [dbType, setDbType] = useState<"service" | "project">("service");
@@ -319,41 +327,45 @@ export default function DatabaseEditorPage() {
 
   // ── Render ─────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 shrink-0">
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </Button>
-        <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-sm font-medium">Database Editor</span>
-        {selectedTable && <Badge variant="outline" className="text-[10px]">{selectedTable}</Badge>}
-        {selectedTable && !hasPK && (
-          <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/50">no primary key · read only</Badge>
-        )}
-        <div className="ml-auto flex gap-1">
-          {(["browse", "columns", "sql"] as const).map(t => (
-            <Button key={t} variant={activeTab === t ? "default" : "ghost"} size="sm" className="h-7 px-3 text-[11px] capitalize" onClick={() => setActiveTab(t)}>
-              {t === "browse" ? <Table2 className="h-3 w-3 mr-1" /> : t === "columns" ? <Columns3 className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-              {t}
-            </Button>
-          ))}
-        </div>
-      </div>
+    <ConsoleFrame>
+      <ConsoleHeader
+        kind="PostgreSQL"
+        title={dbName || "Database"}
+        icon={Database}
+        tone="postgres"
+        onBack={() => router.push("/services")}
+        tabs={PG_TABS}
+        active={activeTab}
+        onTab={setActiveTab}
+        extra={selectedTable && !hasPK ? (
+          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[12px] font-medium text-amber-600 dark:text-amber-400">no primary key · read only</span>
+        ) : null}
+        picker={tables.length > 0 ? (
+          <ConsolePicker
+            label="Table"
+            value={selectedTable}
+            onChange={setSelectedTable}
+            options={tables.map(t => ({ value: t.name, label: t.name, hint: t.size_pretty }))}
+          />
+        ) : null}
+      />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-52 shrink-0 border-r border-border/40 overflow-y-auto bg-card/30">
-          <div className="px-3 py-2 text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Tables ({tables.length})</div>
+        {/* Sidebar (tablet and up; phones use the picker in the header) */}
+        <div className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--dz-hairline)] py-2 md:block">
+          <p className="eyebrow px-4 pb-2 pt-1">Tables · {tables.length}</p>
           {loadingTables ? (
             <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
           ) : tables.length === 0 ? (
-            <p className="px-3 text-[11px] text-muted-foreground">No tables found</p>
+            <p className="px-4 text-[13px] text-muted-foreground">No tables found</p>
           ) : tables.map(t => (
             <button key={t.name} onClick={() => setSelectedTable(t.name)}
-              className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-accent/40 transition-colors flex items-center justify-between gap-2 ${selectedTable === t.name ? "bg-accent/60 text-foreground font-medium" : "text-muted-foreground"}`}>
-              <span className="truncate">{t.name}</span>
-              <span className="text-[9px] text-muted-foreground/60 shrink-0">{t.size_pretty}</span>
+              className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${selectedTable === t.name ? "bg-foreground/[0.07] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"}`}>
+              <span className="flex min-w-0 items-center gap-2">
+                <Table2 className={`h-3.5 w-3.5 shrink-0 ${selectedTable === t.name ? "text-sky-500" : "opacity-50"}`} />
+                <span className="truncate font-mono text-[12.5px]">{t.name}</span>
+              </span>
+              <span className="figure shrink-0 text-[11px] text-muted-foreground/70">{t.size_pretty}</span>
             </button>
           ))}
         </div>
@@ -365,12 +377,12 @@ export default function DatabaseEditorPage() {
           {activeTab === "browse" && (
             <>
               {/* Toolbar */}
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 text-[10px] text-muted-foreground shrink-0">
-                <span>
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--dz-hairline)] px-3 py-1.5 text-[12px] text-muted-foreground sm:px-4">
+                <span className="figure min-w-0 truncate">
                   {browseData
                     ? `${browseData.total_rows.toLocaleString()} rows · showing ${browseData.offset + 1}–${Math.min(browseData.offset + browseData.rows.length, browseData.total_rows)}`
                     : "—"}
-                  {hasPK && <span className="ml-2 text-muted-foreground/60">· double-click cell to edit</span>}
+                  {hasPK && <span className="ml-2 hidden text-muted-foreground/60 sm:inline">· double-click cell to edit</span>}
                 </span>
                 <div className="flex items-center gap-1.5">
                   {hasPK && !addingRow && (
@@ -379,7 +391,7 @@ export default function DatabaseEditorPage() {
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" className="h-6 px-1.5" disabled={page === 0} onClick={() => handlePage(-1)}><ChevronLeft className="h-3 w-3" /></Button>
-                  <span>Page {page + 1}</span>
+                  <span className="whitespace-nowrap">Page {page + 1}</span>
                   <Button variant="ghost" size="sm" className="h-6 px-1.5"
                     disabled={!browseData || browseData.offset + browseData.rows.length >= browseData.total_rows}
                     onClick={() => handlePage(1)}><ChevronRight className="h-3 w-3" /></Button>
@@ -631,6 +643,6 @@ export default function DatabaseEditorPage() {
 
         </div>
       </div>
-    </div>
+    </ConsoleFrame>
   );
 }

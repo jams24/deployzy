@@ -147,7 +147,7 @@ function TabNav({ base }: { base: string }) {
   const pathname = usePathname();
   return (
     <nav className="frost sticky top-0 z-10 -mx-4 mt-6 border-b border-[var(--dz-hairline)] px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-      <div className="-mb-px flex items-center gap-1 overflow-x-auto">
+      <div className="-mb-px flex items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(to_right,#000_88%,transparent)] [scrollbar-width:none] sm:gap-1 sm:[mask-image:none]">
         {TABS.map(({ slug, label, icon: Icon }) => {
           const href = `${base}${slug}`;
           const active = slug === "" ? pathname === base : pathname.startsWith(href);
@@ -156,11 +156,12 @@ function TabNav({ base }: { base: string }) {
               key={slug}
               href={href}
               aria-current={active ? "page" : undefined}
-              className={`relative flex h-12 items-center gap-2 whitespace-nowrap px-3 text-[14px] transition-colors ${
+              ref={active ? (el: HTMLAnchorElement | null) => { el?.scrollIntoView({ block: "nearest", inline: "nearest" }); } : undefined}
+              className={`relative flex h-12 items-center gap-2 whitespace-nowrap px-2.5 text-[14px] transition-colors sm:px-3 ${
                 active ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Icon className={`h-4 w-4 ${active ? "text-brand" : ""}`} />
+              <Icon className={`hidden h-4 w-4 sm:block ${active ? "text-brand" : ""}`} />
               {label}
               {active && (
                 <motion.span layoutId="dz-project-tab" transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }} className="absolute inset-x-2 bottom-0 h-[2px] rounded-full bg-brand" />

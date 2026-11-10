@@ -43,7 +43,7 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
 
   // Small "requires plan" badge shown above the deploy box.
   const planBadge = reqRank > 0 ? (
-    <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 w-fit">
+    <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[12.5px] font-medium text-amber-600 dark:text-amber-400 w-fit">
       <Lock className="h-3 w-3" /> Requires {needLabel} plan
     </div>
   ) : null;
@@ -99,7 +99,7 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
   }
 
   if (!ready) {
-    return <div className="h-11 rounded-xl border border-border/60 animate-pulse" />;
+    return <div className="h-12 animate-pulse rounded-full bg-foreground/[0.06]" />;
   }
 
   // Logged out — route to sign-up, preserving the template.
@@ -109,11 +109,11 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
         {planBadge}
         <Link
           href={`/sign-up?template=${encodeURIComponent(slug)}`}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-background text-sm font-semibold hover:opacity-85 transition-opacity"
+          className="pill pill-launch w-full"
         >
-          <Rocket className="h-4 w-4" /> Deploy Now
+          <Rocket className="h-4 w-4" /> Deploy now
         </Link>
-        <p className="text-center text-[11px] text-muted-foreground">
+        <p className="text-center text-[12.5px] text-muted-foreground">
           {reqRank > 0 ? `Sign up — ${needLabel} plan required to deploy this one.` : "Free to start — sign up in seconds."}
         </p>
       </div>
@@ -122,12 +122,12 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
 
   if (doneId) {
     return (
-      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
-        <p className="flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
+      <div className="rounded-2xl border border-brand/30 bg-brand/10 p-4 text-[14px]">
+        <p className="flex items-center gap-2 font-medium text-[var(--dz-green-strong)] dark:text-brand">
           <Check className="h-4 w-4" /> Deploying {name}
         </p>
-        <Link href="/overview" className="mt-3 flex items-center gap-1 text-xs font-medium text-foreground hover:underline">
-          Go to dashboard <ArrowRight className="h-3.5 w-3.5" />
+        <Link href={doneId && doneId !== "ok" ? `/projects/${doneId}` : "/overview"} className="mt-3 inline-flex items-center gap-1 text-[13.5px] font-medium text-foreground hover:underline">
+          Watch it build <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
     );
@@ -138,24 +138,24 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
     return (
       <div className="space-y-3">
         {planBadge}
-        <div className="rounded-xl border border-border/60 bg-gradient-to-b from-amber-500/[0.06] to-transparent p-4">
+        <div className="rounded-2xl border border-amber-500/25 bg-gradient-to-b from-amber-500/[0.07] to-transparent p-4">
           <p className="flex items-center gap-2 text-sm font-semibold">
             <Zap className="h-4 w-4 text-amber-500" /> {needLabel} plan required
           </p>
-          <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+          <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
             This template needs the {needLabel} plan or higher. Upgrade and you can deploy it right away.
           </p>
           <Link
             href="/billing"
-            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-85 transition-opacity"
+            className="pill pill-ink pill-sm mt-3 w-full"
           >
             <Zap className="h-4 w-4" /> Upgrade to {needLabel}
           </Link>
         </div>
         <button
           onClick={toggleStar}
-          className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border text-xs font-medium transition-colors ${
-            starred ? "border-amber-500/40 text-amber-500" : "border-border text-muted-foreground hover:text-foreground"
+          className={`flex h-10 w-full items-center justify-center gap-1.5 rounded-full border text-[13.5px] font-medium transition-colors ${
+            starred ? "border-amber-500/40 text-amber-500" : "border-[var(--dz-hairline)] text-muted-foreground hover:border-foreground/20 hover:text-foreground"
           }`}
         >
           <Star className={`h-3.5 w-3.5 ${starred ? "fill-amber-500" : ""}`} /> {starred ? "Starred" : "Star this template"}
@@ -172,7 +172,7 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
         <div className="space-y-2">
           {userVars.map((v) => (
             <div key={v.key}>
-              <label className="text-[11px] font-medium text-muted-foreground">
+              <label className="text-[12.5px] font-medium text-muted-foreground">
                 {v.label || v.key}{v.required && <span className="text-red-500"> *</span>}
               </label>
               <input
@@ -180,25 +180,25 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
                 value={values[v.key] ?? v.default ?? ""}
                 onChange={(e) => setValues((p) => ({ ...p, [v.key]: e.target.value }))}
                 placeholder={v.description || v.key}
-                className="mt-1 w-full h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-foreground/30"
+                className="mt-1.5 h-10 w-full rounded-xl border border-[var(--dz-hairline)] bg-background/70 px-3.5 text-[14px] outline-none transition-colors focus:border-foreground/25 dark:bg-white/[0.03]"
               />
             </div>
           ))}
         </div>
       )}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-[13px] text-red-500">{error}</p>}
       <button
         onClick={deploy}
         disabled={deploying}
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-background text-sm font-semibold hover:opacity-85 transition-opacity disabled:opacity-60"
+        className="pill pill-launch w-full disabled:opacity-60"
       >
         {deploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-        Deploy Now
+        Deploy now
       </button>
       <button
         onClick={toggleStar}
-        className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border text-xs font-medium transition-colors ${
-          starred ? "border-amber-500/40 text-amber-500" : "border-border text-muted-foreground hover:text-foreground"
+        className={`flex h-10 w-full items-center justify-center gap-1.5 rounded-full border text-[13.5px] font-medium transition-colors ${
+          starred ? "border-amber-500/40 text-amber-500" : "border-[var(--dz-hairline)] text-muted-foreground hover:border-foreground/20 hover:text-foreground"
         }`}
       >
         <Star className={`h-3.5 w-3.5 ${starred ? "fill-amber-500" : ""}`} /> {starred ? "Starred" : "Star this template"}

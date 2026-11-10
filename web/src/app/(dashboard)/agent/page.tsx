@@ -171,7 +171,7 @@ export default function AgentPage() {
     <div className="w-full">
       {/* Composer: a tall, roomy card — prompt sits at the top, a control row
           runs along the bottom (Claude-style layout, Deployzy identity). */}
-      <div className="rounded-3xl border border-border bg-card shadow-sm px-2.5 pt-3 pb-2.5 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
+      <div className="surface rounded-[26px] px-2.5 pb-2.5 pt-3 transition-[border-color,box-shadow] focus-within:border-brand/50 focus-within:ring-4 focus-within:ring-brand/10">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -182,17 +182,17 @@ export default function AgentPage() {
           className="w-full bg-transparent px-2.5 pt-1 pb-2 text-[15px] leading-relaxed resize-none focus:outline-none max-h-56 min-h-[2.5rem] placeholder:text-muted-foreground/50"
         />
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 pl-1.5 pr-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--dz-hairline)] py-1 pl-1.5 pr-2.5 text-[12.5px] font-medium text-muted-foreground sm:inline-flex">
               <Image src="/logo-mark.png" alt="" width={15} height={15} className="rounded-sm" /> Deployzy Agent
             </span>
 
             {/* Engine picker: Deployzy default + any saved BYOK keys, and a link to add one */}
             <div className="relative">
               <button type="button" onClick={() => setEngineOpen((v) => !v)}
-                className="inline-flex items-center gap-1 rounded-full border border-border/60 pl-2 pr-1.5 py-1 text-[11px] font-medium hover:border-foreground/40 transition-colors">
+                className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--dz-hairline)] py-1 pl-2.5 pr-2 text-[12.5px] font-medium transition-colors hover:border-foreground/25">
                 {engine === "deployzy"
-                  ? <span className="text-muted-foreground">Engine: Deployzy</span>
+                  ? <span className="text-muted-foreground"><span className="hidden sm:inline">Engine: </span>Deployzy</span>
                   : <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><Key className="h-3 w-3" /> Your {engines.find(e => e.id === engine)?.label || "key"}</span>}
                 <ChevronDown className="h-3 w-3 opacity-60" />
               </button>

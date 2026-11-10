@@ -5,13 +5,19 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ConsoleFrame, ConsoleHeader, ConsolePicker, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
 import {
-  ArrowLeft, RefreshCw, Loader2, Trash2, Plus, Search,
+  RefreshCw, Loader2, Trash2, Plus, Search,
   Terminal, Database, Check, X, ChevronDown, ChevronRight,
   Layers,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+
+const MONGO_TABS: ConsoleTab<"browse" | "shell">[] = [
+  { id: "browse", label: "Browse", icon: Database },
+  { id: "shell", label: "Shell", icon: Terminal },
+];
 
 interface Collection {
   name: string;
@@ -243,6 +249,7 @@ function CollapsibleDoc({
 
 export default function MongoEditorPage() {
   const { id } = useParams<{ id: string }>();
+  const dbName = useDatabaseName(id);
   const router = useRouter();
 
   const headers = useCallback(() => {
@@ -390,56 +397,51 @@ export default function MongoEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 shrink-0">
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => router.push("/services")}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </Button>
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-green-500/10 text-green-600 dark:text-green-400">
-          <Database className="h-3.5 w-3.5" />
-        </div>
-        <span className="text-sm font-medium">MongoDB Browser</span>
-        {selectedCol && (
-          <Badge variant="outline" className="text-[10px] font-mono bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
-            {selectedCol}
-          </Badge>
-        )}
-        <div className="ml-auto flex gap-1">
-          <Button variant={activeTab === "browse" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-[11px]" onClick={() => setActiveTab("browse")}>
-            <Database className="h-3 w-3 mr-1" /> Browse
-          </Button>
-          <Button variant={activeTab === "shell" ? "default" : "ghost"} size="sm" className="h-7 px-3 text-[11px]" onClick={() => setActiveTab("shell")}>
-            <Terminal className="h-3 w-3 mr-1" /> Shell
-          </Button>
-        </div>
-      </div>
+    <ConsoleFrame>
+      <ConsoleHeader
+        kind="MongoDB"
+        title={dbName || "Database"}
+        icon={Database}
+        tone="mongo"
+        onBack={() => router.push("/services")}
+        tabs={MONGO_TABS}
+        active={activeTab}
+        onTab={setActiveTab}
+        picker={collections.length > 0 ? (
+          <ConsolePicker
+            label="Coll"
+            value={selectedCol}
+            onChange={(v) => { setSelectedCol(v); setActiveTab("browse"); }}
+            options={collections.map(c => ({ value: c.name, label: c.name, hint: c.count.toLocaleString() }))}
+          />
+        ) : null}
+      />
 
       {/* Body: sidebar + main */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Collection sidebar */}
-        <div className="w-52 shrink-0 border-r border-border/30 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border/20 shrink-0">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Collections</span>
-            <button onClick={loadCollections} disabled={colLoading} className="p-0.5 rounded hover:bg-accent text-muted-foreground">
+        {/* Collection sidebar (tablet and up; phones use the picker) */}
+        <div className="hidden w-56 shrink-0 flex-col overflow-hidden border-r border-[var(--dz-hairline)] md:flex">
+          <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3">
+            <span className="eyebrow">Collections · {collections.length}</span>
+            <button onClick={loadCollections} disabled={colLoading} aria-label="Reload collections" className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
               {colLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto py-1">
+          <div className="flex-1 overflow-y-auto pb-2">
             {collections.length === 0 && !colLoading && (
-              <p className="text-[11px] text-muted-foreground px-3 py-3">No collections</p>
+              <p className="px-4 py-3 text-[13px] text-muted-foreground">No collections</p>
             )}
             {collections.map((col) => (
               <button
                 key={col.name}
                 onClick={() => { setSelectedCol(col.name); setActiveTab("browse"); }}
-                className={`w-full flex items-center justify-between px-3 py-1.5 text-left text-[12px] transition-colors group ${selectedCol === col.name ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
+                className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${selectedCol === col.name ? "bg-foreground/[0.07] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"}`}
               >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Layers className="h-3 w-3 shrink-0 text-green-600/70 dark:text-green-500/70" />
-                  <span className="truncate font-mono">{col.name}</span>
-                </div>
-                <span className="text-[10px] text-muted-foreground shrink-0">{col.count.toLocaleString()}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <Layers className={`h-3.5 w-3.5 shrink-0 ${selectedCol === col.name ? "text-green-500" : "opacity-50"}`} />
+                  <span className="truncate font-mono text-[12.5px]">{col.name}</span>
+                </span>
+                <span className="figure shrink-0 text-[11px] text-muted-foreground/70">{col.count.toLocaleString()}</span>
               </button>
             ))}
           </div>
@@ -615,6 +617,6 @@ export default function MongoEditorPage() {
           )}
         </div>
       </div>
-    </div>
+    </ConsoleFrame>
   );
 }

@@ -19,41 +19,45 @@ const PROHIBITED = [
 
 export default function AcceptableUsePage() {
   return (
-    <div className="mx-auto max-w-3xl px-5 sm:px-6 py-16 sm:py-24">
-      <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Acceptable Use Policy</h1>
-      <p className="mt-4 text-muted-foreground leading-relaxed">
+    <div className="mx-auto max-w-3xl px-5 py-14 sm:px-6 sm:py-20">
+      <p className="eyebrow rise">Legal</p>
+      <h1 className="rise mt-4 text-[clamp(2.2rem,5.4vw,3.4rem)] font-semibold leading-[1.02] tracking-[-0.045em]" style={{ animationDelay: "0.06s" }}>
+        Acceptable <span className="accent-serif">use</span> policy
+      </h1>
+      <p className="rise mt-5 text-[16px] leading-relaxed text-muted-foreground sm:text-[17px]" style={{ animationDelay: "0.12s" }}>
         Deployzy lets you deploy apps, expose local services through tunnels, and connect custom domains.
         With that power comes a short, non-negotiable set of rules. Using Deployzy means you agree to them,
         and to be responsible for everything you and your users do on the platform.
       </p>
 
-      <h2 className="mt-12 text-xl font-semibold tracking-tight">Prohibited uses</h2>
-      <div className="mt-5 space-y-4">
-        {PROHIBITED.map(([t, d]) => (
-          <div key={t} className="rounded-xl border border-border/60 p-4">
-            <h3 className="text-sm font-semibold">{t}</h3>
-            <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{d}</p>
+      <h2 className="mt-14 text-[22px] font-semibold tracking-[-0.025em]">Prohibited uses</h2>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {PROHIBITED.map(([t, d], i) => (
+          <div key={t} className={`surface rounded-[20px] p-5 ${i === PROHIBITED.length - 1 && PROHIBITED.length % 2 ? "sm:col-span-2" : ""}`}>
+            <p className="figure text-[12px] text-muted-foreground">{String(i + 1).padStart(2, "0")}</p>
+            <h3 className="mt-2 text-[15px] font-semibold tracking-tight">{t}</h3>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{d}</p>
           </div>
         ))}
       </div>
 
-      <h2 className="mt-12 text-xl font-semibold tracking-tight">Enforcement</h2>
-      <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
+      <h2 className="mt-14 text-[22px] font-semibold tracking-[-0.025em]">Enforcement</h2>
+      <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
         We may suspend or terminate any project, tunnel, custom domain, or account — with or without notice —
         when we reasonably believe this policy has been violated, and we may block the associated IP addresses.
         We cooperate with law-enforcement requests and preserve relevant logs (including IP addresses) as required by law.
         Repeat or severe violations result in a permanent ban.
       </p>
 
-      <h2 className="mt-12 text-xl font-semibold tracking-tight">Report abuse</h2>
-      <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
-        Seeing something that breaks these rules on a <span className="font-mono">deployzy.com</span> address?
+      <h2 className="mt-14 text-[22px] font-semibold tracking-[-0.025em]">Report abuse</h2>
+      <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
+        Seeing something that breaks these rules on a <span className="font-mono text-foreground">deployzy.app</span> or <span className="font-mono text-foreground">deployzy.com</span> address?
         Please tell us — we act fast. Use the{" "}
-        <Link href="/report" className="text-emerald-600 dark:text-emerald-400 underline underline-offset-2">abuse report form</Link>{" "}
-        or email <a href="mailto:abuse@deployzy.com" className="text-emerald-600 dark:text-emerald-400 underline underline-offset-2">abuse@deployzy.com</a>.
+        <Link href="/report" className="text-[var(--dz-green-strong)] underline underline-offset-2 dark:text-brand">abuse report form</Link>{" "}
+        or email <a href="mailto:abuse@deployzy.com" className="text-[var(--dz-green-strong)] underline underline-offset-2 dark:text-brand">abuse@deployzy.com</a>.
       </p>
 
-      <p className="mt-12 text-xs text-muted-foreground">Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long" })}</p>
+      <p className="mt-14 text-[12.5px] text-muted-foreground">Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long" })}</p>
     </div>
   );
 }
