@@ -42,18 +42,24 @@ function size(mb: number): string {
   if (mb >= 1024) return `${+(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB`;
   return `${mb} MB`;
 }
+/** "1 database", "3 databases", "Unlimited databases"; null for 0 so the item is left out. */
+function count(v: number, one: string, many = `${one}s`): string | null {
+  if (v === 0) return null;
+  return v < 0 ? `Unlimited ${many}` : `${v} ${v === 1 ? one : many}`;
+}
+const group = (...parts: (string | null)[]) => parts.filter(Boolean).join(" · ");
 
 // buildFeatures turns the enforced limits into the display bullet list, so the
 // numbers always match what the backend actually allows.
 export function buildFeatures(l: PlanLimits): string[] {
   const feats: string[] = [
-    `${num(l.max_projects)} projects · ${num(l.max_databases)} databases`,
+    group(count(l.max_projects, "project"), count(l.max_databases, "database")),
     `${size(l.max_db_size_mb)} database storage`,
     `${size(l.max_memory_mb)} RAM / ${l.max_cpus < 0 ? "∞" : l.max_cpus} vCPU per project`,
     `${num(l.max_bandwidth_gb)} GB bandwidth · ${num(l.max_build_minutes_monthly)} build min/mo`,
-    `${num(l.max_subdomains)} subdomains · ${num(l.max_tunnels)} tunnels · ${num(l.max_custom_domains)} custom domains`,
-    `${num(l.max_byoc_servers)} BYOC servers · ${num(l.max_services)} services · ${num(l.max_crons)} cron jobs`,
-  ];
+    group(count(l.max_subdomains, "subdomain"), count(l.max_tunnels, "tunnel"), count(l.max_custom_domains, "custom domain")),
+    group(count(l.max_byoc_servers, "BYOC server"), count(l.max_services, "service"), count(l.max_crons, "cron job")),
+  ].filter(Boolean);
 
   // Capabilities from boolean flags (only shown when enabled).
   const caps: string[] = [];

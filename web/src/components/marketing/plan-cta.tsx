@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { useSignedIn } from "@/lib/use-signed-in";
+import { cn } from "@/lib/utils";
 
 /**
  * Pricing-card CTA that routes based on auth state: logged-in users go
@@ -10,24 +10,14 @@ import { Button } from "@/components/ui/button";
  * instead of being bounced through sign-up.
  */
 export function PlanCta({ planId, cta, popular }: { planId: string; cta: string; popular: boolean }) {
-  const [loggedIn, setLoggedIn] = useState(false);
-  useEffect(() => {
-    setLoggedIn(!!localStorage.getItem("sm_token"));
-  }, []);
+  const loggedIn = useSignedIn();
 
-  const href = loggedIn
-    ? planId === "free" ? "/dashboard" : "/billing"
-    : "/sign-up";
+  const href = loggedIn ? (planId === "free" ? "/overview" : "/billing") : "/sign-up";
   const label = loggedIn && planId === "free" ? "Go to dashboard" : cta;
 
   return (
-    <Button
-      className="mt-6 w-full h-9 text-xs"
-      variant={popular ? "default" : "outline"}
-      nativeButton={false}
-      render={<Link href={href} />}
-    >
+    <Link href={href} className={cn("pill pill-sm mt-7 w-full", popular ? "pill-launch" : "pill-line")}>
       {label}
-    </Button>
+    </Link>
   );
 }

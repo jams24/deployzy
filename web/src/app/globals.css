@@ -10,6 +10,15 @@
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-sans);
+  --font-serif: var(--font-serif), Georgia, serif;
+
+  /* Launch: Deployzy's two brand colours, straight from the logo brackets.
+     Green means live / deployed / go; cyan is its partner in gradients. */
+  --color-brand: var(--dz-green);
+  --color-brand-strong: var(--dz-green-strong);
+  --color-brand-cyan: var(--dz-cyan);
+  --color-ink: var(--dz-ink);
+  --color-paper: var(--dz-paper);
 
   --text-xs:   0.75rem;  --text-xs--line-height:   calc(1     / 0.75);
   --text-sm:   0.875rem; --text-sm--line-height:   calc(1.25  / 0.875);
@@ -451,4 +460,230 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
   .animate-orbit-slow, .bg-grid-animated, .beam, .beam-slow, .gradient-border,
   .pulse-ring::before, .animate-rise-in { animation: none !important; }
   .btn-shine::after { display: none; }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Deployzy "Launch" design system (marketing first, app shell next)
+
+   Paper & ink: neutral surfaces, hairline borders, ink pill actions, mono
+   figures. Two brand colours from the logo: green (live, deployed, go) and
+   cyan, used together only in the hero gradient. Headlines are Geist with one
+   Instrument Serif italic word. The 3D hero lives in a dark ink card in both
+   themes so the scene reads the same everywhere.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --dz-green: oklch(0.62 0.15 163);        /* text-safe on paper */
+  --dz-green-strong: oklch(0.5 0.13 163);
+  --dz-cyan: oklch(0.66 0.13 215);
+  --dz-ink: oklch(0.16 0.006 265);         /* #0b0c0f-ish, hero card */
+  --dz-paper: oklch(0.985 0.002 90);
+  --dz-hairline: oklch(0 0 0 / 0.08);
+}
+.dark {
+  --dz-green: oklch(0.8 0.16 163);         /* #34d399 family */
+  --dz-green-strong: oklch(0.85 0.15 163);
+  --dz-cyan: oklch(0.8 0.13 215);          /* #22d3ee family */
+  --dz-ink: oklch(0.14 0.006 265);
+  --dz-paper: oklch(0.145 0 0);
+  --dz-hairline: oklch(1 0 0 / 0.08);
+}
+
+/* Small mono caps label above titles, figures and table heads. */
+.eyebrow {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+/* Serif italic for one or two words inside a headline. */
+.accent-serif {
+  font-family: var(--font-serif), Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+/* Launch gradient (green → cyan), for one hero word at most. */
+.text-launch {
+  background-image: linear-gradient(100deg, var(--dz-green) 15%, var(--dz-cyan) 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Tabular figures for any number that changes. */
+.figure {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+/* Live dot: solid core + expanding ring. */
+.live-dot {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--dz-green);
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: dz-live-ping 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes dz-live-ping {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+/* Content framed by hairline rails on wide screens, like a ruled sheet. */
+.ruled {
+  position: relative;
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1200px;
+}
+@media (min-width: 1024px) {
+  .ruled {
+    border-left: 1px solid var(--dz-hairline);
+    border-right: 1px solid var(--dz-hairline);
+  }
+}
+/* Default surface for content cards. */
+.panel {
+  position: relative;
+  border: 1px solid var(--dz-hairline);
+  border-radius: 1.25rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: 0 1px 0 oklch(0 0 0 / 0.03);
+}
+/* Translucent bar for headers and docks. */
+.frost {
+  background: color-mix(in oklch, var(--background) 86%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+/* Pointer-following highlight; set --mx/--my from JS. */
+.spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklch, var(--dz-green) 10%, transparent), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+.spotlight:hover::after { opacity: 1; }
+/* Faint grain so large flat dark areas don't look digital. Needs position. */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+/* Ink pill buttons: primary action everywhere on the marketing site. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding-inline: 1.25rem;
+  border-radius: 9999px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: transform 0.2s var(--ease-out-expo), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.pill:active { transform: scale(0.97); }
+.pill-ink { background: var(--foreground); color: var(--background); }
+.pill-ink:hover { background: color-mix(in oklch, var(--foreground) 86%, transparent); }
+.pill-launch {
+  background: var(--dz-green);
+  color: oklch(0.16 0.02 165);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--dz-green) 40%, transparent), 0 10px 30px -10px color-mix(in oklch, var(--dz-green) 60%, transparent);
+}
+.pill-launch:hover { box-shadow: 0 0 0 1px var(--dz-green), 0 14px 40px -10px color-mix(in oklch, var(--dz-green) 75%, transparent); }
+.pill-line { border: 1px solid var(--border); background: color-mix(in oklch, var(--background) 60%, transparent); }
+.pill-line:hover { border-color: color-mix(in oklch, var(--foreground) 25%, transparent); }
+.pill-sm { height: 2.25rem; padding-inline: 1rem; font-size: 0.875rem; }
+/* Section rhythm for the landing page. */
+.home-section { padding-block: 5rem; }
+@media (min-width: 640px) { .home-section { padding-block: 7rem; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after { animation: none; }
+}
+
+/* Entrance motion in CSS, not JS: content is visible even before hydration
+   (and if scripts fail), so the hero never paints blank. */
+@keyframes dz-rise {
+  from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes dz-flip {
+  from { opacity: 0; transform: translateY(0.5em) rotateX(-70deg); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.rise { animation: dz-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.flip { display: inline-block; transform-origin: 50% 100%; animation: dz-flip 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .flip { animation: none; }
+}
+
+/* Scroll reveal with CSS scroll-driven animations: no JS, and browsers that
+   don't support it simply show the content. */
+@supports (animation-timeline: view()) {
+  .reveal-up {
+    animation: dz-rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-up { animation: none; }
+}
+
+/* Perspective floor for the closing CTA: a grid plane tilted away and
+   scrolling toward the viewer, in pure CSS. */
+.floor {
+  position: absolute;
+  inset: auto -50% -10% -50%;
+  height: 70%;
+  transform: perspective(420px) rotateX(62deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--dz-green) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--dz-green) 35%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to top, black 10%, transparent 85%);
+  -webkit-mask-image: linear-gradient(to top, black 10%, transparent 85%);
+  animation: dz-floor 3.2s linear infinite;
+}
+@keyframes dz-floor { to { background-position: 0 56px; } }
+@media (prefers-reduced-motion: reduce) { .floor { animation: none; } }
+
+/* FAQ disclosure: rotate the plus into an x when open. */
+.faq summary { list-style: none; cursor: pointer; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq[open] .faq-icon { transform: rotate(45deg); }
+.faq-icon { transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Logo marquee: one row, GPU-only transform, pauses on hover. */
+@keyframes dz-scroll-x { to { transform: translate3d(-50%, 0, 0); } }
+.marquee-track { display: flex; width: max-content; animation: dz-scroll-x 48s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+  .marquee { overflow-x: auto; }
 }

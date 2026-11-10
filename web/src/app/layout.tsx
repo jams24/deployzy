@@ -1,24 +1,27 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
-// Inter + JetBrains Mono — same pairing ngrok.com uses (they use Roobert
-// for sans, which is proprietary; Inter is the closest free equivalent —
-// same geometric neutral grotesque character). JetBrains Mono is the exact
-// mono font ngrok uses.
-const sans = Inter({
+// Geist for UI and headlines, Geist Mono for code and figures, and Instrument
+// Serif italic for the one accent word in a headline (`.accent-serif`).
+const sans = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
-  // Use the variable font so we get every weight without multiple file
-  // downloads — matches how ngrok ships it.
-  axes: ["opsz"],
 });
 
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const serif = Instrument_Serif({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
   display: "swap",
 });
 
@@ -85,7 +88,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sans.variable} ${mono.variable} h-full antialiased`}
+      className={`${sans.variable} ${mono.variable} ${serif.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground w-full max-w-[100vw]">
