@@ -191,8 +191,9 @@ export default function ApiKeysPage() {
 
       {/* Create Key */}
       <Panel title="Create New Key" className="mt-6">
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
           <Input
+            className="h-10 flex-1 sm:h-9"
             placeholder="Key name (e.g., laptop, ci-cd)"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
@@ -201,14 +202,14 @@ export default function ApiKeysPage() {
           <select
             value={newKeyScope}
             onChange={(e) => setNewKeyScope(e.target.value)}
-            className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-10 w-full shrink-0 rounded-lg border border-input bg-background px-2.5 text-sm sm:h-9 sm:w-auto"
             title="Key scope"
           >
             <option value="full">Full access</option>
             <option value="deploy">Deploy (no account/key mgmt)</option>
             <option value="read">Read-only</option>
           </select>
-          <Button onClick={createKey} className="btn-shine gap-2 shrink-0 rounded-full">
+          <Button onClick={createKey} className="h-10 shrink-0 gap-2 rounded-full px-4 sm:h-9">
             <Plus className="h-4 w-4" />
             Create
           </Button>
@@ -250,6 +251,28 @@ export default function ApiKeysPage() {
             </p>
           </div>
         ) : (
+          <>
+          {/* Phones: one card per key instead of a sideways-scrolling table. */}
+          <ul className="-mx-1 divide-y divide-[var(--dz-hairline)] sm:hidden">
+            {keys.map((k) => (
+              <li key={k.id} className="flex items-start gap-3 px-1 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[14.5px] font-medium">{k.name}</span>
+                    <span className="rounded-full border border-[var(--dz-hairline)] px-2 py-px text-[12px] capitalize text-muted-foreground">{k.scope || "full"}</span>
+                  </div>
+                  <p className="mt-0.5 truncate font-mono text-[12.5px] text-muted-foreground">{k.prefix}…</p>
+                  <p className="mt-1 text-[12.5px] text-muted-foreground">
+                    Used {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : "never"} · created {new Date(k.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => deleteKey(k.id)} aria-label={`Delete ${k.name}`} className="h-9 w-9 p-0 text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden sm:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -295,6 +318,8 @@ export default function ApiKeysPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
+          </>
         )}
       </Panel>
     </div>

@@ -7,7 +7,7 @@ import { AnimatedCounter } from "@/components/marketing/animated-counter";
 import { openCommandMenu } from "@/components/dashboard/command-menu";
 import { EmptyState, PanelHeader, StackIcon, StatusPill, TONE_DOT, statusTone, type Tone } from "@/components/dashboard/kit";
 import { API, headers } from "@/components/project/project-shared";
-import { fetchPlanCards, type PlanLimits } from "@/lib/plans";
+import type { UsageResponse } from "@/components/billing/types";
 import { useModKey } from "@/lib/use-me";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ export default function OverviewPage() {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [dbs, setDbs] = useState<DbRow[]>([]);
-  const [limits, setLimits] = useState<PlanLimits[] | null>(null);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -75,7 +75,8 @@ export default function OverviewPage() {
         setDbs(Array.isArray(db) ? db : []);
       })
       .finally(() => setLoading(false));
-    fetchPlanCards().then((cards) => setLimits(cards ? cards.map((c) => c.limits) : null));
+    // Same source as Billing, so the meters agree (and admins show as unlimited).
+    get("/api/v1/users/me/limits", null).then((u) => setUsage(u as UsageResponse | null));
   }, []);
 
   const byTone = useMemo(() => {
@@ -113,7 +114,13 @@ export default function OverviewPage() {
     .map(([k, v]) => `${k}\u00a0${v}`) // keep "Redis 1" on one line when the tile wraps
     .join(" · ");
 
-  const planLimits = limits?.find((l) => l.plan === user?.plan) ?? null;
+  const lim = (key: keyof UsageResponse["limits"]) => {
+    if (!usage) return undefined;
+    if (usage.is_admin) return -1;
+    const v = usage.limits[key];
+    return typeof v === "number" ? v : undefined;
+  };
+  const used = (key: string, fallback: number) => usage?.usage?.[key] ?? fallback;
   const firstName = user?.name?.split(" ")[0] || "there";
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
   const total = projects.length;
@@ -297,19 +304,27 @@ export default function OverviewPage() {
             <PanelHeader
               title="Plan usage"
               action={
-                user?.plan && (
+                (usage?.plan || user?.plan) && (
                   <span className="rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider text-[var(--dz-green-strong)] dark:text-brand">
-                    {user.plan}
+                    {usage?.is_admin ? "Admin" : usage?.plan || user?.plan}
                   </span>
                 )
               }
             />
             <div className="space-y-4 p-4 sm:p-5">
-              <Meter label="Projects" used={total} limit={planLimits?.max_projects} />
-              <Meter label="Databases" used={dbs.length} limit={planLimits?.max_databases} />
-              <Meter label="Custom domains" used={domains.length} limit={planLimits?.max_custom_domains} />
-              <Meter label="Tunnels online" used={activeTunnels.length} limit={planLimits?.max_tunnels} />
-              {user?.plan === "free" && (
+              {!usage ? (
+                <div className="h-28 animate-pulse rounded-xl bg-muted" />
+              ) : (
+                <>
+              {/* Labels and counts match Billing: "Databases" are attached to a
+                  project, "Services" are standalone databases. */}
+              <Meter label="Projects" used={used("projects", total)} limit={lim("max_projects")} />
+              <Meter label="Databases" used={used("databases", 0)} limit={lim("max_databases")} />
+              <Meter label="Services" used={used("services", 0)} limit={lim("max_services")} />
+              <Meter label="Custom domains" used={used("custom_domains", domains.length)} limit={lim("max_custom_domains")} />
+                </>
+              )}
+              {usage && !usage.is_admin && usage.plan === "free" && (
                 <Link href="/billing" className="pill pill-launch pill-sm mt-1 w-full">
                   <Zap className="h-4 w-4" /> Upgrade plan
                 </Link>

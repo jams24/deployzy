@@ -128,7 +128,7 @@ export function PlanHero({
         <div className="flex items-center gap-5 lg:flex-col lg:items-end lg:gap-3">
           {isPremium && !isAdmin ? (
             <div className="flex items-center gap-4">
-              <div className="text-right">
+              <div className="sm:text-right">
                 <div className="text-2xl font-bold tabular-nums tracking-tight">{meta?.price}<span className="text-sm font-normal text-muted-foreground">/mo</span></div>
                 <div className="text-[11px] text-muted-foreground">
                   {daysLeft === null ? "—" : `renews in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`}
@@ -137,7 +137,7 @@ export function PlanHero({
               <CycleRing pct={elapsedPct} label={daysLeft === null ? "–" : String(daysLeft)} sub={`of ${cycleDays}d`} />
             </div>
           ) : (
-            <div className="text-right">
+            <div className="sm:text-right">
               <div className="text-2xl font-bold tabular-nums tracking-tight">{isAdmin ? "∞" : "$0"}</div>
               <div className="text-[11px] text-muted-foreground">{isAdmin ? "all limits bypassed" : "forever · no card required"}</div>
             </div>
