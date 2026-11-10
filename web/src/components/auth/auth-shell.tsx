@@ -366,3 +366,49 @@ export function ApiKeyReveal({
     </AuthShell>
   );
 }
+
+// ── Centered status screen (OAuth callback, CLI sign-in done, …) ─────────
+export function StatusScreen({
+  title,
+  subtitle,
+  badge,
+  children,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  badge?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="relative grid min-h-[100dvh] place-items-center overflow-hidden bg-background px-5 py-12">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[420px] overflow-hidden">
+        <div className="absolute -top-40 left-1/2 h-80 w-[640px] -translate-x-1/2 rounded-full bg-brand/[0.1] blur-[120px]" />
+        <div className="absolute -top-16 right-[12%] h-48 w-[360px] rounded-full bg-brand-cyan/[0.07] blur-[100px]" />
+        <div className="mask-fade-b absolute inset-0 text-foreground/[0.035]"><div className="bg-grid absolute inset-0" /></div>
+      </div>
+      <div className="rise relative w-full max-w-[400px] text-center">
+        <Link href="/" aria-label="Deployzy home" className="mx-auto block w-fit">
+          <img src="/logo-mark.png" alt="" className="h-11 w-11 rounded-xl" />
+        </Link>
+        {badge && <div className="mt-8 flex justify-center">{badge}</div>}
+        <h1 className={`${badge ? "mt-5" : "mt-8"} text-[clamp(1.8rem,5vw,2.2rem)] font-semibold leading-[1.08] tracking-[-0.035em]`}>{title}</h1>
+        {subtitle && <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">{subtitle}</p>}
+        {children && <div className="mt-8">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function StatusBadge({ tone }: { tone: "ok" | "bad" | "busy" }) {
+  const cls =
+    tone === "ok"
+      ? "border-brand/30 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand"
+      : tone === "bad"
+        ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+        : "border-[var(--dz-hairline)] bg-foreground/[0.04] text-muted-foreground";
+  return (
+    <span className={`flex h-14 w-14 items-center justify-center rounded-2xl border ${cls}`}>
+      {tone === "ok" ? <Check className="h-6 w-6" /> : tone === "bad" ? <AlertCircle className="h-6 w-6" /> : <Loader2 className="h-6 w-6 animate-spin" />}
+    </span>
+  );
+}

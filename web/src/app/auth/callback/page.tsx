@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { Terminal } from "lucide-react";
+import { StatusBadge, StatusScreen } from "@/components/auth/auth-shell";
 
 function CallbackHandler() {
   const router = useRouter();
@@ -24,16 +24,10 @@ function CallbackHandler() {
 
 export default function AuthCallbackPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <div className="flex justify-center mb-4">
-          <img src="/logo-mark.png" alt="Deployzy" className="h-10 w-10 rounded-lg animate-pulse" />
-        </div>
-        <p className="text-sm text-muted-foreground">Signing you in...</p>
-        <Suspense>
-          <CallbackHandler />
-        </Suspense>
-      </div>
-    </div>
+    <StatusScreen badge={<StatusBadge tone="busy" />} title="Signing you in" subtitle="One moment while we open your dashboard.">
+      <Suspense>
+        <CallbackHandler />
+      </Suspense>
+    </StatusScreen>
   );
 }

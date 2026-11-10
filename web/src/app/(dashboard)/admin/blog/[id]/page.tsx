@@ -6,7 +6,6 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   Plus,
@@ -227,7 +226,7 @@ function SectionEditor({
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/40">
         <div className="flex items-center gap-2">
           <GripVertical className="h-4 w-4 text-muted-foreground/40 cursor-grab" />
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          <span className="eyebrow">
             {SECTION_LABELS[section.type]}
           </span>
         </div>
@@ -439,34 +438,34 @@ export default function BlogPostEditorPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5" nativeButton={false} render={<Link href="/admin/blog" />}>
+      {/* Sticky action bar — Save/Publish stay reachable while editing a long post */}
+      <div className="frost sticky top-0 z-20 -mx-4 -mt-6 flex items-center justify-between gap-3 border-b border-[var(--dz-hairline)] px-4 py-2.5 sm:-mx-6 sm:-mt-8 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Link href="/admin/blog" aria-label="Back to posts" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[13.5px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
-            Posts
-          </Button>
-          <Badge
-            variant="outline"
-            className={
+            <span className="hidden sm:inline">Posts</span>
+          </Link>
+          <span
+            className={`inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-full border px-2 text-[12px] font-medium capitalize ${
               post.status === "published"
-                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/50"
-                : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/50"
-            }
+                ? "border-brand/25 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand"
+                : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+            }`}
           >
+            <span className={`h-1.5 w-1.5 rounded-full ${post.status === "published" ? "bg-brand" : "bg-amber-500"}`} />
             {post.status || "draft"}
-          </Badge>
+          </span>
           {saveMsg && (
-            <span className={`text-xs ${saveMsg.startsWith("Error") ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+            <span className={`truncate text-[13px] ${saveMsg.startsWith("Error") ? "text-destructive" : "text-[var(--dz-green-strong)] dark:text-brand"}`}>
               {saveMsg}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="gap-1.5 h-8"
+            className="h-9 gap-1.5 px-3.5 text-[13.5px]"
             onClick={save}
             disabled={saving}
           >
@@ -475,7 +474,7 @@ export default function BlogPostEditorPage() {
           </Button>
           <Button
             size="sm"
-            className="gap-1.5 h-8"
+            className="h-9 gap-1.5 px-3.5 text-[13.5px]"
             onClick={togglePublish}
             disabled={publishing || saving}
           >
@@ -496,19 +495,22 @@ export default function BlogPostEditorPage() {
         <div className="space-y-5">
           {/* Title */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Title</label>
-            <Input
+            <label htmlFor="post-title" className="eyebrow">Title</label>
+            <textarea
+              id="post-title"
+              rows={2}
+              style={{ background: "transparent" }}
               value={post.title || ""}
               placeholder="Post title"
-              className="mt-1 text-lg font-bold h-12"
-              onChange={(e) => updateField("title", e.target.value)}
+              className="mt-2 w-full resize-none bg-transparent text-[26px] font-semibold leading-[1.15] tracking-[-0.03em] outline-none placeholder:text-muted-foreground/50 [field-sizing:content] sm:text-[32px]"
+              onChange={(e) => updateField("title", e.target.value.replace(/\n/g, " "))}
             />
           </div>
 
           {/* Slug */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Slug</label>
-            <div className="mt-1 flex items-center gap-2">
+            <label className="eyebrow">Slug</label>
+            <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-mono shrink-0">/blog/</span>
               <Input
                 value={post.slug || ""}
@@ -521,9 +523,9 @@ export default function BlogPostEditorPage() {
 
           {/* Excerpt */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Excerpt</label>
+            <label className="eyebrow">Excerpt</label>
             <textarea
-              className="mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              className="mt-2 min-h-[4.5rem] w-full resize-none rounded-xl border border-[var(--dz-hairline)] bg-transparent px-3.5 py-2.5 text-[14.5px] leading-relaxed outline-none transition-colors [field-sizing:content] focus:border-foreground/25"
               rows={2}
               value={post.excerpt || ""}
               placeholder="Short preview text shown in blog listing..."
@@ -533,16 +535,16 @@ export default function BlogPostEditorPage() {
 
           {/* Cover image */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Cover Image</label>
-            <div className="mt-1 space-y-2">
+            <label className="eyebrow">Cover image</label>
+            <div className="mt-2 space-y-2">
               {post.cover_image ? (
                 <div className="relative group">
                   <img
                     src={post.cover_image.startsWith("/api") ? `${API}${post.cover_image}` : post.cover_image}
                     alt="Cover"
-                    className="w-full h-40 object-cover rounded-lg border border-border"
+                    className="h-40 w-full rounded-2xl border border-[var(--dz-hairline)] object-cover sm:h-56"
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
                       size="sm"
                       variant="outline"
@@ -564,7 +566,7 @@ export default function BlogPostEditorPage() {
               ) : (
                 <button
                   onClick={() => coverRef.current?.click()}
-                  className="w-full h-28 rounded-lg border-2 border-dashed border-border hover:border-ring transition-colors flex flex-col items-center justify-center gap-2 text-muted-foreground"
+                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--dz-hairline)] text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground"
                   disabled={uploadingCover}
                 >
                   {uploadingCover ? (
@@ -589,12 +591,12 @@ export default function BlogPostEditorPage() {
                   e.target.value = "";
                 }}
               />
-              <div className="flex gap-2 items-center">
-                <span className="text-[10px] text-muted-foreground">Or paste a URL:</span>
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <span className="shrink-0 text-[12.5px] text-muted-foreground">Or paste a URL</span>
                 <Input
                   value={post.cover_image || ""}
                   placeholder="https://..."
-                  className="h-7 text-xs"
+                  className="h-9 text-[13.5px]"
                   onChange={(e) => updateField("cover_image", e.target.value || null)}
                 />
               </div>
@@ -604,12 +606,12 @@ export default function BlogPostEditorPage() {
           {/* Block editor */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-xs font-medium text-muted-foreground">Content Blocks</label>
-              <span className="text-[10px] text-muted-foreground">{content.length} blocks</span>
+              <label className="eyebrow">Content</label>
+              <span className="figure text-[12px] text-muted-foreground">{content.length} block{content.length === 1 ? "" : "s"}</span>
             </div>
 
             {content.length === 0 && (
-              <div className="rounded-lg border-2 border-dashed border-border p-8 text-center text-muted-foreground text-sm mb-3">
+              <div className="mb-3 rounded-2xl border border-dashed border-[var(--dz-hairline)] p-8 text-center text-[14px] text-muted-foreground">
                 No blocks yet. Add your first block below.
               </div>
             )}
@@ -653,7 +655,7 @@ export default function BlogPostEditorPage() {
           {/* Meta */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Post Settings</CardTitle>
+              <CardTitle className="text-[15px] tracking-tight">Post settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -745,7 +747,7 @@ export default function BlogPostEditorPage() {
           {/* SEO */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">SEO</CardTitle>
+              <CardTitle className="text-[15px] tracking-tight">SEO</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -768,7 +770,7 @@ export default function BlogPostEditorPage() {
               {/* SERP preview */}
               {(post.title || post.description) && (
                 <div className="rounded-lg border border-border/40 p-3 space-y-1 bg-muted/10">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Google preview</p>
+                  <p className="eyebrow">Google preview</p>
                   <p className="text-[13px] font-medium text-blue-600 dark:text-blue-400 line-clamp-1">
                     {post.title || "Post title"} | Deployzy
                   </p>
