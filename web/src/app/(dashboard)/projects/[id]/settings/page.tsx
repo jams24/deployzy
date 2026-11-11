@@ -1,52 +1,85 @@
 "use client";
 
 // Settings tab — everything configurable about the project in one place:
-// auto-deploy, labels, env vars, build & runtime (incl. multi-service),
+// general (auto-deploy, labels), env vars, build & runtime (incl. multi-service),
 // custom domains, PR previews, scheduled jobs, and the danger zone
-// (move server / delete).
+// (move server / delete). Desktop gets a sticky section nav; phones get a
+// scrollable chip row of the same sections.
 
-import { useCallback, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  Clock, Code, Folder, GitPullRequest, Globe, Layers, Loader2, Plus,
-  RefreshCw, Settings2, Trash2,
+  ArrowRight, ArrowUpRight, Check, Clock, Copy, Folder, GitPullRequest, Globe, Hammer,
+  KeyRound, Layers, Loader2, Plus, Settings2, Tag, Trash2, TriangleAlert, X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "@/components/DirectoryPicker";
+import { StatusPill } from "@/components/dashboard/kit";
+import {
+  Field, FooterNote, SettingRow, SettingsNav, SettingsSection, Switch,
+  inputCls, monoInputCls, selectCls, type Note, type SettingsNavItem,
+} from "@/components/dashboard/settings-kit";
+import { EnvEditor } from "@/components/project/env-editor";
 import { useProject } from "@/components/project/project-context";
 import { ServiceCards } from "@/components/project/service-cards";
 import {
   API, detectStackFor, headers, previewSubdomainExample,
-  serviceToCfg, servicesPayload, statusColor,
+  serviceToCfg, servicesPayload,
   type BuildConfig, type Cron, type Domain, type MoveTarget, type Project, type ServiceCfg,
 } from "@/components/project/project-shared";
 import { getBuildPlaceholders } from "@/lib/placeholders";
-import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
 import { regionName } from "@/lib/regions";
 
-function Section({ title, icon: Icon, children, action }: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
+function Group({ title, children, first }: { title: string; children: ReactNode; first?: boolean }) {
   return (
-    <section className="rounded-xl surface p-4 sm:p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Icon className="h-4 w-4 text-muted-foreground" /> {title}
-        </h2>
-        {action}
-      </div>
+    <div className={cn(!first && "mt-5 border-t border-[var(--dz-hairline)] pt-5")}>
+      <p className="eyebrow mb-3">{title}</p>
       {children}
-    </section>
+    </div>
   );
 }
+
+function Chip({ children, tone }: { children: ReactNode; tone?: "ok" | "warn" | "bad" | "info" }) {
+  return (
+    <span className={cn(
+      "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-[12px] font-medium",
+      tone === "ok" && "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+      tone === "warn" && "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      tone === "bad" && "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+      tone === "info" && "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+      !tone && "border-[var(--dz-hairline)] bg-foreground/[0.03] text-foreground/80",
+    )}>
+      {children}
+    </span>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => { navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); }).catch(() => {}); }}
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+    >
+      {done ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+const CRON_PRESETS = [
+  { label: "Hourly", value: "0 * * * *" },
+  { label: "Daily 3am", value: "0 3 * * *" },
+  { label: "Weekly", value: "0 3 * * 0" },
+  { label: "Every 15 min", value: "*/15 * * * *" },
+];
+
+const textBtn = "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors";
 
 export default function ProjectSettingsPage() {
   const { project: p, refresh, deploy, move, remove, deploying, deleting } = useProject();
   const ph = getBuildPlaceholders(p.framework);
+  const branch = p.github_branch || p.branch || "main";
 
   // ── Auto-deploy ──
   const [togglingAutoDeploy, setTogglingAutoDeploy] = useState(false);
@@ -63,29 +96,53 @@ export default function ProjectSettingsPage() {
 
   // ── Labels ──
   const [editingLabels, setEditingLabels] = useState(false);
-  const [labelsInput, setLabelsInput] = useState("");
+  const [labelDraft, setLabelDraft] = useState<string[]>([]);
+  const [labelInput, setLabelInput] = useState("");
+  const [savingLabels, setSavingLabels] = useState(false);
+  const [labelNote, setLabelNote] = useState<Note>(null);
+  const addLabels = (raw: string) => {
+    const next = raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (!next.length) return;
+    setLabelDraft((d) => Array.from(new Set([...d, ...next])).slice(0, 10));
+    setLabelInput("");
+  };
   async function saveLabels() {
-    const labels = labelsInput.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-    await fetch(`${API}/api/v1/projects/${p.id}/labels`, {
-      method: "PUT", headers: headers(), body: JSON.stringify({ labels }),
-    });
-    setEditingLabels(false);
-    setLabelsInput("");
-    refresh();
+    const labels = Array.from(new Set([...labelDraft, ...labelInput.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)])).slice(0, 10);
+    setSavingLabels(true); setLabelNote(null);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${p.id}/labels`, {
+        method: "PUT", headers: headers(), body: JSON.stringify({ labels }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        setLabelNote({ kind: "err", text: e.error || "Couldn't save labels" });
+      } else {
+        setEditingLabels(false);
+        setLabelInput("");
+        refresh();
+      }
+    } catch { setLabelNote({ kind: "err", text: "Network error" }); }
+    setSavingLabels(false);
   }
 
   // ── Env vars ──
-  // Initialized once from the fetched project; polls must not clobber typing.
-  const [envText, setEnvText] = useState(() =>
-    Object.entries(p.env_vars || {}).map(([k, v]) => `${k}=${v}`).join("\n"));
   const [savingEnv, setSavingEnv] = useState(false);
-  async function saveEnvVars(redeploy: boolean) {
-    setSavingEnv(true);
-    await fetch(`${API}/api/v1/projects/${p.id}`, {
-      method: "PUT", headers: headers(), body: JSON.stringify({ env_vars: parseEnvText(envText) }),
-    });
+  const [envNote, setEnvNote] = useState<Note>(null);
+  async function saveEnvVars(vars: Record<string, string>, redeploy: boolean) {
+    setSavingEnv(true); setEnvNote(null);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${p.id}`, {
+        method: "PUT", headers: headers(), body: JSON.stringify({ env_vars: vars }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        setEnvNote({ kind: "err", text: e.error || "Couldn't save variables" });
+      } else {
+        setEnvNote({ kind: "ok", text: redeploy ? "Saved. Redeploying…" : "Saved. Applies on the next deploy." });
+        if (redeploy) deploy(); else refresh();
+      }
+    } catch { setEnvNote({ kind: "err", text: "Network error" }); }
     setSavingEnv(false);
-    if (redeploy) deploy(); else refresh();
   }
 
   // ── Build & runtime ──
@@ -103,9 +160,11 @@ export default function ProjectSettingsPage() {
     build_mode: p.build_mode || "",
     dockerfile_path: p.dockerfile_path || "",
   }));
+  const setCfg = (patch: Partial<BuildConfig>) => setBuildCfg((prev) => ({ ...prev, ...patch }));
   const [multiService, setMultiService] = useState(() => (p.services || []).length > 0);
   const [services, setServices] = useState<ServiceCfg[]>(() => (p.services || []).map(serviceToCfg));
   const [savingBuild, setSavingBuild] = useState(false);
+  const [buildNote, setBuildNote] = useState<Note>(null);
   const [planLimits, setPlanLimits] = useState<{ max_memory_mb: number; max_cpus: number } | null>(null);
   const [dirPicker, setDirPicker] = useState<{ kind: "root" } | { kind: "service"; index: number } | null>(null);
 
@@ -115,9 +174,11 @@ export default function ProjectSettingsPage() {
       .then((d) => { if (d?.limits) setPlanLimits({ max_memory_mb: d.limits.max_memory_mb, max_cpus: d.limits.max_cpus }); })
       .catch(() => {});
   }, []);
+  const memCap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 0;
+  const cpuCap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 0;
 
   async function saveBuildConfig(redeploy: boolean) {
-    setSavingBuild(true);
+    setSavingBuild(true); setBuildNote(null);
     try {
       const res = await fetch(`${API}/api/v1/projects/${p.id}/build-config`, {
         method: "PUT", headers: headers(),
@@ -125,13 +186,13 @@ export default function ProjectSettingsPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Failed" }));
-        alert(err.error || "Failed to save build config");
-        setSavingBuild(false);
-        return;
+        setBuildNote({ kind: "err", text: err.error || "Couldn't save build settings" });
+      } else {
+        setBuildNote({ kind: "ok", text: redeploy ? "Saved. Redeploying…" : "Saved. Applies on the next deploy." });
+        if (redeploy) deploy(); else refresh();
       }
-      if (redeploy) deploy(); else refresh();
     } catch {
-      alert("Failed to save build config");
+      setBuildNote({ kind: "err", text: "Couldn't save build settings" });
     }
     setSavingBuild(false);
   }
@@ -140,6 +201,8 @@ export default function ProjectSettingsPage() {
   const [allDomains, setAllDomains] = useState<Domain[]>([]);
   const [newDomain, setNewDomain] = useState("");
   const [addingDomain, setAddingDomain] = useState(false);
+  const [domainNote, setDomainNote] = useState<Note>(null);
+  const [pendingDns, setPendingDns] = useState<Domain | null>(null);
 
   const loadDomains = useCallback(async () => {
     try {
@@ -159,7 +222,7 @@ export default function ProjectSettingsPage() {
   async function addProjectDomain() {
     const d = newDomain.trim().toLowerCase();
     if (!d) return;
-    setAddingDomain(true);
+    setAddingDomain(true); setDomainNote(null); setPendingDns(null);
     try {
       // 1) Register domain
       const regRes = await fetch(`${API}/api/v1/domains`, {
@@ -167,7 +230,7 @@ export default function ProjectSettingsPage() {
       });
       if (!regRes.ok && regRes.status !== 409) {
         const err = await regRes.json().catch(() => ({ error: "Failed to add domain" }));
-        alert(err.error || "Failed to add domain");
+        setDomainNote({ kind: "err", text: err.error || "Failed to add domain" });
         setAddingDomain(false);
         return;
       }
@@ -176,13 +239,13 @@ export default function ProjectSettingsPage() {
       const list: Domain[] = listRes.ok ? await listRes.json() : [];
       const row = list.find((x) => x.domain === d);
       if (!row) {
-        alert("Domain registered but couldn't find it in the list — try again.");
+        setDomainNote({ kind: "err", text: "Domain registered but not found in your list. Try again." });
         setAddingDomain(false);
         return;
       }
-      // 3) If not verified yet, tell user to set the CNAME and verify from /domains.
+      // 3) Not verified yet: show the CNAME to set, verify from /domains.
       if (!row.verified) {
-        alert(`Domain added. Now set a CNAME record:\n\n  ${d}  →  ${row.cname_target}\n\nThen go to /domains to click Verify.`);
+        setPendingDns(row);
         setNewDomain("");
         loadDomains();
         setAddingDomain(false);
@@ -194,9 +257,10 @@ export default function ProjectSettingsPage() {
         body: JSON.stringify({ target_type: "project", target_subdomain: p.subdomain }),
       });
       setNewDomain("");
+      setDomainNote({ kind: "ok", text: `${d} now points to this project.` });
       loadDomains();
     } catch {
-      alert("Failed to add domain");
+      setDomainNote({ kind: "err", text: "Failed to add domain" });
     }
     setAddingDomain(false);
   }
@@ -209,6 +273,9 @@ export default function ProjectSettingsPage() {
     });
     loadDomains();
   }
+
+  const boundDomains = allDomains.filter((d) => d.target_type === "project" && d.target_subdomain === p.subdomain);
+  const unverifiedCount = allDomains.filter((d) => !d.verified && !d.target_subdomain).length;
 
   // ── PR previews ──
   const [previews, setPreviews] = useState<Project[]>([]);
@@ -242,6 +309,9 @@ export default function ProjectSettingsPage() {
   const [crons, setCrons] = useState<Cron[]>([]);
   const [editingCron, setEditingCron] = useState(false);
   const [cronForm, setCronForm] = useState({ name: "", schedule: "0 3 * * *", command: "" });
+  const [cronNote, setCronNote] = useState<Note>(null);
+  const [savingCron, setSavingCron] = useState(false);
+  const [confirmCron, setConfirmCron] = useState<string | null>(null);
   const loadCrons = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/v1/projects/${p.id}/crons`, { headers: headers() });
@@ -257,18 +327,22 @@ export default function ProjectSettingsPage() {
   }, [loadCrons]);
 
   async function addCron() {
-    if (!cronForm.schedule || !cronForm.command) { alert("Schedule and command are required"); return; }
-    const res = await fetch(`${API}/api/v1/projects/${p.id}/crons`, {
-      method: "POST", headers: headers(), body: JSON.stringify(cronForm),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Failed" }));
-      alert(err.error || "Failed to create cron");
-      return;
-    }
-    setCronForm({ name: "", schedule: "0 3 * * *", command: "" });
-    setEditingCron(false);
-    loadCrons();
+    if (!cronForm.schedule.trim() || !cronForm.command.trim()) { setCronNote({ kind: "err", text: "Schedule and command are required." }); return; }
+    setSavingCron(true); setCronNote(null);
+    try {
+      const res = await fetch(`${API}/api/v1/projects/${p.id}/crons`, {
+        method: "POST", headers: headers(), body: JSON.stringify(cronForm),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        setCronNote({ kind: "err", text: err.error || "Couldn't create the job" });
+      } else {
+        setCronForm({ name: "", schedule: "0 3 * * *", command: "" });
+        setEditingCron(false);
+        loadCrons();
+      }
+    } catch { setCronNote({ kind: "err", text: "Network error" }); }
+    setSavingCron(false);
   }
   async function toggleCron(c: Cron) {
     await fetch(`${API}/api/v1/projects/${c.project_id}/crons/${c.id}`, {
@@ -278,10 +352,10 @@ export default function ProjectSettingsPage() {
     loadCrons();
   }
   async function deleteCron(c: Cron) {
-    if (!confirm(`Delete cron "${c.name}"?`)) return;
     await fetch(`${API}/api/v1/projects/${c.project_id}/crons/${c.id}`, {
       method: "DELETE", headers: headers(),
     });
+    setConfirmCron(null);
     loadCrons();
   }
 
@@ -293,26 +367,47 @@ export default function ProjectSettingsPage() {
       .then((data) => setMoveTargets(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+  const [moveTo, setMoveTo] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteText, setDeleteText] = useState("");
 
+  // Destinations = selectable platform regions + own BYOC, minus wherever this
+  // project already lives and any full box. A project on a specific server can
+  // always be rescued back to the shared platform.
+  const targets = moveTargets.filter((s) => !s.full && s.id !== p.worker_server_id);
+  const canMoveToPlatform = !!p.worker_server_id;
+  const canMove = targets.length > 0 || canMoveToPlatform;
+  const moveLabel = moveTo === "platform"
+    ? "Deployzy Cloud"
+    : (() => { const s = targets.find((t) => t.id === moveTo); return s ? (s.is_byoc ? s.label : regionName(s.region, s.label)) : ""; })();
+
   const buildCustomized = !!(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd || p.dockerfile_path);
 
+  const navItems = useMemo<SettingsNavItem[]>(() => [
+    { id: "general", label: "General", icon: Settings2 },
+    { id: "env", label: "Environment", icon: KeyRound },
+    { id: "build", label: "Build & runtime", icon: Hammer },
+    { id: "domains", label: "Domains", icon: Globe },
+    ...(p.github_repo ? [{ id: "previews", label: "PR previews", icon: GitPullRequest }] : []),
+    { id: "jobs", label: "Scheduled jobs", icon: Clock },
+    { id: "danger", label: "Danger zone", icon: TriangleAlert, tone: "danger" as const },
+  ], [p.github_repo]);
+
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="lg:grid lg:grid-cols-[188px_minmax(0,1fr)] lg:gap-8">
       {/* Directory picker — writes back to root_dir or a service's dir */}
       {dirPicker && p.github_repo && (
         <DirectoryPicker
           repo={p.github_repo}
-          branch={p.github_branch || p.branch || "main"}
+          branch={branch}
           initialPath={dirPicker.kind === "root" ? buildCfg.root_dir : (services[dirPicker.index]?.root_dir || "")}
           onClose={() => setDirPicker(null)}
           onSelect={async (path) => {
             const dp = dirPicker;
             if (dp.kind === "root") {
-              setBuildCfg((prev) => ({ ...prev, root_dir: path }));
+              setCfg({ root_dir: path });
             } else {
-              const fw = await detectStackFor(p.github_repo, p.github_branch || p.branch || "main", path);
+              const fw = await detectStackFor(p.github_repo, branch, path);
               setServices((prev) => prev.map((s, j) => (j === dp.index ? { ...s, root_dir: path, framework: fw } : s)));
             }
             setDirPicker(null);
@@ -320,439 +415,548 @@ export default function ProjectSettingsPage() {
         />
       )}
 
-      {/* Auto-Deploy */}
-      {p.github_repo && (
-        <Section title="Auto-Deploy" icon={RefreshCw}>
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">
-              Automatically redeploy when you push to <span className="font-mono font-medium text-foreground">{p.github_branch || p.branch || "main"}</span>
-            </p>
-            <button
-              onClick={() => toggleAutoDeploy(!p.auto_deploy)}
-              disabled={togglingAutoDeploy}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${
-                p.auto_deploy ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"
-              } ${togglingAutoDeploy ? "opacity-50" : ""}`}
+      <aside className="hidden lg:block">
+        <div className="sticky top-20">
+          <p className="eyebrow mb-2 px-3">Settings</p>
+          <SettingsNav items={navItems} />
+        </div>
+      </aside>
+
+      <div className="min-w-0 max-w-3xl space-y-4">
+        {/* Phone jump row */}
+        <nav aria-label="Sections" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
+          {navItems.map(({ id, label, tone }) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center rounded-full border border-[var(--dz-hairline)] px-3 text-[13px] font-medium",
+                tone === "danger" ? "text-red-600 dark:text-red-400" : "text-muted-foreground",
+              )}
             >
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform duration-200 ${
-                p.auto_deploy ? "translate-x-[18px]" : "translate-x-[3px]"
-              }`} />
-            </button>
-          </div>
-        </Section>
-      )}
+              {label}
+            </a>
+          ))}
+        </nav>
 
-      {/* Labels */}
-      <Section title="Labels" icon={Code}
-        action={!editingLabels ? (
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setEditingLabels(true); setLabelsInput((p.labels || []).join(", ")); }}>
-            Edit
-          </Button>
-        ) : undefined}
-      >
-        {editingLabels ? (
-          <div className="space-y-2">
-            <label className="text-[10px] text-muted-foreground">Labels <span>(comma-separated, max 10)</span></label>
-            <input type="text" value={labelsInput} onChange={(e) => setLabelsInput(e.target.value)} placeholder="prod, api, client-work" className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            <div className="flex gap-2">
-              <Button size="sm" className="h-7 text-xs" onClick={saveLabels}>Save</Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingLabels(false)}>Cancel</Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {(p.labels || []).length === 0 ? (
-              <span className="text-xs text-muted-foreground">No labels — labels power the filter bar on the Projects list.</span>
-            ) : (
-              (p.labels || []).map((l) => (
-                <Badge key={l} variant="outline" className="text-[10px] text-blue-600 dark:text-blue-400 border-blue-500/40 bg-blue-500/5">{l}</Badge>
-              ))
+        {/* General */}
+        <SettingsSection id="general" icon={Settings2} title="General" description="How this project deploys and how it's organised.">
+          <div className="divide-y divide-[var(--dz-hairline)]">
+            {p.github_repo && (
+              <SettingRow
+                title="Auto-deploy"
+                description={<>Redeploy on every push to <code className="font-mono text-[12.5px] text-foreground">{branch}</code>.</>}
+                control={<Switch checked={!!p.auto_deploy} disabled={togglingAutoDeploy} onChange={toggleAutoDeploy} label="Auto-deploy on push" />}
+              />
             )}
-          </div>
-        )}
-      </Section>
-
-      {/* Environment Variables */}
-      <Section title="Environment Variables" icon={Code}
-        action={
-          <button
-            type="button"
-            onClick={() => setEnvText(autoFormatEnvText(envText))}
-            disabled={!envText.trim()}
-            className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title="Parse and rewrite as one KEY=VALUE per line. Recovers from pasted values with missing newlines."
-          >
-            Auto-format
-          </button>
-        }
-      >
-        <div className="space-y-3">
-          <textarea
-            value={envText}
-            onChange={(e) => setEnvText(e.target.value)}
-            placeholder={ph.env}
-            className="w-full h-40 rounded-md border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground resize-y focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-[10px] text-muted-foreground">KEY=VALUE format, one per line</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={savingEnv} onClick={() => saveEnvVars(false)}>Save</Button>
-              <Button size="sm" className="h-7 text-xs" disabled={savingEnv} onClick={() => saveEnvVars(true)}>
-                {savingEnv ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Save &amp; Redeploy
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      {/* Build & Runtime */}
-      <Section title="Build &amp; Runtime" icon={Settings2}
-        action={buildCustomized ? (
-          <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">customized</Badge>
-        ) : undefined}
-      >
-        <div className="space-y-3">
-          <p className="text-[10px] text-muted-foreground">Leave blank to use defaults.</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground">Root Directory <span>(monorepos)</span></label>
-              <div className="relative">
-                <input type="text" placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setBuildCfg({ ...buildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                <button type="button" title="Browse repository directories" disabled={!p.github_repo} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
-                  <Folder className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground">Node Version</label>
-              <select value={buildCfg.node_version} onChange={(e) => setBuildCfg({ ...buildCfg, node_version: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-                <option value="">Default (20)</option>
-                <option value="18">Node 18</option>
-                <option value="20">Node 20</option>
-                <option value="22">Node 22</option>
-              </select>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Install Command</label>
-              <input type="text" placeholder={ph.install} value={buildCfg.install_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, install_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Build Command</label>
-              <input type="text" placeholder={ph.build} value={buildCfg.build_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, build_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Start Command</label>
-              <input type="text" placeholder={ph.start} value={buildCfg.start_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, start_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground">Port Override <span>(0 = auto)</span></label>
-              <input type="number" min="0" max="65535" value={buildCfg.port_override || ""} onChange={(e) => setBuildCfg({ ...buildCfg, port_override: parseInt(e.target.value) || 0 })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground">
-                Memory MB <span>(0 = {planLimits && planLimits.max_memory_mb > 0 ? Math.min(512, planLimits.max_memory_mb) : 512}{planLimits && planLimits.max_memory_mb > 0 ? `, plan max ${planLimits.max_memory_mb}` : ""})</span>
-              </label>
-              <input type="number" min="0" max={planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : 16384} step="128" value={buildCfg.memory_mb || ""} onChange={(e) => { const v = parseInt(e.target.value) || 0; const cap = planLimits && planLimits.max_memory_mb > 0 ? planLimits.max_memory_mb : Infinity; setBuildCfg({ ...buildCfg, memory_mb: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground">
-                CPUs <span>(0 = {planLimits && planLimits.max_cpus > 0 ? Math.min(0.5, planLimits.max_cpus) : 0.5}{planLimits && planLimits.max_cpus > 0 ? `, plan max ${planLimits.max_cpus}` : ""})</span>
-              </label>
-              <input type="number" min="0" max={planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : 8} step="0.25" value={buildCfg.cpus || ""} onChange={(e) => { const v = parseFloat(e.target.value) || 0; const cap = planLimits && planLimits.max_cpus > 0 ? planLimits.max_cpus : Infinity; setBuildCfg({ ...buildCfg, cpus: Math.min(v, cap) }); }} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Health Check Path <span>(e.g. /health; empty = skip)</span></label>
-              <input type="text" placeholder={ph.healthCheck} value={buildCfg.health_check_path} onChange={(e) => setBuildCfg({ ...buildCfg, health_check_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Release Command <span>(runs before start, e.g. migrations)</span></label>
-              <input type="text" placeholder={ph.release} value={buildCfg.release_cmd} onChange={(e) => setBuildCfg({ ...buildCfg, release_cmd: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Build Mode</label>
-              <select value={buildCfg.build_mode} onChange={(e) => setBuildCfg({ ...buildCfg, build_mode: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-                <option value="">Auto (use repo Dockerfile if present)</option>
-                <option value="ignore_dockerfile">Ignore repo Dockerfile — always auto-generate</option>
-              </select>
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[10px] text-muted-foreground">Dockerfile Path <span>(e.g. Dockerfile.bot; empty = Dockerfile)</span></label>
-              <input type="text" placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setBuildCfg({ ...buildCfg, dockerfile_path: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted px-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-            </div>
-          </div>
-
-          {/* Multiple Services */}
-          <div className="rounded-lg border border-border overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2.5">
-              <div className="flex items-start gap-2">
-                <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <div>
-                  <span className="text-xs font-medium">Multiple Services</span>
-                  <p className="text-[10px] text-muted-foreground">Deploy multiple directories from this repository as services inside one container.</p>
+            <div className="py-3.5 first:pt-0 last:pb-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium">Labels</p>
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Filter the Projects list by label. Up to 10.</p>
                 </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={multiService}
-                onClick={() => {
-                  const next = !multiService;
-                  setMultiService(next);
-                  if (next && services.length === 0) setServices([{ name: "service-1", root_dir: "", port: 3001, framework: "", install_cmd: "npm install", build_cmd: "npm run build", start_cmd: "npm run start", env_text: "" }]);
-                }}
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${multiService ? "bg-violet-600" : "bg-zinc-300 dark:bg-zinc-700"}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${multiService ? "left-[18px]" : "left-0.5"}`} />
-              </button>
-            </div>
-            {multiService && (
-              <div className="border-t border-border/40 p-3">
-                <ServiceCards
-                  services={services}
-                  onChange={setServices}
-                  subdomain={p.subdomain}
-                  repoConnected={!!p.github_repo}
-                  onBrowse={(i) => setDirPicker({ kind: "service", index: i })}
-                  detectStack={(dir) => detectStackFor(p.github_repo, p.github_branch || p.branch || "main", dir)}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2 pt-1">
-            <Button size="sm" className="h-7 text-xs" onClick={() => saveBuildConfig(true)} disabled={savingBuild}>
-              {savingBuild ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Save &amp; Redeploy
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => saveBuildConfig(false)} disabled={savingBuild}>Save Only</Button>
-          </div>
-        </div>
-      </Section>
-
-      {/* Custom Domains */}
-      <Section title="Custom Domains" icon={Globe}>
-        <div className="space-y-2">
-          {allDomains.filter((d) => d.target_type === "project" && d.target_subdomain === p.subdomain).map((d) => (
-            <div key={d.id} className="flex items-center justify-between text-xs rounded-md bg-muted px-2.5 py-1.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="font-mono text-foreground hover:text-foreground truncate">{d.domain}</a>
-                {d.verified ? (
-                  <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">verified</Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[9px] text-amber-600 dark:text-amber-400 border-amber-500/40">needs CNAME</Badge>
+                {!editingLabels && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditingLabels(true); setLabelDraft(p.labels || []); setLabelInput(""); setLabelNote(null); }}
+                    className={cn(textBtn, "border border-[var(--dz-hairline)] hover:bg-foreground/[0.04]")}
+                  >
+                    <Tag className="h-3.5 w-3.5" /> {(p.labels || []).length ? "Edit" : "Add"}
+                  </button>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive hover:text-destructive" onClick={() => unbindDomain(d.id)}>Unbind</Button>
-            </div>
-          ))}
-          {allDomains.filter((d) => !d.verified && !d.target_subdomain).length > 0 && (
-            <div className="text-[10px] text-muted-foreground">
-              <span>Pending verification — set CNAME, then verify at <a href="/domains" className="text-blue-600 dark:text-blue-400 hover:underline">/domains</a></span>
-            </div>
-          )}
-          <div className="flex gap-1">
-            <input
-              type="text"
-              placeholder="app.yourdomain.com"
-              value={newDomain}
-              onChange={(e) => setNewDomain(e.target.value)}
-              className="flex-1 h-7 rounded-md border border-input bg-muted px-2 font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <Button size="sm" className="h-7 px-2 text-xs" onClick={addProjectDomain} disabled={addingDomain || !newDomain}>
-              {addingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-            </Button>
-          </div>
-        </div>
-      </Section>
-
-      {/* PR Previews */}
-      {p.github_repo && (
-        <Section title="Pull Request Previews" icon={GitPullRequest}
-          action={
-            <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                className="accent-emerald-500 h-3 w-3"
-                checked={!!p.preview_enabled}
-                disabled={togglingPreview}
-                onChange={(e) => togglePreviewEnabled(e.target.checked)}
-              />
-              Auto-deploy PRs
-            </label>
-          }
-        >
-          {!p.preview_enabled ? (
-            <p className="text-[10px] text-muted-foreground">Turn on to auto-deploy every open PR to a <code className="font-mono text-zinc-500">{previewSubdomainExample(p.subdomain)}</code> URL. Closed PRs are torn down automatically.</p>
-          ) : previews.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground">No open PRs with a preview. Open a PR on <span className="font-mono">{p.github_repo}</span> and it&apos;ll appear here.</p>
-          ) : (
-            <div className="space-y-1">
-              {previews.map((pv) => (
-                <div key={pv.id} className="flex items-center justify-between rounded-md bg-muted px-2.5 py-1.5 text-[11px] gap-2">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Badge variant="outline" className="text-[9px] text-blue-600 dark:text-blue-400 border-blue-500/40 shrink-0">#{pv.pr_number}</Badge>
-                    <Badge variant="outline" className={`text-[9px] shrink-0 ${statusColor[pv.status] || ""}`}>{pv.status}</Badge>
-                    <span className="truncate text-foreground">{pv.pr_title || pv.branch}</span>
+              {editingLabels ? (
+                <div className="mt-3">
+                  <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-xl border border-[var(--dz-hairline)] px-2 py-1.5 transition-[border-color,box-shadow] focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/10">
+                    {labelDraft.map((l) => (
+                      <span key={l} className="inline-flex h-7 items-center gap-1 rounded-full bg-foreground/[0.06] pl-2.5 pr-1 text-[13px] font-medium">
+                        {l}
+                        <button type="button" aria-label={`Remove ${l}`} onClick={() => setLabelDraft((d) => d.filter((x) => x !== l))} className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      autoFocus
+                      value={labelInput}
+                      onChange={(e) => { const v = e.target.value; if (v.includes(",")) addLabels(v); else setLabelInput(v); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); if (labelInput.trim()) addLabels(labelInput); else saveLabels(); }
+                        else if (e.key === "Backspace" && !labelInput) setLabelDraft((d) => d.slice(0, -1));
+                        else if (e.key === "Escape") setEditingLabels(false);
+                      }}
+                      placeholder={labelDraft.length ? "" : "prod, api, client-work"}
+                      aria-label="Add a label"
+                      disabled={labelDraft.length >= 10}
+                      className="h-7 min-w-[8rem] flex-1 border-0 px-1 text-[14px] outline-none"
+                      style={{ background: "transparent" }}
+                    />
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {pv.commit_sha && <code className="text-[9px] text-muted-foreground font-mono">{pv.commit_sha.slice(0, 7)}</code>}
-                    {pv.status === "running" && (
-                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1" nativeButton={false} render={<a href={`https://${pv.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
-                        Visit
-                      </Button>
-                    )}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
+                    <FooterNote note={labelNote} />
+                    <span className="mr-auto text-[12.5px] text-muted-foreground">Press Enter or comma to add.</span>
+                    <button type="button" onClick={() => setEditingLabels(false)} className="pill pill-line pill-sm">Cancel</button>
+                    <button type="button" onClick={saveLabels} disabled={savingLabels} className="pill pill-ink pill-sm disabled:opacity-50">
+                      {savingLabels && <Loader2 className="h-4 w-4 animate-spin" />} Save labels
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </Section>
-      )}
-
-      {/* Scheduled Jobs */}
-      <Section title="Scheduled Jobs" icon={Clock}
-        action={
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => setEditingCron(!editingCron)}>
-            <Plus className="h-3 w-3" /> New job
-          </Button>
-        }
-      >
-        <div className="space-y-2">
-          {crons.length === 0 && !editingCron && (
-            <p className="text-[10px] text-muted-foreground">No scheduled jobs yet.</p>
-          )}
-          {crons.map((c) => (
-            <div key={c.id} className="rounded-md bg-muted px-2.5 py-2 space-y-1">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.enabled ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-zinc-500/10 text-muted-foreground"}`}>{c.enabled ? "on" : "off"}</span>
-                  <span className="text-xs font-medium truncate">{c.name}</span>
-                  <code className="text-[10px] text-blue-400 font-mono">{c.schedule}</code>
-                  {c.last_status === "success" && <Badge variant="outline" className="text-[9px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">success</Badge>}
-                  {c.last_status === "failed" && <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/40">failed</Badge>}
+              ) : (p.labels || []).length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {(p.labels || []).map((l) => <Chip key={l}>{l}</Chip>)}
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleCron(c)}>{c.enabled ? "Pause" : "Resume"}</Button>
-                  <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => deleteCron(c)}>Delete</Button>
-                </div>
-              </div>
-              <code className="block text-[10px] text-muted-foreground font-mono truncate">$ {c.command}</code>
-              {c.last_run_at && (
-                <div className="text-[10px] text-muted-foreground">Last run: {new Date(c.last_run_at).toLocaleString()}</div>
               )}
             </div>
-          ))}
-          {editingCron && (
-            <div className="rounded-md border border-border/40 bg-muted p-2.5 space-y-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-muted-foreground">Name</label>
-                  <input type="text" placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-muted-foreground">Schedule <span>(cron: min hour day month dow)</span></label>
-                  <input type="text" placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">Command</label>
-                <input type="text" placeholder="node scripts/cleanup.js" value={cronForm.command} onChange={(e) => setCronForm({ ...cronForm, command: e.target.value })} className="w-full h-7 rounded-md border border-input bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" className="h-7 text-xs" onClick={addCron}>Create</Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingCron(false)}>Cancel</Button>
-              </div>
-              <p className="text-[10px] text-muted-foreground">Runs in a fresh container built from this project&apos;s image, with the same env vars. Stdout/stderr is captured and shown above.</p>
-            </div>
-          )}
-        </div>
-      </Section>
-
-      {/* Danger Zone */}
-      <section className="rounded-xl border border-red-500/40 bg-red-500/[0.03] p-4 sm:p-5 space-y-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-red-500">
-          <Trash2 className="h-4 w-4" /> Danger Zone
-        </h2>
-
-        {/* Move server */}
-        {(() => {
-          // Destinations = selectable platform regions + own BYOC, minus wherever
-          // this project already lives and any full box. A project on a specific
-          // server can always be rescued back to the shared platform.
-          const targets = moveTargets.filter((s) => !s.full && s.id !== p.worker_server_id);
-          const canMoveToPlatform = !!p.worker_server_id;
-          if (targets.length === 0 && !canMoveToPlatform) return null;
-          return (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-xs font-medium">Move to another server</p>
-                <p className="text-[10px] text-muted-foreground">Migrate this project to a platform region or one of your own servers (Pro).</p>
-              </div>
-              <select
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                value=""
-                disabled={deploying}
-                onChange={(e) => { const v = e.target.value; e.currentTarget.value = ""; if (v) move(v); }}
-              >
-                <option value="">Move to…</option>
-                {canMoveToPlatform && <option value="platform">Deployzy Cloud (platform)</option>}
-                {targets.map((s) => (
-                  <option key={s.id} value={s.id}>{s.is_byoc ? s.label : regionName(s.region, s.label)}</option>
-                ))}
-              </select>
-            </div>
-          );
-        })()}
-
-        {/* Delete */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <p className="text-xs font-medium">Delete this project</p>
-              <p className="text-[10px] text-muted-foreground">Permanently delete the project and its container. This cannot be undone.</p>
-            </div>
-            {!confirmDelete && (
-              <Button variant="outline" size="sm" className="h-8 text-xs border-red-500/50 text-red-500 hover:bg-red-500/10 hover:text-red-500" onClick={() => { setConfirmDelete(true); setDeleteText(""); }}>
-                <Trash2 className="h-3 w-3 mr-1" /> Delete project
-              </Button>
-            )}
           </div>
-          {confirmDelete && (
-            <div className="rounded-lg border border-red-500/50 bg-red-500/5 p-4 space-y-3">
-              <p className="text-xs text-muted-foreground">
-                This will permanently delete <span className="font-semibold text-foreground">{p.name}</span> and its container. This action cannot be undone.
-              </p>
-              <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">
-                  Type <span className="font-mono font-semibold text-foreground">{p.name}</span> to confirm:
-                </label>
-                <Input
-                  value={deleteText}
-                  onChange={(e) => setDeleteText(e.target.value)}
-                  placeholder={p.name}
-                  className="h-8 text-sm font-mono"
+        </SettingsSection>
+
+        {/* Environment */}
+        <EnvEditor
+          id="env"
+          initial={p.env_vars || {}}
+          placeholder={ph.env}
+          saving={savingEnv}
+          note={envNote}
+          onSave={saveEnvVars}
+        />
+
+        {/* Build & runtime */}
+        <SettingsSection
+          id="build"
+          icon={Hammer}
+          title="Build & runtime"
+          description="Leave any field blank to use what we detect from your repo."
+          action={buildCustomized ? <Chip tone="ok">Customized</Chip> : undefined}
+          footer={
+            <>
+              <FooterNote note={buildNote} />
+              <button type="button" onClick={() => saveBuildConfig(false)} disabled={savingBuild} className="pill pill-line pill-sm disabled:opacity-50">Save</button>
+              <button type="button" onClick={() => saveBuildConfig(true)} disabled={savingBuild} className="pill pill-ink pill-sm disabled:opacity-50">
+                {savingBuild && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; redeploy
+              </button>
+            </>
+          }
+        >
+          <Group title="Commands" first>
+            <div className="space-y-3.5">
+              <Field label="Install" htmlFor="b-install">
+                <input id="b-install" className={monoInputCls} placeholder={ph.install} value={buildCfg.install_cmd} onChange={(e) => setCfg({ install_cmd: e.target.value })} spellCheck={false} />
+              </Field>
+              <Field label="Build" htmlFor="b-build">
+                <input id="b-build" className={monoInputCls} placeholder={ph.build} value={buildCfg.build_cmd} onChange={(e) => setCfg({ build_cmd: e.target.value })} spellCheck={false} />
+              </Field>
+              <Field label="Start" htmlFor="b-start">
+                <input id="b-start" className={monoInputCls} placeholder={ph.start} value={buildCfg.start_cmd} onChange={(e) => setCfg({ start_cmd: e.target.value })} spellCheck={false} />
+              </Field>
+              <Field label="Release" htmlFor="b-release" hint="Runs before each start, e.g. database migrations.">
+                <input id="b-release" className={monoInputCls} placeholder={ph.release} value={buildCfg.release_cmd} onChange={(e) => setCfg({ release_cmd: e.target.value })} spellCheck={false} />
+              </Field>
+            </div>
+          </Group>
+
+          <Group title="Source">
+            <div className="grid gap-3.5 sm:grid-cols-2">
+              <Field label="Root directory" htmlFor="b-root" hint="For monorepos.">
+                <div className="relative">
+                  <input id="b-root" className={cn(monoInputCls, "pr-10")} placeholder="apps/web" value={buildCfg.root_dir} onChange={(e) => setCfg({ root_dir: e.target.value })} spellCheck={false} />
+                  <button
+                    type="button"
+                    title="Browse repository folders"
+                    aria-label="Browse repository folders"
+                    disabled={!p.github_repo}
+                    onClick={() => setDirPicker({ kind: "root" })}
+                    className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-40"
+                  >
+                    <Folder className="h-4 w-4" />
+                  </button>
+                </div>
+              </Field>
+              <Field label="Node version" htmlFor="b-node">
+                <select id="b-node" className={selectCls} value={buildCfg.node_version} onChange={(e) => setCfg({ node_version: e.target.value })}>
+                  <option value="">Default (20)</option>
+                  <option value="18">Node 18</option>
+                  <option value="20">Node 20</option>
+                  <option value="22">Node 22</option>
+                </select>
+              </Field>
+              <Field label="Build mode" htmlFor="b-mode">
+                <select id="b-mode" className={selectCls} value={buildCfg.build_mode} onChange={(e) => setCfg({ build_mode: e.target.value })}>
+                  <option value="">Auto (repo Dockerfile if present)</option>
+                  <option value="ignore_dockerfile">Ignore repo Dockerfile</option>
+                </select>
+              </Field>
+              <Field label="Dockerfile path" htmlFor="b-docker" hint="Empty means ./Dockerfile.">
+                <input id="b-docker" className={monoInputCls} placeholder="Dockerfile" value={buildCfg.dockerfile_path} onChange={(e) => setCfg({ dockerfile_path: e.target.value })} spellCheck={false} />
+              </Field>
+            </div>
+          </Group>
+
+          <Group title="Resources">
+            <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3">
+              <Field label="Port" htmlFor="b-port" hint="Empty = auto">
+                <input id="b-port" type="number" inputMode="numeric" min="0" max="65535" className={monoInputCls} placeholder="auto" value={buildCfg.port_override || ""} onChange={(e) => setCfg({ port_override: parseInt(e.target.value) || 0 })} />
+              </Field>
+              <Field label="Memory (MB)" htmlFor="b-mem" hint={memCap ? `Default ${Math.min(512, memCap)}, plan max ${memCap}` : "Default 512"}>
+                <input
+                  id="b-mem" type="number" inputMode="numeric" min="0" step="128" max={memCap || 16384}
+                  className={monoInputCls} placeholder={String(memCap ? Math.min(512, memCap) : 512)} value={buildCfg.memory_mb || ""}
+                  onChange={(e) => { const v = parseInt(e.target.value) || 0; setCfg({ memory_mb: memCap ? Math.min(v, memCap) : v }); }}
+                />
+              </Field>
+              <Field label="CPUs" htmlFor="b-cpu" hint={cpuCap ? `Default ${Math.min(0.5, cpuCap)}, plan max ${cpuCap}` : "Default 0.5"} className="col-span-2 sm:col-span-1">
+                <input
+                  id="b-cpu" type="number" inputMode="decimal" min="0" step="0.25" max={cpuCap || 8}
+                  className={monoInputCls} placeholder={String(cpuCap ? Math.min(0.5, cpuCap) : 0.5)} value={buildCfg.cpus || ""}
+                  onChange={(e) => { const v = parseFloat(e.target.value) || 0; setCfg({ cpus: cpuCap ? Math.min(v, cpuCap) : v }); }}
+                />
+              </Field>
+              <Field label="Health check path" htmlFor="b-health" hint="We wait for a 2xx here before switching traffic. Empty skips the check." className="col-span-2 sm:col-span-3">
+                <input id="b-health" className={monoInputCls} placeholder={ph.healthCheck} value={buildCfg.health_check_path} onChange={(e) => setCfg({ health_check_path: e.target.value })} spellCheck={false} />
+              </Field>
+            </div>
+          </Group>
+
+          <Group title="Services">
+            <div className="overflow-hidden rounded-2xl border border-[var(--dz-hairline)]">
+              <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Layers className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-medium">Multiple services</p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Run several folders of this repo as services in one container.</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={multiService}
+                  label="Multiple services"
+                  onChange={(next) => {
+                    setMultiService(next);
+                    if (next && services.length === 0) setServices([{ name: "service-1", root_dir: "", port: 3001, framework: "", install_cmd: "npm install", build_cmd: "npm run build", start_cmd: "npm run start", env_text: "" }]);
+                  }}
                 />
               </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs border-red-500/50 text-red-500 hover:bg-red-500/20 hover:text-red-500"
-                  disabled={deleteText.trim() !== p.name.trim() || deleting}
-                  onClick={() => remove()}
-                >
-                  {deleting
-                    ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Deleting…</>
-                    : <><Trash2 className="h-3 w-3 mr-1" /> Delete Forever</>}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={deleting} onClick={() => { setConfirmDelete(false); setDeleteText(""); }}>
-                  Cancel
-                </Button>
+              {multiService && (
+                <div className="border-t border-[var(--dz-hairline)] p-3 sm:p-4">
+                  <ServiceCards
+                    services={services}
+                    onChange={setServices}
+                    subdomain={p.subdomain}
+                    repoConnected={!!p.github_repo}
+                    onBrowse={(i) => setDirPicker({ kind: "service", index: i })}
+                    detectStack={(dir) => detectStackFor(p.github_repo, branch, dir)}
+                  />
+                </div>
+              )}
+            </div>
+          </Group>
+        </SettingsSection>
+
+        {/* Domains */}
+        <SettingsSection
+          id="domains"
+          icon={Globe}
+          title="Custom domains"
+          description={<>Your app is always live at <code className="font-mono text-[12.5px] text-foreground">{p.subdomain}.deployzy.app</code>.</>}
+          action={
+            <a href="/domains" className={cn(textBtn, "text-muted-foreground hover:text-foreground")}>
+              All domains <ArrowUpRight className="h-3.5 w-3.5" />
+            </a>
+          }
+        >
+          {boundDomains.length > 0 && (
+            <ul className="mb-3 space-y-2">
+              {boundDomains.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 rounded-2xl border border-[var(--dz-hairline)] px-3.5 py-2.5">
+                  <span className={cn("h-2 w-2 shrink-0 rounded-full", d.verified ? "bg-brand" : "bg-amber-500")} aria-hidden />
+                  <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="min-w-0 flex-1 truncate font-mono text-[13.5px] hover:underline">{d.domain}</a>
+                  {d.verified ? <Chip tone="ok">Verified</Chip> : <Chip tone="warn">Needs DNS</Chip>}
+                  <button type="button" onClick={() => unbindDomain(d.id)} className={cn(textBtn, "h-7 px-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400")}>
+                    Unbind
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {pendingDns && (
+            <div className="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[14px] font-semibold">Point {pendingDns.domain} at Deployzy</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">Add this record at your DNS provider, then verify it on the Domains page.</p>
+                </div>
+                <button type="button" aria-label="Dismiss" onClick={() => setPendingDns(null)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
+              <div className="mt-3 grid gap-2 rounded-xl border border-[var(--dz-hairline)] bg-background p-3 font-mono text-[13px] sm:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1.3fr)] sm:items-center">
+                <span className="eyebrow">CNAME</span>
+                <span className="flex min-w-0 items-center gap-1"><span className="truncate">{pendingDns.domain}</span><CopyButton text={pendingDns.domain} label="Copy name" /></span>
+                <ArrowRight className="hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
+                <span className="flex min-w-0 items-center gap-1"><span className="truncate">{pendingDns.cname_target}</span><CopyButton text={pendingDns.cname_target} label="Copy target" /></span>
+              </div>
+              <a href="/domains" className="mt-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--dz-green-strong)] hover:opacity-80 dark:text-brand">
+                Verify on the Domains page <ArrowRight className="h-3.5 w-3.5" />
+              </a>
             </div>
           )}
-        </div>
-      </section>
+
+          <form
+            onSubmit={(e) => { e.preventDefault(); addProjectDomain(); }}
+            className="flex flex-col gap-2 sm:flex-row"
+          >
+            <input
+              value={newDomain}
+              onChange={(e) => { setNewDomain(e.target.value); setDomainNote(null); }}
+              placeholder="app.yourdomain.com"
+              aria-label="Domain name"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className={monoInputCls}
+            />
+            <button type="submit" disabled={addingDomain || !newDomain.trim()} className="pill pill-ink pill-sm shrink-0 disabled:opacity-50">
+              {addingDomain ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add domain
+            </button>
+          </form>
+          {(domainNote || (unverifiedCount > 0 && !pendingDns)) && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <FooterNote note={domainNote} />
+              {unverifiedCount > 0 && !pendingDns && (
+                <p className="text-[12.5px] text-muted-foreground">
+                  {unverifiedCount} domain{unverifiedCount === 1 ? "" : "s"} waiting for DNS. <a href="/domains" className="font-medium text-foreground underline-offset-2 hover:underline">Verify them</a>
+                </p>
+              )}
+            </div>
+          )}
+        </SettingsSection>
+
+        {/* PR previews */}
+        {p.github_repo && (
+          <SettingsSection
+            id="previews"
+            icon={GitPullRequest}
+            title="Pull request previews"
+            description={<>Every open PR gets its own URL like <code className="font-mono text-[12.5px] text-foreground">{previewSubdomainExample(p.subdomain)}</code>. Closed PRs are removed.</>}
+            action={<Switch checked={!!p.preview_enabled} disabled={togglingPreview} onChange={togglePreviewEnabled} label="Deploy pull request previews" />}
+          >
+            {!p.preview_enabled ? null : previews.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-[var(--dz-hairline)] px-4 py-5 text-center text-[13.5px] text-muted-foreground">
+                No open PRs yet. Open one on <span className="font-mono text-foreground">{p.github_repo}</span> and it shows up here.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {previews.map((pv) => (
+                  <li key={pv.id} className="flex items-center gap-3 rounded-2xl border border-[var(--dz-hairline)] px-3.5 py-2.5">
+                    <span className="shrink-0 font-mono text-[13px] text-muted-foreground">#{pv.pr_number}</span>
+                    <span className="min-w-0 flex-1 truncate text-[14px]">{pv.pr_title || pv.branch}</span>
+                    {pv.commit_sha && <code className="hidden shrink-0 font-mono text-[12px] text-muted-foreground sm:inline">{pv.commit_sha.slice(0, 7)}</code>}
+                    <StatusPill status={pv.status} />
+                    {pv.status === "running" && (
+                      <a href={`https://${pv.subdomain}.deployzy.app`} target="_blank" rel="noopener" aria-label={`Open preview for PR #${pv.pr_number}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
+                        <ArrowUpRight className="h-4 w-4" />
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SettingsSection>
+        )}
+
+        {/* Scheduled jobs */}
+        <SettingsSection
+          id="jobs"
+          icon={Clock}
+          title="Scheduled jobs"
+          description="Commands that run on a schedule in a fresh container with this project's env vars."
+          action={!editingCron ? (
+            <button type="button" onClick={() => { setEditingCron(true); setCronNote(null); }} className={cn(textBtn, "border border-[var(--dz-hairline)] hover:bg-foreground/[0.04]")}>
+              <Plus className="h-3.5 w-3.5" /> New job
+            </button>
+          ) : undefined}
+        >
+          {crons.length === 0 && !editingCron && (
+            <p className="rounded-2xl border border-dashed border-[var(--dz-hairline)] px-4 py-5 text-center text-[13.5px] text-muted-foreground">
+              No jobs yet. Use them for backups, cleanups or reports.
+            </p>
+          )}
+
+          {crons.length > 0 && (
+            <ul className="space-y-2">
+              {crons.map((c) => (
+                <li key={c.id} className={cn("rounded-2xl border border-[var(--dz-hairline)] px-3.5 py-3", !c.enabled && "bg-foreground/[0.015]")}>
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className={cn("truncate text-[14px] font-medium", !c.enabled && "text-muted-foreground")}>{c.name || "Untitled job"}</span>
+                        <code className="rounded-md bg-foreground/[0.05] px-1.5 py-0.5 font-mono text-[12px]">{c.schedule}</code>
+                        {c.last_status === "success" && <Chip tone="ok">Last run OK</Chip>}
+                        {c.last_status === "failed" && <Chip tone="bad">Last run failed</Chip>}
+                        {!c.enabled && <Chip>Paused</Chip>}
+                      </div>
+                      <code className="mt-1 block truncate font-mono text-[12.5px] text-muted-foreground">$ {c.command}</code>
+                      {c.last_run_at && <p className="mt-1 text-[12.5px] text-muted-foreground">Last run {new Date(c.last_run_at).toLocaleString()}</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Switch checked={c.enabled} onChange={() => toggleCron(c)} label={c.enabled ? `Pause ${c.name}` : `Resume ${c.name}`} />
+                      <button
+                        type="button"
+                        aria-label={`Delete ${c.name || "job"}`}
+                        onClick={() => setConfirmCron(confirmCron === c.id ? null : c.id)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {confirmCron === c.id && (
+                    <div className="mt-3 flex items-center gap-2 rounded-xl bg-red-500/[0.06] py-1.5 pl-3 pr-1.5">
+                      <span className="mr-auto text-[13px]">Delete this job?</span>
+                      <button type="button" onClick={() => setConfirmCron(null)} className={cn(textBtn, "h-7 px-2.5 text-muted-foreground hover:text-foreground")}>Cancel</button>
+                      <button type="button" onClick={() => deleteCron(c)} className={cn(textBtn, "h-7 bg-red-600 px-3 text-white hover:bg-red-700")}>Delete</button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {editingCron && (
+            <form
+              onSubmit={(e) => { e.preventDefault(); addCron(); }}
+              className={cn("rounded-2xl border border-[var(--dz-hairline)] bg-foreground/[0.015] p-4", crons.length > 0 && "mt-3")}
+            >
+              <p className="text-[14px] font-semibold">New job</p>
+              <div className="mt-3 grid gap-3.5 sm:grid-cols-2">
+                <Field label="Name" htmlFor="c-name">
+                  <input id="c-name" className={inputCls} placeholder="nightly-backup" value={cronForm.name} onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })} />
+                </Field>
+                <Field label="Schedule" htmlFor="c-sched" hint="minute hour day month weekday (UTC)">
+                  <input id="c-sched" className={monoInputCls} placeholder="0 3 * * *" value={cronForm.schedule} onChange={(e) => setCronForm({ ...cronForm, schedule: e.target.value })} spellCheck={false} />
+                </Field>
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {CRON_PRESETS.map((pr) => (
+                  <button
+                    key={pr.value}
+                    type="button"
+                    onClick={() => setCronForm({ ...cronForm, schedule: pr.value })}
+                    className={cn(
+                      "h-7 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors",
+                      cronForm.schedule === pr.value ? "border-foreground bg-foreground text-background" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {pr.label}
+                  </button>
+                ))}
+              </div>
+              <Field label="Command" htmlFor="c-cmd" className="mt-3.5">
+                <input id="c-cmd" className={monoInputCls} placeholder="node scripts/cleanup.js" value={cronForm.command} onChange={(e) => { setCronForm({ ...cronForm, command: e.target.value }); setCronNote(null); }} spellCheck={false} />
+              </Field>
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <FooterNote note={cronNote} />
+                <button type="button" onClick={() => { setEditingCron(false); setCronNote(null); }} className="pill pill-line pill-sm">Cancel</button>
+                <button type="submit" disabled={savingCron} className="pill pill-ink pill-sm disabled:opacity-50">
+                  {savingCron && <Loader2 className="h-4 w-4 animate-spin" />} Create job
+                </button>
+              </div>
+            </form>
+          )}
+        </SettingsSection>
+
+        {/* Danger zone */}
+        <SettingsSection id="danger" tone="danger" icon={TriangleAlert} title="Danger zone" description="These change where the project runs or remove it for good.">
+          <div className="divide-y divide-red-500/15">
+            {canMove && (
+              <div className="py-4 first:pt-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-medium">Move to another server</p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Rebuild and run this project in another region or on one of your own servers.</p>
+                  </div>
+                  <select
+                    aria-label="Destination server"
+                    className={cn(selectCls, "sm:w-64")}
+                    value={moveTo}
+                    disabled={deploying}
+                    onChange={(e) => setMoveTo(e.target.value)}
+                  >
+                    <option value="">Choose a destination…</option>
+                    {canMoveToPlatform && <option value="platform">Deployzy Cloud (platform)</option>}
+                    {targets.map((s) => (
+                      <option key={s.id} value={s.id}>{s.is_byoc ? s.label : regionName(s.region, s.label)}</option>
+                    ))}
+                  </select>
+                </div>
+                {moveTo && (
+                  <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-red-500/25 bg-background p-3 sm:flex-row sm:items-center">
+                    <p className="text-[13.5px] sm:mr-auto">Move <span className="font-semibold">{p.name}</span> to <span className="font-semibold">{moveLabel}</span>? It redeploys there, with a short downtime.</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setMoveTo("")} className="pill pill-line pill-sm flex-1 sm:flex-none">Cancel</button>
+                      <button
+                        type="button"
+                        disabled={deploying}
+                        onClick={() => { const v = moveTo; setMoveTo(""); move(v); }}
+                        className="pill pill-sm flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 sm:flex-none"
+                      >
+                        {deploying && <Loader2 className="h-4 w-4 animate-spin" />} Move project
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="py-4 first:pt-0 last:pb-0">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium">Delete this project</p>
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Removes the project, its container and deployments. This can&apos;t be undone.</p>
+                </div>
+                {!confirmDelete && (
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmDelete(true); setDeleteText(""); }}
+                    className="pill pill-sm shrink-0 border border-red-500/40 text-red-600 hover:bg-red-500/10 dark:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete project
+                  </button>
+                )}
+              </div>
+              {confirmDelete && (
+                <div className="mt-3 rounded-2xl border border-red-500/25 bg-background p-4">
+                  <label htmlFor="del-confirm" className="block text-[13.5px]">
+                    Type <span className="font-mono font-semibold">{p.name}</span> to confirm.
+                  </label>
+                  <input
+                    id="del-confirm"
+                    autoFocus
+                    value={deleteText}
+                    onChange={(e) => setDeleteText(e.target.value)}
+                    placeholder={p.name}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={cn(monoInputCls, "mt-2 focus:border-red-500/60 focus:ring-red-500/10")}
+                  />
+                  <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button type="button" disabled={deleting} onClick={() => { setConfirmDelete(false); setDeleteText(""); }} className="pill pill-line pill-sm">Cancel</button>
+                    <button
+                      type="button"
+                      disabled={deleteText.trim() !== p.name.trim() || deleting}
+                      onClick={() => remove()}
+                      className="pill pill-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                    >
+                      {deleting ? <><Loader2 className="h-4 w-4 animate-spin" /> Deleting…</> : <><Trash2 className="h-4 w-4" /> Delete forever</>}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </SettingsSection>
+      </div>
     </div>
   );
 }

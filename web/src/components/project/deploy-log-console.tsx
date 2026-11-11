@@ -4,43 +4,74 @@
 // outcome, commit, duration and output; runtime events (sleep, wake, crash,
 // auto-restart, stop) sit between them on the timeline.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   AlertTriangle, Check, ChevronRight, Copy, GitCommit, Loader2, Moon, Power,
   RotateCcw, Sun, XCircle, Zap,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { DeployLog } from "./project-shared";
 import {
   fmtDuration, fmtWhen, groupDeployLogs,
   type DeployGroup, type EventItem, type EventTone,
 } from "./deploy-log-groups";
 
-const OUTCOME: Record<DeployGroup["outcome"], { label: string; cls: string; icon: React.ReactNode }> = {
-  succeeded: { label: "Succeeded", cls: "text-[#3fb950] border-[#3fb950]/30 bg-[#3fb950]/10", icon: <Check className="h-3 w-3" /> },
-  failed: { label: "Failed", cls: "text-[#f85149] border-[#f85149]/30 bg-[#f85149]/10", icon: <XCircle className="h-3 w-3" /> },
-  building: { label: "Building", cls: "text-[#d29922] border-[#d29922]/30 bg-[#d29922]/10", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
-  interrupted: { label: "Interrupted", cls: "text-[#8b949e] border-white/10 bg-white/[0.04]", icon: <AlertTriangle className="h-3 w-3" /> },
+const OUTCOME: Record<DeployGroup["outcome"], { label: string; cls: string; icon: ReactNode }> = {
+  succeeded: { label: "Succeeded", cls: "text-brand border-brand/30 bg-brand/10", icon: <Check className="h-3 w-3" /> },
+  failed: { label: "Failed", cls: "text-red-400 border-red-400/30 bg-red-400/10", icon: <XCircle className="h-3 w-3" /> },
+  building: { label: "Building", cls: "text-amber-300 border-amber-300/30 bg-amber-300/10", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+  interrupted: { label: "Interrupted", cls: "text-white/55 border-white/10 bg-white/[0.04]", icon: <AlertTriangle className="h-3 w-3" /> },
 };
 
-const EVENT: Record<EventTone, { cls: string; icon: React.ReactNode }> = {
-  sleep: { cls: "text-[#8b949e]", icon: <Moon className="h-3 w-3" /> },
-  wake: { cls: "text-[#58a6ff]", icon: <Sun className="h-3 w-3" /> },
-  crash: { cls: "text-[#f85149]", icon: <Zap className="h-3 w-3" /> },
-  restart: { cls: "text-[#d29922]", icon: <RotateCcw className="h-3 w-3" /> },
-  stop: { cls: "text-[#8b949e]", icon: <Power className="h-3 w-3" /> },
-  info: { cls: "text-[#8b949e]", icon: <ChevronRight className="h-3 w-3" /> },
+const EVENT: Record<EventTone, { cls: string; icon: ReactNode }> = {
+  sleep: { cls: "text-white/50", icon: <Moon className="h-3.5 w-3.5" /> },
+  wake: { cls: "text-brand-cyan", icon: <Sun className="h-3.5 w-3.5" /> },
+  crash: { cls: "text-red-400", icon: <Zap className="h-3.5 w-3.5" /> },
+  restart: { cls: "text-amber-300", icon: <RotateCcw className="h-3.5 w-3.5" /> },
+  stop: { cls: "text-white/50", icon: <Power className="h-3.5 w-3.5" /> },
+  info: { cls: "text-white/50", icon: <ChevronRight className="h-3.5 w-3.5" /> },
 };
 
 function lineClass(l: DeployLog): string {
-  if (l.level === "error") return "text-[#f85149]";
-  if (l.level === "deploy") return "text-[#3fb950]";
+  if (l.level === "error") return "text-red-400";
+  if (l.level === "deploy") return "text-brand";
   // BuildKit step output ("#11 32.4 …") is the bulk of a build — keep it quiet.
-  if (/^#\d+/.test(l.message)) return "text-[#8b949e]";
-  return "text-[#c9d1d9]";
+  if (/^#\d+/.test(l.message)) return "text-white/45";
+  return "text-white/80";
 }
 
 function clock(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+// Small on/off chip used for the console filters.
+export function ConsoleToggle({ on, onClick, children, tone = "brand" }: { on: boolean; onClick: () => void; children: ReactNode; tone?: "brand" | "red" }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors",
+        on
+          ? tone === "red" ? "border-red-400/40 bg-red-400/10 text-red-300" : "border-brand/40 bg-brand/10 text-brand"
+          : "border-white/10 text-white/55 hover:border-white/20 hover:text-white/85",
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", on ? (tone === "red" ? "bg-red-400" : "bg-brand") : "bg-white/25")} />
+      {children}
+    </button>
+  );
+}
+
+export function ConsoleDots() {
+  return (
+    <span className="flex gap-1.5" aria-hidden>
+      <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+      <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+      <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+    </span>
+  );
 }
 
 function DeployCard({ g, open, onToggle, errorsOnly }: {
@@ -57,7 +88,7 @@ function DeployCard({ g, open, onToggle, errorsOnly }: {
     if (el && open && g.outcome === "building") el.scrollTop = el.scrollHeight;
   }, [g.lines.length, open, g.outcome]);
 
-  const copy = (e: React.MouseEvent) => {
+  const copy = (e: MouseEvent) => {
     e.stopPropagation();
     const text = g.lines.map((l) => `${new Date(l.created_at).toISOString()} [${l.level}] ${l.message}`).join("\n");
     navigator.clipboard?.writeText(text).then(() => {
@@ -67,51 +98,50 @@ function DeployCard({ g, open, onToggle, errorsOnly }: {
   };
 
   return (
-    <div className={`rounded-lg border ${g.current ? "border-[#3fb950]/30" : "border-white/[0.08]"} bg-[#0d1117]`}>
-      <button onClick={onToggle} className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.02] rounded-lg">
-        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-[#8b949e] transition-transform ${open ? "rotate-90" : ""}`} />
-        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${o.cls}`}>
-          {o.icon}{o.label}
-        </span>
-        {g.current && (
-          <span className="rounded-full border border-[#3fb950]/30 px-1.5 py-0.5 text-[10px] text-[#3fb950]">current</span>
-        )}
-        <span className="text-[11px] text-[#c9d1d9] truncate">
-          {g.partial ? "Deploy (start not in history)" : "Deploy"} · {fmtWhen(g.startedAt)}
-        </span>
-        <span className="hidden sm:inline text-[10px] text-[#8b949e] shrink-0">
-          {g.outcome === "building" ? "running for " : ""}{fmtDuration(g.startedAt, g.endedAt)}
-        </span>
-        {g.commit && (
-          <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-[#8b949e] font-mono shrink-0">
-            <GitCommit className="h-3 w-3" />{g.commit}
+    <div className={cn("rounded-2xl border bg-white/[0.02]", g.current ? "border-brand/25" : "border-white/[0.07]")}>
+      <div className="flex items-center gap-1 pr-2">
+        <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-white/[0.02] sm:px-4">
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-white/40 transition-transform", open && "rotate-90")} />
+          <span className={cn("inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] font-medium", o.cls)}>
+            {o.icon}{o.label}
           </span>
-        )}
-        <span className="ml-auto flex items-center gap-2 shrink-0">
-          <span className="hidden sm:inline text-[10px] text-[#6e7681]">{g.lines.length} lines</span>
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={copy}
-            onKeyDown={(e) => { if (e.key === "Enter") copy(e as unknown as React.MouseEvent); }}
-            title="Copy this deploy's logs"
-            className="rounded p-1 text-[#8b949e] hover:text-[#c9d1d9] hover:bg-white/[0.06]"
-          >
-            {copied ? <Check className="h-3 w-3 text-[#3fb950]" /> : <Copy className="h-3 w-3" />}
+          {g.current && (
+            <span className="hidden h-[22px] shrink-0 items-center rounded-full border border-brand/30 px-2 text-[12px] text-brand min-[420px]:inline-flex">Live</span>
+          )}
+          <span className="min-w-0 truncate text-[13.5px] text-white/85">
+            {fmtWhen(g.startedAt)}{g.partial ? " · partial" : ""}
           </span>
-        </span>
-      </button>
+          <span className="hidden shrink-0 text-[12.5px] tabular-nums text-white/45 sm:inline">
+            {g.outcome === "building" ? "running " : ""}{fmtDuration(g.startedAt, g.endedAt)}
+          </span>
+          {g.commit && (
+            <span className="hidden shrink-0 items-center gap-1 font-mono text-[12px] text-white/45 md:inline-flex">
+              <GitCommit className="h-3.5 w-3.5" />{g.commit}
+            </span>
+          )}
+          <span className="ml-auto hidden shrink-0 text-[12.5px] tabular-nums text-white/35 sm:inline">{g.lines.length} lines</span>
+        </button>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy this deploy's logs"
+          title="Copy this deploy's logs"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </div>
       {!open && g.failure && (
-        <div className="px-9 pb-2 -mt-1 text-[11px] font-mono text-[#f85149]/90 truncate">{g.failure}</div>
+        <p className="-mt-1 truncate px-4 pb-2.5 pl-[2.6rem] font-mono text-[12.5px] text-red-400/90 sm:pl-[2.85rem]">{g.failure}</p>
       )}
       {open && (
-        <div ref={bodyRef} className="border-t border-white/[0.06] max-h-[52vh] overflow-y-auto p-2 font-mono text-[11px] leading-relaxed">
+        <div ref={bodyRef} className="max-h-[52vh] overflow-y-auto border-t border-white/[0.06] px-3 py-2.5 font-mono text-[12.5px] leading-relaxed sm:px-4">
           {lines.length === 0 ? (
-            <div className="px-2 py-1 italic text-[#8b949e]">{errorsOnly ? "No errors in this deploy." : "No output."}</div>
+            <p className="italic text-white/45">{errorsOnly ? "No errors in this deploy." : "No output."}</p>
           ) : lines.map((l, i) => (
-            <div key={i} className="flex gap-3 px-2 py-px rounded hover:bg-white/[0.03]">
-              <span className="text-[#58a6ff]/70 select-none shrink-0 tabular-nums">{clock(l.created_at)}</span>
-              <span className={`whitespace-pre-wrap break-words min-w-0 ${lineClass(l)}`}>{l.message}</span>
+            <div key={i} className="flex gap-3 rounded px-1 py-px hover:bg-white/[0.03]">
+              <span className="hidden shrink-0 select-none tabular-nums text-white/25 sm:inline">{clock(l.created_at)}</span>
+              <span className={cn("min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]", lineClass(l))}>{l.message.replace(/^\n+|\n+$/g, "")}</span>
             </div>
           ))}
         </div>
@@ -124,19 +154,21 @@ function EventRow({ e }: { e: EventItem }) {
   const [open, setOpen] = useState(e.tone === "crash");
   const t = EVENT[e.tone];
   return (
-    <div className="pl-3">
-      <div className="border-l border-white/[0.08] pl-3 py-1">
+    <div className="pl-4 sm:pl-5">
+      <div className="border-l border-white/[0.08] py-1.5 pl-3.5">
         <button
+          type="button"
           onClick={() => e.detail && setOpen((v) => !v)}
-          className={`flex items-start gap-2 text-left text-[11px] ${t.cls} ${e.detail ? "cursor-pointer" : "cursor-default"}`}
+          aria-expanded={e.detail ? open : undefined}
+          className={cn("flex items-start gap-2 text-left text-[13px]", t.cls, e.detail ? "cursor-pointer" : "cursor-default")}
         >
           <span className="mt-0.5 shrink-0">{t.icon}</span>
-          <span className="text-[#6e7681] shrink-0 tabular-nums">{fmtWhen(e.at)}</span>
+          <span className="shrink-0 tabular-nums text-white/35">{fmtWhen(e.at)}</span>
           <span className="min-w-0">{e.title}</span>
-          {e.detail && <ChevronRight className={`mt-0.5 h-3 w-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />}
+          {e.detail && <ChevronRight className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")} />}
         </button>
         {open && e.detail && (
-          <pre className="mt-1.5 ml-5 max-h-[40vh] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-2 text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-words">
+          <pre className="mt-2 max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/30 p-3 font-mono text-[12.5px] leading-relaxed text-white/80 [overflow-wrap:anywhere]">
             {e.detail}
           </pre>
         )}
@@ -157,30 +189,27 @@ export function DeployLogConsole({ logs, status, loading }: { logs: DeployLog[];
   const shown = hideEvents ? entries.filter((e) => e.kind === "deploy") : entries;
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-[#0b0e13] overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/[0.08] bg-[#161b22] px-3 py-1.5 text-[10px] font-mono text-[#8b949e]">
-        <span className="text-[#c9d1d9]">Deploy history</span>
-        <span>{deploys} deploy{deploys === 1 ? "" : "s"}</span>
+    <section className="dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.07] px-4 py-3 sm:px-5">
+        <p className="flex items-center gap-2.5 text-[14px] font-medium">
+          <ConsoleDots />
+          Deploy history
+          <span className="text-[13px] font-normal text-white/45">{deploys} deploy{deploys === 1 ? "" : "s"}</span>
+        </p>
         {status === "building" && (
-          <span className="flex items-center gap-1 text-[#d29922]"><Loader2 className="h-3 w-3 animate-spin" /> building…</span>
+          <span className="flex items-center gap-1.5 text-[13px] text-amber-300"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building</span>
         )}
-        <span className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input type="checkbox" checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)} className="accent-[#f85149] h-3 w-3" />
-            errors only
-          </label>
-          <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input type="checkbox" checked={hideEvents} onChange={(e) => setHideEvents(e.target.checked)} className="accent-emerald-500 h-3 w-3" />
-            hide events
-          </label>
-          <span className="hidden sm:inline">kept 14 days</span>
+        <span className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <ConsoleToggle on={errorsOnly} onClick={() => setErrorsOnly((v) => !v)} tone="red">Errors only</ConsoleToggle>
+          <ConsoleToggle on={hideEvents} onClick={() => setHideEvents((v) => !v)}>Hide events</ConsoleToggle>
+          <span className="ml-auto hidden text-[12.5px] text-white/35 sm:ml-1 md:inline">Kept 14 days</span>
         </span>
       </div>
-      <div className="h-[62vh] overflow-y-auto p-2 space-y-1.5">
+      <div className="h-[62vh] space-y-2 overflow-y-auto p-2.5 sm:p-3">
         {shown.length === 0 ? (
-          <div className="p-2 text-[11px] font-mono italic text-[#8b949e]">
-            {loading ? "Loading logs…" : "No deploy logs yet. Logs are kept for 14 days — redeploy to generate fresh logs."}
-          </div>
+          <p className="p-2 font-mono text-[12.5px] text-white/45">
+            {loading ? "Loading logs…" : "No deploy logs yet. Logs are kept for 14 days; redeploy to generate fresh ones."}
+          </p>
         ) : shown.map((e) =>
           e.kind === "event" ? <EventRow key={e.key} e={e} /> : (
             <DeployCard
@@ -193,6 +222,6 @@ export function DeployLogConsole({ logs, status, loading }: { logs: DeployLog[];
           ),
         )}
       </div>
-    </div>
+    </section>
   );
 }

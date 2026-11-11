@@ -1,51 +1,108 @@
 "use client";
 
-// Analytics tab — privacy-first website analytics for this project: headline
-// numbers, traffic-over-time chart and the top-lists (pages, referrers,
-// countries, browsers, OS, devices).
+// Analytics tab — privacy-first website analytics for this project: a stat
+// strip, the traffic chart and the top lists (pages, referrers, countries,
+// browsers, OS, devices), plus the optional client snippet.
 
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Eye, MousePointerClick, Bot } from "lucide-react";
 import {
-  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from "recharts";
+  AppWindow, Bot, Check, ChevronDown, Copy, Eye, FileText, Globe, Link2, Monitor,
+  MousePointerClick, Smartphone, Repeat2, type LucideIcon,
+} from "lucide-react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { cn } from "@/lib/utils";
 import { useProject } from "@/components/project/project-context";
 import {
-  API, fmtNum, headers, type SiteOverview, type SiteTopRow,
-} from "@/components/project/project-shared";
+  CYAN, ChartTooltip, GREEN, Segmented, Sparkline, StatCell, axisProps, gridProps, tickLabel,
+} from "@/components/project/charts";
+import { API, fmtNum, headers, type SiteOverview, type SiteTopRow } from "@/components/project/project-shared";
 
-const RANGES = ["24h", "7d", "30d"] as const;
-const TOP_FIELDS = [
-  { field: "path", label: "Top pages" },
-  { field: "referrer", label: "Top referrers" },
-  { field: "country", label: "Top countries" },
-  { field: "browser", label: "Browsers" },
-  { field: "os", label: "Operating systems" },
-  { field: "device", label: "Devices" },
+const RANGES = [
+  { id: "24h", label: "24 hours" },
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
 ] as const;
+type Range = (typeof RANGES)[number]["id"];
 
-function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) {
-  if (!active || !payload?.length) return null;
+const TOP_FIELDS: { field: string; label: string; icon: LucideIcon; mono?: boolean }[] = [
+  { field: "path", label: "Pages", icon: FileText, mono: true },
+  { field: "referrer", label: "Referrers", icon: Link2 },
+  { field: "country", label: "Countries", icon: Globe },
+  { field: "browser", label: "Browsers", icon: AppWindow },
+  { field: "os", label: "Operating systems", icon: Monitor },
+  { field: "device", label: "Devices", icon: Smartphone },
+];
+
+function flag(cc: string) {
+  if (!cc || cc.length !== 2) return "🌐";
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0)));
+}
+let regionNames: Intl.DisplayNames | null = null;
+function countryName(cc: string) {
+  try {
+    regionNames ??= new Intl.DisplayNames(["en"], { type: "region" });
+    return regionNames.of(cc.toUpperCase()) || cc;
+  } catch { return cc; }
+}
+const OS_LABEL: Record<string, string> = { windows: "Windows", macos: "macOS", linux: "Linux", ios: "iOS", android: "Android" };
+function labelFor(field: string, key: string) {
+  if (!key) return field === "referrer" ? "Direct / none" : "Unknown";
+  if (field === "country") return key.length === 2 ? `${flag(key)}  ${countryName(key)}` : key;
+  if (field === "os") return OS_LABEL[key] ?? key[0].toUpperCase() + key.slice(1);
+  if (field === "browser" || field === "device") return key[0].toUpperCase() + key.slice(1);
+  return key;
+}
+
+function TopList({ label, icon: Icon, field, mono, rows, loaded }: {
+  label: string; icon: LucideIcon; field: string; mono?: boolean; rows: SiteTopRow[]; loaded: boolean;
+}) {
+  const [all, setAll] = useState(false);
+  const max = rows.length ? Math.max(...rows.map((r) => r.count)) : 1;
+  const total = rows.reduce((a, r) => a + r.count, 0);
+  const shown = all ? rows : rows.slice(0, 6);
   return (
-    <div className="rounded-lg border border-white/10 bg-[#0d1117] px-3 py-2 text-[11px] font-mono shadow-xl">
-      <div className="text-muted-foreground mb-1">{label}</div>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-[#e6edf3]">{p.name}: {p.value}</span>
-        </div>
-      ))}
-    </div>
+    <section className="surface flex flex-col rounded-[20px] p-4 sm:p-5">
+      <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight"><Icon className="h-4 w-4 text-muted-foreground" /> {label}</p>
+      {rows.length === 0 ? (
+        <p className="mt-3 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-[var(--dz-hairline)] px-4 py-6 text-center text-[13px] text-muted-foreground">
+          {loaded ? "Nothing recorded in this range." : "Loading…"}
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-1">
+          {shown.map((row) => (
+            <li key={row.key} className="relative overflow-hidden rounded-lg">
+              <div className="absolute inset-y-0 left-0 rounded-lg bg-brand/[0.13] dark:bg-brand/[0.16]" style={{ width: `${Math.max((row.count / max) * 100, 2)}%` }} aria-hidden />
+              <div className="relative flex items-center justify-between gap-3 px-2.5 py-1.5 text-[13.5px]">
+                <span className={cn("min-w-0 truncate", mono && "font-mono text-[13px]", !row.key && "text-muted-foreground")} title={row.key || undefined}>{labelFor(field, row.key)}</span>
+                <span className="shrink-0 tabular-nums">
+                  {row.count.toLocaleString()}
+                  <span className="ml-1.5 hidden text-[12px] text-muted-foreground min-[380px]:inline">{total ? Math.round((row.count / total) * 100) : 0}%</span>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rows.length > 6 && (
+        <button type="button" onClick={() => setAll((v) => !v)} className="mt-2 inline-flex items-center gap-1 self-start text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+          {all ? "Show less" : `Show all ${rows.length}`} <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", all && "rotate-180")} />
+        </button>
+      )}
+    </section>
   );
 }
+
+const SNIPPET = '<script defer src="/__sm/analytics.js"></script>';
 
 export default function ProjectAnalyticsPage() {
   const { project: p } = useProject();
   const [data, setData] = useState<SiteOverview | null>(null);
-  const [range, setRange] = useState<string>("24h");
+  const [range, setRange] = useState<Range>("24h");
   const [top, setTop] = useState<Record<string, SiteTopRow[]>>({});
+  const [loaded, setLoaded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const load = useCallback(async (r: string) => {
+  const load = useCallback(async (r: Range) => {
     try {
       const fields = TOP_FIELDS.map((f) => f.field);
       const [oRes, ...topReses] = await Promise.all([
@@ -67,6 +124,7 @@ export default function ProjectAnalyticsPage() {
       }
       setTop(topByField);
     } catch {}
+    setLoaded(true);
   }, [p.id]);
 
   // Deferred so the mount effect doesn't synchronously trigger a setState.
@@ -81,125 +139,141 @@ export default function ProjectAnalyticsPage() {
     return () => clearInterval(t);
   }, [load, range]);
 
-  const ts = (data?.timeseries || []).map((t) => ({
-    ...t,
-    label: new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  }));
+  const ts = (data?.timeseries || []).map((t) => ({ ...t, label: tickLabel(t.ts, range) }));
+  const hasTraffic = ts.some((t) => t.pageviews > 0 || t.visitors > 0);
+  const pv = data?.overview?.pageviews || 0;
+  const vis = data?.overview?.visitors || 0;
+  const bots = data?.overview?.bots || 0;
+  const live = data?.realtime?.visitors || 0;
+  const rangeLabel = RANGES.find((r) => r.id === range)?.label.toLowerCase();
+
+  const copySnippet = () => {
+    navigator.clipboard?.writeText(SNIPPET).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); }).catch(() => {});
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Header row: live badge + range picker */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <BarChart3 className="h-3.5 w-3.5" />
-          {data?.realtime?.visitors ? (
-            <span className="flex items-center gap-1 text-emerald-500">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {data.realtime.visitors} visitor{data.realtime.visitors === 1 ? "" : "s"} right now
-            </span>
-          ) : (
-            <span>Cookieless, privacy-first analytics</span>
-          )}
-        </div>
-        <div className="flex gap-1">
-          {RANGES.map((r) => (
-            <button key={r} onClick={() => load(r)} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${range === r ? "border-foreground/30 bg-accent text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground"}`}>{r}</button>
-          ))}
-        </div>
+    <div className="space-y-4 sm:space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {live > 0 ? (
+          <p className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-[13.5px] font-medium text-[var(--dz-green-strong)] dark:text-brand">
+            <span className="relative inline-flex h-2 w-2"><span className="live-dot bg-brand" aria-hidden /></span>
+            {live} visitor{live === 1 ? "" : "s"} right now
+          </p>
+        ) : (
+          <p className="text-[13.5px] text-muted-foreground">Cookieless analytics, collected at the edge.</p>
+        )}
+        <Segmented label="Time range" value={range} options={RANGES} onChange={(r) => load(r)} className="w-full sm:w-auto" />
       </div>
 
-      {/* Headline metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl surface p-4">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            <MousePointerClick className="h-3 w-3" /> Pageviews
-          </div>
-          <div className="mt-1.5 text-xl font-semibold font-mono">{fmtNum(data?.overview?.pageviews || 0)}</div>
+      {/* Stat strip */}
+      <section className="surface overflow-hidden rounded-[20px]">
+        <div className="grid grid-cols-2 gap-px bg-[var(--dz-hairline)] lg:grid-cols-4">
+          <StatCell icon={Eye} label="Unique visitors" value={fmtNum(vis)}>
+            <Sparkline values={ts.map((t) => t.visitors)} />
+          </StatCell>
+          <StatCell icon={MousePointerClick} label="Pageviews" value={fmtNum(pv)}>
+            <Sparkline values={ts.map((t) => t.pageviews)} color={CYAN} />
+          </StatCell>
+          <StatCell icon={Repeat2} label="Views per visitor" value={vis ? (pv / vis).toFixed(1) : "—"}>
+            <p className="text-[12.5px] text-muted-foreground">How deep people read</p>
+          </StatCell>
+          <StatCell icon={Bot} label="Bots filtered" value={fmtNum(bots)}>
+            <p className="text-[12.5px] text-muted-foreground">{pv + bots > 0 ? `${Math.round((bots / (pv + bots)) * 100)}% of all hits` : "Not counted above"}</p>
+          </StatCell>
         </div>
-        <div className="rounded-xl surface p-4">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            <Eye className="h-3 w-3" /> Unique visitors
-          </div>
-          <div className="mt-1.5 text-xl font-semibold font-mono text-emerald-500">{fmtNum(data?.overview?.visitors || 0)}</div>
-        </div>
-        <div className="rounded-xl surface p-4">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            <Bot className="h-3 w-3" /> Bots filtered
-          </div>
-          <div className="mt-1.5 text-xl font-semibold font-mono text-muted-foreground">{fmtNum(data?.overview?.bots || 0)}</div>
-        </div>
-      </div>
+      </section>
 
-      {/* Traffic over time */}
-      <div className="rounded-xl surface p-4">
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs font-medium">Traffic over time</span>
-          <span className="text-[10px] text-muted-foreground">pageviews · visitors</span>
+      {/* Traffic */}
+      <section className="surface overflow-hidden rounded-[20px]">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 pt-4 sm:px-5 sm:pt-5">
+          <div className="min-w-0">
+            <p className="text-[14.5px] font-semibold tracking-tight">Traffic</p>
+            <p className="text-[13px] text-muted-foreground">Last {rangeLabel}</p>
+          </div>
+          <div className="flex items-center gap-4 text-[13px] text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: GREEN }} />Visitors</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: CYAN }} />Pageviews</span>
+          </div>
         </div>
-        <div className="mt-3 h-56">
-          {ts.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">No traffic recorded in this range yet.</div>
+        <div className="relative h-64 px-2 pb-3 pt-4 sm:px-3">
+          {!hasTraffic ? (
+            <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
+              <div aria-hidden className="absolute inset-x-3 inset-y-4 flex flex-col justify-between">
+                {[0, 1, 2, 3].map((i) => <div key={i} className="border-t border-dashed border-[var(--dz-hairline)]" />)}
+              </div>
+              <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-background shadow-sm ring-1 ring-[var(--dz-hairline)]">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              </span>
+              <p className="relative mt-3 text-[14.5px] font-semibold">{loaded ? `No visits in the last ${rangeLabel}` : "Loading…"}</p>
+              {loaded && <p className="relative mt-1 max-w-xs text-[13.5px] text-muted-foreground">Visits to {p.subdomain}.deployzy.app and your domains show up here within a minute.</p>}
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={ts} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+              <AreaChart data={ts} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
                 <defs>
-                  <linearGradient id="apv" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
+                  <linearGradient id="an-pv" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CYAN} stopOpacity={0.22} />
+                    <stop offset="100%" stopColor={CYAN} stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="avs" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  <linearGradient id="an-vs" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={GREEN} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={GREEN} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border/40" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} minTickGap={40} />
-                <YAxis tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="pageviews" stroke="#60a5fa" strokeWidth={1.5} fill="url(#apv)" />
-                <Area type="monotone" dataKey="visitors" stroke="#10b981" strokeWidth={1.5} fill="url(#avs)" />
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="label" {...axisProps} minTickGap={40} />
+                <YAxis {...axisProps} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip />} cursor={{ stroke: "currentColor", strokeOpacity: 0.15 }} />
+                <Area type="monotone" dataKey="pageviews" stroke={CYAN} strokeWidth={1.75} fill="url(#an-pv)" name="pageviews" />
+                <Area type="monotone" dataKey="visitors" stroke={GREEN} strokeWidth={1.75} fill="url(#an-vs)" name="visitors" />
               </AreaChart>
             </ResponsiveContainer>
           )}
         </div>
-      </div>
+      </section>
 
-      {/* Top lists */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {TOP_FIELDS.map(({ field, label }) => {
-          const rows = top[field] || [];
-          const maxC = rows.length ? Math.max(...rows.map((r) => r.count)) : 1;
-          return (
-            <div key={field} className="rounded-xl surface px-3 py-2.5 space-y-1">
-              <div className="text-[10px] text-muted-foreground">{label}</div>
-              {rows.length === 0 && <div className="text-[10px] text-muted-foreground py-1">No data yet</div>}
-              {rows.slice(0, 6).map((row) => (
-                <div key={row.key} className="relative text-[11px] py-0.5">
-                  <div className="absolute inset-y-0 left-0 bg-emerald-500/20 rounded" style={{ width: `${(row.count / maxC) * 100}%` }} />
-                  <div className="relative flex justify-between items-baseline px-1.5 font-mono">
-                    <span className="truncate pr-2 text-foreground">{row.key || "(direct)"}</span>
-                    <span className="text-zinc-500 tabular-nums">{row.count}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground">Cookieless, privacy-first. Visitor IDs rotate daily and can&apos;t be linked across days. Asset requests (CSS/JS/images) are excluded from pageview counts.</p>
-
-      {/* Optional JS snippet for SPA route changes + custom events */}
-      <details className="text-[10px] text-zinc-500">
-        <summary className="cursor-pointer hover:text-foreground py-1">Track SPA routes &amp; custom events (optional JS snippet)</summary>
-        <div className="mt-1 space-y-2 pl-2 border-l border-border">
-          <p>Server-side capture covers every HTTP request automatically. For client-side routing (SPAs) and custom events, add this tag to your site:</p>
-          <code className="block rounded bg-black px-2 py-1.5 font-mono text-[10px] text-muted-foreground break-all">
-            &lt;script defer src=&quot;/__sm/analytics.js&quot;&gt;&lt;/script&gt;
-          </code>
-          <p>Then call <code className="text-emerald-400">window.sm.track(&quot;signup&quot;, {"{ plan: \"pro\" }"})</code> for custom events.</p>
+      {/* Top lists — one quiet note instead of six empty cards before the first visit */}
+      {loaded && TOP_FIELDS.every((f) => !(top[f.field] || []).length) ? (
+        <p className="rounded-[20px] border border-dashed border-[var(--dz-hairline)] px-4 py-5 text-center text-[13.5px] text-muted-foreground">
+          Top pages, referrers, countries, browsers and devices appear here after the first visits.
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {TOP_FIELDS.map((f) => (
+            <TopList key={f.field} {...f} rows={top[f.field] || []} loaded={loaded} />
+          ))}
         </div>
-      </details>
+      )}
+
+      {/* Privacy + snippet */}
+      <section className="surface rounded-[20px]">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 sm:px-5 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="block text-[14.5px] font-semibold tracking-tight">Track client-side routes and events</span>
+              <span className="block text-[13px] text-muted-foreground">Optional. Server-side capture already counts every page load.</span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-3 border-t border-[var(--dz-hairline)] px-4 py-4 text-[13.5px] sm:px-5">
+            <p className="text-muted-foreground">Single-page apps that change routes without a full load can add this tag:</p>
+            <div className="dark flex items-center gap-2 rounded-xl bg-[#0b0c10] py-2 pl-3.5 pr-2 text-white">
+              <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-white/85">{SNIPPET}</code>
+              <button type="button" onClick={copySnippet} aria-label="Copy snippet" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white">
+                {copied ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+            <p className="text-muted-foreground">
+              Then send custom events with <code className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[12.5px] text-foreground">window.sm.track(&quot;signup&quot;, {"{ plan: \"pro\" }"})</code>.
+            </p>
+          </div>
+        </details>
+      </section>
+
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        No cookies. Visitor IDs rotate daily and can&apos;t be linked across days. Requests for CSS, JS and images aren&apos;t counted as pageviews.
+      </p>
     </div>
   );
 }

@@ -5,12 +5,12 @@
 // The interactive shell (Terminal) also lives here since it's log-adjacent.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ChevronDown, ScrollText, Terminal, TerminalSquare } from "lucide-react";
+import { ArrowDownToLine, Pause, Play, ScrollText, Terminal, TerminalSquare } from "lucide-react";
 import { TerminalModal } from "@/components/terminal-modal";
 import { useProject } from "@/components/project/project-context";
 import { API, headers, type DeployLog, type LiveLog } from "@/components/project/project-shared";
-import { DeployLogConsole } from "@/components/project/deploy-log-console";
+import { ConsoleDots, ConsoleToggle, DeployLogConsole } from "@/components/project/deploy-log-console";
+import { Segmented } from "@/components/project/charts";
 
 type Mode = "deploy" | "live";
 
@@ -116,70 +116,75 @@ export default function ProjectLogsPage() {
   const running = p.status === "running";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {terminalOpen && (
         <TerminalModal projectId={p.id} projectName={p.name} onClose={() => setTerminalOpen(false)} />
       )}
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center rounded-lg surface p-0.5">
-          {(["deploy", "live"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-xs transition-colors ${
-                mode === m ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {m === "deploy" ? <ScrollText className="h-3 w-3" /> : <Terminal className="h-3 w-3" />}
-              {m === "deploy" ? "Deploy logs" : "Live container logs"}
-              {m === "live" && liveOn && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Segmented
+          label="Log source"
+          value={mode}
+          onChange={setMode}
+          className="w-full sm:w-auto"
+          options={[
+            { id: "deploy", label: <><ScrollText className="h-3.5 w-3.5" /> Deploys</> },
+            { id: "live", label: <><Terminal className="h-3.5 w-3.5" /> Live output{liveOn && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}</> },
+          ]}
+        />
         {running && (
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={() => setTerminalOpen(true)}>
-            <TerminalSquare className="h-3.5 w-3.5" /> Open Terminal
-          </Button>
+          <button type="button" onClick={() => setTerminalOpen(true)} className="pill pill-line pill-sm w-full sm:w-auto">
+            <TerminalSquare className="h-4 w-4" /> Open terminal
+          </button>
         )}
       </div>
 
       {/* Deploy history */}
       {mode === "deploy" && <DeployLogConsole logs={logs} status={p.status} loading={loadingLogs} />}
 
-      {/* Live container logs console */}
+      {/* Live container output */}
       {mode === "live" && (
-        <div className="rounded-xl border border-white/[0.08] bg-[#0d1117] overflow-hidden">
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/[0.08] bg-[#161b22] text-[10px] text-muted-foreground font-mono">
-            <div className="flex items-center gap-2 min-w-0">
-              <Terminal className="h-3 w-3 shrink-0 text-[#58a6ff]" /> <span className="shrink-0 text-[#c9d1d9]">Live Container Logs</span>
-              {liveOn && <span className="flex items-center gap-1 text-[#3fb950] shrink-0"><span className="h-1.5 w-1.5 rounded-full bg-[#3fb950] animate-pulse" /> streaming</span>}
-              <span className="text-[#6e7681] shrink-0">• {liveLogs.length} lines</span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
+        <section className="dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.07] px-4 py-3 sm:px-5">
+            <p className="flex items-center gap-2.5 text-[14px] font-medium">
+              <ConsoleDots />
+              Live output
               {liveOn ? (
-                <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={stopLive} title="Stop streaming (keeps buffer)">Pause</Button>
+                <span className="flex items-center gap-1.5 text-[13px] font-normal text-brand"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" /> Streaming</span>
               ) : (
-                <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={startLive} disabled={!hasContainer} title="Resume streaming">Resume</Button>
+                <span className="text-[13px] font-normal text-white/45">{liveLogs.length} lines</span>
               )}
-              <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] text-muted-foreground hover:text-[#c9d1d9]" onClick={() => setLiveLogs([])} title="Clear buffer">Clear</Button>
-              <label className="flex items-center gap-1 text-[10px] text-muted-foreground select-none cursor-pointer" title="Auto-scroll to bottom on new output">
-                <input type="checkbox" checked={liveAutoscroll} onChange={(e) => setLiveAutoscroll(e.target.checked)} className="accent-emerald-500 h-3 w-3" />
-                auto
-              </label>
-              <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-[#c9d1d9]" onClick={() => {
-                const el = liveScrollRef.current;
-                if (el) el.scrollTop = el.scrollHeight;
-              }} title="Jump to bottom">
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </div>
+            </p>
+            <span className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+              {liveOn ? (
+                <button type="button" onClick={stopLive} title="Stop streaming (keeps what's shown)" className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/10 px-2.5 text-[12.5px] font-medium text-white/70 transition-colors hover:border-white/20 hover:text-white">
+                  <Pause className="h-3 w-3" /> Pause
+                </button>
+              ) : (
+                <button type="button" onClick={startLive} disabled={!hasContainer} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/10 px-2.5 text-[12.5px] font-medium text-white/70 transition-colors hover:border-white/20 hover:text-white disabled:opacity-40">
+                  <Play className="h-3 w-3" /> Resume
+                </button>
+              )}
+              <ConsoleToggle on={liveAutoscroll} onClick={() => setLiveAutoscroll((v) => !v)}>Follow</ConsoleToggle>
+              <button type="button" onClick={() => setLiveLogs([])} className="inline-flex h-7 items-center rounded-full px-2.5 text-[12.5px] font-medium text-white/55 transition-colors hover:text-white">
+                Clear
+              </button>
+              <button
+                type="button"
+                aria-label="Jump to latest"
+                title="Jump to latest"
+                onClick={() => { const el = liveScrollRef.current; if (el) el.scrollTop = el.scrollHeight; setLiveAutoscroll(true); }}
+                className="ml-auto flex h-7 w-7 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white sm:ml-0"
+              >
+                <ArrowDownToLine className="h-3.5 w-3.5" />
+              </button>
+            </span>
           </div>
           {hasContainer ? (
             <div
               ref={liveScrollRef}
-              className="p-2 font-mono text-[11px] space-y-0.5 h-[58vh] overflow-y-auto"
+              className="h-[62vh] overflow-y-auto px-3 py-3 font-mono text-[12.5px] leading-relaxed sm:px-4"
               onScroll={(e) => {
                 const el = e.currentTarget;
                 const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
@@ -187,35 +192,37 @@ export default function ProjectLogsPage() {
               }}
             >
               {liveLogs.map((l, i) => (
-                <div key={i} className="flex gap-3 px-2 py-0.5 text-[#e6edf3] hover:bg-white/[0.03] rounded">
-                  <span className="text-[#58a6ff] select-none shrink-0 tabular-nums">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span>
-                  <span className="whitespace-pre-wrap break-words min-w-0">{l.line}</span>
+                <div key={i} className="flex gap-3 rounded px-1 py-px hover:bg-white/[0.03]">
+                  <span className="hidden shrink-0 select-none tabular-nums text-white/25 sm:inline">{l.t ? new Date(l.t).toLocaleTimeString() : ""}</span>
+                  <span className="min-w-0 whitespace-pre-wrap text-white/85 [overflow-wrap:anywhere]">{l.line}</span>
                 </div>
               ))}
               {liveEnded === "ended" && !liveOn && liveLogs.length > 0 && (
-                <div className="px-2 py-1.5 text-[#d29922] italic">
+                <p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2 font-sans text-[13px] text-amber-200/90">
                   {running
-                    ? "Stream ended. If the app is asleep, the lines above are its most recent output — it wakes on the next visit. Click Resume to reconnect."
+                    ? "Stream ended. If the app is asleep, the lines above are its latest output; it wakes on the next visit. Resume to reconnect."
                     : "The container is stopped. The lines above are its output from right before it stopped."}
-                </div>
+                </p>
               )}
               {liveLogs.length === 0 && liveOn && (
-                <div className="px-2 py-1 text-muted-foreground italic">Waiting for output…</div>
+                <p className="flex items-center gap-2 px-1 text-white/45"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" /> Waiting for output…</p>
               )}
               {liveLogs.length === 0 && !liveOn && (
-                <div className="px-2 py-1 text-muted-foreground italic">
-                  {liveEnded === "failed" ? "Couldn't open the log stream. Click Resume to try again."
+                <p className="px-1 text-white/45">
+                  {liveEnded === "failed" ? "Couldn't open the log stream. Resume to try again."
                     : liveEnded === "ended" ? "This container hasn't written any output."
-                    : "Stream paused. Click Resume to start again."}
-                </div>
+                    : "Paused. Resume to start streaming again."}
+                </p>
               )}
             </div>
           ) : (
-            <div className="p-8 text-center text-[11px] text-muted-foreground font-mono italic">
-              No container yet — deploy the project to see its output here.
+            <div className="flex h-[40vh] flex-col items-center justify-center gap-2 px-6 text-center">
+              <Terminal className="h-5 w-5 text-white/35" />
+              <p className="text-[14px] font-medium">No container yet</p>
+              <p className="max-w-xs text-[13px] text-white/50">Deploy the project and its output streams here.</p>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );
