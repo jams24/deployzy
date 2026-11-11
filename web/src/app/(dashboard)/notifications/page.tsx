@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Bell, Send, Unlink, ExternalLink, Copy, Check } from "lucide-react";
+// Notifications — where Deployzy reaches you. Email (deploy failures and
+// crashes, always on) and Telegram (linked through the bot, with per-alert
+// switches). While a link code is open the page checks the connection itself.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Notifications — Telegram alert connection + preferences. Flow unchanged;
-// presentation rebuilt with the Deployzy 2.0 card language (both themes).
-// ─────────────────────────────────────────────────────────────────────────────
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ArrowUpRight, Bell, Check, Copy, Loader2, Mail, RefreshCw, Send, Unlink } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/use-me";
+import { PageHeader } from "@/components/dashboard/kit";
+import { SettingRow, SettingsSection, Switch } from "@/components/dashboard/settings-kit";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+const TG = "#229ED9";
 
 interface TelegramStatus {
   connected: boolean;
@@ -23,63 +24,103 @@ interface TelegramStatus {
   notify_traffic_summary?: boolean;
   notify_new_signup?: boolean;
 }
+type PrefKey = Exclude<keyof TelegramStatus, "connected" | "username" | "first_name">;
 
-interface LinkData {
-  code: string;
-  bot_url: string;
-  bot_name: string;
-}
+interface LinkData { code: string; bot_url: string; bot_name: string }
 
-function Panel({ title, icon, children, className = "" }: { title: React.ReactNode; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
+const headers = () => ({
+  Authorization: `Bearer ${typeof window !== "undefined" ? localStorage.getItem("sm_token") : ""}`,
+  "Content-Type": "application/json",
+});
+
+const PREFS: { key: PrefKey; label: string; desc: string; adminOnly?: boolean }[] = [
+  { key: "notify_tunnel_connect", label: "Tunnel connected", desc: "A tunnel comes online." },
+  { key: "notify_tunnel_disconnect", label: "Tunnel disconnected", desc: "A tunnel goes offline." },
+  { key: "notify_error_spike", label: "Error spikes", desc: "The error rate jumps above normal." },
+  { key: "notify_traffic_summary", label: "Traffic summary", desc: "An hourly digest of requests." },
+  { key: "notify_new_signup", label: "New signups", desc: "Someone creates an account.", adminOnly: true },
+];
+
+const COMMANDS = [
+  { cmd: "/tunnels", desc: "List your active tunnels" },
+  { cmd: "/stats", desc: "Quick traffic numbers" },
+  { cmd: "/help", desc: "Every command" },
+];
+
+function ChannelIcon({ children, color }: { children: ReactNode; color?: string }) {
   return (
-    <div className={`rounded-2xl surface overflow-hidden ${className}`}>
-      <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
-        {icon}
-        <p className="eyebrow">{title}</p>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
+    <span
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+      style={color ? { color, borderColor: `${color}33`, background: `${color}14` } : undefined}
+    >
+      {children}
+    </span>
   );
 }
 
 export default function NotificationsPage() {
+  const { me, isAdmin } = useSession();
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [linkData, setLinkData] = useState<LinkData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [linking, setLinking] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState("");
 
-  const headers = () => {
-    const token = localStorage.getItem("sm_token");
-    return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-  };
-
-  async function loadStatus() {
+  const loadStatus = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/v1/telegram/status`, { headers: headers() });
-      if (res.ok) setStatus(await res.json());
+      if (res.ok) {
+        const s: TelegramStatus = await res.json();
+        setStatus(s);
+        if (s.connected) setLinkData(null);
+      }
     } catch {}
     setLoading(false);
-  }
+  }, []);
+
+  // Deferred so the mount effect doesn't synchronously trigger a setState.
+  useEffect(() => {
+    const t = setTimeout(() => loadStatus(), 0);
+    return () => clearTimeout(t);
+  }, [loadStatus]);
+
+  // While a link code is out, check every 4s so the page flips to "connected"
+  // on its own after the user taps Start in Telegram.
+  useEffect(() => {
+    if (!linkData) return;
+    const t = setInterval(loadStatus, 4000);
+    return () => clearInterval(t);
+  }, [linkData, loadStatus]);
 
   async function generateLink() {
+    setLinking(true); setErr("");
     try {
       const res = await fetch(`${API}/api/v1/telegram/link`, { method: "POST", headers: headers() });
       if (res.ok) setLinkData(await res.json());
-    } catch {}
+      else setErr((await res.json().catch(() => ({}))).error || "Couldn't start linking");
+    } catch { setErr("Network error"); }
+    setLinking(false);
   }
 
-  async function updatePref(key: string, value: boolean) {
-    setStatus((prev) => prev ? { ...prev, [key]: value } : prev);
+  async function checkNow() {
+    setChecking(true);
+    await loadStatus();
+    setChecking(false);
+  }
+
+  async function updatePref(key: PrefKey, value: boolean) {
+    const before = status;
+    setStatus((prev) => (prev ? { ...prev, [key]: value } : prev));
     try {
-      await fetch(`${API}/api/v1/telegram/preferences`, {
-        method: "PUT",
-        headers: headers(),
+      const res = await fetch(`${API}/api/v1/telegram/preferences`, {
+        method: "PUT", headers: headers(),
         body: JSON.stringify({ [key.replace("notify_", "")]: value }),
       });
-    } catch {}
+      if (!res.ok) setStatus(before);
+    } catch { setStatus(before); }
   }
 
   async function disconnect() {
@@ -87,144 +128,166 @@ export default function NotificationsPage() {
       await fetch(`${API}/api/v1/telegram`, { method: "DELETE", headers: headers() });
       setStatus({ connected: false });
       setLinkData(null);
+      setConfirmUnlink(false);
     } catch {}
   }
 
-  useEffect(() => {
-    loadStatus();
-  }, []);
-
-  const prefs = [
-    { key: "notify_tunnel_connect", label: "Tunnel Connected", desc: "When a tunnel comes online" },
-    { key: "notify_tunnel_disconnect", label: "Tunnel Disconnected", desc: "When a tunnel goes offline" },
-    { key: "notify_error_spike", label: "Error Spikes", desc: "When error rate exceeds threshold" },
-    { key: "notify_traffic_summary", label: "Traffic Summary", desc: "Hourly traffic digest" },
-    { key: "notify_new_signup", label: "New Signups", desc: "When someone registers (self-hosted)" },
-  ];
+  const connected = !!status?.connected;
+  const prefs = PREFS.filter((p) => !p.adminOnly || isAdmin);
+  const onCount = prefs.filter((p) => status?.[p.key]).length;
 
   return (
     <div className="animate-fade-in-up">
-      <p className="eyebrow">Account</p>
-      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Notifications</h1>
-      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
-        Get alerts in Telegram when something happens with your tunnels.
-      </p>
+      <PageHeader
+        eyebrow="Account"
+        title="Notifications"
+        description="Where Deployzy tells you about failed deploys, crashes and your tunnels."
+      />
 
-      {/* Connection Card */}
-      <Panel title="Telegram" icon={<Send className="h-3.5 w-3.5 text-[#229ED9]" />} className="mt-6">
-        {loading ? (
-          <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>
-        ) : status?.connected ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#229ED9]/20 bg-[#229ED9]/10 text-[#229ED9]">
-                <Send className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">
-                  {status.first_name || "Connected"}
-                  {status.username && (
-                    <span className="ml-1 text-muted-foreground">@{status.username}</span>
-                  )}
-                </p>
-                <Badge variant="outline" className="mt-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
-                  Connected
-                </Badge>
-              </div>
-            </div>
-            <Button variant="outline" size="sm" onClick={disconnect} className="gap-1 rounded-full text-destructive hover:text-destructive">
-              <Unlink className="h-3.5 w-3.5" />
-              Disconnect
-            </Button>
-          </div>
-        ) : (
-          <div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Connect your Telegram to receive real-time tunnel alerts.
-            </p>
-
-            {linkData ? (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-[#229ED9]/20 bg-[#229ED9]/5 p-4">
-                  <p className="text-sm font-medium mb-2">
-                    Click the button below to open the bot in Telegram:
+      <div className="mt-6 grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4 sm:space-y-5">
+          {/* Channels */}
+          <SettingsSection icon={Bell} title="Channels" description="Each channel gets the alerts it supports.">
+            <div className="divide-y divide-[var(--dz-hairline)]">
+              {/* Email */}
+              <div className="flex items-center gap-3 pb-4">
+                <ChannelIcon><Mail className="h-4 w-4 text-foreground/70" /></ChannelIcon>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="text-[14.5px] font-medium">Email</p>
+                    <span className="inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-400">
+                      <Check className="h-3 w-3" /> Always on
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
+                    Failed deploys and crashes go to {me?.email ? <span className="text-foreground">{me.email}</span> : "your account email"}.
                   </p>
-                  <a
-                    href={linkData.bot_url}
-                    target="_blank"
-                    rel="noopener"
-                    className="inline-flex items-center gap-2 rounded-full bg-[#229ED9] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1E8BC3] transition-colors"
-                  >
-                    <Send className="h-4 w-4" />
-                    Open @{linkData.bot_name}
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    Or send this to the bot manually: <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">/start {linkData.code}</code>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(`/start ${linkData.code}`);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
-                      }}
-                      className="ml-1 inline-flex items-center text-primary"
-                    >
-                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                </div>
+              </div>
+
+              {/* Telegram */}
+              <div className="pt-4">
+                <div className="flex items-center gap-3">
+                  <ChannelIcon color={TG}><Send className="h-4 w-4" /></ChannelIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14.5px] font-medium">Telegram</p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
+                      {loading ? "Checking…" : connected
+                        ? <>Linked to <span className="text-foreground">{status?.first_name || "your account"}</span>{status?.username && <> · @{status.username}</>}</>
+                        : "Tunnel alerts and quick stats in a chat."}
+                    </p>
+                  </div>
+                  {!loading && (connected ? (
+                    !confirmUnlink && (
+                      <button type="button" onClick={() => setConfirmUnlink(true)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400">
+                        <Unlink className="h-4 w-4" /><span className="hidden sm:inline">Disconnect</span>
+                      </button>
+                    )
+                  ) : !linkData && (
+                    <button type="button" onClick={generateLink} disabled={linking} className="pill pill-sm shrink-0 text-white disabled:opacity-60" style={{ background: TG }}>
+                      {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Connect
                     </button>
-                  </p>
+                  ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Code expires in 10 minutes. After clicking Start in Telegram, come back here and refresh.
-                </p>
-                <Button variant="outline" size="sm" onClick={loadStatus} className="rounded-full">
-                  Refresh Status
-                </Button>
-              </div>
-            ) : (
-              <Button onClick={generateLink} className="btn-shine gap-2 rounded-full px-5">
-                <Send className="h-4 w-4" />
-                Connect Telegram
-              </Button>
-            )}
-          </div>
-        )}
-      </Panel>
 
-      {/* Preferences */}
-      {status?.connected && (
-        <Panel title="Alert Preferences" icon={<Bell className="h-3.5 w-3.5 text-muted-foreground" />} className="mt-4">
-          <div className="divide-y divide-border/60 -my-2">
-            {prefs.map((p) => (
-              <div key={p.key} className="flex items-center justify-between py-3.5">
-                <div>
-                  <p className="text-sm font-medium">{p.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{p.desc}</p>
-                </div>
-                <Switch
-                  checked={!!(status as unknown as Record<string, unknown>)[p.key]}
-                  onCheckedChange={(checked: boolean) => updatePref(p.key, checked)}
-                />
-              </div>
-            ))}
-          </div>
-        </Panel>
-      )}
+                {confirmUnlink && connected && (
+                  <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-red-500/[0.06] p-3 sm:flex-row sm:items-center">
+                    <p className="text-[13.5px] sm:mr-auto">Stop sending alerts to Telegram? You can link it again any time.</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setConfirmUnlink(false)} className="pill pill-line pill-sm flex-1 sm:flex-none">Cancel</button>
+                      <button type="button" onClick={disconnect} className="pill pill-sm flex-1 bg-red-600 text-white hover:bg-red-700 sm:flex-none">Disconnect</button>
+                    </div>
+                  </div>
+                )}
 
-      {/* Bot Commands */}
-      <Panel title="Bot Commands" className="mt-4">
-        <div className="space-y-2 font-mono text-sm">
-          {[
-            { cmd: "/tunnels", desc: "List your active tunnels" },
-            { cmd: "/stats", desc: "Quick traffic statistics" },
-            { cmd: "/help", desc: "Show available commands" },
-          ].map((c) => (
-            <div key={c.cmd} className="flex items-center gap-4 rounded-lg bg-muted/50 px-4 py-2.5">
-              <code className="text-emerald-600 dark:text-emerald-400 font-bold">{c.cmd}</code>
-              <span className="text-xs text-muted-foreground font-sans">{c.desc}</span>
+                {err && <p className="mt-3 text-[13.5px] text-red-600 dark:text-red-400">{err}</p>}
+
+                {/* Linking steps */}
+                {linkData && !connected && (
+                  <ol className="mt-4 space-y-3 rounded-2xl border p-4" style={{ borderColor: `${TG}33`, background: `${TG}0a` }}>
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white" style={{ background: TG }}>1</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium">Open the bot</p>
+                        <a href={linkData.bot_url} target="_blank" rel="noopener" className="pill pill-sm mt-2 text-white" style={{ background: TG }}>
+                          <Send className="h-4 w-4" /> Open @{linkData.bot_name} <ArrowUpRight className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold text-white" style={{ background: TG }}>2</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium">Tap Start</p>
+                        <p className="mt-0.5 text-[13px] text-muted-foreground">Or send this message to the bot yourself:</p>
+                        <div className="mt-2 flex items-center gap-2 rounded-xl border border-[var(--dz-hairline)] bg-background py-1.5 pl-3 pr-1.5">
+                          <code className="min-w-0 flex-1 truncate font-mono text-[13px]">/start {linkData.code}</code>
+                          <button
+                            type="button"
+                            aria-label="Copy start message"
+                            onClick={() => { navigator.clipboard?.writeText(`/start ${linkData.code}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); }}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+                          >
+                            {copied ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--dz-hairline)] bg-background">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium">Waiting for Telegram</p>
+                        <p className="mt-0.5 text-[13px] text-muted-foreground">This page updates by itself. The code expires in 10 minutes.</p>
+                        <button type="button" onClick={checkNow} disabled={checking} className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50">
+                          <RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} /> Check now
+                        </button>
+                      </div>
+                    </li>
+                  </ol>
+                )}
+              </div>
             </div>
-          ))}
+          </SettingsSection>
+
+          {/* Telegram alerts */}
+          <SettingsSection
+            icon={Send}
+            title="Telegram alerts"
+            description={connected ? `${onCount} of ${prefs.length} on.` : "Connect Telegram above to choose alerts."}
+          >
+            <div className={cn("divide-y divide-[var(--dz-hairline)]", !connected && "opacity-55")}>
+              {prefs.map((p) => (
+                <SettingRow
+                  key={p.key}
+                  title={p.label}
+                  description={p.desc}
+                  control={<Switch checked={!!status?.[p.key]} disabled={!connected} onChange={(v) => updatePref(p.key, v)} label={p.label} />}
+                />
+              ))}
+            </div>
+          </SettingsSection>
         </div>
-      </Panel>
+
+        {/* Bot commands */}
+        <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+          <section className="dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white">
+            <div className="flex items-center gap-2.5 border-b border-white/[0.07] px-4 py-3 sm:px-5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: `${TG}26`, color: TG }}><Send className="h-3.5 w-3.5" /></span>
+              <p className="text-[14px] font-medium">Bot commands</p>
+            </div>
+            <ul className="space-y-1 p-2.5">
+              {COMMANDS.map((c) => (
+                <li key={c.cmd} className="flex items-baseline gap-3 rounded-xl px-2.5 py-2 hover:bg-white/[0.03]">
+                  <code className="w-[4.5rem] shrink-0 font-mono text-[13px] font-semibold text-brand">{c.cmd}</code>
+                  <span className="text-[13px] text-white/60">{c.desc}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-white/[0.07] px-4 py-3 text-[12.5px] text-white/45 sm:px-5">Send them to the bot once Telegram is linked.</p>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   CYAN, ChartTooltip, GREEN, Segmented, Sparkline, StatCell, axisProps, gridProps, tickLabel,
 } from "@/components/project/charts";
 import { API, fmtNum, headers, type SiteOverview, type SiteTopRow } from "@/components/project/project-shared";
+import { countryName, flag } from "@/lib/geo";
 
 const RANGES = [
   { id: "24h", label: "24 hours" },
@@ -33,17 +34,6 @@ const TOP_FIELDS: { field: string; label: string; icon: LucideIcon; mono?: boole
   { field: "device", label: "Devices", icon: Smartphone },
 ];
 
-function flag(cc: string) {
-  if (!cc || cc.length !== 2) return "🌐";
-  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0)));
-}
-let regionNames: Intl.DisplayNames | null = null;
-function countryName(cc: string) {
-  try {
-    regionNames ??= new Intl.DisplayNames(["en"], { type: "region" });
-    return regionNames.of(cc.toUpperCase()) || cc;
-  } catch { return cc; }
-}
 const OS_LABEL: Record<string, string> = { windows: "Windows", macos: "macOS", linux: "Linux", ios: "iOS", android: "Android" };
 function labelFor(field: string, key: string) {
   if (!key) return field === "referrer" ? "Direct / none" : "Unknown";
