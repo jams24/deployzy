@@ -206,6 +206,11 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []struct{}{})
 		return
 	}
+	if offline, err := s.db.OfflineServerIDs(r.Context()); err == nil && len(offline) > 0 {
+		for i := range projects {
+			projects[i].ServerOffline = offline[projects[i].WorkerServerID]
+		}
+	}
 	writeJSON(w, http.StatusOK, projects)
 }
 
@@ -221,9 +226,24 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 	logs, _ := s.db.GetDeployLogs(r.Context(), projectID, 50)
 
+	// Where it runs, so the dashboard can say "server offline" instead of a
+	// stale "running" when the box died (the heartbeat flips status).
+	var server map[string]interface{}
+	if project.WorkerServerID != "" {
+		if ws, _ := s.db.GetWorkerServer(r.Context(), project.WorkerServerID); ws != nil {
+			server = map[string]interface{}{
+				"label":   ws.Label,
+				"status":  ws.Status,
+				"offline": ws.Status == "offline",
+				"byoc":    ws.UserID != nil,
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project": project,
 		"logs":    logs,
+		"server":  server,
 	})
 }
 
@@ -798,11 +818,26 @@ func (s *Server) handleMoveProject(w http.ResponseWriter, r *http.Request) {
 	// move: bound the teardown so a hung SSH to an offline box can't block. The
 	// teardown is best-effort — any orphan left on a dead server is reaped later
 	// (orphan sweep / when it comes back). The move proceeds regardless.
-	stopCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	if err := s.deployer.Stop(stopCtx, project); err != nil {
-		s.log.Warn().Err(err).Str("project", projectID).Msg("move: source teardown didn't confirm (server may be down) — proceeding")
+	sourceDown := false
+	if project.WorkerServerID != "" {
+		if src, _ := s.db.GetWorkerServer(r.Context(), project.WorkerServerID); src != nil && src.Status == "offline" {
+			sourceDown = true
+		}
 	}
-	cancel()
+	if sourceDown {
+		// Nothing to tear down that we can reach — don't make the user wait on
+		// SSH timeouts. Leftovers are reaped by the orphan sweep if it returns.
+		s.db.UpdateProjectStatus(r.Context(), projectID, "stopped", "", 0)
+		s.db.DeleteServiceRoutes(r.Context(), projectID)
+		s.db.AddDeployLog(r.Context(), projectID, "The current server is offline — skipping its cleanup and moving the project.", "deploy")
+	} else {
+		stopCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		if err := s.deployer.Stop(stopCtx, project); err != nil {
+			s.log.Warn().Err(err).Str("project", projectID).Msg("move: source teardown didn't confirm (server may be down) — proceeding")
+		}
+		cancel()
+	}
+	project.ContainerID, project.ContainerPort = "", 0
 
 	s.db.AssignProjectServer(r.Context(), projectID, target)
 	project.WorkerServerID = target

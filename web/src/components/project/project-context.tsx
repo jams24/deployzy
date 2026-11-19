@@ -47,7 +47,7 @@ export function ProjectProvider({ id, children }: { id: string; children: React.
       if (res.status === 404) { setNotFound(true); return; }
       if (res.ok) {
         const data = await res.json();
-        if (data?.project) setProject(data.project);
+        if (data?.project) setProject({ ...data.project, server: data.server ?? null });
       }
     } catch {}
   }, [id]);

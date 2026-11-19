@@ -149,7 +149,12 @@ function ProjectsContent() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/v1/projects`, { headers: headers() });
-      if (res.ok) setProjects(await res.json());
+      if (res.ok) {
+        // A project whose server went offline isn't really "running" — show it
+        // as offline so the card offers Deploy (which fails over elsewhere).
+        const list: Project[] = await res.json();
+        setProjects(list.map((p) => (p.server_offline && p.status !== "building" ? { ...p, status: "offline" } : p)));
+      }
     } catch {}
     setLoading(false);
   }, []);

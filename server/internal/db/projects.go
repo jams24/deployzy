@@ -50,6 +50,9 @@ type Project struct {
 	ContainerID     string            `json:"container_id"`
 	ContainerPort   int               `json:"container_port"`
 	WorkerServerID  string            `json:"worker_server_id"`
+	// ServerOffline is set by the list API (not stored): the project's worker
+	// server stopped answering heartbeats, so "running" is stale.
+	ServerOffline   bool              `json:"server_offline,omitempty"`
 	GitHubRepo      string            `json:"github_repo"`
 	GitHubBranch    string            `json:"github_branch"`
 	AutoDeploy      bool              `json:"auto_deploy"`

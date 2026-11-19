@@ -34,6 +34,7 @@ const EVENT: Record<EventTone, { cls: string; icon: ReactNode }> = {
 
 function lineClass(l: DeployLog): string {
   if (l.level === "error") return "text-red-400";
+  if (l.level === "warn") return "text-amber-300";
   if (l.level === "deploy") return "text-brand";
   // BuildKit step output ("#11 32.4 …") is the bulk of a build — keep it quiet.
   if (/^#\d+/.test(l.message)) return "text-white/45";

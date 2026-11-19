@@ -28,6 +28,10 @@ export interface Project {
   parent_project_id?: string | null; pr_number?: number; pr_title?: string;
   last_deploy_at: string | null; created_at: string;
   worker_server_id?: string | null;
+  /** List API only: the project's server is offline, so its status is stale. */
+  server_offline?: boolean;
+  /** Where it runs (from GET /projects/{id}); offline = the box stopped answering heartbeats. */
+  server?: { label: string; status: string; offline: boolean; byoc: boolean } | null;
   deploy_source?: string; // "git" | "upload" | "image"
   container_id?: string;
 }

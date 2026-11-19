@@ -143,6 +143,25 @@ func (d *DB) DeleteWorkerServer(ctx context.Context, id string) error {
 	return tx.Commit(ctx)
 }
 
+// OfflineServerIDs returns the ids of worker servers the heartbeat monitor has
+// marked offline.
+func (d *DB) OfflineServerIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := d.Pool.Query(ctx, `SELECT id::text FROM worker_servers WHERE status = 'offline'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan offline server: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // UpdateWorkerServerStatus updates the status of a server.
 func (d *DB) UpdateWorkerServerStatus(ctx context.Context, id, status string) error {
 	_, err := d.Pool.Exec(ctx, `UPDATE worker_servers SET status = $2 WHERE id = $1`, id, status)

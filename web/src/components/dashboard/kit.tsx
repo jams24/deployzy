@@ -91,6 +91,7 @@ export function statusTone(status: string): Tone {
     case "failed":
     case "crashed":
     case "error":
+    case "offline":
       return "bad";
     case "created":
       return "new";

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, ArrowUpRight, Globe, GitBranch, ExternalLink, RefreshCw,
   Play, Square, Loader2, LayoutDashboard, ScrollText, Activity,
-  BarChart3, Settings,
+  BarChart3, Settings, TriangleAlert,
 } from "lucide-react";
 import { StackIcon, StatusDot, StatusPill } from "@/components/dashboard/kit";
 import { ProjectProvider, useProject } from "@/components/project/project-context";
@@ -31,8 +31,11 @@ const btn = "h-9 gap-1.5 rounded-full px-3.5 text-[13.5px]";
 function ProjectHeader() {
   const { project: p, deploying, deploy, stop, refresh } = useProject();
   const router = useRouter();
-  const running = p.status === "running";
   const building = p.status === "building";
+  // The heartbeat marked the server offline: whatever the last status says,
+  // the app isn't reachable. Redeploying moves it to a healthy server.
+  const serverDown = !!p.server?.offline && !building;
+  const running = p.status === "running" && !serverDown;
   // The ReuploadButton deploys internally after the upload lands — afterwards
   // just refresh + go watch the build stream.
   const afterReupload = () => { refresh(); router.push(`/projects/${p.id}/logs`); };
@@ -57,13 +60,19 @@ function ProjectHeader() {
             <StackIcon stack={p.framework} className="h-6 w-6" />
             {/* .live-dot sets position itself (unlayered), so the wrapper places it. */}
             <span className="absolute -right-1 -top-1 flex rounded-full ring-[3px] ring-background">
-              <StatusDot status={p.status} />
+              <StatusDot status={serverDown ? "failed" : p.status} />
             </span>
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-[26px] font-semibold leading-tight tracking-[-0.03em] sm:text-[30px]">{p.name}</h1>
-              <StatusPill status={p.status} />
+              {serverDown ? (
+                <span className="inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2 text-[12px] font-medium text-red-600 dark:text-red-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />Server offline
+                </span>
+              ) : (
+                <StatusPill status={p.status} />
+              )}
               {(p.labels || []).map((l) => (
                 <span key={l} className="inline-flex h-[22px] items-center rounded-full border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-[12px] font-medium text-cyan-700 dark:text-brand-cyan">{l}</span>
               ))}
@@ -114,9 +123,9 @@ function ProjectHeader() {
                 <ReuploadButton projectId={p.id} onDeployed={afterReupload} />
               </>
             ) : (
-              <Button size="sm" className={btn} title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy()} disabled={deploying}>
-                {deploying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                <span>{p.status === "stopped" ? "Start" : "Deploy"}</span>
+              <Button size="sm" className={btn} title={serverDown ? "Redeploy on a healthy server" : p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy()} disabled={deploying}>
+                {deploying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : serverDown ? <RefreshCw className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                <span>{serverDown ? "Redeploy elsewhere" : p.status === "stopped" ? "Start" : "Deploy"}</span>
               </Button>
             )
           )}
@@ -139,6 +148,20 @@ function ProjectHeader() {
           )}
         </div>
       </div>
+
+      {serverDown && (
+        <div role="alert" className="mt-5 flex gap-3 rounded-2xl border border-red-500/30 bg-red-500/[0.06] px-4 py-3.5">
+          <TriangleAlert className="mt-0.5 h-[18px] w-[18px] shrink-0 text-red-500" />
+          <div className="min-w-0 flex-1 text-[13.5px]">
+            <p className="font-semibold text-red-600 dark:text-red-400">
+              {`${p.server?.label ?? "This server"} is offline, so ${p.name} isn't reachable.`}
+            </p>
+            <p className="mt-0.5 leading-snug text-muted-foreground">
+              {`Redeploy elsewhere moves it to a healthy server${p.server?.byoc ? " (another of your servers, or Deployzy Cloud)" : ""}. Files it saved on that server's disk can't be brought over while the server is down.`}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

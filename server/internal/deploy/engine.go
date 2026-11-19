@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,6 +119,18 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 			_ = reserveCPU
 			_ = reserveMem
 		}
+	}
+
+	// Failover: a project pinned to a server that is down (heartbeat says
+	// offline, or SSH doesn't answer) is moved to a healthy server instead of
+	// timing out on the dead box on every redeploy.
+	if assignedServer != nil && !isLocalServer(assignedServer) && !serverReachable(ctx, assignedServer) {
+		replacement := e.failoverProject(ctx, project, assignedServer)
+		if replacement == nil {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("Server %s is down and no other server has room right now — try again in a few minutes.", assignedServer.Label), "error")
+			return fmt.Errorf("server %s is down and no replacement server is available", assignedServer.Label)
+		}
+		assignedServer = replacement
 	}
 
 	// isRemoteBYOC is true when the project lives on a user's own server (not
@@ -1044,6 +1058,113 @@ func (e *Engine) projectRunsRemotely(ctx context.Context, project *db.Project) b
 		return false
 	}
 	return !(server.IsLocal || server.Host == "localhost" || server.Host == "127.0.0.1" || server.Host == "")
+}
+
+// isLocalServer reports whether a worker row is the primary host itself.
+func isLocalServer(s *db.WorkerServer) bool {
+	return s.IsLocal || s.Host == "localhost" || s.Host == "127.0.0.1" || s.Host == ""
+}
+
+// serverReachable is a cheap liveness check before committing a deploy to a
+// remote server: can we open its SSH port? The heartbeat's "offline" flag
+// alone isn't trusted either way — it lags a recovery by up to a monitor
+// cycle — but it sets how hard we try: a server the monitor still calls
+// active gets three attempts, so one dropped SYN never moves a project off
+// its owner's box; one already flagged offline gets a single probe.
+func serverReachable(ctx context.Context, s *db.WorkerServer) bool {
+	port := s.Port
+	if port == 0 {
+		port = 22
+	}
+	attempts := 3
+	if s.Status == "offline" {
+		attempts = 1
+	}
+	addr := net.JoinHostPort(s.Host, strconv.Itoa(port))
+	d := net.Dialer{Timeout: 5 * time.Second}
+	for attempt := 0; attempt < attempts; attempt++ {
+		conn, err := d.DialContext(ctx, "tcp", addr)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		if attempt+1 < attempts {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(probeBackoff):
+			}
+		}
+	}
+	return false
+}
+
+// probeBackoff is the pause between reachability attempts (a var for tests).
+var probeBackoff = time.Second
+
+// failoverProject moves a project off a dead server: it prefers another of the
+// owner's own servers when the dead one was theirs (BYOC), otherwise the shared
+// platform. The project is treated as a fresh deploy on the new server (the old
+// container lives on the dead box, so there is nothing to keep serving).
+// Returns nil when no healthy server has room.
+func (e *Engine) failoverProject(ctx context.Context, project *db.Project, dead *db.WorkerServer) *db.WorkerServer {
+	e.logMsg(ctx, project.ID, fmt.Sprintf("Server %s isn't responding — moving this project to another server.", dead.Label), "deploy")
+
+	var candidates []*db.WorkerServer
+	if dead.UserID != nil {
+		if s, _ := e.db.SelectServerForProject(ctx, &project.UserID); s != nil && s.ID != dead.ID {
+			candidates = append(candidates, s)
+		}
+	}
+	if s, _ := e.db.SelectServerForProject(ctx, nil); s != nil && s.ID != dead.ID {
+		candidates = append(candidates, s)
+	}
+
+	for _, c := range candidates {
+		if !isLocalServer(c) && !serverReachable(ctx, c) {
+			continue
+		}
+		if err := e.db.AssignProjectServer(ctx, project.ID, c.ID); err != nil {
+			e.log.Error().Err(err).Str("project", project.ID).Msg("failover: could not reassign project")
+			return nil
+		}
+		// Nothing on the new server yet: clear the dead container so the
+		// blue-green step below starts clean instead of "preserving" it.
+		e.db.UpdateProjectStatus(ctx, project.ID, "building", "", 0)
+		project.WorkerServerID = c.ID
+		project.ContainerID, project.ContainerPort = "", 0
+		e.db.ReconcileServerAllocation(ctx, dead.ID)
+
+		e.logMsg(ctx, project.ID, fmt.Sprintf("Moved to %s. Files the app saved on %s's disk aren't carried over.", c.Label, dead.Label), "deploy")
+		for _, k := range envKeysPointingAt(project.EnvVars, dead) {
+			e.logMsg(ctx, project.ID, fmt.Sprintf("%s still points at %s, which is down — update it if that database or service moved.", k, dead.Label), "warn")
+		}
+		e.log.Warn().Str("project", project.ID).Str("from", dead.Label).Str("to", c.Label).Msg("deploy failover: moved project off a down server")
+		return c
+	}
+	return nil
+}
+
+// envKeysPointingAt lists env vars whose value mentions the dead server's
+// address (e.g. a DATABASE_URL on database-<label>.deployzy.com), sorted.
+func envKeysPointingAt(env map[string]string, s *db.WorkerServer) []string {
+	needles := []string{}
+	for _, h := range []string{s.Host, s.ServiceHost} {
+		if h != "" && h != "localhost" && h != "127.0.0.1" {
+			needles = append(needles, h)
+		}
+	}
+	var keys []string
+	for k, v := range env {
+		for _, n := range needles {
+			if strings.Contains(v, n) {
+				keys = append(keys, k)
+				break
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (e *Engine) getRunner(ctx context.Context, project *db.Project) *Runner {
