@@ -2,8 +2,9 @@
 // InventPay handles USDT invoices, Polar handles credit/debit cards.
 //
 // Uses plain HTTP against the Polar REST API (no official Go SDK). Webhooks
-// are verified per the Standard Webhooks spec Polar uses: HMAC-SHA256 over
-// "{msg-id}.{timestamp}.{body}" keyed with the base64-decoded whsec_ secret.
+// are verified per the Standard Webhooks scheme: HMAC-SHA256 over
+// "{msg-id}.{timestamp}.{body}". See polarWebhookKeys for how the key is
+// derived from the secret (it differs between legacy and newer secrets).
 package billing
 
 import (
@@ -49,6 +50,20 @@ func NewPolar(accessToken, webhookSecret string, products map[string]string, san
 func (p *Polar) HasPlan(plan string) bool {
 	_, ok := p.products[plan]
 	return ok
+}
+
+// PlanForProduct maps a Polar product ID back to our plan name, or "" when
+// the product isn't one of our plan products.
+func (p *Polar) PlanForProduct(productID string) string {
+	if productID == "" {
+		return ""
+	}
+	for plan, id := range p.products {
+		if id == productID {
+			return plan
+		}
+	}
+	return ""
 }
 
 // PolarCheckout is the subset of the checkout response we care about.
@@ -163,12 +178,18 @@ type PolarWebhookEvent struct {
 }
 
 // PolarOrder is the subset of order/subscription webhook data we consume.
+// BillingReason is "purchase", "subscription_create", "subscription_cycle"
+// (a monthly renewal charge) or "subscription_update". Amounts are in cents.
 type PolarOrder struct {
-	ID       string            `json:"id"`
-	Status   string            `json:"status"`
-	Paid     bool              `json:"paid"`
-	Metadata map[string]string `json:"metadata"`
-	Customer struct {
+	ID             string            `json:"id"`
+	Status         string            `json:"status"`
+	Paid           bool              `json:"paid"`
+	BillingReason  string            `json:"billing_reason"`
+	ProductID      string            `json:"product_id"`
+	SubscriptionID string            `json:"subscription_id"`
+	NetAmount      int64             `json:"net_amount"`
+	Metadata       map[string]string `json:"metadata"`
+	Customer       struct {
 		ExternalID string `json:"external_id"`
 		Email      string `json:"email"`
 	} `json:"customer"`
@@ -196,27 +217,43 @@ func (p *Polar) VerifyWebhook(body []byte, headers http.Header) bool {
 		return false
 	}
 
-	secret := strings.TrimPrefix(p.webhookSecret, "whsec_")
-	key, err := base64.StdEncoding.DecodeString(secret)
-	if err != nil {
-		// Secret may be raw rather than base64 — use as-is.
-		key = []byte(secret)
-	}
-
-	mac := hmac.New(sha256.New, key)
-	fmt.Fprintf(mac, "%s.%s.", msgID, timestamp)
-	mac.Write(body)
-	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	signed := []byte(msgID + "." + timestamp + ".")
+	signed = append(signed, body...)
 
 	// Header format: space-separated list of "v1,<base64sig>" entries.
-	for _, part := range strings.Fields(sigHeader) {
-		if sig, ok := strings.CutPrefix(part, "v1,"); ok {
-			if subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1 {
-				return true
+	for _, key := range polarWebhookKeys(p.webhookSecret) {
+		mac := hmac.New(sha256.New, key)
+		mac.Write(signed)
+		expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+		for _, part := range strings.Fields(sigHeader) {
+			if sig, ok := strings.CutPrefix(part, "v1,"); ok {
+				if subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1 {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// polarWebhookKeys returns the HMAC keys a Polar secret can stand for, in the
+// order they're tried. Polar changed the scheme on 8 Sept 2026:
+//   - Secrets created before then ("Legacy signing" in the dashboard) key the
+//     HMAC with the UTF-8 bytes of the FULL "whsec_…" string, prefix included.
+//   - Secrets created or reset after then are plain Standard Webhooks: strip
+//     "whsec_" and base64-decode the rest.
+//
+// Both look identical ("whsec_" + 43 chars), so we try both, as Polar's own
+// SDKs do. Only keys derived from our configured secret are ever accepted.
+func polarWebhookKeys(secret string) [][]byte {
+	keys := [][]byte{[]byte(secret)}
+	rest := strings.TrimPrefix(secret, "whsec_")
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		if k, err := enc.DecodeString(rest); err == nil && len(k) > 0 {
+			return append(keys, k)
+		}
+	}
+	return keys
 }
 
 func truncate(s string, n int) string {

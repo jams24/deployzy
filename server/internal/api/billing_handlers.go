@@ -233,6 +233,14 @@ func (s *Server) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		// Monthly renewal charges have no checkout of their own (or reuse the
+		// first one, which is already active), so they need their own row.
+		if order.BillingReason == "subscription_cycle" {
+			s.renewPolarSubscription(r, order.PolarOrder)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"success": true}`))
+			return
+		}
 		paymentID := order.CheckoutID
 		if paymentID == "" {
 			paymentID = order.Metadata["checkout_id"]
@@ -246,6 +254,34 @@ func (s *Server) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"success": true}`))
+}
+
+// renewPolarSubscription records a Polar renewal charge as a new subscription
+// row and activates it, which extends the user's paid period by a month and
+// sends the "renewed" email. Keyed on the order ID, so a replayed webhook hits
+// the unique payment_id and activation is a no-op.
+func (s *Server) renewPolarSubscription(r *http.Request, order billing.PolarOrder) {
+	userID := order.Customer.ExternalID
+	if userID == "" {
+		userID = order.Metadata["user_id"]
+	}
+	plan := s.polar.PlanForProduct(order.ProductID)
+	if plan == "" {
+		plan = order.Metadata["plan"]
+	}
+	if userID == "" || plan == "" {
+		s.log.Warn().Str("order", order.ID).Str("product", order.ProductID).
+			Msg("polar renewal: cannot attribute user or plan")
+		return
+	}
+	paymentID := "polar_order_" + order.ID
+	if _, err := s.db.CreateSubscription(r.Context(), userID, plan, paymentID,
+		float64(order.NetAmount)/100, "USD"); err != nil {
+		// Most likely a replay (payment_id is unique); activation below is
+		// idempotent either way, so log and carry on.
+		s.log.Info().Err(err).Str("order", order.ID).Msg("polar renewal: subscription row not created")
+	}
+	s.activatePaidSubscription(r, paymentID)
 }
 
 // activatePaidSubscription flips a pending subscription to active and
