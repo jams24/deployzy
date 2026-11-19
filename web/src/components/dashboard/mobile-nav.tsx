@@ -48,7 +48,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
   };
 
   return (
-    <nav aria-label="Primary" className="frost shrink-0 border-t border-[var(--dz-hairline)] pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav aria-label="Primary" data-bottom-nav className="frost shrink-0 border-t border-[var(--dz-hairline)] pb-[env(safe-area-inset-bottom)] md:hidden">
       <div className="flex h-16 items-stretch">
         {tab(TABS[0])}
         {tab(TABS[1])}

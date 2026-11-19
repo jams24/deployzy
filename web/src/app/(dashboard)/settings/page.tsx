@@ -9,8 +9,9 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   AlertTriangle, ArrowRight, BadgeCheck, Bell, CalendarDays, Check, Copy, Crown, Eye, EyeOff, KeyRound,
-  Loader2, Mail, Monitor, Moon, Palette, Shield, Sun, Terminal, User as UserIcon,
+  ArrowUpRight, Loader2, Mail, Monitor, Moon, Palette, Scale, Shield, Sun, Terminal, User as UserIcon,
 } from "lucide-react";
+import { CookieSettingsButton } from "@/components/cookie-notice";
 import { cn } from "@/lib/utils";
 import { api, type User } from "@/lib/api";
 import { PageHeader } from "@/components/dashboard/kit";
@@ -33,6 +34,7 @@ const NAV: SettingsNavItem[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "developer", label: "Developer access", icon: Terminal },
   { id: "plan", label: "Plan", icon: Crown },
+  { id: "legal", label: "Privacy & legal", icon: Scale },
   { id: "danger", label: "Danger zone", icon: AlertTriangle, tone: "danger" },
 ];
 
@@ -306,6 +308,29 @@ export default function SettingsPage() {
                   </p>
                 </div>
               ))}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection id="legal" icon={Scale} title="Privacy & legal" description="The terms you agreed to and how we handle your data.">
+            <div className="grid gap-px overflow-hidden rounded-2xl bg-[var(--dz-hairline)] sm:grid-cols-2">
+              {[
+                { href: "/terms", label: "Terms of Service", hint: "The agreement for using Deployzy" },
+                { href: "/privacy", label: "Privacy Policy", hint: "What we collect and why" },
+                { href: "/cookies", label: "Cookie Policy", hint: "Essential cookies and storage only" },
+                { href: "/acceptable-use", label: "Acceptable Use", hint: "What's not allowed on the platform" },
+              ].map((l) => (
+                <Link key={l.href} href={l.href} target="_blank" className="group flex items-center gap-3 bg-card px-3.5 py-3 transition-colors hover:bg-foreground/[0.025]">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] font-medium">{l.label}</p>
+                    <p className="truncate text-[12px] text-muted-foreground">{l.hint}</p>
+                  </div>
+                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                </Link>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-muted-foreground">
+              <CookieSettingsButton className="pill pill-line pill-xs" />
+              <span>Privacy questions or a data request? <a href="mailto:support@deployzy.com" className="font-medium text-foreground underline decoration-foreground/25 underline-offset-[3px] hover:decoration-foreground">support@deployzy.com</a></span>
             </div>
           </SettingsSection>
 

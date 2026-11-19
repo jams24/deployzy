@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { CookieNotice } from "@/components/cookie-notice";
 import "./globals.css";
 
 // Geist for UI and headlines, Geist Mono for code and figures, and Instrument
@@ -133,7 +134,10 @@ export default function RootLayout({
             ]),
           }}
         />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          {children}
+          <CookieNotice />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -198,10 +198,12 @@ export function AuthShell({
         </div>
 
         <p className="relative text-center text-[12.5px] text-muted-foreground/80">
-          By continuing you agree to the{" "}
-          <Link href="/acceptable-use" className="underline underline-offset-2 hover:text-foreground">
-            Acceptable Use Policy
-          </Link>
+          By continuing you agree to our{" "}
+          <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">Terms</Link>
+          {" "}and{" "}
+          <Link href="/acceptable-use" className="underline underline-offset-2 hover:text-foreground">Acceptable Use Policy</Link>
+          , and confirm you’ve read the{" "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy Policy</Link>
           .
         </p>
       </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LEGAL_UPDATED, LegalNav } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
   title: "Acceptable Use Policy",
@@ -19,7 +20,8 @@ const PROHIBITED = [
 
 export default function AcceptableUsePage() {
   return (
-    <div className="mx-auto max-w-3xl px-5 py-14 sm:px-6 sm:py-20">
+    <div className="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16">
+      <LegalNav active="acceptable-use" className="rise mb-10" />
       <p className="eyebrow rise">Legal</p>
       <h1 className="rise mt-4 text-[clamp(2.2rem,5.4vw,3.4rem)] font-semibold leading-[1.02] tracking-[-0.045em]" style={{ animationDelay: "0.06s" }}>
         Acceptable <span className="accent-serif">use</span> policy
@@ -57,7 +59,7 @@ export default function AcceptableUsePage() {
         or email <a href="mailto:abuse@deployzy.com" className="text-[var(--dz-green-strong)] underline underline-offset-2 dark:text-brand">abuse@deployzy.com</a>.
       </p>
 
-      <p className="mt-14 text-[12.5px] text-muted-foreground">Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long" })}</p>
+      <p className="mt-14 text-[12.5px] text-muted-foreground">Last updated: {LEGAL_UPDATED}</p>
     </div>
   );
 }

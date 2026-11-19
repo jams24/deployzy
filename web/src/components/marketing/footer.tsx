@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SOCIALS } from "@/lib/socials";
+import { CookieSettingsButton } from "@/components/cookie-notice";
 
 const footerLinks = {
   Product: [
@@ -19,10 +20,12 @@ const footerLinks = {
     { label: "Blog", href: "/blog" },
     { label: "Contact", href: "mailto:support@deployzy.com" },
   ],
-  Trust: [
+  Legal: [
+    { label: "Terms", href: "/terms" },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Cookies", href: "/cookies" },
     { label: "Acceptable Use", href: "/acceptable-use" },
     { label: "Report Abuse", href: "/report" },
-    { label: "Abuse Contact", href: "mailto:abuse@deployzy.com" },
   ],
 };
 
@@ -77,9 +80,12 @@ export function Footer() {
 
         <div className="mt-14 flex flex-col-reverse items-start justify-between gap-4 border-t py-6 text-[13px] text-muted-foreground sm:flex-row sm:items-center">
           <p>© {new Date().getFullYear()} Deployzy. All rights reserved.</p>
-          <a href="mailto:support@deployzy.com" className="transition-colors hover:text-foreground">
-            support@deployzy.com
-          </a>
+          <div className="flex items-center gap-4">
+            <CookieSettingsButton className="transition-colors hover:text-foreground" />
+            <a href="mailto:support@deployzy.com" className="transition-colors hover:text-foreground">
+              support@deployzy.com
+            </a>
+          </div>
         </div>
       </div>
 
