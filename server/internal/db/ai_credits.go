@@ -174,7 +174,7 @@ func (d *DB) CreateCreditPurchase(ctx context.Context, userID, paymentID string,
 // types and to stay idempotent against replayed webhooks.
 func (d *DB) ActivateCreditPurchase(ctx context.Context, paymentID string) (userID string, credits float64, ok bool, err error) {
 	err = d.Pool.QueryRow(ctx,
-		`UPDATE ai_credit_purchases SET status = 'paid'
+		`UPDATE ai_credit_purchases SET status = 'paid', paid_at = now()
 		 WHERE payment_id = $1 AND status = 'pending'
 		 RETURNING user_id, credits`, paymentID,
 	).Scan(&userID, &credits)

@@ -9,6 +9,7 @@ package billing
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -17,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -184,6 +186,9 @@ type PolarOrder struct {
 	ID             string            `json:"id"`
 	Status         string            `json:"status"`
 	Paid           bool              `json:"paid"`
+	CheckoutID     string            `json:"checkout_id"`
+	CreatedAt      time.Time         `json:"created_at"`
+	Currency       string            `json:"currency"`
 	BillingReason  string            `json:"billing_reason"`
 	ProductID      string            `json:"product_id"`
 	SubscriptionID string            `json:"subscription_id"`
@@ -193,6 +198,97 @@ type PolarOrder struct {
 		ExternalID string `json:"external_id"`
 		Email      string `json:"email"`
 	} `json:"customer"`
+	Product struct {
+		Name string `json:"name"`
+	} `json:"product"`
+}
+
+// PolarDelivery is one webhook delivery attempt, as Polar's API reports it.
+type PolarDelivery struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	Succeeded bool      `json:"succeeded"`
+	HTTPCode  *int      `json:"http_code"`
+	Event     struct {
+		ID        string    `json:"id"`
+		Type      string    `json:"type"`
+		CreatedAt time.Time `json:"created_at"`
+		Succeeded *bool     `json:"succeeded"`
+	} `json:"webhook_event"`
+}
+
+// PolarEndpoint is a configured webhook endpoint (secret never included).
+type PolarEndpoint struct {
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
+}
+
+// api calls the Polar REST API and decodes a 2xx JSON response into out.
+func (p *Polar) api(ctx context.Context, method, path string, out any) error {
+	if p.accessToken == "" {
+		return fmt.Errorf("polar: no access token configured")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("polar %s %s: HTTP %d: %s", method, path, resp.StatusCode, truncate(string(body), 200))
+	}
+	if out == nil || len(body) == 0 {
+		return nil
+	}
+	return json.Unmarshal(body, out)
+}
+
+// ListOrders returns the newest orders (paid and unpaid), newest first.
+func (p *Polar) ListOrders(ctx context.Context, limit int) ([]PolarOrder, error) {
+	var out struct {
+		Items []PolarOrder `json:"items"`
+	}
+	err := p.api(ctx, "GET", fmt.Sprintf("/v1/orders/?limit=%d&sorting=-created_at", limit), &out)
+	return out.Items, err
+}
+
+// GetOrder fetches one order straight from Polar (the source of truth).
+func (p *Polar) GetOrder(ctx context.Context, id string) (*PolarOrder, error) {
+	var o PolarOrder
+	if err := p.api(ctx, "GET", "/v1/orders/"+url.PathEscape(id), &o); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// ListDeliveries returns the newest webhook delivery attempts.
+func (p *Polar) ListDeliveries(ctx context.Context, limit int) ([]PolarDelivery, error) {
+	var out struct {
+		Items []PolarDelivery `json:"items"`
+	}
+	err := p.api(ctx, "GET", fmt.Sprintf("/v1/webhooks/deliveries?limit=%d", limit), &out)
+	return out.Items, err
+}
+
+// ListEndpoints returns the configured webhook endpoints.
+func (p *Polar) ListEndpoints(ctx context.Context) ([]PolarEndpoint, error) {
+	var out struct {
+		Items []PolarEndpoint `json:"items"`
+	}
+	err := p.api(ctx, "GET", "/v1/webhooks/endpoints?limit=20", &out)
+	return out.Items, err
+}
+
+// Redeliver asks Polar to send a webhook event again (freshly signed).
+func (p *Polar) Redeliver(ctx context.Context, eventID string) error {
+	return p.api(ctx, "POST", "/v1/webhooks/events/"+url.PathEscape(eventID)+"/redeliver", nil)
 }
 
 // VerifyWebhook validates a Standard Webhooks signature. All three headers

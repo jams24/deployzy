@@ -11,6 +11,7 @@ import { Pager, FilterChip, fmtBytes, timeAgo } from "@/components/admin/pager";
 import { SuspendDialog, type SuspendRequest } from "@/components/admin/suspend-dialog";
 import { WebsiteAnalytics } from "@/components/website-analytics";
 import { OverviewDashboard } from "@/components/admin/overview-dashboard";
+import { PaymentsDashboard } from "@/components/admin/payments-dashboard";
 import { EmailValidatorDashboard, type EmailAnalytics as EmailAnalyticsData } from "@/components/admin/email-validator-dashboard";
 import {
   Users, Globe, Activity, Search, Trash2, Shield, Crown,
@@ -19,12 +20,12 @@ import {
   RotateCcw, GitBranch, FolderOpen, FileText, TrendingUp,
   HardDrive, CheckCircle2, AlertCircle,
   Clock, UserCheck, Layers, ChevronUp, ChevronDown, LayoutTemplate,
-  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles, ChevronsUpDown,
+  Eye, EyeOff, Copy, Ban, Moon, Flag, Sparkles, ChevronsUpDown, CircleDollarSign,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
-type Tab = "overview" | "analytics" | "density" | "website" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse" | "email";
+type Tab = "overview" | "analytics" | "density" | "website" | "seo" | "plans" | "users" | "projects" | "databases" | "orphans" | "sessions" | "infra" | "backups" | "broadcast" | "vpn" | "ai" | "bans" | "abuse" | "email" | "payments";
 
 // Grouped sidebar navigation — the 17 tabs organised into labelled sections so
 // the console is scannable instead of a single long scroll of pills.
@@ -42,6 +43,7 @@ const NAV_GROUPS: { group: string; items: { id: Tab; label: string; icon: NavIco
     { id: "email", label: "Email Validator", icon: CheckCircle2 },
   ] },
   { group: "Billing", items: [
+    { id: "payments", label: "Payments", icon: CircleDollarSign },
     { id: "plans", label: "Plans", icon: Crown },
     { id: "ai", label: "AI Model", icon: Sparkles },
   ] },
@@ -1435,6 +1437,7 @@ export default function AdminPage() {
     { id: "analytics", label: "Analytics" },
     { id: "density", label: "Density" },
     { id: "seo", label: "SEO & LLM" },
+    { id: "payments", label: "Payments" },
     { id: "plans", label: "Plans" },
     { id: "users", label: "Users", badge: usersTotal },
     { id: "bans", label: "IP Bans", badge: ipBans.length || undefined },
@@ -3035,6 +3038,8 @@ export default function AdminPage() {
         </div>
         );
       })()}
+
+      {tab === "payments" && <PaymentsDashboard />}
 
       {tab === "email" && (
         <EmailValidatorDashboard a={emailAnalytics}

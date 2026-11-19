@@ -73,6 +73,11 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 		log:                 log.With().Str("component", "api").Logger(),
 	}
 
+	// Safety net for card payments: applies paid Polar orders a webhook missed.
+	if polarClient != nil {
+		go s.runPolarReconciler()
+	}
+
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -349,6 +354,14 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 				r.Get("/users/{userId}/credits", s.handleAdminGetUserCredits)
 				r.Post("/users/{userId}/credits", s.handleAdminAdjustUserCredits)
 				r.Post("/redeploy-all", s.handleAdminRedeployAll)
+
+				// Payments console: revenue, webhook health, event log, Polar reconciliation
+				r.Get("/payments/summary", s.handleAdminPaymentsSummary)
+				r.Get("/payments/events", s.handleAdminPaymentEvents)
+				r.Get("/payments/subscriptions", s.handleAdminPaymentSubscriptions)
+				r.Get("/payments/polar", s.handleAdminPolarStatus)
+				r.Post("/payments/polar/orders/{orderId}/apply", s.handleAdminApplyPolarOrder)
+				r.Post("/payments/polar/events/{eventId}/redeliver", s.handleAdminRedeliverPolarEvent)
 
 				// Infrastructure management
 				r.Get("/servers", s.handleAdminListServers)
