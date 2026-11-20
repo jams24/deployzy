@@ -158,7 +158,7 @@ export default function ServersPage() {
       />
 
       {byocAllowed === false && (
-        <div className="mb-6 rounded-2xl surface p-5">
+        <div className="mb-6 rounded-[18px] surface p-5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1">
               <p className="text-sm font-medium">Bring-your-own-server is a paid feature</p>
@@ -172,7 +172,7 @@ export default function ServersPage() {
       )}
 
       {showAdd && byocAllowed !== false && (
-        <div className="mb-6 rounded-2xl surface overflow-hidden">
+        <div className="mb-6 rounded-[18px] surface overflow-hidden">
           <div className="px-4 py-3 border-b border-border/60">
             <p className="eyebrow">Add SSH Server</p>
           </div>
@@ -212,7 +212,7 @@ export default function ServersPage() {
       {loading ? (
         <p className="text-sm text-muted-foreground animate-pulse">Loading servers…</p>
       ) : servers.length === 0 ? (
-        <div className="relative rounded-2xl border border-dashed border-border overflow-hidden">
+        <div className="relative rounded-[18px] border border-dashed border-border overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-brand/[0.08] blur-[80px]" />
           <div className="relative flex flex-col items-center py-16 px-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
@@ -229,7 +229,7 @@ export default function ServersPage() {
           {servers.map((s, i) => (
             <div
               key={s.id}
-              className="animate-fade-in-up rounded-2xl surface p-4 transition-all duration-300 hover:border-foreground/20"
+              className="animate-fade-in-up rounded-[18px] surface p-4 transition-all duration-300 hover:border-foreground/20"
               style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
             >
               <div className="flex items-center justify-between gap-3">
@@ -284,7 +284,7 @@ export default function ServersPage() {
                     {s.total_memory_mb > 0 && (
                       <div className="h-1 rounded-full bg-border overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all duration-700 ${s.used_memory_mb / s.total_memory_mb > 0.85 ? "bg-amber-500" : "bg-gradient-to-r from-emerald-500 to-emerald-400"}`}
+                          className={`h-full rounded-full transition-all duration-700 ${s.used_memory_mb / s.total_memory_mb > 0.85 ? "bg-amber-500" : "bg-brand"}`}
                           style={{ width: `${Math.min(100, (s.used_memory_mb / s.total_memory_mb) * 100)}%` }}
                         />
                       </div>

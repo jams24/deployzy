@@ -116,7 +116,7 @@ export default function SubdomainsPage() {
 
       <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Reserve */}
-        <form onSubmit={reserve} className="ov-rise rounded-2xl surface p-4 sm:p-5">
+        <form onSubmit={reserve} className="ov-rise rounded-[18px] surface p-4 sm:p-5">
           <p className="text-sm font-semibold">Reserve a subdomain</p>
           <div className={`mt-3 flex items-center overflow-hidden rounded-xl border bg-background shadow-sm transition-all focus-within:ring-4 ${
             check && !check.available ? "border-red-500/50 focus-within:ring-red-500/10" : check?.available ? "border-emerald-500/50 focus-within:ring-emerald-500/10" : "border-input focus-within:border-foreground/30 focus-within:ring-emerald-500/10"}`}>
@@ -141,7 +141,7 @@ export default function SubdomainsPage() {
         </form>
 
         {/* Usage */}
-        <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "60ms" }}>
+        <div className="ov-rise rounded-[18px] surface p-4 sm:p-5" style={{ animationDelay: "60ms" }}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">Usage</p>
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium capitalize">{data?.plan ?? "…"} plan</span>
@@ -150,12 +150,12 @@ export default function SubdomainsPage() {
             {data?.count ?? "–"}<span className="text-base font-normal text-muted-foreground"> / {unlimited ? "∞" : data?.limit ?? "–"}</span>
           </p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div className={`ov-grow h-full rounded-full ${atLimit ? "bg-red-500" : pct > 80 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${unlimited ? 4 : pct}%` }} />
+            <div className={`ov-grow h-full rounded-full ${atLimit ? "bg-red-500" : pct > 80 ? "bg-amber-500" : "bg-brand"}`} style={{ width: `${unlimited ? 4 : pct}%` }} />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">{usedCount} in use · {(data?.count ?? 0) - usedCount} idle</p>
           {(atLimit || data?.plan === "free") && upgradeTiers.length > 0 && (
             <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-              <p className="mb-1 flex items-center gap-1 font-medium text-foreground"><CrownIcon className="h-3 w-3 text-amber-500" /> More with a bigger plan</p>
+              <p className="mb-1 flex items-center gap-1 font-medium text-foreground"><CrownIcon className="h-3 w-3" /> More with a bigger plan</p>
               {upgradeTiers.map(([p, n]) => <span key={p} className="mr-3 capitalize">{p}: <span className="tabular-nums text-foreground">{n < 0 ? "∞" : n}</span></span>)}
               <Link href="/billing?tab=plans" className="mt-1 block font-medium text-foreground hover:underline">Upgrade →</Link>
             </div>
@@ -164,12 +164,12 @@ export default function SubdomainsPage() {
       </div>
 
       {/* List */}
-      <div className="ov-rise rounded-2xl surface" style={{ animationDelay: "120ms" }}>
+      <div className="ov-rise rounded-[18px] surface" style={{ animationDelay: "120ms" }}>
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 p-3 sm:px-4">
           <p className="mr-auto text-sm font-semibold">Your subdomains <span className="font-normal text-muted-foreground">({data?.count ?? 0})</span></p>
-          <div className="flex rounded-lg border border-border/60 p-0.5">
+          <div className="flex rounded-lg border border-[var(--dz-hairline)] p-0.5">
             {([["all", "All"], ["used", "In use"], ["idle", "Idle"]] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setView(k)} className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${view === k ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
+              <button key={k} onClick={() => setView(k)} className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${view === k ? "bg-foreground/[0.07] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
             ))}
           </div>
           <div className="relative w-full sm:w-56">
@@ -197,7 +197,7 @@ export default function SubdomainsPage() {
                 <div key={s.id} className="ov-rise flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30" style={{ animationDelay: `${140 + Math.min(i, 14) * 25}ms` }}>
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
                     s.tunnel ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : s.project ? "border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400" : "border-border/60 bg-muted/40 text-muted-foreground"}`}>
+                    : s.project ? "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]" : "border-border/60 bg-muted/40 text-muted-foreground"}`}>
                     {s.tunnel ? <BroadcastIcon className="h-4 w-4" /> : s.project ? <RocketLaunchIcon className="h-4 w-4" /> : <GlobeSimpleIcon className="h-4 w-4" />}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -232,7 +232,7 @@ export default function SubdomainsPage() {
         )}
       </div>
 
-      <div className="ov-rise flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-xs text-muted-foreground" style={{ animationDelay: "200ms" }}>
+      <div className="ov-rise flex items-start gap-3 rounded-[18px] border border-border/60 bg-muted/20 p-4 text-xs text-muted-foreground" style={{ animationDelay: "200ms" }}>
         <TerminalWindowIcon className="mt-0.5 h-4 w-4 shrink-0" />
         <p>Start a tunnel on a reserved name with <span className="font-mono text-foreground">deployzy http 3000 --subdomain NAME</span>. Use the copy button on an idle row to grab the exact command.</p>
       </div>

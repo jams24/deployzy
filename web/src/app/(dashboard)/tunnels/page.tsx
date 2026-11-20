@@ -42,18 +42,17 @@ function CopyButton({ text, label = "Copy URL" }: { text: string; label?: string
 }
 
 const PROTO: Record<string, { icon: typeof GlobeSimpleIcon; tone: string; label: string }> = {
-  http: { icon: GlobeSimpleIcon, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20", label: "HTTP" },
-  tls: { icon: GlobeSimpleIcon, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20", label: "TLS" },
-  tcp: { icon: TerminalWindowIcon, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20", label: "TCP" },
+  http: { icon: GlobeSimpleIcon, tone: "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]", label: "HTTP" },
+  tls: { icon: GlobeSimpleIcon, tone: "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]", label: "TLS" },
+  tcp: { icon: TerminalWindowIcon, tone: "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]", label: "TCP" },
 };
 
 function TunnelCard({ t, i }: { t: Item; i: number }) {
   const p = PROTO[t.protocol] ?? { icon: PlugsConnectedIcon, tone: "bg-muted text-muted-foreground border-border", label: t.protocol.toUpperCase() };
   const host = t.url.replace(/^[a-z]+:\/\//, "");
   return (
-    <div className="ov-rise group relative overflow-hidden rounded-2xl surface p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-lg hover:shadow-black/[0.04]"
+    <div className="ov-rise group relative overflow-hidden rounded-[18px] surface p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-lg hover:shadow-black/[0.04]"
       style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-500/60 to-transparent" />
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${p.tone}`}><p.icon className="h-4 w-4" /></span>
@@ -87,7 +86,7 @@ function TunnelCard({ t, i }: { t: Item; i: number }) {
         <span><span className="font-medium tabular-nums text-foreground">{(t.requests ?? 0).toLocaleString()}</span> requests</span>
         <span><span className="font-medium tabular-nums text-foreground">{fmtBytes(t.bytes ?? 0)}</span> transferred</span>
         {t.inspect ? (
-          <Link href="/inspector" className="inline-flex items-center gap-1 text-violet-600 hover:underline dark:text-violet-400"><EyeIcon className="h-3 w-3" /> inspecting</Link>
+          <Link href="/inspector" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"><EyeIcon className="h-3 w-3" /> inspecting</Link>
         ) : null}
       </div>
     </div>
@@ -100,10 +99,10 @@ function StartTunnel() {
     { cmd: "deployzy tcp 5432", hint: "Expose a TCP port (databases, SSH…)" },
   ];
   return (
-    <div className="ov-rise relative overflow-hidden rounded-2xl border border-dashed border-border px-5 py-8 sm:px-8">
-      <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-sky-500/[0.08] blur-[80px]" />
+    <div className="ov-rise relative overflow-hidden rounded-[18px] border border-dashed border-border px-5 py-8 sm:px-8">
+      <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-brand/[0.08] blur-[80px]" />
       <div className="relative flex flex-col items-center text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-brand" /></div>
         <h3 className="mt-4 font-semibold">No tunnels running</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">Run one of these in your terminal. The tunnel appears here the moment it connects.</p>
         <div className="mt-5 grid w-full max-w-lg gap-2">
@@ -160,7 +159,7 @@ export default function TunnelsPage() {
 
       {items === null ? (
         <div className="grid gap-3 @2xl:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-[168px] animate-pulse rounded-2xl bg-muted/50" />)}
+          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-[168px] animate-pulse rounded-[18px] bg-muted/50" />)}
         </div>
       ) : (
         <>
@@ -186,17 +185,17 @@ export default function TunnelsPage() {
               <Link href="/projects" className="text-xs font-medium text-muted-foreground hover:text-foreground">All projects →</Link>
             </div>
             {apps.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border px-6 py-8 text-center text-sm text-muted-foreground">
+              <div className="rounded-[18px] border border-dashed border-border px-6 py-8 text-center text-sm text-muted-foreground">
                 No running apps. <Link href="/new" className="font-medium text-foreground hover:underline">Deploy one</Link>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl surface">
+              <div className="overflow-hidden rounded-[18px] surface">
                 <div className="divide-y divide-border/50">
                   {apps.map((a, i) => {
                     const asleep = a.status === "sleeping";
                     return (
                       <div key={a.url} className="ov-rise flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
-                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${asleep ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" : "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]"}`}>
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${asleep ? "border-[var(--dz-hairline)] bg-muted/40 text-muted-foreground" : "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]"}`}>
                           {asleep ? <MoonIcon className="h-3.5 w-3.5" /> : <StackIcon stack={a.framework} />}
                         </span>
                         <div className="min-w-0 flex-1">
@@ -206,8 +205,8 @@ export default function TunnelsPage() {
                           </div>
                           <p className="truncate text-[12px] text-muted-foreground">{a.url.replace(/^https?:\/\//, "")}</p>
                         </div>
-                        <span className={`hidden shrink-0 items-center gap-1.5 text-[11px] font-medium sm:flex ${asleep ? "text-indigo-600 dark:text-indigo-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${asleep ? "bg-indigo-500" : "bg-emerald-500"}`} />{asleep ? "Sleeping" : "Running"}
+                        <span className={`hidden shrink-0 items-center gap-1.5 text-[11px] font-medium sm:flex ${asleep ? "text-muted-foreground" : "text-emerald-600 dark:text-emerald-400"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${asleep ? "bg-muted-foreground/40" : "bg-emerald-500"}`} />{asleep ? "Sleeping" : "Running"}
                         </span>
                         <CopyButton text={a.url} />
                         <a href={a.url} target="_blank" rel="noopener" title="Open app" aria-label="Open app"

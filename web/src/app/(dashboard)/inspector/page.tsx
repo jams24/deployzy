@@ -124,16 +124,16 @@ function Detail({ r, host, onClose }: { r: CapturedRequest; host: string; onClos
         {tab === "request" ? (
           <>
             {params.length > 0 && (
-              <section><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Query</p>
+              <section><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Query</p>
                 <Headers h={Object.fromEntries(params)} reveal /></section>
             )}
-            <section><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Headers</p><Headers h={r.request_headers} reveal={reveal} /></section>
-            <section><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Body</p><Body b64={r.request_body} size={r.request_size} /></section>
+            <section><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Headers</p><Headers h={r.request_headers} reveal={reveal} /></section>
+            <section><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Body</p><Body b64={r.request_body} size={r.request_size} /></section>
           </>
         ) : (
           <>
-            <section><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Headers</p><Headers h={r.response_headers} reveal={reveal} /></section>
-            <section><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Body</p><Body b64={r.response_body} size={r.response_size} /></section>
+            <section><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Headers</p><Headers h={r.response_headers} reveal={reveal} /></section>
+            <section><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Body</p><Body b64={r.response_body} size={r.response_size} /></section>
           </>
         )}
       </div>
@@ -231,10 +231,10 @@ export default function InspectorPage() {
       />
 
       {tunnels === null ? (
-        <div className="h-[420px] animate-pulse rounded-2xl bg-muted/50" />
+        <div className="h-[420px] animate-pulse rounded-[18px] bg-muted/50" />
       ) : tunnels.length === 0 ? (
-        <div className="ov-rise flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
+        <div className="ov-rise flex flex-col items-center rounded-[18px] border border-dashed border-border px-6 py-14 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-brand" /></div>
           <h3 className="mt-4 font-semibold">No HTTP tunnels running</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">Start one and its requests stream in here. Inspection is on by default.</p>
           <div className="mt-5 flex items-center gap-3 rounded-xl surface px-4 py-2.5">
@@ -272,10 +272,10 @@ export default function InspectorPage() {
               <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by path, query or method (GET, POST…)"
                 className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-foreground/30 focus:ring-4 focus:ring-emerald-500/10" />
             </div>
-            <div className="flex rounded-lg border border-border/60 p-0.5">
+            <div className="flex rounded-lg border border-[var(--dz-hairline)] p-0.5">
               {STATUS_FILTERS.map((f) => (
                 <button key={f.k} onClick={() => setStatus(f.k)}
-                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${status === f.k ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{f.label}</button>
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${status === f.k ? "bg-foreground/[0.07] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{f.label}</button>
               ))}
             </div>
             <button onClick={() => (paused ? resume() : setPaused(true))}
@@ -289,7 +289,7 @@ export default function InspectorPage() {
           </div>
 
           {/* List + detail */}
-          <div className="grid overflow-hidden rounded-2xl surface lg:h-[620px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <div className="grid overflow-hidden rounded-[18px] surface lg:h-[620px] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <div className="flex min-h-0 flex-col border-border/60 lg:border-r">
               <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
                 <span><span className="font-medium tabular-nums text-foreground">{shown.length}</span> of {reqs.length} requests</span>
