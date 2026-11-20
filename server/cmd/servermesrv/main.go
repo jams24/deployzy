@@ -443,6 +443,10 @@ func main() {
 		}
 
 		cfClient := cf.New(*cfToken, *cfZoneID)
+		// Pending custom domains are re-checked every 2 minutes and go live on
+		// their own once DNS points at us.
+		go api.StartDomainVerifier(context.Background(), database, log)
+
 		apiRouter := api.NewRouter(database, jwtMgr, registry, inspectStore, googleCfg, telegramBot, *telegramBotUsername, emailSvc, billingClient, polarClient, deployEngine, manager, cfClient, *domain, analyticsCollector, log)
 		apiServer := &http.Server{
 			Addr:    *apiAddr,

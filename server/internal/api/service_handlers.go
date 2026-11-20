@@ -13,6 +13,7 @@ import (
 	"github.com/serverme/serverme/server/internal/auth"
 	"github.com/serverme/serverme/server/internal/billing"
 	"github.com/serverme/serverme/server/internal/db"
+	"github.com/serverme/serverme/server/internal/deploy"
 )
 
 // dockerFirewallPrefix is prepended to every DB-container `docker run`. On hosts
@@ -159,7 +160,7 @@ func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, 
 		internalPort = 5432
 		dockerRun = fmt.Sprintf(
 			`docker pull postgres:16-alpine >/dev/null && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:5432 `+
 				`-e POSTGRES_USER=%s -e POSTGRES_PASSWORD=%s -e POSTGRES_DB=%s `+
 				`-v sm-svc-%s-data:/var/lib/postgresql/data `+
@@ -170,7 +171,7 @@ func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, 
 		dbUser = "" // Redis has no username concept
 		dockerRun = fmt.Sprintf(
 			`docker pull redis:7-alpine >/dev/null && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:6379 `+
 				`-v sm-svc-%s-data:/data `+
 				`redis:7-alpine redis-server --requirepass %s`,
@@ -179,7 +180,7 @@ func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, 
 		internalPort = 27017
 		dockerRun = fmt.Sprintf(
 			`docker pull mongo:7 >/dev/null && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:27017 `+
 				`-e MONGO_INITDB_ROOT_USERNAME=%s -e MONGO_INITDB_ROOT_PASSWORD=%s -e MONGO_INITDB_DATABASE=%s `+
 				`-v sm-svc-%s-data:/data/db `+
@@ -189,7 +190,7 @@ func (s *Server) provisionServiceContainerOn(ctx context.Context, userID, name, 
 		internalPort = 3306
 		dockerRun = fmt.Sprintf(
 			`docker pull mysql:8 >/dev/null && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:3306 `+
 				`-e MYSQL_ROOT_PASSWORD=%s -e MYSQL_DATABASE=%s -e MYSQL_USER=%s -e MYSQL_PASSWORD=%s `+
 				`-v sm-svc-%s-data:/var/lib/mysql `+
@@ -253,7 +254,7 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 		dbUser = ""
 		dockerRun = fmt.Sprintf(
 			`docker pull redis:7-alpine >/dev/null 2>&1 && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:6379 `+
 				`-v sm-svc-%s-data:/data `+
 				`redis:7-alpine redis-server --requirepass %s`,
@@ -262,7 +263,7 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 		internalPort = 27017
 		dockerRun = fmt.Sprintf(
 			`docker pull mongo:7 >/dev/null 2>&1 && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:27017 `+
 				`-e MONGO_INITDB_ROOT_USERNAME=%s -e MONGO_INITDB_ROOT_PASSWORD=%s -e MONGO_INITDB_DATABASE=%s `+
 				`-v sm-svc-%s-data:/data/db `+
@@ -272,7 +273,7 @@ func (s *Server) provisionPlatformContainer(ctx context.Context, userID, name, s
 		internalPort = 3306
 		dockerRun = fmt.Sprintf(
 			`docker pull mysql:8 >/dev/null 2>&1 && `+
-				`docker run -d --name %s --restart unless-stopped `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
 				`-p %d:3306 `+
 				`-e MYSQL_ROOT_PASSWORD=%s -e MYSQL_DATABASE=%s -e MYSQL_USER=%s -e MYSQL_PASSWORD=%s `+
 				`-v sm-svc-%s-data:/var/lib/mysql `+

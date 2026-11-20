@@ -752,6 +752,7 @@ func (e *Engine) Deploy(ctx context.Context, project *db.Project) error {
 	// becomes PID 1 and never reaps them — one container had leaked 4,700+
 	// zombie processes on a worker.
 	args := []string{"run", "-d", "--init", "--name", newContainerName}
+	args = append(args, DockerLogArgs...)
 
 	// Map primary port
 	args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))

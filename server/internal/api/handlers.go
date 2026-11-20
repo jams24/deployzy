@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os/exec"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -463,29 +462,44 @@ func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list domains")
 		return
 	}
-	if domains == nil {
-		domains = []db.Domain{}
-	}
-	writeJSON(w, http.StatusOK, domains)
+	writeJSON(w, http.StatusOK, domainViews(domains))
 }
 
 type createDomainRequest struct {
 	Domain string `json:"domain"`
+	// Optional: where the domain should route once its DNS verifies.
+	TargetType      string `json:"target_type"`
+	TargetSubdomain string `json:"target_subdomain"`
 }
 
 func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	u := auth.GetUser(r)
 
 	var req createDomainRequest
-	if err := decodeJSON(r, &req); err != nil || req.Domain == "" {
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.Domain) == "" {
 		writeError(w, http.StatusBadRequest, "domain required")
 		return
 	}
+	name, note, err := normalizeDomain(req.Domain)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	// Check if domain already exists
-	existing, _ := s.db.GetDomainByName(r.Context(), req.Domain)
-	if existing != nil {
-		writeError(w, http.StatusConflict, "domain already registered")
+	_, userIDs, err := s.getTeamContext(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if req.TargetType != "" || req.TargetSubdomain != "" {
+		if err := s.checkDomainTarget(r, userIDs, req.TargetType, req.TargetSubdomain); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if existing, _ := s.db.GetDomainByName(r.Context(), name); existing != nil {
+		writeError(w, http.StatusConflict, name+" is already added to a Deployzy account")
 		return
 	}
 
@@ -495,23 +509,25 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// cname.deployzy.com is a DNS-only (grey-cloud) A record pointing to our VPS.
-	// Using deployzy.com directly breaks custom domains because deployzy.com is
-	// Cloudflare-proxied — CF can't terminate TLS for a domain it doesn't own.
-	cnameTarget := "cname.deployzy.com"
-	dom, err := s.db.CreateDomain(r.Context(), u.ID, req.Domain, cnameTarget)
+	dom, err := s.db.CreateDomain(r.Context(), u.ID, name, cnameTarget, req.TargetType, req.TargetSubdomain)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create domain")
 		return
 	}
+	view := domainViews([]db.Domain{*dom})[0]
 
+	// Legacy "instructions" kept for the SDKs/CLI; the dashboard uses "records".
+	main := view.Records[0]
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"domain": dom,
+		"domain":  view,
+		"note":    note,
+		"records": view.Records,
 		"instructions": map[string]string{
-			"type":   "CNAME",
-			"name":   req.Domain,
-			"target": cnameTarget,
-			"note":   "Add a CNAME record pointing to cname.deployzy.com, then call POST /api/v1/domains/{id}/verify",
+			"type":   main.Type,
+			"name":   name,
+			"host":   main.Host,
+			"target": main.Value,
+			"note":   "Add the DNS record, then call POST /api/v1/domains/{id}/verify (pending domains are also checked automatically every few minutes)",
 		},
 	})
 }
@@ -549,9 +565,9 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var targetDomain *db.Domain
-	for _, d := range domains {
-		if d.ID == domID {
-			targetDomain = &d
+	for i := range domains {
+		if domains[i].ID == domID {
+			targetDomain = &domains[i]
 			break
 		}
 	}
@@ -560,99 +576,25 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try multiple verification methods.
-	// Accept both cname.deployzy.com (current) and deployzy.com (legacy) as valid targets.
-	validTargets := []string{"cname.deployzy.com", "deployzy.com"}
-	verified := false
-	method := ""
-	expected := targetDomain.CnameTarget
-	if expected == "" {
-		expected = "cname.deployzy.com"
+	verified, method, hint := checkDomainDNS(targetDomain.Domain)
+	if err := s.db.RecordDomainCheck(r.Context(), domID, verified, hint); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save check")
+		return
 	}
-
-	cnames, _ := net.LookupCNAME(targetDomain.Domain)
-
-	// Method 1: CNAME lookup against any valid target
-	for _, t := range validTargets {
-		if cnames == t || cnames == t+"." {
-			verified = true
-			method = "cname"
-			break
-		}
-	}
-
-	// Method 2: A-record resolves to same IP as cname.deployzy.com (handles CF-flattened CNAMEs)
-	if !verified {
-		ips, _ := net.LookupHost(targetDomain.Domain)
-		serverIPs, _ := net.LookupHost("cname.deployzy.com")
-		for _, ip := range ips {
-			for _, sip := range serverIPs {
-				if ip == sip {
-					verified = true
-					method = "a-record"
-					break
-				}
-			}
-			if verified {
-				break
-			}
-		}
-	}
-
-	// Method 3: External DNS check via 8.8.8.8
-	if !verified {
-		out, err := exec.Command("dig", "+short", targetDomain.Domain, "@8.8.8.8").Output()
-		if err == nil {
-			domainIP := strings.TrimSpace(string(out))
-			out2, err2 := exec.Command("dig", "+short", "cname.deployzy.com", "@8.8.8.8").Output()
-			if err2 == nil {
-				serverIP := strings.TrimSpace(string(out2))
-				if domainIP != "" && serverIP != "" && domainIP == serverIP {
-					verified = true
-					method = "dig"
-				}
-			}
-		}
-	}
-
-	// Method 4: Local DNS fallback
-	if !verified {
-		out, _ := exec.Command("dig", "+short", targetDomain.Domain).Output()
-		domainIP := strings.TrimSpace(string(out))
-		out2, _ := exec.Command("dig", "+short", "cname.deployzy.com").Output()
-		serverIP := strings.TrimSpace(string(out2))
-		if domainIP != "" && serverIP != "" && domainIP == serverIP {
-			verified = true
-			method = "dig-local"
-		}
-	}
-
 	if verified {
-		if err := s.db.VerifyDomain(r.Context(), domID); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to verify")
-			return
-		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"verified": true,
 			"method":   method,
 		})
-	} else {
-		// Most common failure: the CNAME is proxied through Cloudflare (orange
-		// cloud), so the domain resolves to Cloudflare's IPs and the real
-		// target (cname.deployzy.com → our origin) is hidden. Detect that and
-		// tell the user exactly what to change, since the generic "check your
-		// record" message sends them looking in the wrong place.
-		hint := "Set your CNAME to cname.deployzy.com and wait for it to propagate (can take a few minutes)."
-		if domainIsCloudflareProxied(targetDomain.Domain) {
-			hint = "Your CNAME is proxied through Cloudflare (orange cloud), which hides it from verification. In Cloudflare, click the orange cloud next to this record to switch it to grey (DNS only), wait ~1 minute, then verify again."
-		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"verified": false,
-			"found":    cnames,
-			"expected": expected,
-			"hint":     hint,
-		})
+		return
 	}
+	found, _ := net.LookupCNAME(targetDomain.Domain)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"verified": false,
+		"found":    found,
+		"expected": cnameTarget,
+		"hint":     hint,
+	})
 }
 
 // cloudflareCIDRs are Cloudflare's published IPv4 ranges. A custom domain that
@@ -711,34 +653,12 @@ func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.TargetType != "tunnel" && req.TargetType != "project" {
-		writeError(w, http.StatusBadRequest, "target_type must be 'tunnel' or 'project'")
-		return
-	}
+	// An empty target disconnects the domain (routing requires a target).
 	if req.TargetSubdomain == "" {
-		writeError(w, http.StatusBadRequest, "target_subdomain required")
+		req.TargetType = ""
+	} else if err := s.checkDomainTarget(r, userIDs, req.TargetType, req.TargetSubdomain); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-
-	// Verify the user has access to the target (tunnel or project)
-	if req.TargetType == "project" {
-		found := false
-		for _, uid := range userIDs {
-			projects, _ := s.db.ListProjects(r.Context(), uid)
-			for _, p := range projects {
-				if p.Subdomain == req.TargetSubdomain {
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-		if !found {
-			writeError(w, http.StatusBadRequest, "no project with that subdomain found in your team")
-			return
-		}
 	}
 
 	// Find which user in the team owns this domain
@@ -760,12 +680,16 @@ func (s *Server) handleBindDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.BindDomain(r.Context(), domID, domainOwnerID, req.TargetType, req.TargetSubdomain); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to bind domain — is it verified?")
+		writeError(w, http.StatusBadRequest, "failed to connect domain")
 		return
 	}
 
+	status := "bound"
+	if req.TargetSubdomain == "" {
+		status = "unbound"
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":           "bound",
+		"status":           status,
 		"target_type":      req.TargetType,
 		"target_subdomain": req.TargetSubdomain,
 	})

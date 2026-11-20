@@ -903,10 +903,16 @@ func (p *HTTPProxy) isCertAllowed(domain string) bool {
 		return false
 	}
 
-	// Allow verified custom domains.
+	// Allow verified custom domains, and www.<verified domain>: the www name
+	// needs its own certificate before the www → apex redirect can be served.
 	if p.domains != nil {
 		if _, _, ok := p.domains.ResolveDomain(domain); ok {
 			return true
+		}
+		if apex := strings.TrimPrefix(domain, "www."); apex != domain {
+			if _, _, ok := p.domains.ResolveDomain(apex); ok {
+				return true
+			}
 		}
 	}
 
