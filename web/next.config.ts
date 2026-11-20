@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
       // BYOC is the "run it on your own VPS" path now.
       { source: "/docs/guides/self-hosting", destination: "/docs/guides/byoc", permanent: true },
       { source: "/docs/self-hosting", destination: "/docs/guides/byoc", permanent: true },
+      // Pricing lives on the home page (#pricing section), not a standalone
+      // route. Redirect so old sitemap/backlink hits to /pricing resolve to the
+      // homepage instead of 404ing into Next's noindex not-found page.
+      { source: "/pricing", destination: "/#pricing", permanent: true },
     ];
   },
 };
