@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { Terminal } from "lucide-react";
+import { TerminalWindowIcon } from "@phosphor-icons/react";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();

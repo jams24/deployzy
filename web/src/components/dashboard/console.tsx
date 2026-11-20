@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronsUpDown, type LucideIcon } from "lucide-react";
+import { ArrowLeftIcon, CaretUpDownIcon, type Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 // Shared chrome for the full-height data consoles (Postgres, MongoDB, Redis):
@@ -26,7 +26,7 @@ const TONES = {
   redis: "bg-red-500/10 text-red-600 dark:text-red-400",
 } as const;
 
-export type ConsoleTab<T extends string> = { id: T; label: string; icon: LucideIcon };
+export type ConsoleTab<T extends string> = { id: T; label: string; icon: PhosphorIcon };
 
 export function ConsoleHeader<T extends string>({
   kind,
@@ -42,7 +42,7 @@ export function ConsoleHeader<T extends string>({
 }: {
   kind: string;
   title: string;
-  icon: LucideIcon;
+  icon: PhosphorIcon;
   tone: keyof typeof TONES;
   onBack: () => void;
   tabs: ConsoleTab<T>[];
@@ -85,7 +85,7 @@ export function ConsoleHeader<T extends string>({
           aria-label="Back to databases"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeftIcon className="h-4 w-4" />
         </button>
         <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", TONES[tone])}>
           <Icon className="h-4 w-4" />
@@ -138,7 +138,7 @@ export function ConsolePicker({
           </option>
         ))}
       </select>
-      <ChevronsUpDown className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-muted-foreground" />
+      <CaretUpDownIcon className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-muted-foreground" />
     </label>
   );
 }

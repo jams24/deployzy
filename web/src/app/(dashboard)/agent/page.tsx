@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Sparkles, ArrowUp, Loader2, Check, Wrench, Rocket, Bug, Database, BookOpen, Key, ChevronDown, Plus } from "lucide-react";
+import { ArrowUpIcon, BookOpenTextIcon, BugIcon, CaretDownIcon, CheckIcon, CircleNotchIcon, DatabaseIcon, KeyIcon, PlusIcon, RocketLaunchIcon, WrenchIcon, type Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { IconTile, type IconTone } from "@/components/dashboard/kit";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -17,11 +18,11 @@ type Msg = {
   streaming?: boolean;
 };
 
-const suggestions = [
-  { icon: Rocket, title: "Build & deploy an app", text: "Build me a TypeScript API with a /health and a /joke endpoint, then deploy it" },
-  { icon: Bug, title: "Diagnose a failure", text: "Which of my projects are failing, and why?" },
-  { icon: Database, title: "Manage infrastructure", text: "List my databases and which projects use them" },
-  { icon: BookOpen, title: "Ask the docs", text: "How do I expose my localhost to the internet with Deployzy?" },
+const suggestions: { icon: PhosphorIcon; tone: IconTone; title: string; text: string }[] = [
+  { icon: RocketLaunchIcon, tone: "brand", title: "Build & deploy an app", text: "Build me a TypeScript API with a /health and a /joke endpoint, then deploy it" },
+  { icon: BugIcon, tone: "rose", title: "Diagnose a failure", text: "Which of my projects are failing, and why?" },
+  { icon: DatabaseIcon, tone: "sky", title: "Manage infrastructure", text: "List my databases and which projects use them" },
+  { icon: BookOpenTextIcon, tone: "violet", title: "Ask the docs", text: "How do I expose my localhost to the internet with Deployzy?" },
 ];
 
 // Turn a tool name into a friendly label.
@@ -171,7 +172,7 @@ export default function AgentPage() {
     <div className="w-full">
       {/* Composer: a tall, roomy card — prompt sits at the top, a control row
           runs along the bottom (Claude-style layout, Deployzy identity). */}
-      <div className="surface rounded-[26px] px-2.5 pb-2.5 pt-3 transition-[border-color,box-shadow] focus-within:border-brand/50 focus-within:ring-4 focus-within:ring-brand/10">
+      <div className="rounded-[22px] border border-[var(--dz-hairline)] bg-card px-2.5 pb-2.5 pt-3 shadow-[0_12px_40px_-24px_rgb(0_0_0/0.35)] transition-[border-color,box-shadow] focus-within:border-brand/50 focus-within:ring-4 focus-within:ring-brand/10">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -179,7 +180,7 @@ export default function AgentPage() {
           rows={2}
           disabled={busy}
           placeholder="How can I help you build or ship today?"
-          className="w-full bg-transparent px-2.5 pt-1 pb-2 text-[15px] leading-relaxed resize-none focus:outline-none max-h-56 min-h-[2.5rem] placeholder:text-muted-foreground/50"
+          className="w-full bg-transparent px-2.5 pt-1 pb-2 text-[14.5px] leading-relaxed resize-none focus:outline-none max-h-56 min-h-[2.5rem] placeholder:text-muted-foreground/60"
         />
         <div className="flex items-center justify-between px-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -193,27 +194,27 @@ export default function AgentPage() {
                 className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--dz-hairline)] py-1 pl-2.5 pr-2 text-[12.5px] font-medium transition-colors hover:border-foreground/25">
                 {engine === "deployzy"
                   ? <span className="text-muted-foreground"><span className="hidden sm:inline">Engine: </span>Deployzy</span>
-                  : <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><Key className="h-3 w-3" /> Your {engines.find(e => e.id === engine)?.label || "key"}</span>}
-                <ChevronDown className="h-3 w-3 opacity-60" />
+                  : <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><KeyIcon className="h-3 w-3" /> Your {engines.find(e => e.id === engine)?.label || "key"}</span>}
+                <CaretDownIcon className="h-3 w-3 opacity-60" />
               </button>
               {engineOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setEngineOpen(false)} />
-                  <div className="absolute bottom-full mb-1.5 left-0 z-20 w-56 rounded-xl border border-border/70 bg-background shadow-lg p-1">
+                  <div className="absolute bottom-full left-0 z-20 mb-1.5 w-60 rounded-[13px] border border-[var(--dz-hairline)] bg-card p-1 shadow-[0_18px_44px_-18px_rgb(0_0_0/0.4)]">
                     {engines.map((e) => (
                       <button key={e.id} onClick={() => { setEngine(e.id); setEngineOpen(false); }}
-                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[12px] hover:bg-muted/60 ${engine === e.id ? "font-medium" : ""}`}>
+                        className={`flex w-full items-center justify-between rounded-[9px] px-2.5 py-[7px] text-[13px] hover:bg-foreground/[0.06] ${engine === e.id ? "font-medium" : ""}`}>
                         <span className="flex items-center gap-1.5">
-                          {e.byok ? <Key className="h-3 w-3 text-emerald-500" /> : <Image src="/logo-mark.png" alt="" width={13} height={13} className="rounded-sm" />}
+                          {e.byok ? <KeyIcon className="h-3 w-3 text-emerald-500" /> : <Image src="/logo-mark.png" alt="" width={13} height={13} className="rounded-sm" />}
                           {e.label}
                         </span>
-                        {engine === e.id && <Check className="h-3.5 w-3.5" />}
+                        {engine === e.id && <CheckIcon className="h-3.5 w-3.5" />}
                       </button>
                     ))}
-                    <div className="my-1 border-t border-border/50" />
+                    <div className="mx-1.5 my-1 h-px bg-[var(--dz-hairline)]" />
                     <a href="/api-keys"
-                      className="w-full flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] text-emerald-600 dark:text-emerald-400 hover:bg-muted/60">
-                      <Plus className="h-3.5 w-3.5" /> Add your own API key
+                      className="flex w-full items-center gap-1.5 rounded-[9px] px-2.5 py-[7px] text-[13px] text-[var(--dz-green-strong)] hover:bg-foreground/[0.06] dark:text-brand">
+                      <PlusIcon className="h-3.5 w-3.5" /> Add your own API key
                     </a>
                   </div>
                 </>
@@ -222,13 +223,13 @@ export default function AgentPage() {
           </div>
           <button onClick={() => send(input)} disabled={!input.trim() || busy}
             aria-label="Send"
-            className="h-9 w-9 rounded-full bg-emerald-500 text-white grid place-items-center disabled:opacity-25 shrink-0 transition-colors hover:bg-emerald-600">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-foreground text-background transition-opacity disabled:opacity-20">
+            {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <ArrowUpIcon weight="bold" className="h-4 w-4" />}
           </button>
         </div>
       </div>
-      <p className="text-[10px] text-center text-muted-foreground/50 mt-2.5">
-        The agent reads your projects & logs and can build, fix & deploy apps · verify important actions
+      <p className="mt-2.5 text-center text-[11.5px] text-muted-foreground/70">
+        The agent can read your projects and logs, and build, fix and deploy apps. Check important actions.
       </p>
     </div>
   );
@@ -236,31 +237,24 @@ export default function AgentPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] max-w-3xl mx-auto w-full">
       {empty ? (
-        <div className="flex-1 flex flex-col items-center justify-start px-4 pt-[11vh]">
-          <div className="mb-5">
-            <Image src="/logo-mark.png" alt="Deployzy" width={56} height={56} className="rounded-2xl" priority />
-          </div>
-          <h1 className="text-4xl font-bold text-center tracking-tight">
-            {name ? `Hi ${name}` : "Deployzy Agent"}
+        <div className="flex flex-1 flex-col items-center justify-start px-4 pt-[10vh]">
+          <Image src="/logo-mark.png" alt="" width={44} height={44} className="rounded-[13px]" priority />
+          <h1 className="mt-5 text-center text-[26px] font-semibold tracking-[-0.03em] sm:text-[28px]">
+            {name ? `Hi ${name.split(" ")[0]}` : "Deployzy Agent"}
           </h1>
-          <p className="mt-2 text-lg text-muted-foreground text-center">What would you like to build or fix today?</p>
+          <p className="mt-1.5 text-center text-[15px] text-muted-foreground">What would you like to build or fix today?</p>
           <div className="mt-7 w-full max-w-2xl">{composer}</div>
-          <div className="mt-6 grid sm:grid-cols-2 gap-3 w-full max-w-2xl">
-            {suggestions.map((s) => {
-              const Icon = s.icon;
-              return (
-                <button key={s.title} onClick={() => send(s.text)}
-                  className="group text-left rounded-2xl border border-border/60 p-4 hover:border-emerald-500/50 hover:bg-emerald-500/[0.05] transition-all">
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <div className="h-8 w-8 rounded-lg bg-muted/60 grid place-items-center text-emerald-500 group-hover:bg-emerald-500/15 transition-colors">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <span className="text-sm font-semibold">{s.title}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed pl-[42px]">{s.text}</p>
-                </button>
-              );
-            })}
+          <div className="mt-7 grid w-full max-w-2xl gap-2.5 sm:grid-cols-2">
+            {suggestions.map((s) => (
+              <button key={s.title} type="button" onClick={() => send(s.text)}
+                className="group flex items-start gap-3 rounded-[16px] border border-[var(--dz-hairline)] bg-card p-3.5 text-left transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-px hover:border-foreground/15 hover:shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]">
+                <IconTile icon={s.icon} tone={s.tone} size="sm" />
+                <span className="min-w-0 pt-px">
+                  <span className="block text-[13.5px] font-semibold tracking-[-0.01em]">{s.title}</span>
+                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-muted-foreground">{s.text}</span>
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       ) : (
@@ -268,7 +262,7 @@ export default function AgentPage() {
           {chat.map((m, i) => (
             <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
               {m.role === "user" ? (
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-emerald-500/15 border border-emerald-500/25 px-4 py-2.5 text-sm">{m.text}</div>
+                <div className="max-w-[85%] rounded-[18px] rounded-br-md bg-foreground/[0.06] px-4 py-2.5 text-sm">{m.text}</div>
               ) : (
                 <div className="space-y-2">
                   {/* live tool steps */}
@@ -277,9 +271,9 @@ export default function AgentPage() {
                       {m.steps.map((s, j) => (
                         <div key={j} className="flex items-center gap-2 text-xs text-muted-foreground">
                           {s.done
-                            ? <Check className="h-3.5 w-3.5 text-emerald-500" />
-                            : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                          <Wrench className="h-3 w-3" /> {toolLabel[s.tool] || s.tool}{!s.done && "…"}
+                            ? <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />
+                            : <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" />}
+                          <WrenchIcon className="h-3 w-3" /> {toolLabel[s.tool] || s.tool}{!s.done && "…"}
                         </div>
                       ))}
                     </div>
@@ -295,7 +289,7 @@ export default function AgentPage() {
                     <div className="rounded-lg border border-white/[0.08] bg-[#0d1117] overflow-hidden mt-1">
                       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/[0.08] bg-[#161b22] text-[10px] font-mono text-muted-foreground">
                         {m.buildStatus
-                          ? (m.buildStatus.ok ? <><Check className="h-3 w-3 text-emerald-500" /> deployed</> : <span className="text-red-400">build failed</span>)
+                          ? (m.buildStatus.ok ? <><CheckIcon className="h-3 w-3 text-emerald-500" /> deployed</> : <span className="text-red-400">build failed</span>)
                           : <><span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> building & deploying…</>}
                       </div>
                       <div className="p-2 font-mono text-[11px] max-h-52 overflow-y-auto space-y-0.5">
@@ -312,7 +306,7 @@ export default function AgentPage() {
                   {m.buildStatus && (
                     m.buildStatus.ok ? (
                       <div className="flex items-center gap-2 text-sm text-emerald-500">
-                        <Check className="h-4 w-4" /> Live at{" "}
+                        <CheckIcon className="h-4 w-4" /> Live at{" "}
                         <a href={m.buildStatus.url} target="_blank" rel="noopener" className="text-emerald-500 hover:underline">{m.buildStatus.url}</a>
                       </div>
                     ) : (
@@ -322,7 +316,7 @@ export default function AgentPage() {
 
                   {m.streaming && !m.text && (!m.steps || m.steps.length === 0) && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
+                      <CircleNotchIcon className="h-4 w-4 animate-spin" /> Thinking…
                     </div>
                   )}
                 </div>

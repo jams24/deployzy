@@ -5,7 +5,7 @@
 // switches). While a link code is open the page checks the connection itself.
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowUpRight, Bell, Check, Copy, Loader2, Mail, RefreshCw, Send, Unlink } from "lucide-react";
+import { ArrowsClockwiseIcon, ArrowUpRightIcon, BellSimpleIcon, CheckIcon, CircleNotchIcon, CopyIcon, EnvelopeIcon, LinkBreakIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/use-me";
 import { PageHeader } from "@/components/dashboard/kit";
@@ -139,7 +139,7 @@ export default function NotificationsPage() {
   return (
     <div className="animate-fade-in-up">
       <PageHeader
-        eyebrow="Account"
+        level={2}
         title="Notifications"
         description="Where Deployzy tells you about failed deploys, crashes and your tunnels."
       />
@@ -147,16 +147,16 @@ export default function NotificationsPage() {
       <div className="mt-6 grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4 sm:space-y-5">
           {/* Channels */}
-          <SettingsSection icon={Bell} title="Channels" description="Each channel gets the alerts it supports.">
+          <SettingsSection icon={BellSimpleIcon} title="Channels" description="Each channel gets the alerts it supports.">
             <div className="divide-y divide-[var(--dz-hairline)]">
               {/* Email */}
               <div className="flex items-center gap-3 pb-4">
-                <ChannelIcon><Mail className="h-4 w-4 text-foreground/70" /></ChannelIcon>
+                <ChannelIcon><EnvelopeIcon className="h-4 w-4 text-foreground/70" /></ChannelIcon>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-[14.5px] font-medium">Email</p>
+                    <p className="text-[14px] font-medium">Email</p>
                     <span className="inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-400">
-                      <Check className="h-3 w-3" /> Always on
+                      <CheckIcon className="h-3 w-3" /> Always on
                     </span>
                   </div>
                   <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">
@@ -168,9 +168,9 @@ export default function NotificationsPage() {
               {/* Telegram */}
               <div className="pt-4">
                 <div className="flex items-center gap-3">
-                  <ChannelIcon color={TG}><Send className="h-4 w-4" /></ChannelIcon>
+                  <ChannelIcon color={TG}><PaperPlaneTiltIcon className="h-4 w-4" /></ChannelIcon>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[14.5px] font-medium">Telegram</p>
+                    <p className="text-[14px] font-medium">Telegram</p>
                     <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
                       {loading ? "Checking…" : connected
                         ? <>Linked to <span className="text-foreground">{status?.first_name || "your account"}</span>{status?.username && <> · @{status.username}</>}</>
@@ -180,19 +180,19 @@ export default function NotificationsPage() {
                   {!loading && (connected ? (
                     !confirmUnlink && (
                       <button type="button" onClick={() => setConfirmUnlink(true)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400">
-                        <Unlink className="h-4 w-4" /><span className="hidden sm:inline">Disconnect</span>
+                        <LinkBreakIcon className="h-4 w-4" /><span className="hidden sm:inline">Disconnect</span>
                       </button>
                     )
                   ) : !linkData && (
                     <button type="button" onClick={generateLink} disabled={linking} className="pill pill-sm shrink-0 text-white disabled:opacity-60" style={{ background: TG }}>
-                      {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Connect
+                      {linking ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <PaperPlaneTiltIcon className="h-4 w-4" />} Connect
                     </button>
                   ))}
                 </div>
 
                 {confirmUnlink && connected && (
                   <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-red-500/[0.06] p-3 sm:flex-row sm:items-center">
-                    <p className="text-[13.5px] sm:mr-auto">Stop sending alerts to Telegram? You can link it again any time.</p>
+                    <p className="text-[13px] sm:mr-auto">Stop sending alerts to Telegram? You can link it again any time.</p>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setConfirmUnlink(false)} className="pill pill-line pill-sm flex-1 sm:flex-none">Cancel</button>
                       <button type="button" onClick={disconnect} className="pill pill-sm flex-1 bg-red-600 text-white hover:bg-red-700 sm:flex-none">Disconnect</button>
@@ -200,7 +200,7 @@ export default function NotificationsPage() {
                   </div>
                 )}
 
-                {err && <p className="mt-3 text-[13.5px] text-red-600 dark:text-red-400">{err}</p>}
+                {err && <p className="mt-3 text-[13px] text-red-600 dark:text-red-400">{err}</p>}
 
                 {/* Linking steps */}
                 {linkData && !connected && (
@@ -210,7 +210,7 @@ export default function NotificationsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-[14px] font-medium">Open the bot</p>
                         <a href={linkData.bot_url} target="_blank" rel="noopener" className="pill pill-sm mt-2 text-white" style={{ background: TG }}>
-                          <Send className="h-4 w-4" /> Open @{linkData.bot_name} <ArrowUpRight className="h-3.5 w-3.5" />
+                          <PaperPlaneTiltIcon className="h-4 w-4" /> Open @{linkData.bot_name} <ArrowUpRightIcon className="h-3.5 w-3.5" />
                         </a>
                       </div>
                     </li>
@@ -227,20 +227,20 @@ export default function NotificationsPage() {
                             onClick={() => { navigator.clipboard?.writeText(`/start ${linkData.code}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); }}
                             className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
                           >
-                            {copied ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copied ? <CheckIcon className="h-3.5 w-3.5 text-brand" /> : <CopyIcon className="h-3.5 w-3.5" />}
                           </button>
                         </div>
                       </div>
                     </li>
                     <li className="flex gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--dz-hairline)] bg-background">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        <CircleNotchIcon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[14px] font-medium">Waiting for Telegram</p>
                         <p className="mt-0.5 text-[13px] text-muted-foreground">This page updates by itself. The code expires in 10 minutes.</p>
                         <button type="button" onClick={checkNow} disabled={checking} className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50">
-                          <RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} /> Check now
+                          <ArrowsClockwiseIcon className={cn("h-3.5 w-3.5", checking && "animate-spin")} /> Check now
                         </button>
                       </div>
                     </li>
@@ -252,7 +252,7 @@ export default function NotificationsPage() {
 
           {/* Telegram alerts */}
           <SettingsSection
-            icon={Send}
+            icon={PaperPlaneTiltIcon}
             title="Telegram alerts"
             description={connected ? `${onCount} of ${prefs.length} on.` : "Connect Telegram above to choose alerts."}
           >
@@ -271,20 +271,20 @@ export default function NotificationsPage() {
 
         {/* Bot commands */}
         <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
-          <section className="dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white">
-            <div className="flex items-center gap-2.5 border-b border-white/[0.07] px-4 py-3 sm:px-5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: `${TG}26`, color: TG }}><Send className="h-3.5 w-3.5" /></span>
-              <p className="text-[14px] font-medium">Bot commands</p>
+          <section className="surface overflow-hidden rounded-[16px]">
+            <div className="flex items-center gap-2.5 border-b border-[var(--dz-hairline)] px-4 py-3">
+              <PaperPlaneTiltIcon className="dz-ico h-4 w-4 text-muted-foreground" />
+              <p className="text-[13px] font-medium">Bot commands</p>
             </div>
             <ul className="space-y-1 p-2.5">
               {COMMANDS.map((c) => (
-                <li key={c.cmd} className="flex items-baseline gap-3 rounded-xl px-2.5 py-2 hover:bg-white/[0.03]">
-                  <code className="w-[4.5rem] shrink-0 font-mono text-[13px] font-semibold text-brand">{c.cmd}</code>
-                  <span className="text-[13px] text-white/60">{c.desc}</span>
+                <li key={c.cmd} className="flex items-baseline gap-3 rounded-[10px] px-2.5 py-1.5">
+                  <code className="w-[4.5rem] shrink-0 font-mono text-[12px] font-medium text-foreground/85">{c.cmd}</code>
+                  <span className="text-[12.5px] text-muted-foreground">{c.desc}</span>
                 </li>
               ))}
             </ul>
-            <p className="border-t border-white/[0.07] px-4 py-3 text-[12.5px] text-white/45 sm:px-5">Send them to the bot once Telegram is linked.</p>
+            <p className="border-t border-[var(--dz-hairline)] px-4 py-3 text-[12px] text-muted-foreground">Send them to the bot once Telegram is linked.</p>
           </section>
         </aside>
       </div>

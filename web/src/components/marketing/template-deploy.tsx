@@ -146,7 +146,7 @@ export function TemplateDeploy({ slug, name, envVars, requiredPlan = "" }: { slu
             This template needs the {needLabel} plan or higher. Upgrade and you can deploy it right away.
           </p>
           <Link
-            href="/billing"
+            href="/billing?tab=plans"
             className="pill pill-ink pill-sm mt-3 w-full"
           >
             <Zap className="h-4 w-4" /> Upgrade to {needLabel}

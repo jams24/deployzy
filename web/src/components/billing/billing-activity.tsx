@@ -1,11 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import {
-  ArrowDownLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Gift,
-  MailCheck, MessageSquare, Pencil, Receipt, SlidersHorizontal, Undo2,
-  Wand2, XCircle,
-} from "lucide-react";
+import { ArrowCounterClockwiseIcon, ArrowDownLeftIcon, CaretLeftIcon, CaretRightIcon, ChatTextIcon, CheckCircleIcon, ClockIcon, EnvelopeOpenIcon, GiftIcon, MagicWandIcon, PencilSimpleIcon, ReceiptIcon, SlidersHorizontalIcon, XCircleIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtInt, reasonLabel, timeAgo, usd, type LedgerRow, type Subscription } from "./types";
 import { useNow } from "./use-now";
@@ -32,10 +28,10 @@ function derive(s: Subscription, now: number | null): { label: string; tone: Ton
   return { label: s.status, tone: "dead" };
 }
 
-const TONE_STYLE: Record<Tone, { cls: string; icon: typeof CheckCircle2 }> = {
-  paid:    { cls: "bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand", icon: CheckCircle2 },
-  pending: { cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400",          icon: Clock },
-  dead:    { cls: "bg-foreground/[0.05] text-muted-foreground",                  icon: XCircle },
+const TONE_STYLE: Record<Tone, { cls: string; icon: typeof CheckCircleIcon }> = {
+  paid:    { cls: "bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand", icon: CheckCircleIcon },
+  pending: { cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400",          icon: ClockIcon },
+  dead:    { cls: "bg-foreground/[0.05] text-muted-foreground",                  icon: XCircleIcon },
 };
 
 function StatusPill({ tone, label }: { tone: Tone; label: string }) {
@@ -51,29 +47,29 @@ function Pager({ page, pages, total, pageSize, onPage }: { page: number; pages: 
   if (pages <= 1) return null;
   const btn = "flex h-8 w-8 items-center justify-center rounded-full border border-[var(--dz-hairline)] transition-colors hover:border-foreground/30 hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
   return (
-    <div className="flex items-center justify-between border-t border-[var(--dz-hairline)] px-4 py-3 text-[13.5px] text-muted-foreground sm:px-5">
+    <div className="flex items-center justify-between border-t border-[var(--dz-hairline)] px-4 py-3 text-[13px] text-muted-foreground sm:px-5">
       <span className="tabular-nums">{page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}</span>
       <div className="flex items-center gap-1.5">
         <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page" className={btn}>
-          <ChevronLeft className="h-4 w-4" />
+          <CaretLeftIcon className="h-4 w-4" />
         </button>
         <span className="min-w-[3rem] text-center tabular-nums">{page + 1} / {pages}</span>
         <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page" className={btn}>
-          <ChevronRight className="h-4 w-4" />
+          <CaretRightIcon className="h-4 w-4" />
         </button>
       </div>
     </div>
   );
 }
 
-function EmptyNote({ icon: Icon, title, children }: { icon: typeof Receipt; title: string; children: ReactNode }) {
+function EmptyNote({ icon: Icon, title, children }: { icon: typeof ReceiptIcon; title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground/[0.05]">
         <Icon className="h-4.5 w-4.5 text-muted-foreground" />
       </span>
-      <p className="mt-3 text-[14.5px] font-semibold">{title}</p>
-      <p className="mt-1 max-w-xs text-[13.5px] leading-snug text-muted-foreground">{children}</p>
+      <p className="mt-3 text-[14px] font-semibold">{title}</p>
+      <p className="mt-1 max-w-xs text-[13px] leading-snug text-muted-foreground">{children}</p>
     </div>
   );
 }
@@ -81,8 +77,8 @@ function EmptyNote({ icon: Icon, title, children }: { icon: typeof Receipt; titl
 function Header({ title, meta, action }: { title: string; meta?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex min-h-[53px] flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-[var(--dz-hairline)] px-4 py-2.5 sm:px-5">
-      <p className="text-[14.5px] font-semibold tracking-tight">{title}</p>
-      <div className="flex items-center gap-3 text-[13.5px] text-muted-foreground">
+      <p className="text-[14px] font-semibold tracking-tight">{title}</p>
+      <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
         {meta}
         {action}
       </div>
@@ -90,10 +86,10 @@ function Header({ title, meta, action }: { title: string; meta?: ReactNode; acti
   );
 }
 
-const REASON_ICON: Record<string, typeof Wand2> = {
-  build: Wand2, edit: Pencil, agent: MessageSquare,
-  email_verify: MailCheck, email_verify_batch: MailCheck,
-  topup: ArrowDownLeft, monthly_free: Gift, refund: Undo2, admin: SlidersHorizontal,
+const REASON_ICON: Record<string, typeof MagicWandIcon> = {
+  build: MagicWandIcon, edit: PencilSimpleIcon, agent: ChatTextIcon,
+  email_verify: EnvelopeOpenIcon, email_verify_batch: EnvelopeOpenIcon,
+  topup: ArrowDownLeftIcon, monthly_free: GiftIcon, refund: ArrowCounterClockwiseIcon, admin: SlidersHorizontalIcon,
 };
 
 export function Invoices({ history }: { history: Subscription[] }) {
@@ -111,7 +107,7 @@ export function Invoices({ history }: { history: Subscription[] }) {
   const slice = rows.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="surface overflow-hidden rounded-[20px]">
+    <section className="surface overflow-hidden rounded-[16px]">
       <Header
         title="Invoices"
         meta={history.length > 0 ? <span className="tabular-nums">{paidCount} paid</span> : undefined}
@@ -127,7 +123,7 @@ export function Invoices({ history }: { history: Subscription[] }) {
       />
 
       {rows.length === 0 ? (
-        <EmptyNote icon={Receipt} title={history.length === 0 ? "No payments yet" : "Nothing paid or pending"}>
+        <EmptyNote icon={ReceiptIcon} title={history.length === 0 ? "No payments yet" : "Nothing paid or pending"}>
           {history.length === 0
             ? "Receipts for your subscription land here after your first upgrade."
             : "Only expired or cancelled checkouts so far."}
@@ -137,7 +133,7 @@ export function Invoices({ history }: { history: Subscription[] }) {
           {slice.map(({ s, d }) => (
             <li key={s.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground">
-                <Receipt className="h-4 w-4" />
+                <ReceiptIcon className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[14px] font-medium"><span className="capitalize">{s.plan}</span> plan</p>
@@ -165,18 +161,18 @@ export function CreditsLedger({ ledger }: { ledger: LedgerRow[] }) {
   const slice = ledger.slice(cur * pageSize, cur * pageSize + pageSize);
 
   return (
-    <section className="surface overflow-hidden rounded-[20px]">
+    <section className="surface overflow-hidden rounded-[16px]">
       <Header title="AI & email activity" meta={ledger.length > 0 ? <span className="tabular-nums">{ledger.length} events</span> : undefined} />
 
       {ledger.length === 0 ? (
-        <EmptyNote icon={Wand2} title="No activity yet">
+        <EmptyNote icon={MagicWandIcon} title="No activity yet">
           AI builder runs, agent chats, email verifications and top-ups appear here.
         </EmptyNote>
       ) : (
         <ul className="divide-y divide-[var(--dz-hairline)]">
           {slice.map((row, i) => {
             const isGrant = row.delta >= 0;
-            const Icon = REASON_ICON[row.reason] ?? SlidersHorizontal;
+            const Icon = REASON_ICON[row.reason] ?? SlidersHorizontalIcon;
             const tokens = row.tokens_in + row.tokens_out;
             return (
               <li key={i} className="flex items-center gap-3 px-4 py-3 sm:px-5">

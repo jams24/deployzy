@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import { LightningIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -55,7 +55,7 @@ export function UpgradeDialogHost() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15">
-            <Zap className="h-6 w-6 text-emerald-500" />
+            <LightningIcon className="h-6 w-6 text-emerald-500" />
           </div>
           <DialogTitle className="text-center pt-2">You&apos;ve reached a plan limit</DialogTitle>
           <DialogDescription className="text-center">
@@ -68,8 +68,8 @@ export function UpgradeDialogHost() {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-col gap-2">
-          <Button className="w-full gap-2" nativeButton={false} render={<Link href="/billing" />}>
-            <Zap className="h-4 w-4" />
+          <Button className="w-full gap-2" nativeButton={false} render={<Link href="/billing?tab=plans" />}>
+            <LightningIcon className="h-4 w-4" />
             View plans &amp; upgrade
           </Button>
           <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => setOpen(false)}>

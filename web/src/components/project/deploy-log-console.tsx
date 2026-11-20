@@ -5,10 +5,7 @@
 // auto-restart, stop) sit between them on the timeline.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import {
-  AlertTriangle, Check, ChevronRight, Copy, GitCommit, Loader2, Moon, Power,
-  RotateCcw, Sun, XCircle, Zap,
-} from "lucide-react";
+import { ArrowCounterClockwiseIcon, CaretRightIcon, CheckIcon, CircleNotchIcon, CopyIcon, GitCommitIcon, LightningIcon, MoonIcon, PowerIcon, SunIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import type { DeployLog } from "./project-shared";
 import {
@@ -17,19 +14,19 @@ import {
 } from "./deploy-log-groups";
 
 const OUTCOME: Record<DeployGroup["outcome"], { label: string; cls: string; icon: ReactNode }> = {
-  succeeded: { label: "Succeeded", cls: "text-brand border-brand/30 bg-brand/10", icon: <Check className="h-3 w-3" /> },
-  failed: { label: "Failed", cls: "text-red-400 border-red-400/30 bg-red-400/10", icon: <XCircle className="h-3 w-3" /> },
-  building: { label: "Building", cls: "text-amber-300 border-amber-300/30 bg-amber-300/10", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
-  interrupted: { label: "Interrupted", cls: "text-white/55 border-white/10 bg-white/[0.04]", icon: <AlertTriangle className="h-3 w-3" /> },
+  succeeded: { label: "Succeeded", cls: "text-brand border-brand/30 bg-brand/10", icon: <CheckIcon className="h-3 w-3" /> },
+  failed: { label: "Failed", cls: "text-red-400 border-red-400/30 bg-red-400/10", icon: <XCircleIcon className="h-3 w-3" /> },
+  building: { label: "Building", cls: "text-amber-300 border-amber-300/30 bg-amber-300/10", icon: <CircleNotchIcon className="h-3 w-3 animate-spin" /> },
+  interrupted: { label: "Interrupted", cls: "text-white/55 border-white/10 bg-white/[0.04]", icon: <WarningIcon className="h-3 w-3" /> },
 };
 
 const EVENT: Record<EventTone, { cls: string; icon: ReactNode }> = {
-  sleep: { cls: "text-white/50", icon: <Moon className="h-3.5 w-3.5" /> },
-  wake: { cls: "text-brand-cyan", icon: <Sun className="h-3.5 w-3.5" /> },
-  crash: { cls: "text-red-400", icon: <Zap className="h-3.5 w-3.5" /> },
-  restart: { cls: "text-amber-300", icon: <RotateCcw className="h-3.5 w-3.5" /> },
-  stop: { cls: "text-white/50", icon: <Power className="h-3.5 w-3.5" /> },
-  info: { cls: "text-white/50", icon: <ChevronRight className="h-3.5 w-3.5" /> },
+  sleep: { cls: "text-white/50", icon: <MoonIcon className="h-3.5 w-3.5" /> },
+  wake: { cls: "text-brand-cyan", icon: <SunIcon className="h-3.5 w-3.5" /> },
+  crash: { cls: "text-red-400", icon: <LightningIcon className="h-3.5 w-3.5" /> },
+  restart: { cls: "text-amber-300", icon: <ArrowCounterClockwiseIcon className="h-3.5 w-3.5" /> },
+  stop: { cls: "text-white/50", icon: <PowerIcon className="h-3.5 w-3.5" /> },
+  info: { cls: "text-white/50", icon: <CaretRightIcon className="h-3.5 w-3.5" /> },
 };
 
 function lineClass(l: DeployLog): string {
@@ -102,7 +99,7 @@ function DeployCard({ g, open, onToggle, errorsOnly }: {
     <div className={cn("rounded-2xl border bg-white/[0.02]", g.current ? "border-brand/25" : "border-white/[0.07]")}>
       <div className="flex items-center gap-1 pr-2">
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-white/[0.02] sm:px-4">
-          <ChevronRight className={cn("h-4 w-4 shrink-0 text-white/40 transition-transform", open && "rotate-90")} />
+          <CaretRightIcon className={cn("h-4 w-4 shrink-0 text-white/40 transition-transform", open && "rotate-90")} />
           <span className={cn("inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] font-medium", o.cls)}>
             {o.icon}{o.label}
           </span>
@@ -117,7 +114,7 @@ function DeployCard({ g, open, onToggle, errorsOnly }: {
           </span>
           {g.commit && (
             <span className="hidden shrink-0 items-center gap-1 font-mono text-[12px] text-white/45 md:inline-flex">
-              <GitCommit className="h-3.5 w-3.5" />{g.commit}
+              <GitCommitIcon className="h-3.5 w-3.5" />{g.commit}
             </span>
           )}
           <span className="ml-auto hidden shrink-0 text-[12.5px] tabular-nums text-white/35 sm:inline">{g.lines.length} lines</span>
@@ -129,7 +126,7 @@ function DeployCard({ g, open, onToggle, errorsOnly }: {
           title="Copy this deploy's logs"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
         >
-          {copied ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <CheckIcon className="h-3.5 w-3.5 text-brand" /> : <CopyIcon className="h-3.5 w-3.5" />}
         </button>
       </div>
       {!open && g.failure && (
@@ -166,7 +163,7 @@ function EventRow({ e }: { e: EventItem }) {
           <span className="mt-0.5 shrink-0">{t.icon}</span>
           <span className="shrink-0 tabular-nums text-white/35">{fmtWhen(e.at)}</span>
           <span className="min-w-0">{e.title}</span>
-          {e.detail && <ChevronRight className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")} />}
+          {e.detail && <CaretRightIcon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")} />}
         </button>
         {open && e.detail && (
           <pre className="mt-2 max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/30 p-3 font-mono text-[12.5px] leading-relaxed text-white/80 [overflow-wrap:anywhere]">
@@ -198,7 +195,7 @@ export function DeployLogConsole({ logs, status, loading }: { logs: DeployLog[];
           <span className="text-[13px] font-normal text-white/45">{deploys} deploy{deploys === 1 ? "" : "s"}</span>
         </p>
         {status === "building" && (
-          <span className="flex items-center gap-1.5 text-[13px] text-amber-300"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building</span>
+          <span className="flex items-center gap-1.5 text-[13px] text-amber-300"><CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> Building</span>
         )}
         <span className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <ConsoleToggle on={errorsOnly} onClick={() => setErrorsOnly((v) => !v)} tone="red">Errors only</ConsoleToggle>

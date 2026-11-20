@@ -3,13 +3,13 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ArrowRight, BookOpen, Compass, CornerDownLeft, Database, LogOut, Moon, Plus, Rocket, Search, Sun, type LucideIcon } from "lucide-react";
+import { ArrowElbowDownLeftIcon, ArrowRightIcon, BookOpenTextIcon, CompassIcon, DatabaseIcon, type Icon, MagnifyingGlassIcon, MoonIcon, PlusIcon, RocketLaunchIcon, SignOutIcon, SunIcon } from "@phosphor-icons/react";
 import { startTour } from "@/lib/onboarding";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { API, headers } from "@/components/project/project-shared";
 import { useSession } from "@/lib/use-me";
-import { ADMIN_ITEM, NAV_GROUPS } from "./nav-config";
+import { ADMIN_ITEM, ALL_NAV } from "./nav-config";
 
 const OPEN_EVENT = "dz:command-menu";
 
@@ -24,7 +24,7 @@ interface Entry {
   label: string;
   hint?: string;
   keywords?: string;
-  icon: LucideIcon;
+  icon: Icon;
   dot?: string;
   run: () => void;
 }
@@ -127,15 +127,15 @@ export function CommandMenu() {
 
   const entries = React.useMemo<Entry[]>(() => {
     const list: Entry[] = [
-      { id: "a-new", group: "Actions", label: "New project", keywords: "deploy create app", icon: Plus, run: () => go("/new") },
-      { id: "a-db", group: "Actions", label: "New database", keywords: "postgres redis mongo mysql create", icon: Database, run: () => go("/new?type=database") },
-      { id: "a-tour", group: "Actions", label: "Take the product tour", keywords: "help onboarding guide walkthrough tour", icon: Compass, run: () => { setOpen(false); startTour(); } },
+      { id: "a-new", group: "Actions", label: "New project", keywords: "deploy create app", icon: PlusIcon, run: () => go("/new") },
+      { id: "a-db", group: "Actions", label: "New database", keywords: "postgres redis mongo mysql create", icon: DatabaseIcon, run: () => go("/new?type=database") },
+      { id: "a-tour", group: "Actions", label: "Take the product tour", keywords: "help onboarding guide walkthrough tour", icon: CompassIcon, run: () => { setOpen(false); startTour(); } },
       {
         id: "a-theme",
         group: "Actions",
         label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme",
         keywords: "theme dark light mode appearance",
-        icon: resolvedTheme === "dark" ? Sun : Moon,
+        icon: resolvedTheme === "dark" ? SunIcon : MoonIcon,
         run: () => {
           setTheme(resolvedTheme === "dark" ? "light" : "dark");
           setOpen(false);
@@ -146,7 +146,7 @@ export function CommandMenu() {
         group: "Actions",
         label: "Open documentation",
         keywords: "docs help cli api",
-        icon: BookOpen,
+        icon: BookOpenTextIcon,
         run: () => {
           setOpen(false);
           window.open("/docs", "_blank", "noopener");
@@ -160,15 +160,15 @@ export function CommandMenu() {
         label: p.name,
         hint: p.status,
         keywords: p.subdomain,
-        icon: Rocket,
+        icon: RocketLaunchIcon,
         dot: STATUS_DOT[p.status] ?? "bg-zinc-400",
         run: () => go(`/projects/${p.id}`),
       });
     }
     for (const d of dbs) {
-      list.push({ id: `d-${d.id}`, group: "Databases", label: d.name, hint: d.type, icon: Database, run: () => go("/services") });
+      list.push({ id: `d-${d.id}`, group: "Databases", label: d.name, hint: d.type, icon: DatabaseIcon, run: () => go("/services") });
     }
-    const nav = [...NAV_GROUPS.flatMap((g) => g.items), ...(isAdmin ? [ADMIN_ITEM] : [])];
+    const nav = [...ALL_NAV, ...(isAdmin ? [ADMIN_ITEM] : [])];
     for (const n of nav) {
       list.push({ id: `n-${n.href}`, group: "Go to", label: n.label, keywords: n.keywords, icon: n.icon, run: () => go(n.href) });
     }
@@ -177,7 +177,7 @@ export function CommandMenu() {
       group: "Account",
       label: "Sign out",
       keywords: "logout log out",
-      icon: LogOut,
+      icon: SignOutIcon,
       run: () => {
         api.logout();
         go("/sign-in");
@@ -248,7 +248,7 @@ export function CommandMenu() {
         className="relative w-full max-w-[640px] animate-[dz-pop_.18s_cubic-bezier(.16,1,.3,1)] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-[0_30px_80px_-20px_rgba(0,0,0,.5)]"
       >
         <div className="flex items-center gap-3 border-b px-4">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
             autoFocus
             value={query}
@@ -296,15 +296,15 @@ export function CommandMenu() {
                     <span
                       className={cn(
                         "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border bg-background",
-                        selected ? "text-brand" : "text-muted-foreground",
+                        selected ? "text-foreground" : "text-muted-foreground",
                       )}
                     >
-                      <item.icon className="h-3.5 w-3.5" />
+                      <item.icon weight="duotone" className={cn("dz-ico h-4 w-4", selected && "dz-ico-on")} />
                       {item.dot && <span className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-popover", item.dot)} />}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
                     {item.hint && <span className="hidden truncate font-mono text-[12px] text-muted-foreground sm:block">{item.hint}</span>}
-                    {selected && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                    {selected && <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                   </button>
                 );
               })}
@@ -319,7 +319,7 @@ export function CommandMenu() {
           </span>
           <span className="flex items-center gap-1.5">
             <kbd className="flex items-center rounded border px-1">
-              <CornerDownLeft className="h-3 w-3" />
+              <ArrowElbowDownLeftIcon className="h-3 w-3" />
             </kbd>{" "}
             to open
           </span>

@@ -4,15 +4,15 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Database, LayoutDashboard, Menu, Plus, Rocket } from "lucide-react";
+import { DatabaseIcon, DotsThreeOutlineIcon, HouseSimpleIcon, PlusIcon, RocketLaunchIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { isActive } from "./nav-config";
 import { Sidebar } from "./sidebar";
 
 const TABS = [
-  { href: "/overview", icon: LayoutDashboard, label: "Home" },
-  { href: "/projects", icon: Rocket, label: "Projects" },
-  { href: "/services", icon: Database, label: "Databases" },
+  { href: "/overview", icon: HouseSimpleIcon, label: "Home" },
+  { href: "/projects", icon: RocketLaunchIcon, label: "Projects" },
+  { href: "/services", icon: DatabaseIcon, label: "Databases" },
 ];
 
 // Routes that need the full height of the screen (editors, chat) hide the
@@ -42,7 +42,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
         )}
       >
         {active && <motion.span layoutId="dz-tab" className="absolute top-0 h-[2px] w-8 rounded-full bg-brand" transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }} />}
-        <t.icon className={cn("h-5 w-5", active && "text-brand")} />
+        <t.icon weight="duotone" className={cn("dz-ico h-[22px] w-[22px]", active && "dz-ico-on")} />
         {t.label}
       </Link>
     );
@@ -60,12 +60,12 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
             aria-label="New project"
             className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background shadow-[0_10px_30px_-10px_color-mix(in_oklch,var(--dz-green)_70%,transparent)] transition-transform active:scale-95"
           >
-            <Plus className="h-5 w-5" />
+            <PlusIcon className="h-5 w-5" />
           </Link>
         </div>
         {tab(TABS[2])}
         <button type="button" onClick={onMore} data-tour="more" className="flex flex-1 flex-col items-center justify-center gap-1 text-[11.5px] font-medium text-muted-foreground">
-          <Menu className="h-5 w-5" />
+          <DotsThreeOutlineIcon weight="duotone" className="dz-ico h-[22px] w-[22px]" />
           More
         </button>
       </div>

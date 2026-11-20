@@ -5,7 +5,7 @@
 // The interactive shell (Terminal) also lives here since it's log-adjacent.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDownToLine, Pause, Play, ScrollText, Terminal, TerminalSquare } from "lucide-react";
+import { DownloadSimpleIcon, PauseIcon, PlayIcon, ScrollIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { TerminalModal } from "@/components/terminal-modal";
 import { useProject } from "@/components/project/project-context";
 import { API, headers, type DeployLog, type LiveLog } from "@/components/project/project-shared";
@@ -129,13 +129,13 @@ export default function ProjectLogsPage() {
           onChange={setMode}
           className="w-full sm:w-auto"
           options={[
-            { id: "deploy", label: <><ScrollText className="h-3.5 w-3.5" /> Deploys</> },
-            { id: "live", label: <><Terminal className="h-3.5 w-3.5" /> Live output{liveOn && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}</> },
+            { id: "deploy", label: <><ScrollIcon className="h-3.5 w-3.5" /> Deploys</> },
+            { id: "live", label: <><TerminalWindowIcon className="h-3.5 w-3.5" /> Live output{liveOn && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}</> },
           ]}
         />
         {running && (
           <button type="button" onClick={() => setTerminalOpen(true)} className="pill pill-line pill-sm w-full sm:w-auto">
-            <TerminalSquare className="h-4 w-4" /> Open terminal
+            <TerminalWindowIcon className="h-4 w-4" /> Open terminal
           </button>
         )}
       </div>
@@ -145,7 +145,7 @@ export default function ProjectLogsPage() {
 
       {/* Live container output */}
       {mode === "live" && (
-        <section className="dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white">
+        <section className="dark overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#0b0c10] text-white">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.07] px-4 py-3 sm:px-5">
             <p className="flex items-center gap-2.5 text-[14px] font-medium">
               <ConsoleDots />
@@ -159,11 +159,11 @@ export default function ProjectLogsPage() {
             <span className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
               {liveOn ? (
                 <button type="button" onClick={stopLive} title="Stop streaming (keeps what's shown)" className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/10 px-2.5 text-[12.5px] font-medium text-white/70 transition-colors hover:border-white/20 hover:text-white">
-                  <Pause className="h-3 w-3" /> Pause
+                  <PauseIcon className="h-3 w-3" /> Pause
                 </button>
               ) : (
                 <button type="button" onClick={startLive} disabled={!hasContainer} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/10 px-2.5 text-[12.5px] font-medium text-white/70 transition-colors hover:border-white/20 hover:text-white disabled:opacity-40">
-                  <Play className="h-3 w-3" /> Resume
+                  <PlayIcon className="h-3 w-3" /> Resume
                 </button>
               )}
               <ConsoleToggle on={liveAutoscroll} onClick={() => setLiveAutoscroll((v) => !v)}>Follow</ConsoleToggle>
@@ -177,7 +177,7 @@ export default function ProjectLogsPage() {
                 onClick={() => { const el = liveScrollRef.current; if (el) el.scrollTop = el.scrollHeight; setLiveAutoscroll(true); }}
                 className="ml-auto flex h-7 w-7 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white sm:ml-0"
               >
-                <ArrowDownToLine className="h-3.5 w-3.5" />
+                <DownloadSimpleIcon className="h-3.5 w-3.5" />
               </button>
             </span>
           </div>
@@ -217,7 +217,7 @@ export default function ProjectLogsPage() {
             </div>
           ) : (
             <div className="flex h-[40vh] flex-col items-center justify-center gap-2 px-6 text-center">
-              <Terminal className="h-5 w-5 text-white/35" />
+              <TerminalWindowIcon className="h-5 w-5 text-white/35" />
               <p className="text-[14px] font-medium">No container yet</p>
               <p className="max-w-xs text-[13px] text-white/50">Deploy the project and its output streams here.</p>
             </div>

@@ -1,22 +1,17 @@
 "use client";
 
-// Account settings — profile, password, appearance, developer access, plan and
-// account deletion. Same section kit and sticky nav as project settings.
+// Account settings: profile, password, appearance, developer access, plan and
+// account deletion. Lives in the Settings hub, whose layout supplies the nav.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import {
-  AlertTriangle, ArrowRight, BadgeCheck, Bell, CalendarDays, Check, Copy, Crown, Eye, EyeOff, KeyRound,
-  ArrowUpRight, Loader2, Mail, Monitor, Moon, Palette, Scale, Shield, Sun, Terminal, User as UserIcon,
-} from "lucide-react";
-import { CookieSettingsButton } from "@/components/cookie-notice";
+import { ArrowRightIcon, BellSimpleIcon, CalendarBlankIcon, CheckIcon, CircleNotchIcon, CopyIcon, CrownIcon, EnvelopeIcon, EyeIcon, EyeSlashIcon, KeyIcon, MonitorIcon, MoonIcon, PaletteIcon, SealCheckIcon, ShieldIcon, SunIcon, TerminalWindowIcon, UserIcon, WarningIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { api, type User } from "@/lib/api";
-import { PageHeader } from "@/components/dashboard/kit";
 import {
-  Field, FooterNote, SettingsNav, SettingsSection, inputCls, type Note, type SettingsNavItem,
+  Field, FooterNote, SettingsSection, inputCls, type Note,
 } from "@/components/dashboard/settings-kit";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -28,16 +23,6 @@ interface Limits {
   usage: { projects: number; databases: number };
 }
 
-const NAV: SettingsNavItem[] = [
-  { id: "profile", label: "Profile", icon: UserIcon },
-  { id: "security", label: "Password", icon: Shield },
-  { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "developer", label: "Developer access", icon: Terminal },
-  { id: "plan", label: "Plan", icon: Crown },
-  { id: "legal", label: "Privacy & legal", icon: Scale },
-  { id: "danger", label: "Danger zone", icon: AlertTriangle, tone: "danger" },
-];
-
 function PasswordInput({ id, value, onChange, placeholder, autoComplete }: { id: string; value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string }) {
   const [show, setShow] = useState(false);
   return (
@@ -45,7 +30,7 @@ function PasswordInput({ id, value, onChange, placeholder, autoComplete }: { id:
       <input id={id} type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoComplete={autoComplete} className={cn(inputCls, "pr-10")} />
       <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"}
         className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-        {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        {show ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
       </button>
     </div>
   );
@@ -54,11 +39,11 @@ function PasswordInput({ id, value, onChange, placeholder, autoComplete }: { id:
 function CopyLine({ cmd }: { cmd: string }) {
   const [done, setDone] = useState(false);
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-white/[0.04] py-1.5 pl-3 pr-1.5 ring-1 ring-white/[0.07]">
-      <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-white/85"><span className="text-brand">$</span> {cmd}</code>
+    <div className="flex items-center gap-2 rounded-[10px] bg-background py-1 pl-3 pr-1 ring-1 ring-[var(--dz-hairline)] dark:bg-white/[0.03]">
+      <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground/85"><span className="select-none text-muted-foreground">$</span> {cmd}</code>
       <button type="button" onClick={() => navigator.clipboard?.writeText(cmd).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); }).catch(() => {})} aria-label="Copy command"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white">
-        {done ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
+        {done ? <CheckIcon className="h-3.5 w-3.5 text-[var(--dz-green-strong)] dark:text-brand" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </button>
     </div>
   );
@@ -135,41 +120,28 @@ export default function SettingsPage() {
   const plan = limits?.is_admin ? "admin" : limits?.plan ?? user?.plan ?? "free";
   const fmtLimit = (n?: number) => (n === undefined ? "…" : n < 0 ? "Unlimited" : String(n));
   const pwStrength = pwNew.length === 0 ? 0 : pwNew.length < 8 ? 1 : (/[A-Z]/.test(pwNew) && /[0-9]/.test(pwNew) && pwNew.length >= 12) ? 3 : 2;
-  const nav = useMemo(() => NAV, []);
 
   return (
     <div className="animate-fade-in-up">
-      <PageHeader eyebrow="Account" title="Settings" description="Your profile, password, appearance and developer access." />
-
-      {/* Identity */}
-      <section className="dark grain relative isolate mt-6 overflow-hidden rounded-[24px] bg-[#0b0c10] p-5 text-white sm:p-6">
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 -z-10 h-72 w-72 rounded-full bg-brand/15 blur-3xl" />
-        <div className="flex flex-wrap items-center gap-4">
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-brand-cyan text-[20px] font-semibold text-[#06281d] shadow-lg shadow-brand/20">{initials}</span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-[22px] font-semibold tracking-[-0.03em]">{user?.name || "…"}</h2>
-              <Link href="/billing" className="inline-flex h-[22px] items-center gap-1 rounded-full border border-white/15 bg-white/[0.06] px-2 text-[12px] font-medium capitalize text-white/85 hover:bg-white/[0.11]">
-                <Crown className="h-3 w-3 text-amber-300" />{plan}
-              </Link>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-white/55">
-              <span className="flex min-w-0 items-center gap-1.5"><Mail className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{user?.email}</span></span>
-              {user && user.email_verified !== false && <span className="flex items-center gap-1 text-brand"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
-              {joined && <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Joined {joined}</span>}
-            </div>
+      {/* Identity: a quiet row, not a hero card */}
+      <div className="flex items-center gap-3.5">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] text-[15px] font-semibold text-foreground/75 ring-1 ring-inset ring-[var(--dz-hairline)] dark:bg-white/[0.07]">{initials}</span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-[15px] font-semibold tracking-[-0.015em]">{user?.name || "…"}</p>
+            <Link href="/billing" className="inline-flex h-5 items-center gap-1 rounded-full border border-[var(--dz-hairline)] px-2 text-[11.5px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground">
+              <CrownIcon className="h-3 w-3" />{plan}
+            </Link>
           </div>
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12.5px] text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1.5"><EnvelopeIcon className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{user?.email}</span></span>
+            {user && user.email_verified !== false && <span className="flex items-center gap-1 text-[var(--dz-green-strong)] dark:text-brand"><SealCheckIcon className="h-3.5 w-3.5" />Verified</span>}
+            {joined && <span className="flex items-center gap-1.5"><CalendarBlankIcon className="h-3.5 w-3.5" />Joined {joined}</span>}
+          </p>
         </div>
-      </section>
+      </div>
 
-      <div className="mt-6 lg:grid lg:grid-cols-[188px_minmax(0,1fr)] lg:gap-8">
-        <aside className="hidden lg:block">
-          <div className="sticky top-20">
-            <SettingsNav items={nav} />
-          </div>
-        </aside>
-
-        <div className="min-w-0 max-w-3xl space-y-4">
+      <div className="mt-6 max-w-3xl space-y-4">
           <form onSubmit={saveProfile}>
             <SettingsSection
               id="profile"
@@ -180,7 +152,7 @@ export default function SettingsPage() {
                 <>
                   <FooterNote note={profileNote} />
                   <button type="submit" disabled={!dirty || saving || !name.trim()} className="pill pill-ink pill-sm disabled:opacity-50">
-                    {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save
+                    {saving && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Save
                   </button>
                 </>
               }
@@ -199,14 +171,14 @@ export default function SettingsPage() {
           <form onSubmit={changePassword}>
             <SettingsSection
               id="security"
-              icon={Shield}
+              icon={ShieldIcon}
               title="Password"
               description="For signing in with email. Google accounts don't have a separate password."
               footer={
                 <>
                   <FooterNote note={pwNote} />
                   <button type="submit" disabled={pwBusy || !pwCur || !pwNew || !pwConfirm} className="pill pill-ink pill-sm disabled:opacity-50">
-                    {pwBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Update password
+                    {pwBusy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <KeyIcon className="h-4 w-4" />} Update password
                   </button>
                 </>
               }
@@ -235,9 +207,9 @@ export default function SettingsPage() {
             </SettingsSection>
           </form>
 
-          <SettingsSection id="appearance" icon={Palette} title="Appearance" description="How the dashboard looks on this device.">
+          <SettingsSection id="appearance" icon={PaletteIcon} title="Appearance" description="How the dashboard looks on this device.">
             <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2.5 sm:max-w-md">
-              {([["system", "System", Monitor], ["light", "Light", Sun], ["dark", "Dark", Moon]] as const).map(([k, label, I]) => {
+              {([["system", "System", MonitorIcon], ["light", "Light", SunIcon], ["dark", "Dark", MoonIcon]] as const).map(([k, label, I]) => {
                 const on = mounted && theme === k;
                 return (
                   <button
@@ -247,38 +219,38 @@ export default function SettingsPage() {
                     aria-checked={on}
                     onClick={() => setTheme(k)}
                     className={cn(
-                      "relative flex flex-col items-center gap-2 rounded-2xl border px-3 py-4 text-[13.5px] font-medium transition-colors",
-                      on ? "border-brand/60 bg-brand/[0.06]" : "border-[var(--dz-hairline)] text-muted-foreground hover:border-foreground/25 hover:text-foreground",
+                      "relative flex flex-col items-center gap-1.5 rounded-[12px] border px-3 py-3.5 text-[13px] font-medium transition-colors",
+                      on ? "border-foreground/25 bg-foreground/[0.04] text-foreground dark:bg-white/[0.05]" : "border-[var(--dz-hairline)] text-muted-foreground hover:border-foreground/20 hover:text-foreground",
                     )}
                   >
-                    <I className="h-5 w-5" />{label}
-                    {on && <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-brand"><Check className="h-2.5 w-2.5 text-white" /></span>}
+                    <I weight="duotone" className={cn("dz-ico h-5 w-5", on && "dz-ico-on")} />{label}
+                    {on && <CheckIcon weight="bold" className="absolute right-2.5 top-2.5 h-3 w-3 text-[var(--dz-green-strong)] dark:text-brand" />}
                   </button>
                 );
               })}
             </div>
           </SettingsSection>
 
-          <SettingsSection id="developer" icon={Terminal} title="Developer access" description="Use Deployzy from your terminal, scripts and CI.">
+          <SettingsSection id="developer" icon={TerminalWindowIcon} title="Developer access" description="Use Deployzy from your terminal, scripts and CI.">
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="dark rounded-2xl bg-[#0b0c10] p-3.5 text-white">
-                <p className="mb-2.5 text-[13px] font-medium text-white/70">Install the CLI and sign in</p>
+              <div className="rounded-[12px] bg-foreground/[0.03] p-3.5 dark:bg-white/[0.03]">
+                <p className="mb-2.5 text-[13px] font-medium">Install the CLI and sign in</p>
                 <div className="space-y-2">
                   <CopyLine cmd="npm install -g deployzy" />
                   <CopyLine cmd="deployzy login" />
                 </div>
-                <Link href="/docs/cli" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-white/70 hover:text-white">CLI docs <ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/docs/cli" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-muted-foreground hover:text-foreground">CLI docs <ArrowRightIcon className="h-3.5 w-3.5" /></Link>
               </div>
-              <div className="flex flex-col justify-between rounded-2xl border border-[var(--dz-hairline)] p-3.5">
+              <div className="flex flex-col justify-between rounded-[12px] border border-[var(--dz-hairline)] p-3.5">
                 <div>
-                  <p className="flex items-center gap-2 text-[14px] font-medium"><KeyRound className="h-4 w-4 text-muted-foreground" />API keys</p>
-                  <p className="mt-1 text-[13px] text-muted-foreground">
+                  <p className="flex items-center gap-2 text-[13px] font-medium"><KeyIcon className="dz-ico h-4 w-4 text-muted-foreground" />API keys</p>
+                  <p className="mt-1 text-[12.5px] text-muted-foreground">
                     {keyCount === null ? "For the SDKs, CI and the REST API." : `${keyCount} active key${keyCount === 1 ? "" : "s"} for the SDKs, CI and the REST API.`}
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Link href="/api-keys" className="pill pill-line pill-sm">Manage keys <ArrowRight className="h-3.5 w-3.5" /></Link>
-                  <Link href="/notifications" className="pill pill-line pill-sm"><Bell className="h-4 w-4" />Alerts</Link>
+                  <Link href="/api-keys" className="pill pill-line pill-sm">Manage keys <ArrowRightIcon className="h-3.5 w-3.5" /></Link>
+                  <Link href="/notifications" className="pill pill-line pill-sm"><BellSimpleIcon className="h-4 w-4" />Alerts</Link>
                 </div>
               </div>
             </div>
@@ -286,20 +258,20 @@ export default function SettingsPage() {
 
           <SettingsSection
             id="plan"
-            icon={Crown}
+            icon={CrownIcon}
             title="Plan"
             description="Your plan sets limits for projects, databases and bandwidth."
-            action={<Link href="/billing" className="pill pill-ink pill-sm">{plan === "free" ? "Upgrade" : "Billing"} <ArrowRight className="h-3.5 w-3.5" /></Link>}
+            action={<Link href={plan === "free" ? "/billing?tab=plans" : "/billing"} className="pill pill-line pill-xs">{plan === "free" ? "Upgrade" : "Billing"} <ArrowRightIcon className="h-3.5 w-3.5" /></Link>}
           >
-            <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-[var(--dz-hairline)]">
+            <div className="grid grid-cols-3 divide-x divide-[var(--dz-hairline)] overflow-hidden rounded-[12px] border border-[var(--dz-hairline)]">
               {[
                 { label: "Projects", used: limits?.usage.projects, max: limits?.limits.max_projects },
                 { label: "Databases", used: limits?.usage.databases, max: limits?.limits.max_databases },
                 { label: "Bandwidth", used: undefined, max: limits?.limits.max_bandwidth_gb, unit: " GB/mo" },
               ].map((r) => (
-                <div key={r.label} className="bg-card px-3.5 py-3">
+                <div key={r.label} className="px-3.5 py-3">
                   <p className="text-[12.5px] text-muted-foreground">{r.label}</p>
-                  <p className="mt-1 text-[17px] font-semibold tracking-tight tabular-nums">
+                  <p className="mt-1 text-[16px] font-semibold tracking-tight tabular-nums">
                     {limits ? (
                       r.used !== undefined
                         ? <>{r.used}<span className="text-[13px] font-normal text-muted-foreground"> / {r.max !== undefined && r.max < 0 ? "∞" : fmtLimit(r.max)}</span></>
@@ -311,41 +283,17 @@ export default function SettingsPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection id="legal" icon={Scale} title="Privacy & legal" description="The terms you agreed to and how we handle your data.">
-            <div className="grid gap-px overflow-hidden rounded-2xl bg-[var(--dz-hairline)] sm:grid-cols-2">
-              {[
-                { href: "/terms", label: "Terms of Service", hint: "The agreement for using Deployzy" },
-                { href: "/privacy", label: "Privacy Policy", hint: "What we collect and why" },
-                { href: "/cookies", label: "Cookie Policy", hint: "Essential cookies and storage only" },
-                { href: "/acceptable-use", label: "Acceptable Use", hint: "What's not allowed on the platform" },
-              ].map((l) => (
-                <Link key={l.href} href={l.href} target="_blank" className="group flex items-center gap-3 bg-card px-3.5 py-3 transition-colors hover:bg-foreground/[0.025]">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13.5px] font-medium">{l.label}</p>
-                    <p className="truncate text-[12px] text-muted-foreground">{l.hint}</p>
-                  </div>
-                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-                </Link>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-muted-foreground">
-              <CookieSettingsButton className="pill pill-line pill-xs" />
-              <span>Privacy questions or a data request? <a href="mailto:support@deployzy.com" className="font-medium text-foreground underline decoration-foreground/25 underline-offset-[3px] hover:decoration-foreground">support@deployzy.com</a></span>
-            </div>
-          </SettingsSection>
-
-          <SettingsSection id="danger" tone="danger" icon={AlertTriangle} title="Danger zone" description="Permanently delete your account and everything in it.">
-            <p className="text-[13.5px] text-muted-foreground">This stops and deletes all your projects, databases, tunnels, domains and API keys. It can&apos;t be undone.</p>
+          <SettingsSection id="danger" tone="danger" icon={WarningIcon} title="Danger zone" description="Permanently delete your account and everything in it.">
+            <p className="text-[13px] text-muted-foreground">This stops and deletes all your projects, databases, tunnels, domains and API keys. It can&apos;t be undone.</p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
               <Field label={<>Type <span className="font-mono">delete my account</span> to confirm</>} htmlFor="del-acct" className="sm:w-72">
                 <input id="del-acct" value={deleteText} onChange={(e) => setDeleteText(e.target.value)} placeholder="delete my account" autoComplete="off" className={cn(inputCls, "focus:border-red-500/60 focus:ring-red-500/10")} />
               </Field>
               <button type="button" onClick={deleteAccount} disabled={deleteText !== "delete my account" || deleting} className="pill pill-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-40">
-                {deleting && <Loader2 className="h-4 w-4 animate-spin" />} Delete account
+                {deleting && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Delete account
               </button>
             </div>
           </SettingsSection>
-        </div>
       </div>
     </div>
   );

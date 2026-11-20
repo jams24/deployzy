@@ -65,11 +65,8 @@ export interface ProjectServiceData {
   env_overrides?: Record<string, string>;
 }
 
-export interface Domain {
-  id: string; domain: string; verified: boolean;
-  target_type: string; target_subdomain: string;
-  cname_target: string;
-}
+// Same shape as the /api/v1/domains rows (see Domain in lib/api.ts).
+export type { Domain } from "@/lib/api";
 export interface Cron {
   id: string; project_id: string; name: string;
   schedule: string; command: string; enabled: boolean;

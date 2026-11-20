@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, ArrowDown, ArrowRight, ArrowUp, Cpu, MemoryStick, Network, RefreshCw, Wifi } from "lucide-react";
+import { ArrowDownIcon, ArrowRightIcon, ArrowsClockwiseIcon, ArrowUpIcon, CpuIcon, MemoryIcon, PulseIcon, TreeStructureIcon, WifiHighIcon } from "@phosphor-icons/react";
 import {
   Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/dashboard/kit";
 import { useProject } from "@/components/project/project-context";
 import {
-  CYAN, ChartTooltip, GREEN, Segmented, Sparkline, StatCell, axisProps, gridProps, tickLabel,
+  SERIES_2, ChartTooltip, SERIES_1, Segmented, Sparkline, StatCell, axisProps, gridProps, tickLabel,
 } from "@/components/project/charts";
 import {
   API, fmtBytes, fmtGB, headers,
@@ -41,10 +41,10 @@ function ChartCard({ title, value, sub, legend, children }: {
   title: string; value: string; sub?: string; legend?: ReactNode; children: ReactNode;
 }) {
   return (
-    <section className="surface overflow-hidden rounded-[20px]">
+    <section className="surface overflow-hidden rounded-[18px]">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pt-4 sm:px-5 sm:pt-5">
         <div className="min-w-0">
-          <p className="text-[14.5px] font-semibold tracking-tight">{title}</p>
+          <p className="text-[14px] font-semibold tracking-[-0.01em]">{title}</p>
           {sub && <p className="text-[13px] text-muted-foreground">{sub}</p>}
         </div>
         <div className="text-right">
@@ -108,7 +108,7 @@ export default function ProjectMetricsPage() {
   if (p.status !== "running") {
     return (
       <EmptyState
-        icon={Activity}
+        icon={PulseIcon}
         title="Metrics appear while the project runs"
         description={<>It&apos;s <span className="font-medium text-foreground">{p.status}</span> right now. Start or redeploy it to see CPU, memory and network usage.</>}
       />
@@ -147,26 +147,26 @@ export default function ProjectMetricsPage() {
       </div>
 
       {/* Stat strip */}
-      <section className="surface overflow-hidden rounded-[20px]">
+      <section className="surface overflow-hidden rounded-[18px]">
         <div className="grid grid-cols-2 gap-px bg-[var(--dz-hairline)] lg:grid-cols-4">
-          <StatCell icon={Cpu} label="CPU" value={latest ? pct(latest.cpu_pct) : "—"} unit={latest ? `% · peak ${pct(peakCpu)}%` : undefined}>
+          <StatCell icon={CpuIcon} label="CPU" value={latest ? pct(latest.cpu_pct) : "—"} unit={latest ? `% · peak ${pct(peakCpu)}%` : undefined}>
             <Sparkline values={samples.map((s) => s.cpu_pct)} />
           </StatCell>
-          <StatCell icon={MemoryStick} label="Memory" value={latest ? String(latest.memory_mb) : "—"} unit={latest ? (memLimit ? `of ${memLimit} MB` : "MB") : undefined}>
+          <StatCell icon={MemoryIcon} label="Memory" value={latest ? String(latest.memory_mb) : "—"} unit={latest ? (memLimit ? `of ${memLimit} MB` : "MB") : undefined}>
             {latest && memLimit > 0 ? (
               <div className="h-1.5 overflow-hidden rounded-full bg-foreground/[0.07]">
                 <div
-                  className={cn("h-full rounded-full transition-[width] duration-700", memPct >= 90 ? "bg-red-500" : memPct >= 75 ? "bg-amber-500" : "bg-gradient-to-r from-brand to-brand-cyan")}
+                  className={cn("h-full rounded-full transition-[width] duration-700", memPct >= 90 ? "bg-red-500" : memPct >= 75 ? "bg-amber-500" : "bg-brand")}
                   style={{ width: `${Math.max(memPct, 3)}%` }}
                 />
               </div>
-            ) : <Sparkline values={samples.map((s) => s.memory_mb)} color={CYAN} />}
+            ) : <Sparkline values={samples.map((s) => s.memory_mb)} color={SERIES_2} />}
           </StatCell>
-          <StatCell icon={ArrowDown} label="Received since start" value={latest ? fmtBytes(latest.net_rx_bytes) : "—"}>
+          <StatCell icon={ArrowDownIcon} label="Received since start" value={latest ? fmtBytes(latest.net_rx_bytes) : "—"}>
             <Sparkline values={data.map((d) => d.rx_kb)} />
           </StatCell>
-          <StatCell icon={ArrowUp} label="Sent since start" value={latest ? fmtBytes(latest.net_tx_bytes) : "—"}>
-            <Sparkline values={data.map((d) => d.tx_kb)} color={CYAN} />
+          <StatCell icon={ArrowUpIcon} label="Sent since start" value={latest ? fmtBytes(latest.net_tx_bytes) : "—"}>
+            <Sparkline values={data.map((d) => d.tx_kb)} color={SERIES_2} />
           </StatCell>
         </div>
       </section>
@@ -178,15 +178,15 @@ export default function ProjectMetricsPage() {
               <AreaChart data={samples.map((s) => ({ ...s, label: tickLabel(s.ts, range) }))} margin={{ top: 4, right: 8, bottom: 0, left: -6 }}>
                 <defs>
                   <linearGradient id="m-cpu" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={GREEN} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={GREEN} stopOpacity={0} />
+                    <stop offset="0%" stopColor={SERIES_1} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={SERIES_1} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="label" {...axisProps} minTickGap={40} />
                 <YAxis {...axisProps} width={56} tickCount={4} tickFormatter={(v: number) => (v === 0 ? "0%" : v < 1 ? `${Number(v.toPrecision(2))}%` : `${pct(v)}%`)} />
                 <Tooltip content={<ChartTooltip format={(v) => `${pct(v)}%`} />} cursor={{ stroke: "currentColor", strokeOpacity: 0.15 }} />
-                <Area type="monotone" dataKey="cpu_pct" name="CPU" stroke={GREEN} strokeWidth={1.75} fill="url(#m-cpu)" />
+                <Area type="monotone" dataKey="cpu_pct" name="CPU" stroke={SERIES_1} strokeWidth={1.75} fill="url(#m-cpu)" />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -198,15 +198,15 @@ export default function ProjectMetricsPage() {
               <AreaChart data={samples.map((s) => ({ ...s, label: tickLabel(s.ts, range) }))} margin={{ top: 4, right: 8, bottom: 0, left: -14 }}>
                 <defs>
                   <linearGradient id="m-mem" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={CYAN} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={CYAN} stopOpacity={0} />
+                    <stop offset="0%" stopColor={SERIES_2} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={SERIES_2} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="label" {...axisProps} minTickGap={40} />
                 <YAxis {...axisProps} width={48} domain={[0, memLimit ? Math.max(memLimit, peakMem) : "auto"]} />
                 <Tooltip content={<ChartTooltip format={(v) => `${v} MB`} />} cursor={{ stroke: "currentColor", strokeOpacity: 0.15 }} />
-                <Area type="monotone" dataKey="memory_mb" name="Memory" stroke={CYAN} strokeWidth={1.75} fill="url(#m-mem)" />
+                <Area type="monotone" dataKey="memory_mb" name="Memory" stroke={SERIES_2} strokeWidth={1.75} fill="url(#m-mem)" />
                 {memLimit ? (
                   <ReferenceLine y={memLimit} stroke="#f87171" strokeDasharray="4 4" label={{ value: "limit", fill: "#f87171", fontSize: 12, position: "insideTopRight" }} />
                 ) : null}
@@ -221,8 +221,8 @@ export default function ProjectMetricsPage() {
           value={data.length ? fmtKB(data[data.length - 1].rx_kb + data[data.length - 1].tx_kb) : "—"}
           legend={
             <p className="mt-0.5 flex items-center justify-end gap-3 text-[12.5px] text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: GREEN }} />In</span>
-              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: CYAN }} />Out</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: SERIES_1 }} />In</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: SERIES_2 }} />Out</span>
             </p>
           }
         >
@@ -231,30 +231,30 @@ export default function ProjectMetricsPage() {
               <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -14 }}>
                 <defs>
                   <linearGradient id="m-rx" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={GREEN} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={GREEN} stopOpacity={0} />
+                    <stop offset="0%" stopColor={SERIES_1} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={SERIES_1} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="label" {...axisProps} minTickGap={40} />
                 <YAxis {...axisProps} width={48} tickFormatter={(v: number) => (v === 0 ? "0" : v >= 1024 ? `${(v / 1024).toFixed(0)}M` : `${v.toFixed(0)}k`)} />
                 <Tooltip content={<ChartTooltip format={(v) => fmtKB(v)} />} cursor={{ stroke: "currentColor", strokeOpacity: 0.15 }} />
-                <Area type="monotone" dataKey="rx_kb" name="In" stroke={GREEN} strokeWidth={1.75} fill="url(#m-rx)" />
-                <Area type="monotone" dataKey="tx_kb" name="Out" stroke={CYAN} strokeWidth={1.75} fill="none" />
+                <Area type="monotone" dataKey="rx_kb" name="In" stroke={SERIES_1} strokeWidth={1.75} fill="url(#m-rx)" />
+                <Area type="monotone" dataKey="tx_kb" name="Out" stroke={SERIES_2} strokeWidth={1.75} fill="none" />
               </AreaChart>
             </ResponsiveContainer>
           )}
         </ChartCard>
 
         {/* Bandwidth this month */}
-        <section className="surface flex flex-col rounded-[20px] p-4 sm:p-5">
+        <section className="surface flex flex-col rounded-[18px] p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[14.5px] font-semibold tracking-tight">Bandwidth</p>
+              <p className="text-[14px] font-semibold tracking-[-0.01em]">Bandwidth</p>
               <p className="text-[13px] text-muted-foreground">This month</p>
             </div>
             <button type="button" onClick={loadBandwidth} aria-label="Refresh bandwidth" className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
-              <RefreshCw className="h-3.5 w-3.5" />
+              <ArrowsClockwiseIcon className="h-3.5 w-3.5" />
             </button>
           </div>
           {bandwidth ? (() => {
@@ -267,12 +267,12 @@ export default function ProjectMetricsPage() {
             return (
               <>
                 <div className="mt-4">
-                  <p className="flex items-center gap-1.5 text-[13.5px] text-muted-foreground"><Wifi className="h-3.5 w-3.5" /> This project</p>
+                  <p className="flex items-center gap-1.5 text-[13.5px] text-muted-foreground"><WifiHighIcon className="h-3.5 w-3.5" /> This project</p>
                   <p className="mt-1.5 text-[28px] font-semibold leading-none tracking-[-0.035em] tabular-nums">{fmtGB(bw.project_gb)}</p>
                   {bw.account_gb > 0 && <p className="mt-1.5 text-[13px] text-muted-foreground tabular-nums">{share.toFixed(0)}% of your account&apos;s traffic</p>}
                 </div>
                 <div className="mt-auto pt-5">
-                  <div className="rounded-2xl bg-foreground/[0.035] p-3.5">
+                  <div className="rounded-[14px] bg-foreground/[0.03] p-3.5">
                     <div className="flex items-baseline justify-between gap-2 text-[13.5px]">
                       <span className="text-muted-foreground">All projects</span>
                       <span className={cn("font-medium tabular-nums", hot ? "text-red-600 dark:text-red-400" : warm ? "text-amber-600 dark:text-amber-400" : "")}>
@@ -281,19 +281,19 @@ export default function ProjectMetricsPage() {
                     </div>
                     {capped ? (
                       <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-foreground/[0.08]">
-                        <div className={cn("h-full rounded-full transition-[width] duration-700", hot ? "bg-red-500" : warm ? "bg-amber-500" : "bg-gradient-to-r from-brand to-brand-cyan")} style={{ width: `${Math.max(pct, 2)}%` }} />
+                        <div className={cn("h-full rounded-full transition-[width] duration-700", hot ? "bg-red-500" : warm ? "bg-amber-500" : "bg-brand")} style={{ width: `${Math.max(pct, 2)}%` }} />
                       </div>
                     ) : (
                       <p className="mt-1.5 text-[12.5px] text-muted-foreground">No bandwidth cap on your plan</p>
                     )}
                   </div>
                   {bw.exceeded ? (
-                    <p className="mt-3 text-[13px] text-red-600 dark:text-red-400">Limit reached. <Link href="/billing" className="font-medium underline-offset-2 hover:underline">Upgrade</Link> to restore full traffic.</p>
+                    <p className="mt-3 text-[13px] text-red-600 dark:text-red-400">Limit reached. <Link href="/billing?tab=plans" className="font-medium underline-offset-2 hover:underline">Upgrade</Link> to restore full traffic.</p>
                   ) : capped && bw.pct >= 80 ? (
                     <p className="mt-3 text-[13px] text-amber-700 dark:text-amber-400">Close to this month&apos;s limit.</p>
                   ) : (
                     <Link href="/billing" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-foreground/80 transition-colors hover:text-foreground">
-                      Plan limits <ArrowRight className="h-3.5 w-3.5" />
+                      Plan limits <ArrowRightIcon className="h-3.5 w-3.5" />
                     </Link>
                   )}
                 </div>
@@ -303,14 +303,14 @@ export default function ProjectMetricsPage() {
             <div className="mt-4 space-y-3" aria-hidden>
               <div className="h-4 w-24 animate-pulse rounded bg-foreground/[0.06]" />
               <div className="h-8 w-32 animate-pulse rounded bg-foreground/[0.06]" />
-              <div className="h-16 animate-pulse rounded-2xl bg-foreground/[0.04]" />
+              <div className="h-16 animate-pulse rounded-[14px] bg-foreground/[0.04]" />
             </div>
           )}
         </section>
       </div>
 
       <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-        <Network className="h-3.5 w-3.5" /> {samples.length ? `${samples.length} samples in this range.` : "No samples yet."} 100% CPU is one full core.
+        <TreeStructureIcon className="h-3.5 w-3.5" /> {samples.length ? `${samples.length} samples in this range.` : "No samples yet."} 100% CPU is one full core.
       </p>
     </div>
   );

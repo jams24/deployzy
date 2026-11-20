@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, Bitcoin, CreditCard, Loader2, X } from "lucide-react";
+import { ArrowUpRightIcon, CircleNotchIcon, CreditCardIcon, CurrencyBtcIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { API, authHeaders, type CreditsResp } from "./types";
 
@@ -77,7 +77,7 @@ export function AddFundsModal({ data, onClose }: { data: CreditsResp; onClose: (
             <p className="mt-1 text-[13.5px] text-muted-foreground">For AI and email usage. Funds never expire.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
-            <X className="h-4 w-4" />
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -123,12 +123,12 @@ export function AddFundsModal({ data, onClose }: { data: CreditsResp; onClose: (
             <div className="mt-2 grid grid-cols-2 gap-2">
               {methods.card && (
                 <button type="button" onClick={() => setMethod("card")} className={methodBtn(method === "card")}>
-                  <CreditCard className="h-4 w-4" /> Card
+                  <CreditCardIcon className="h-4 w-4" /> Card
                 </button>
               )}
               {methods.crypto && (
                 <button type="button" onClick={() => setMethod("crypto")} className={cn(methodBtn(method === "crypto"), !methods.card && "col-span-2")}>
-                  <Bitcoin className="h-4 w-4" /> Crypto (USDT)
+                  <CurrencyBtcIcon className="h-4 w-4" /> Crypto (USDT)
                 </button>
               )}
             </div>
@@ -144,7 +144,7 @@ export function AddFundsModal({ data, onClose }: { data: CreditsResp; onClose: (
         <div className="flex flex-col-reverse gap-2 p-5 pt-5 sm:flex-row sm:justify-end sm:p-6 sm:pt-5">
           <button type="button" onClick={onClose} className="pill pill-line pill-sm">Cancel</button>
           <button type="button" onClick={buy} disabled={busy || !valid} className="pill pill-launch pill-sm disabled:opacity-50">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continue to payment <ArrowUpRight className="h-4 w-4" /></>}
+            {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <>Continue to payment <ArrowUpRightIcon className="h-4 w-4" /></>}
           </button>
         </div>
       </div>

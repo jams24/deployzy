@@ -165,6 +165,33 @@
   .text-\[11px\] { font-size: 13px; }
   .text-\[12px\] { font-size: 14px; }
   .text-\[13px\] { font-size: 14.5px; }
+
+  /* The dashboard (html.dz-app) uses a calmer, denser scale than the
+     marketing site: body copy at 14px, small print at 12px. */
+  .dz-app .text-xs   { font-size: 0.75rem; line-height: 1.0625rem; }
+  .dz-app .text-sm   { font-size: 0.875rem; line-height: 1.3rem; }
+  .dz-app .text-base { font-size: 0.9375rem; line-height: 1.5rem; }
+  .dz-app .text-lg   { font-size: 1.0625rem; line-height: 1.6rem; }
+  .dz-app .text-\[9px\]  { font-size: 10px; }
+  .dz-app .text-\[10px\] { font-size: 11px; }
+  .dz-app .text-\[11px\] { font-size: 11.5px; }
+  .dz-app .text-\[12px\] { font-size: 12px; }
+  .dz-app .text-\[13px\] { font-size: 13px; }
+}
+
+/* Dashboard numbers: the UI sans with even-width digits, not mono. */
+.dz-app .figure {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Dashboard eyebrows: quiet sans labels, not the marketing mono caps. */
+.dz-app .eyebrow {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* Prevent horizontal scroll WITHOUT breaking position:sticky.
@@ -479,6 +506,11 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
   --dz-ink: oklch(0.16 0.006 265);         /* #0b0c0f-ish, hero card */
   --dz-paper: oklch(0.985 0.002 90);
   --dz-hairline: oklch(0 0 0 / 0.08);
+  /* Chart series. One accent (brand green) plus one second series (indigo);
+     the pair passes the dataviz validator on paper and on the dark card
+     (normal-vision ΔE 28, colour-blind ΔE 24). Green+cyan did not (ΔE 12). */
+  --dz-series-1: #059669;
+  --dz-series-2: #6366f1;
 }
 .dark {
   --dz-green: oklch(0.8 0.16 163);         /* #34d399 family */
@@ -487,6 +519,8 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
   --dz-ink: oklch(0.14 0.006 265);
   --dz-paper: oklch(0.145 0 0);
   --dz-hairline: oklch(1 0 0 / 0.08);
+  --dz-series-1: #199e70;
+  --dz-series-2: #6366f1;
 }
 
 /* Small mono caps label above titles, figures and table heads. */
@@ -618,6 +652,17 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
 .pill-line:hover { border-color: color-mix(in oklch, var(--foreground) 25%, transparent); }
 .pill-sm { height: 2.25rem; padding-inline: 1rem; font-size: 0.875rem; }
 .pill-xs { height: 2rem; padding-inline: 0.875rem; gap: 0.375rem; font-size: 0.78125rem; letter-spacing: -0.005em; }
+/* Dashboard: a disabled primary button reads as "not yet", not as a muddy
+   grey version of itself. Unlayered, so it wins over disabled:opacity-*. */
+.dz-app .pill-ink:disabled,
+.dz-app .pill-launch:disabled {
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: color-mix(in oklch, var(--foreground) 38%, transparent);
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.dz-app .pill:disabled:active { transform: none; }
 /* Cookie notice: on phones it sits above the dashboard's bottom tab bar
    (MobileNav carries data-bottom-nav) instead of covering it. */
 @media (max-width: 767px) {
@@ -741,3 +786,16 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
 @keyframes dz-tour-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .dz-tour-step { animation: dz-tour-in 0.32s var(--ease-out-expo) both; }
 @media (prefers-reduced-motion: reduce) { .dz-tour-glide { transition: none; } .dz-tour-step { animation: none; } }
+
+/* Duotone icons (Phosphor). At rest the soft layer is a quiet grey; on the
+   active item, and on hover inside a .group, it fills with Deployzy green:
+   our own signature instead of plain outlines. */
+.dz-ico path[opacity="0.2"] { opacity: 0.26; transition: fill 0.25s, opacity 0.25s; }
+.dark .dz-ico path[opacity="0.2"] { opacity: 0.3; }
+.dz-ico-on path[opacity="0.2"],
+.group:hover .dz-ico-hover path[opacity="0.2"],
+.group:focus-visible .dz-ico-hover path[opacity="0.2"] { fill: var(--dz-green); opacity: 0.5; }
+.dark .dz-ico-on path[opacity="0.2"],
+.dark .group:hover .dz-ico-hover path[opacity="0.2"] { opacity: 0.45; }
+/* Tinted duotone: both layers take the text colour, soft layer a little stronger. */
+.dz-ico-tint path[opacity="0.2"] { opacity: 0.32; }

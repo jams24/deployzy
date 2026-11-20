@@ -1,7 +1,8 @@
 "use client";
 
+import { PageHeader } from "@/components/dashboard/kit";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Search, Trash2, Pause, Play, Copy, Check, Radio, Waypoints, ArrowRight, Clock, X } from "lucide-react";
+import { ArrowRightIcon, BroadcastIcon, CheckIcon, ClockIcon, CopyIcon, EyeIcon, EyeSlashIcon, MagnifyingGlassIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { api, type CapturedRequest, type Tunnel } from "@/lib/api";
 import { DashMotion } from "@/components/admin/dash-kit";
 import { fmtBytes, timeAgo } from "@/components/admin/pager";
@@ -51,7 +52,7 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
   return (
     <button onClick={() => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })}
       className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/60 px-2 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
-      {done ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}{label}
+      {done ? <CheckIcon className="h-3 w-3 text-emerald-500" /> : <CopyIcon className="h-3 w-3" />}{label}
     </button>
   );
 }
@@ -96,11 +97,11 @@ function Detail({ r, host, onClose }: { r: CapturedRequest; host: string; onClos
           <p className="min-w-0 break-all font-mono text-sm">
             <span className={`font-semibold ${METHOD_COLOR[r.method] || ""}`}>{r.method}</span> {r.path}{r.query ? <span className="text-muted-foreground">?{r.query}</span> : null}
           </p>
-          <button onClick={onClose} className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden" aria-label="Close"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden" aria-label="Close"><XIcon className="h-4 w-4" /></button>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <span className={`rounded border px-1.5 py-0.5 font-mono font-medium ${statusTone(r.status_code)}`}>{r.status_code}</span>
-          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{r.duration_ms} ms</span>
+          <span className="flex items-center gap-1"><ClockIcon className="h-3 w-3" />{r.duration_ms} ms</span>
           <span>↑ {fmtBytes(r.request_size)} · ↓ {fmtBytes(r.response_size)}</span>
           <span>{new Date(r.timestamp).toLocaleTimeString()}</span>
           {r.remote_addr && <span className="font-mono">{r.remote_addr}</span>}
@@ -109,7 +110,7 @@ function Detail({ r, host, onClose }: { r: CapturedRequest; host: string; onClos
           <CopyBtn text={toCurl(r, host)} label="Copy as cURL" />
           <button onClick={() => setReveal((v) => !v)}
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border/60 px-2 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
-            {reveal ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}{reveal ? "Hide secrets" : "Show secrets"}
+            {reveal ? <EyeSlashIcon className="h-3 w-3" /> : <EyeIcon className="h-3 w-3" />}{reveal ? "Hide secrets" : "Show secrets"}
           </button>
         </div>
       </div>
@@ -216,27 +217,24 @@ export default function InspectorPage() {
   return (
     <div className="animate-fade-in-up space-y-5">
       <DashMotion />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow">Network</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Traffic Inspector</h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Every HTTP request through your tunnels, live: headers, bodies, status and timing.</p>
-        </div>
-        {sel && (
+      <PageHeader
+        title="Inspector"
+        description="Every HTTP request through your tunnels, live: headers, bodies, status and timing."
+        actions={sel && (
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
             live === "live" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
             : live === "connecting" ? "border-border bg-muted/40 text-muted-foreground" : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}>
-            <Radio className={`h-3 w-3 ${live === "live" && !paused ? "animate-pulse" : ""}`} />
+            <BroadcastIcon className={`h-3 w-3 ${live === "live" && !paused ? "animate-pulse" : ""}`} />
             {paused ? "Paused" : live === "live" ? "Live" : live === "connecting" ? "Connecting…" : "Reconnecting…"}
           </span>
         )}
-      </div>
+      />
 
       {tunnels === null ? (
         <div className="h-[420px] animate-pulse rounded-2xl bg-muted/50" />
       ) : tunnels.length === 0 ? (
         <div className="ov-rise flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><Waypoints className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
           <h3 className="mt-4 font-semibold">No HTTP tunnels running</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">Start one and its requests stream in here. Inspection is on by default.</p>
           <div className="mt-5 flex items-center gap-3 rounded-xl surface px-4 py-2.5">
@@ -254,8 +252,8 @@ export default function InspectorPage() {
                   sel === t.url ? "border-foreground/30 bg-card shadow-sm" : "border-border/60 hover:border-foreground/20"}`}>
                 <span className={`h-2 w-2 rounded-full ${t.inspect ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
                 <span className="min-w-0">
-                  <span className="block max-w-[16rem] truncate font-mono text-xs">{t.url.replace(/^https?:\/\//, "")}</span>
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">{t.local_addr || "local"} <ArrowRight className="h-2.5 w-2.5" /> {t.inspect ? "inspecting" : "inspection off"}</span>
+                  <span className="block max-w-[16rem] truncate text-xs">{t.url.replace(/^https?:\/\//, "")}</span>
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">{t.local_addr || "local"} <ArrowRightIcon className="h-2.5 w-2.5" /> {t.inspect ? "inspecting" : "inspection off"}</span>
                 </span>
               </button>
             ))}
@@ -270,7 +268,7 @@ export default function InspectorPage() {
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[12rem] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by path, query or method (GET, POST…)"
                 className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-foreground/30 focus:ring-4 focus:ring-emerald-500/10" />
             </div>
@@ -282,11 +280,11 @@ export default function InspectorPage() {
             </div>
             <button onClick={() => (paused ? resume() : setPaused(true))}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-accent">
-              {paused ? <><Play className="h-3.5 w-3.5" /> Resume{queued.current.length ? ` (${queued.current.length})` : ""}</> : <><Pause className="h-3.5 w-3.5" /> Pause</>}
+              {paused ? <><PlayIcon className="h-3.5 w-3.5" /> Resume{queued.current.length ? ` (${queued.current.length})` : ""}</> : <><PauseIcon className="h-3.5 w-3.5" /> Pause</>}
             </button>
             <button onClick={async () => { if (!sel) return; try { await api.clearRequests(sel); } catch { /* keep UI responsive */ } setReqs([]); setSelected(null); }}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/60 px-3 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
-              <Trash2 className="h-3.5 w-3.5" /> Clear
+              <TrashIcon className="h-3.5 w-3.5" /> Clear
             </button>
           </div>
 
@@ -324,7 +322,7 @@ export default function InspectorPage() {
             <div className={`min-h-0 ${selected ? "fixed inset-0 z-50 bg-background lg:static lg:z-auto" : "hidden lg:block"}`}>
               {selected ? <Detail r={selected} host={tunnel?.url || ""} onClose={() => setSelected(null)} /> : (
                 <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-                  <span className="flex flex-col items-center gap-2"><Eye className="h-5 w-5" />Select a request to see its headers, body and timing.</span>
+                  <span className="flex flex-col items-center gap-2"><EyeIcon className="h-5 w-5" />Select a request to see its headers, body and timing.</span>
                 </div>
               )}
             </div>

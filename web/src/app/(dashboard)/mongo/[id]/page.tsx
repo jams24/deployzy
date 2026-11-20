@@ -6,17 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ConsoleFrame, ConsoleHeader, ConsolePicker, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
-import {
-  RefreshCw, Loader2, Trash2, Plus, Search,
-  Terminal, Database, Check, X, ChevronDown, ChevronRight,
-  Layers,
-} from "lucide-react";
+import { ArrowsClockwiseIcon, CaretDownIcon, CaretRightIcon, CheckIcon, CircleNotchIcon, DatabaseIcon, MagnifyingGlassIcon, PlusIcon, StackIcon, TerminalWindowIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 const MONGO_TABS: ConsoleTab<"browse" | "shell">[] = [
-  { id: "browse", label: "Browse", icon: Database },
-  { id: "shell", label: "Shell", icon: Terminal },
+  { id: "browse", label: "Browse", icon: DatabaseIcon },
+  { id: "shell", label: "Shell", icon: TerminalWindowIcon },
 ];
 
 interface Collection {
@@ -174,8 +170,8 @@ function CollapsibleDoc({
         onClick={() => { setExpanded(!expanded); setEditing(false); }}
       >
         {expanded
-          ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-          : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+          ? <CaretDownIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+          : <CaretRightIcon className="h-3 w-3 text-muted-foreground shrink-0" />}
 
         {/* _id */}
         <div className="flex items-center gap-1.5 min-w-0 w-52 shrink-0">
@@ -200,7 +196,7 @@ function CollapsibleDoc({
           className="shrink-0 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-600 dark:text-red-400 transition-colors"
           onClick={(e) => { e.stopPropagation(); onDelete(doc); }}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <TrashIcon className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -219,10 +215,10 @@ function CollapsibleDoc({
               {editError && <p className="text-[10px] text-red-600 dark:text-red-400 font-mono">{editError}</p>}
               <div className="flex gap-1.5">
                 <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={saving} onClick={handleSave}>
-                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
+                  {saving ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <CheckIcon className="h-3 w-3" />} Save
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setEditing(false)}>
-                  <X className="h-3 w-3" />
+                  <XIcon className="h-3 w-3" />
                 </Button>
               </div>
             </div>
@@ -236,7 +232,7 @@ function CollapsibleDoc({
                   Edit document
                 </button>
                 <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive gap-1" onClick={() => onDelete(doc)}>
-                  <Trash2 className="h-3 w-3" /> Delete
+                  <TrashIcon className="h-3 w-3" /> Delete
                 </Button>
               </div>
             </div>
@@ -401,7 +397,7 @@ export default function MongoEditorPage() {
       <ConsoleHeader
         kind="MongoDB"
         title={dbName || "Database"}
-        icon={Database}
+        icon={DatabaseIcon}
         tone="mongo"
         onBack={() => router.push("/services")}
         tabs={MONGO_TABS}
@@ -424,7 +420,7 @@ export default function MongoEditorPage() {
           <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3">
             <span className="eyebrow">Collections · {collections.length}</span>
             <button onClick={loadCollections} disabled={colLoading} aria-label="Reload collections" className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-              {colLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              {colLoading ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <ArrowsClockwiseIcon className="h-3 w-3" />}
             </button>
           </div>
           <div className="flex-1 overflow-y-auto pb-2">
@@ -438,7 +434,7 @@ export default function MongoEditorPage() {
                 className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${selectedCol === col.name ? "bg-foreground/[0.07] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"}`}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <Layers className={`h-3.5 w-3.5 shrink-0 ${selectedCol === col.name ? "text-green-500" : "opacity-50"}`} />
+                  <StackIcon className={`h-3.5 w-3.5 shrink-0 ${selectedCol === col.name ? "text-green-500" : "opacity-50"}`} />
                   <span className="truncate font-mono text-[12.5px]">{col.name}</span>
                 </span>
                 <span className="figure shrink-0 text-[11px] text-muted-foreground/70">{col.count.toLocaleString()}</span>
@@ -455,7 +451,7 @@ export default function MongoEditorPage() {
               {/* Toolbar */}
               <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 shrink-0">
                 <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
                     value={filterInput}
                     onChange={(e) => setFilterInput(e.target.value)}
@@ -465,11 +461,11 @@ export default function MongoEditorPage() {
                   />
                 </div>
                 <Button size="sm" className="h-8 gap-1 text-[11px]" onClick={applyFilter} disabled={docsLoading || !selectedCol}>
-                  {docsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  {docsLoading ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <ArrowsClockwiseIcon className="h-3 w-3" />}
                   Filter
                 </Button>
                 <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={() => { setInserting(true); setInsertError(""); }} disabled={!selectedCol}>
-                  <Plus className="h-3 w-3" /> Insert
+                  <PlusIcon className="h-3 w-3" /> Insert
                 </Button>
                 {page && (
                   <span className="text-[10px] text-muted-foreground ml-auto">
@@ -492,10 +488,10 @@ export default function MongoEditorPage() {
                   {insertError && <p className="text-[10px] text-red-600 dark:text-red-400 font-mono mb-2">{insertError}</p>}
                   <div className="flex gap-1.5">
                     <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={insertSaving} onClick={insertDoc}>
-                      {insertSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Insert
+                      {insertSaving ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <CheckIcon className="h-3 w-3" />} Insert
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => { setInserting(false); setInsertError(""); }}>
-                      <X className="h-3 w-3" />
+                      <XIcon className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
@@ -512,18 +508,18 @@ export default function MongoEditorPage() {
 
                 {!selectedCol && (
                   <div className="flex flex-col items-center py-16 text-muted-foreground">
-                    <Layers className="h-8 w-8 opacity-30 mb-2" />
+                    <StackIcon className="h-8 w-8 opacity-30 mb-2" />
                     <p className="text-sm">Select a collection</p>
                   </div>
                 )}
 
                 {selectedCol && docsLoading && (!page || page.documents.length === 0) && (
-                  <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                  <div className="flex justify-center py-12"><CircleNotchIcon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
                 )}
 
                 {selectedCol && !docsLoading && page && page.documents.length === 0 && (
                   <div className="flex flex-col items-center py-12 text-muted-foreground">
-                    <Database className="h-8 w-8 opacity-30 mb-2" />
+                    <DatabaseIcon className="h-8 w-8 opacity-30 mb-2" />
                     <p className="text-sm">No documents match the filter</p>
                   </div>
                 )}
@@ -608,7 +604,7 @@ export default function MongoEditorPage() {
                 />
                 <div className="flex items-center gap-2">
                   <Button size="sm" className="h-7 px-3 text-[11px] gap-1" onClick={runShell} disabled={shellRunning}>
-                    {shellRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Terminal className="h-3 w-3" />} Run
+                    {shellRunning ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <TerminalWindowIcon className="h-3 w-3" />} Run
                   </Button>
                   <span className="text-[10px] text-muted-foreground">or Ctrl+Enter</span>
                 </div>

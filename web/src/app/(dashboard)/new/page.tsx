@@ -6,18 +6,13 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { RegionPicker } from "@/components/region-picker";
-import { BrandLogo } from "@/components/brand-logos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  GitBranch, Database, Container, Layers, Search, Rocket,
-  ChevronRight, ChevronDown, Loader2, Globe, Server, Check, ArrowLeft, Settings2,
-  Download, Sparkles, ExternalLink, Upload, FolderUp,
-} from "lucide-react";
 import { makeTarGz, shouldIgnore, detectFrameworkFromFiles, type TarFile } from "@/lib/tar";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
-import { api, Template, EnvVarSchema } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { ArrowLeftIcon, ArrowRightIcon, ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, CheckIcon, CircleNotchIcon, DatabaseIcon, FolderOpenIcon, GitBranchIcon, GithubLogoIcon, GlobeHemisphereWestIcon, HardDrivesIcon, type Icon, MagnifyingGlassIcon, RocketLaunchIcon, ShippingContainerIcon, SlidersHorizontalIcon, SparkleIcon, SquaresFourIcon, UploadSimpleIcon } from "@phosphor-icons/react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -33,14 +28,20 @@ const langColor: Record<string, string> = {
   Ruby: "bg-red-500", PHP: "bg-violet-400", HTML: "bg-orange-500",
 };
 
-const options = [
-  { id: "github", title: "GitHub Repository", desc: "Deploy from a GitHub repo", icon: GitBranch, brand: "github", color: "text-violet-600 dark:text-violet-400 bg-violet-500/10", category: "deploy" },
-  { id: "upload", title: "Upload Project", desc: "Deploy a folder from your computer", icon: FolderUp, color: "text-teal-600 dark:text-teal-400 bg-teal-500/10", category: "deploy" },
-  { id: "database", title: "Database", desc: "PostgreSQL, Redis, MongoDB or MySQL with a connection URL", icon: Database, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10", category: "infra" },
-  { id: "template", title: "Template", desc: "Start from a pre-built template", icon: Layers, color: "text-amber-600 dark:text-amber-400 bg-amber-500/10", category: "deploy" },
-  { id: "docker", title: "Docker Image", desc: "Deploy a Docker Hub image", icon: Container, brand: "docker", color: "text-blue-600 dark:text-blue-400 bg-blue-500/10", category: "deploy" },
-  { id: "domain", title: "Custom Domain", desc: "Connect your own domain", icon: Globe, color: "text-pink-600 dark:text-pink-400 bg-pink-500/10", category: "infra" },
-  { id: "server", title: "SSH Server (BYOC)", desc: "Add your own server", icon: Server, color: "text-orange-600 dark:text-orange-400 bg-orange-500/10", category: "infra" },
+// The chooser: how to deploy (repo, folder, template, image, agent) and
+// what to add alongside it. Duotone icons go green on hover.
+const DEPLOY_OPTIONS: { id: string; title: string; desc: string; icon: Icon; tag?: string }[] = [
+  { id: "github", title: "Import from GitHub", desc: "Pick a repository. Every push redeploys it.", icon: GithubLogoIcon },
+  { id: "upload", title: "Upload a folder", desc: "Drop a project from your computer. No Git needed.", icon: FolderOpenIcon },
+  { id: "template", title: "Start from a template", desc: "One-click apps like n8n, Uptime Kuma or Ghost.", icon: SquaresFourIcon },
+  { id: "docker", title: "Deploy a Docker image", desc: "Run any public image from Docker Hub.", icon: ShippingContainerIcon },
+  { id: "agent", title: "Describe it to the Agent", desc: "Say what you want in plain English. It writes, builds and ships it.", icon: SparkleIcon, tag: "AI" },
+];
+
+const ADD_OPTIONS: { id: string; title: string; desc: string; icon: Icon }[] = [
+  { id: "database", title: "Database", desc: "Postgres, MySQL, MongoDB or Redis.", icon: DatabaseIcon },
+  { id: "domain", title: "Custom domain", desc: "Serve an app on your own domain.", icon: GlobeHemisphereWestIcon },
+  { id: "server", title: "Your own server", desc: "Connect a VPS over SSH and deploy to it.", icon: HardDrivesIcon },
 ];
 
 
@@ -69,7 +70,6 @@ function detectFramework(language: string | null): string {
 
 export default function NewResourcePage() {
   const router = useRouter();
-  const [search, setSearch] = useState("");
   const [step, setStep] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -123,17 +123,6 @@ export default function NewResourcePage() {
   const [aiCurrentProject, setAiCurrentProject] = useState<{ id: string; sub: string } | null>(null);
   const aiMetaRef = useRef<{ url: string; summary: string; isSite: boolean }>({ url: "", summary: "", isSite: false });
   const aiScrollRef = useRef<HTMLDivElement>(null);
-
-  // Template picker (API-backed)
-  const [apiTemplates, setApiTemplates]         = useState<Template[]>([]);
-  const [templateSearch, setTemplateSearch]     = useState("");
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [templateEnvVars, setTemplateEnvVars]   = useState<Record<string, string>>({});
-  const [templateName, setTemplateName]         = useState("");
-  const [templateServer, setTemplateServer]     = useState("");
-  const [templateDeploying, setTemplateDeploying] = useState(false);
-  const [templateError, setTemplateError]       = useState("");
 
   // Database
   const [dbName, setDbName] = useState("");
@@ -483,26 +472,6 @@ function startDocker() {
     }
   }
 
-  async function deployTemplate() {
-    if (!selectedTemplate || !templateName.trim()) return;
-    setTemplateDeploying(true);
-    setTemplateError("");
-    try {
-      const payload: { name: string; env_vars: Record<string, string>; worker_server_id?: string } = {
-        name: templateName,
-        env_vars: templateEnvVars,
-      };
-      if (templateServer) {
-        payload.worker_server_id = templateServer;
-      }
-      await api.deployFromTemplate(selectedTemplate.slug, payload);
-      router.push("/projects");
-    } catch (e: unknown) {
-      setTemplateError(e instanceof Error ? e.message : "Deploy failed");
-      setTemplateDeploying(false);
-    }
-  }
-
   // Deep-link support: /new?type=database opens the database form directly
   // (used by the "New Database" button) instead of the resource picker.
   useEffect(() => {
@@ -523,22 +492,12 @@ function startDocker() {
         setUploadFiles(null); setUploadName(""); setUploadSub(""); setUploadErr(""); setUploadFramework("");
         setStep("upload");
         break;
-      case "template":
-        setTemplateSearch("");
-        setSelectedTemplate(null);
-        setTemplateEnvVars({});
-        setTemplateError("");
-        setTemplatesLoading(true);
-        setStep("template");
-        api.listTemplates({ sort: "popular", limit: 50 })
-          .then((res) => setApiTemplates(res.templates ?? []))
-          .catch(() => {})
-          .finally(() => setTemplatesLoading(false));
-        break;
+      case "template": router.push("/new/template"); break;
       case "ai": setAiPrompt(""); setAiChat([]); setAiResult(null); setAiSetup(null); setAiLogs([]); setAiPhase(null); setAiActivePid(null); setAiCurrentProject(null); setStep("ai"); break;
       case "docker": startDocker(); break;
       case "domain": router.push("/domains"); break;
       case "server": router.push("/servers"); break;
+      case "agent": router.push("/agent"); break;
     }
   }
 
@@ -669,17 +628,13 @@ function startDocker() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [aiChat, aiLogs, aiSetup, aiResult, aiPhase]);
 
-  const filtered = options.filter(o =>
-    !search || o.title.toLowerCase().includes(search.toLowerCase()) || o.desc.toLowerCase().includes(search.toLowerCase())
-  );
-
   const filteredRepos = ghRepos.filter(r =>
     !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase()) || r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
   );
 
   const BackButton = () => (
     <button onClick={() => setStep(null)} className="text-xs text-muted-foreground hover:text-foreground mb-4 flex items-center gap-1">
-      <ArrowLeft className="h-3 w-3" /> Back
+      <ArrowLeftIcon className="h-3 w-3" /> Back
     </button>
   );
 
@@ -737,10 +692,10 @@ function startDocker() {
         <BackButton />
         <div className="flex items-center gap-3 mb-3">
           <div className="h-9 w-9 rounded-xl bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 grid place-items-center">
-            <Sparkles className="h-4 w-4" />
+            <SparkleIcon className="h-4 w-4" />
           </div>
           <div>
-            <h1 className="text-xl font-bold leading-tight">Build with AI</h1>
+            <h1 className="text-[20px] font-semibold leading-tight tracking-[-0.02em]">Build with AI</h1>
             <p className="text-xs text-muted-foreground">Describe it in plain English — I&apos;ll generate, deploy, and stream the logs.</p>
           </div>
         </div>
@@ -792,7 +747,7 @@ function startDocker() {
 
           {aiPhase === "generating" && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Generating code…
+              <CircleNotchIcon className="h-4 w-4 animate-spin" /> Generating code…
             </div>
           )}
 
@@ -842,7 +797,7 @@ function startDocker() {
                 )}
                 <div className="flex gap-2 pt-1">
                   <Button onClick={grantAndDeploy} disabled={aiBusy || aiSetup.vars.some((v) => !aiEnvValues[v.key]?.trim())} className="gap-2">
-                    {aiBusy ? <><Loader2 className="h-4 w-4 animate-spin" /> Deploying…</> : <><Rocket className="h-4 w-4" /> Grant &amp; deploy</>}
+                    {aiBusy ? <><CircleNotchIcon className="h-4 w-4 animate-spin" /> Deploying…</> : <><RocketLaunchIcon className="h-4 w-4" /> Grant &amp; deploy</>}
                   </Button>
                 </div>
               </CardContent>
@@ -854,8 +809,8 @@ function startDocker() {
               <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-sm font-medium">{aiResult.ok ? "🎉 Deployed successfully" : "⚠️ Deployment failed"}</div>
                 <div className="flex gap-2">
-                  {aiResult.ok && aiResult.isSite && <Button size="sm" onClick={() => window.open(aiResult.url, "_blank")} className="gap-1.5"><ExternalLink className="h-4 w-4" /> View site</Button>}
-                  <Button size="sm" variant="outline" onClick={() => router.push("/projects")} className="gap-1.5"><Rocket className="h-4 w-4" /> Open project</Button>
+                  {aiResult.ok && aiResult.isSite && <Button size="sm" onClick={() => window.open(aiResult.url, "_blank")} className="gap-1.5"><ArrowSquareOutIcon className="h-4 w-4" /> View site</Button>}
+                  <Button size="sm" variant="outline" onClick={() => router.push("/projects")} className="gap-1.5"><RocketLaunchIcon className="h-4 w-4" /> Open project</Button>
                 </div>
               </CardContent>
             </Card>
@@ -869,7 +824,7 @@ function startDocker() {
             placeholder={aiChat.length ? "Describe a change, or build something new…" : "Describe what you want to build…"}
             className="flex-1 rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-fuchsia-500/50 max-h-32" />
           <Button onClick={runAIBuild} disabled={!aiPrompt.trim() || aiBusy || aiPhase === "building"} className="h-11 w-11 p-0 shrink-0">
-            {aiBusy || aiPhase === "building" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {aiBusy || aiPhase === "building" ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <SparkleIcon className="h-4 w-4" />}
           </Button>
         </div>
         <p className="text-[10px] text-center text-muted-foreground mt-1.5">Each build uses one project slot · TypeScript/Python only · your keys stay private</p>
@@ -883,7 +838,7 @@ function startDocker() {
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
-        <h1 className="text-xl font-bold mb-1">Upload a project</h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.022em]">Upload a project</h1>
         <p className="text-sm text-muted-foreground mb-4">
           Deploy a folder straight from your computer — no GitHub needed. Your project needs a
           <code className="mx-1 px-1 rounded bg-muted text-[0.85em] font-mono">Dockerfile</code>
@@ -898,7 +853,7 @@ function startDocker() {
           onClick={() => uploadInputRef.current?.click()}
           className={`cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${uploadDragging ? "border-teal-500 bg-teal-500/5" : "border-border/70 hover:border-foreground/30"}`}
         >
-          <FolderUp className="h-8 w-8 mx-auto text-muted-foreground/60 mb-2" />
+          <FolderOpenIcon className="h-8 w-8 mx-auto text-muted-foreground/60 mb-2" />
           {uploadStats ? (
             <div className="text-sm">
               <div className="font-medium">{uploadFiles?.length} files · {fmt(uploadStats.bytes)}</div>
@@ -960,7 +915,7 @@ function startDocker() {
             {uploadErr && <p className="text-xs text-red-600 dark:text-red-400">{uploadErr}</p>}
 
             <Button className="w-full gap-2" onClick={deployUpload} disabled={uploading || !uploadName || !uploadSub}>
-              {uploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading &amp; deploying…</> : <><Upload className="h-4 w-4" /> Upload &amp; deploy</>}
+              {uploading ? <><CircleNotchIcon className="h-4 w-4 animate-spin" /> Uploading &amp; deploying…</> : <><UploadSimpleIcon className="h-4 w-4" /> Upload &amp; deploy</>}
             </Button>
           </div>
         )}
@@ -973,27 +928,27 @@ function startDocker() {
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
-        <h1 className="text-xl font-bold mb-1">Import GitHub Repository</h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.022em]">Import a GitHub repository</h1>
         <p className="text-sm text-muted-foreground mb-4">Select a repository to deploy.</p>
 
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input placeholder="Search repos..." className="pl-9 h-9 text-sm" value={repoSearch} onChange={(e) => setRepoSearch(e.target.value)} />
         </div>
 
         {loadingRepos ? (
-          <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          <div className="flex items-center justify-center py-12"><CircleNotchIcon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : filteredRepos.length === 0 ? (
           <div className="flex flex-col items-center py-12 space-y-3">
-            <GitBranch className="h-8 w-8 text-muted-foreground/30" />
+            <GitBranchIcon className="h-8 w-8 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">No repos found</p>
             <p className="text-xs text-muted-foreground text-center max-w-xs">Your GitHub token may have expired. Reconnect to refresh access.</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => loadRepos()}>
-                <Loader2 className="h-3 w-3" /> Retry
+                <CircleNotchIcon className="h-3 w-3" /> Retry
               </Button>
               <Button size="sm" className="gap-1 text-xs" onClick={() => { window.location.href = `${API}/api/v1/github/connect`; }}>
-                <GitBranch className="h-3 w-3" /> Reconnect GitHub
+                <GitBranchIcon className="h-3 w-3" /> Reconnect GitHub
               </Button>
             </div>
           </div>
@@ -1011,7 +966,7 @@ function startDocker() {
                     <p className="text-[11px] text-muted-foreground truncate">{repo.description || repo.full_name}</p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                <CaretRightIcon className="h-4 w-4 text-muted-foreground shrink-0" />
               </button>
             ))}
           </div>
@@ -1026,7 +981,7 @@ function startDocker() {
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
-        <h1 className="text-xl font-bold mb-1">Configure Project</h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.022em]">Configure project</h1>
         <p className="text-sm text-muted-foreground mb-6">
           {selectedRepo ? `Deploying ${selectedRepo.full_name}` : repoUrl ? `From template` : "Configure your project"}
         </p>
@@ -1070,11 +1025,11 @@ function startDocker() {
             {subCheck && subdomain.trim() && (
               subCheck.checking ? (
                 <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Checking availability…
+                  <CircleNotchIcon className="h-3 w-3 animate-spin" /> Checking availability…
                 </p>
               ) : subCheck.available ? (
                 <p className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="h-3 w-3" /> <span className="font-mono">{subCheck.suggestion}.deployzy.app</span> is available
+                  <CheckIcon className="h-3 w-3" /> <span className="font-mono">{subCheck.suggestion}.deployzy.app</span> is available
                 </p>
               ) : subCheck.reason === "subdomain already taken" ? (
                 <p className="text-[11px] text-muted-foreground">
@@ -1123,11 +1078,11 @@ function startDocker() {
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/60 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <Settings2 className="h-4 w-4 text-muted-foreground" />
+                <SlidersHorizontalIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs font-medium">Advanced Build &amp; Runtime Settings</span>
                 <span className="text-[10px] text-muted-foreground">(optional)</span>
               </div>
-              {showAdvanced ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              {showAdvanced ? <CaretDownIcon className="h-4 w-4 text-muted-foreground" /> : <CaretRightIcon className="h-4 w-4 text-muted-foreground" />}
             </button>
             {showAdvanced && (
               <div className="border-t border-border/40 p-4 space-y-3">
@@ -1188,7 +1143,7 @@ function startDocker() {
           </div>
 
           <Button className="w-full gap-2" onClick={deployProject} disabled={creating || !projectName || !subdomain}>
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+            {creating ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <RocketLaunchIcon className="h-4 w-4" />}
             Deploy Project
           </Button>
         </div>
@@ -1201,7 +1156,7 @@ function startDocker() {
     return (
       <div className="max-w-lg mx-auto mt-8">
         <BackButton />
-        <h1 className="text-xl font-bold mb-1">Create Database</h1>
+        <h1 className="mb-1 text-[22px] font-semibold tracking-[-0.022em]">Create a database</h1>
         <p className="text-sm text-muted-foreground mb-6">Set up a new managed database instance. Use the connection URL in any project.</p>
 
         <div className="space-y-4">
@@ -1239,14 +1194,14 @@ function startDocker() {
                         }`}
                       >
                         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${e.bg} ${e.text}`}>
-                          <Database className="h-4.5 w-4.5" />
+                          <DatabaseIcon className="h-4.5 w-4.5" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium">{e.label}</p>
                           <p className="text-[11px] text-muted-foreground line-clamp-2">{e.desc}</p>
                           {e.locked && (
                             <a
-                              href="/billing"
+                              href="/billing?tab=plans"
                               onClick={(ev) => ev.stopPropagation()}
                               className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
                             >
@@ -1254,7 +1209,7 @@ function startDocker() {
                             </a>
                           )}
                         </div>
-                        {selected && !e.locked && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                        {selected && !e.locked && <CheckIcon className="h-4 w-4 shrink-0 text-primary" />}
                       </button>
                     );
                   })}
@@ -1280,7 +1235,7 @@ function startDocker() {
           )}
 
           <Button className="w-full gap-2" onClick={createDatabase} disabled={creating || !dbName}>
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+            {creating ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <DatabaseIcon className="h-4 w-4" />}
             Create Database
           </Button>
 
@@ -1289,7 +1244,7 @@ function startDocker() {
             {!showMigrate ? (
               <button onClick={() => setShowMigrate(true)}
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                <ArrowLeft className="h-3 w-3 rotate-180" /> Already have a database? Migrate it to Deployzy
+                <ArrowLeftIcon className="h-3 w-3 rotate-180" /> Already have a database? Migrate it to Deployzy
               </button>
             ) : (isAdmin || planLimits?.allow_db_migration) ? (
               <div className="space-y-3">
@@ -1311,20 +1266,20 @@ function startDocker() {
                     migJob.status === "success" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                     : migJob.status === "failed" ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
                     : "border-border/60 bg-muted/30 text-muted-foreground"}`}>
-                    {migJob.status === "running" && <span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Copying your data… this can take a few minutes. You can leave this page.</span>}
+                    {migJob.status === "running" && <span className="flex items-center gap-2"><CircleNotchIcon className="h-3 w-3 animate-spin" /> Copying your data… this can take a few minutes. You can leave this page.</span>}
                     {migJob.status === "success" && "Migration complete — redirecting to your databases…"}
                     {migJob.status === "failed" && `Migration failed: ${migJob.error || "unknown error"}`}
                   </div>
                 )}
                 <Button className="w-full gap-2" onClick={startMigration} disabled={migrating || !migUrl.trim()}>
-                  {migrating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                  {migrating ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <DatabaseIcon className="h-4 w-4" />}
                   Start migration
                 </Button>
               </div>
             ) : (
               <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-3 text-xs space-y-1">
                 <p className="font-medium">Migrating an existing database is a paid feature.</p>
-                <a href="/billing" className="text-primary hover:underline">Upgrade to access →</a>
+                <a href="/billing?tab=plans" className="text-primary hover:underline">Upgrade to access →</a>
               </div>
             )}
           </div>
@@ -1333,245 +1288,53 @@ function startDocker() {
     );
   }
 
-  // ── Step: Template Configure ──
-  if (step === "template" && selectedTemplate) {
-    const userFacingVars = selectedTemplate.env_vars.filter((ev: EnvVarSchema) => ev.type !== "auto");
+  // ── Chooser ──
+  const card = (o: { id: string; title: string; desc: string; icon: Icon; tag?: string }, desc = o.desc) => {
+    const wide = o.id === "agent";
     return (
-      <div className="max-w-lg mx-auto mt-8">
-        <button onClick={() => setSelectedTemplate(null)} className="text-xs text-muted-foreground hover:text-foreground mb-4 flex items-center gap-1">
-          <ArrowLeft className="h-3 w-3" /> Back to templates
-        </button>
+      <button
+        key={o.id}
+        type="button"
+        onClick={() => handleSelect(o.id)}
+        className={cn(
+          "group relative flex items-center gap-3.5 rounded-[16px] border border-[var(--dz-hairline)] bg-card p-4 pr-10 text-left sm:p-5",
+          "transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-px hover:border-foreground/15 hover:shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+          wide ? "sm:col-span-2 sm:gap-4" : "sm:flex-col sm:items-start sm:gap-0 sm:pr-5",
+        )}
+      >
+        <o.icon weight="duotone" className="dz-ico dz-ico-hover h-[22px] w-[22px] shrink-0 text-foreground/80 transition-colors group-hover:text-foreground" />
+        <span className={cn("block min-w-0", !wide && "sm:mt-4")}>
+          <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.01em]">
+            {o.title}
+            {o.tag && <span className="rounded-full border border-brand/30 bg-brand/10 px-1.5 font-mono text-[9.5px] uppercase leading-[16px] tracking-wider text-brand">{o.tag}</span>}
+          </span>
+          <span className="mt-1 block text-[12.5px] leading-relaxed text-muted-foreground">{desc}</span>
+        </span>
+        <ArrowRightIcon className={cn(
+          "absolute right-4 top-4 h-4 w-4 -translate-x-1 text-muted-foreground opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100 sm:right-5 sm:top-5",
+          wide && "sm:top-1/2 sm:-mt-2",
+        )} />
+      </button>
+    );
+  };
 
-        <div className="flex items-center gap-3 mb-5">
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-            style={{ background: selectedTemplate.color + "14", border: `1px solid ${selectedTemplate.color}33` }}
-          >
-            <BrandLogo logoSlug={selectedTemplate.logo_slug} slug={selectedTemplate.slug}
-              name={selectedTemplate.name} color={selectedTemplate.color} className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">{selectedTemplate.name}</h1>
-            <p className="text-xs text-muted-foreground">{selectedTemplate.tagline}</p>
-          </div>
-        </div>
+  return (
+    <div className="mx-auto max-w-[860px] animate-fade-in-up">
+      <button type="button" onClick={() => router.push("/projects")} className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeftIcon className="h-3.5 w-3.5" /> Back to projects
+      </button>
+      <h1 className="mt-4 text-[22px] font-semibold tracking-[-0.022em] sm:text-[24px]">New project</h1>
+      <p className="mt-1.5 text-[13.5px] text-muted-foreground">Deploy from a repository, a folder, a template or an image, or add a database, domain or server.</p>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Project name</label>
-            <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={selectedTemplate.slug} className="h-9 text-sm" />
-          </div>
-
-          {userFacingVars.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground">Configuration</p>
-              {userFacingVars.map((ev: EnvVarSchema) => (
-                <div key={ev.key} className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-xs font-medium">{ev.label || ev.key}</label>
-                    {ev.required && <span className="text-[10px] text-destructive font-medium">*</span>}
-                  </div>
-                  {ev.description && <p className="text-[10px] text-muted-foreground">{ev.description}</p>}
-                  {ev.type === "select" && ev.options ? (
-                    <select
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      value={templateEnvVars[ev.key] ?? ""}
-                      onChange={(e) => setTemplateEnvVars((p) => ({ ...p, [ev.key]: e.target.value }))}
-                    >
-                      <option value="">Select…</option>
-                      {ev.options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                  ) : (
-                    <Input
-                      type={ev.type === "secret" ? "password" : "text"}
-                      value={templateEnvVars[ev.key] ?? ""}
-                      onChange={(e) => setTemplateEnvVars((p) => ({ ...p, [ev.key]: e.target.value }))}
-                      placeholder={ev.placeholder || ev.default || ev.key}
-                      className="h-9 text-sm"
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <RegionPicker value={templateServer} onChange={setTemplateServer} />
-
-          {templateError && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
-              {templateError}
-            </div>
-          )}
-
-          <Button
-            className="w-full gap-2"
-            onClick={deployTemplate}
-            disabled={templateDeploying || !templateName.trim()}
-          >
-            {templateDeploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-            Deploy Template
-          </Button>
-        </div>
+      <h2 className="mt-9 text-[13.5px] font-medium">How would you like to deploy?</h2>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {DEPLOY_OPTIONS.map((o) => card(o, o.id === "github" && !ghConnected ? "Connect your GitHub account, then pick a repository." : o.desc))}
       </div>
-    );
-  }
 
-  // ── Step: Template Picker ──
-  if (step === "template") {
-    const filteredTemplates = apiTemplates.filter((t) =>
-      !templateSearch ||
-      t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
-      t.tagline.toLowerCase().includes(templateSearch.toLowerCase()) ||
-      t.tags.some((tag) => tag.toLowerCase().includes(templateSearch.toLowerCase()))
-    );
-
-    function openTemplate(t: Template) {
-      setSelectedTemplate(t);
-      setTemplateName(t.slug);
-      setTemplateEnvVars({});
-      setTemplateError("");
-      setTemplateServer("platform");
-    }
-
-    return (
-      <div className="max-w-lg mx-auto mt-8">
-        <BackButton />
-
-        {/* Search box — always visible at top */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            autoFocus
-            className="pl-9 h-9 text-sm"
-            placeholder="Search templates…"
-            value={templateSearch}
-            onChange={(e) => setTemplateSearch(e.target.value)}
-          />
-        </div>
-
-        {/* Scrollable template list */}
-        <div className="rounded-xl border border-border overflow-hidden">
-          {templatesLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredTemplates.length === 0 ? (
-            <div className="flex flex-col items-center py-10 text-muted-foreground gap-2">
-              <Layers className="h-7 w-7 opacity-30" />
-              <p className="text-sm">No templates found</p>
-            </div>
-          ) : (
-            <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
-              {filteredTemplates.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => openTemplate(t)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors group"
-                >
-                  {/* Icon */}
-                  <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: t.color + "14", border: `1px solid ${t.color}33` }}
-                  >
-                    <BrandLogo logoSlug={t.logo_slug} slug={t.slug} name={t.name} color={t.color} className="h-4.5 w-4.5" />
-                  </div>
-
-                  {/* Text */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-foreground truncate">{t.name}</span>
-                      {t.is_featured && (
-                        <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                          Featured
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground truncate">{t.tagline}</p>
-                  </div>
-
-                  {/* Deploy count */}
-                  {t.deploy_count > 0 && (
-                    <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground shrink-0">
-                      <Download className="h-2.5 w-2.5" />
-                      {t.deploy_count.toLocaleString()}
-                    </div>
-                  )}
-
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Main Command Palette ──
-   return (
-    <div className="max-w-lg mx-auto mt-8 animate-fade-in-up">
-      <div className="rounded-2xl border border-border/60 bg-card/70 dark:bg-[#0c0d0f]/60 overflow-hidden shadow-xl shadow-black/5 dark:shadow-black/40 backdrop-blur">
-        <div className="relative border-b border-border/40">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="What would you like to create?"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-12 pl-11 border-0 rounded-none focus-visible:ring-0 text-sm"
-            autoFocus
-          />
-        </div>
-
-        <div className="p-2">
-          {filtered.filter(o => o.category === "deploy").length > 0 && (
-            <>
-              <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Deploy</p>
-              {filtered.filter(o => o.category === "deploy").map((opt) => (
-                <button key={opt.id} onClick={() => handleSelect(opt.id)} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-accent/50 transition-colors group">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${opt.color} shrink-0 transition-transform group-hover:scale-110`}>
-                      {"brand" in opt && opt.brand
-                        ? <BrandLogo logoSlug={opt.brand as string} name={opt.title} className="h-4 w-4" />
-                        : <opt.icon className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{opt.title}</p>
-                      <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
-            </>
-          )}
-
-          {filtered.filter(o => o.category === "infra").length > 0 && (
-            <>
-              <div className="border-t border-border/30 my-1" />
-              <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Infrastructure</p>
-              {filtered.filter(o => o.category === "infra").map((opt) => (
-                <button key={opt.id} onClick={() => handleSelect(opt.id)} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-accent/50 transition-colors group">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${opt.color} shrink-0 transition-transform group-hover:scale-110`}>
-                      {"brand" in opt && opt.brand
-                        ? <BrandLogo logoSlug={opt.brand as string} name={opt.title} className="h-4 w-4" />
-                        : <opt.icon className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{opt.title}</p>
-                      <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
-            </>
-          )}
-
-          {filtered.length === 0 && (
-            <p className="px-3 py-6 text-sm text-muted-foreground text-center">No matching options</p>
-          )}
-        </div>
+      <h2 className="mt-9 text-[13.5px] font-medium">Add to your stack</h2>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        {ADD_OPTIONS.map((o) => card(o))}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Users, Award, RefreshCw } from "lucide-react";
+import { ArrowsClockwiseIcon, CheckIcon, CopyIcon, MedalIcon, UsersThreeIcon } from "@phosphor-icons/react";
 import { api, type ReferralStats } from "@/lib/api";
 
 export function ReferralsSection() {
@@ -34,7 +34,7 @@ export function ReferralsSection() {
       <CardContent className="space-y-5">
         {data.pro_until && (
           <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/20 px-4 py-2.5">
-            <Award className="h-4 w-4 text-emerald-400 shrink-0" />
+            <MedalIcon className="h-4 w-4 text-emerald-400 shrink-0" />
             <p className="text-sm text-emerald-400">
               Referral reward active — you have <strong>Pro</strong> until {new Date(data.pro_until).toLocaleDateString()}.
             </p>
@@ -50,13 +50,13 @@ export function ReferralsSection() {
             <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5">
               <code className="flex-1 truncate text-xs font-mono">{data.link}</code>
               <button onClick={() => copy(data.link, "link")} className="shrink-0 text-muted-foreground hover:text-foreground">
-                {copied === "link" ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                {copied === "link" ? <CheckIcon className="h-4 w-4 text-emerald-500" /> : <CopyIcon className="h-4 w-4" />}
               </button>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded-md border border-border/40 px-2 py-1 text-xs font-mono">Code: {data.code}</span>
               <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={() => copy(data.code, "code")}>
-                {copied === "code" ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />} Copy code
+                {copied === "code" ? <CheckIcon className="h-3 w-3 text-emerald-500" /> : <CopyIcon className="h-3 w-3" />} Copy code
               </Button>
             </div>
           </div>
@@ -65,7 +65,7 @@ export function ReferralsSection() {
           <div className="rounded-lg border border-border/40 p-4 space-y-3">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-violet-500/15 text-violet-400 shrink-0">
-                <Award className="h-4 w-4" />
+                <MedalIcon className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-sm font-medium">Next Pro reward</p>
@@ -96,11 +96,11 @@ export function ReferralsSection() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-medium">People you referred</p>
-            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={load}><RefreshCw className="h-3 w-3" /> Refresh</Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={load}><ArrowsClockwiseIcon className="h-3 w-3" /> Refresh</Button>
           </div>
           {data.people.length === 0 ? (
             <div className="rounded-lg border border-border/40 flex flex-col items-center py-10 text-center">
-              <Users className="h-7 w-7 text-muted-foreground/40 mb-2" />
+              <UsersThreeIcon className="h-7 w-7 text-muted-foreground/40 mb-2" />
               <p className="text-sm font-medium">No referrals yet</p>
               <p className="text-xs text-muted-foreground">Share your link and new signups will appear here.</p>
             </div>

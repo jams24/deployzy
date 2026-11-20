@@ -1,21 +1,17 @@
 "use client";
 
 // Re-upload flow for "upload" projects: pick a folder → tar+gzip → push to the
-// upload endpoint → deploy. Self-contained (hidden folder input + error toast)
-// so both the projects list and the /projects/[id] header can use it.
+// upload endpoint → deploy. useReupload() owns the hidden folder input and the
+// error toast, so a menu item can trigger it too; ReuploadButton wraps it.
 
 import { useRef, useState } from "react";
-import { FolderUp, Loader2, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { CircleNotchIcon, FolderOpenIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { makeTarGz, shouldIgnore, type TarFile } from "@/lib/tar";
 import { API, headers } from "./project-shared";
 
-export function ReuploadButton({ projectId, onDeployed, className }: {
-  projectId: string;
-  /** Called once the upload has landed and the deploy has been triggered. */
-  onDeployed?: () => void;
-  className?: string;
-}) {
+export function useReupload(projectId: string, onDeployed?: () => void) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
@@ -74,7 +70,7 @@ export function ReuploadButton({ projectId, onDeployed, className }: {
     }
   }
 
-  return (
+  const element = (
     <>
       <input
         ref={inputRef}
@@ -86,20 +82,38 @@ export function ReuploadButton({ projectId, onDeployed, className }: {
         className="hidden"
         onChange={onPick}
       />
-      {err && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-lg border border-red-500/40 bg-background shadow-lg px-4 py-3 text-sm">
-          <div className="flex items-start gap-2">
-            <X className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+      {/* Portalled: page wrappers keep a transform that would trap a fixed toast. */}
+      {err && createPortal(
+        <div role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm rounded-[14px] border border-red-500/30 bg-card px-4 py-3 text-sm shadow-[0_18px_50px_-20px_rgb(0_0_0/0.45)]">
+          <div className="flex items-start gap-2.5">
+            <XIcon className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
             <div className="flex-1">
               <div className="font-medium text-red-600 dark:text-red-400">Re-upload failed</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{err}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{err}</div>
             </div>
-            <button onClick={() => setErr(null)} className="text-muted-foreground hover:text-foreground shrink-0">✕</button>
+            <button type="button" aria-label="Dismiss" onClick={() => setErr(null)} className="shrink-0 text-muted-foreground hover:text-foreground"><XIcon className="h-3.5 w-3.5" /></button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
+    </>
+  );
+
+  return { start, busy, phase, element };
+}
+
+export function ReuploadButton({ projectId, onDeployed, className }: {
+  projectId: string;
+  /** Called once the upload has landed and the deploy has been triggered. */
+  onDeployed?: () => void;
+  className?: string;
+}) {
+  const { start, busy, phase, element } = useReupload(projectId, onDeployed);
+  return (
+    <>
+      {element}
       <Button variant="outline" size="sm" className={`gap-1 h-8 text-xs ${className || ""}`} title="Re-upload & deploy" onClick={(e) => { e.stopPropagation(); start(); }} disabled={busy}>
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderUp className="h-3 w-3" />}
+        {busy ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <FolderOpenIcon className="h-3 w-3" />}
         <span className="hidden sm:inline">{phase || "Re-upload"}</span>
       </Button>
     </>

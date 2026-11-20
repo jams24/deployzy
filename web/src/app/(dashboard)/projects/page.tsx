@@ -5,7 +5,10 @@
 // on the /projects/[id] routes; this page only handles browsing, importing
 // repos and quick actions (visit / redeploy / start / stop).
 
-import { StackIcon, StatusPill } from "@/components/dashboard/kit";
+import Link from "next/link";
+import { EmptyState, IconTile, PageHeader, StackIcon, StatusPill } from "@/components/dashboard/kit";
+import { RowMenu } from "@/components/dashboard/row-menu";
+import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -15,15 +18,15 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Rocket, Plus, Play, Square, ExternalLink, RefreshCw,
-  GitBranch, Search, Check, Loader2, Settings2, ChevronRight, ChevronDown,
-  Globe, Layers, LayoutGrid, List, Folder,
-} from "lucide-react";
+  ArrowsClockwiseIcon, ArrowUpRightIcon, CaretDownIcon, CaretRightIcon, CircleNotchIcon, FolderIcon, FolderOpenIcon,
+  GearSixIcon, GitBranchIcon, GithubLogoIcon, MagnifyingGlassIcon, PlayIcon, PlusIcon, RocketLaunchIcon, RowsIcon,
+  SlidersHorizontalIcon, SquaresFourIcon, StackSimpleIcon, StopIcon, TerminalWindowIcon,
+} from "@phosphor-icons/react";
 import { parseEnvText, autoFormatEnvText } from "@/lib/parseEnvText";
 import { getBuildPlaceholders } from "@/lib/placeholders";
 import { DirectoryPicker } from "@/components/DirectoryPicker";
 import { ServiceCards } from "@/components/project/service-cards";
-import { ReuploadButton } from "@/components/project/reupload-button";
+import { useReupload } from "@/components/project/reupload-button";
 import {
   API, detectFramework, detectStackFor, emptyBuildConfig, headers,
   servicesPayload, timeAgo,
@@ -290,69 +293,60 @@ function ProjectsContent() {
 
   return (
     <div className="animate-fade-in-up">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow">Deploy</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Projects</h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground hidden sm:block">Deploy apps from your GitHub repos.</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Grid / list view toggle */}
-          <div className="flex items-center rounded-full surface p-1">
-            <button type="button" onClick={() => changeView("grid")} title="Grid view" className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${viewMode === "grid" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
-              <LayoutGrid className="h-3.5 w-3.5" />
+      <PageHeader
+        title="Projects"
+        description={ghConnected && ghUsername ? (
+          <span className="inline-flex flex-wrap items-center gap-x-1.5">
+            <GithubLogoIcon className="h-4 w-4 text-foreground/70" />
+            Deploying from GitHub as <span className="font-medium text-foreground">@{ghUsername}</span>
+            <span className="text-border">·</span>
+            <button type="button" onClick={disconnectGH} className="underline-offset-[3px] transition-colors hover:text-foreground hover:underline">Disconnect</button>
+          </span>
+        ) : "Every app you’ve deployed, from GitHub, a folder or a template."}
+        actions={
+          <>
+            {/* Grid / list view toggle */}
+            <div className="flex items-center rounded-full border border-[var(--dz-hairline)] p-0.5" role="group" aria-label="View">
+              {([["grid", SquaresFourIcon, "Grid view"], ["list", RowsIcon, "List view"]] as const).map(([v, I, t]) => (
+                <button key={v} type="button" onClick={() => changeView(v)} title={t} aria-label={t} aria-pressed={viewMode === v}
+                  className={cn("flex h-7 w-7 items-center justify-center rounded-full transition-colors", viewMode === v ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                  <I className="h-4 w-4" />
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={load} title="Refresh" aria-label="Refresh" className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--dz-hairline)] text-muted-foreground transition-colors hover:text-foreground">
+              <ArrowsClockwiseIcon className="h-4 w-4" />
             </button>
-            <button type="button" onClick={() => changeView("list")} title="List view" className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${viewMode === "list" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
-              <List className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <Button variant="outline" size="sm" onClick={load} title="Refresh" className="h-9 w-9 rounded-full p-0">
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-          {ghConnected ? (
-            <Button size="sm" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4">
-              <Plus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Import Repo</span>
-            </Button>
-          ) : (
-            <Button size="sm" nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4">
-              <GitBranch className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Connect GitHub</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* GitHub status */}
-      {ghConnected && (
-        <div className="mt-6 flex items-center justify-between gap-2 rounded-2xl surface px-4 py-2">
-          <div className="flex items-center gap-2 text-sm min-w-0">
-            <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="text-muted-foreground hidden sm:inline">Connected to GitHub as</span>
-            <span className="font-medium truncate">@{ghUsername}</span>
-            <span className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border border-brand/25 bg-brand/10 px-2 text-[12px] font-medium text-[var(--dz-green-strong)] dark:text-brand"><Check className="h-3 w-3" /> Connected</span>
-          </div>
-          <Button variant="ghost" size="sm" onClick={disconnectGH} className="rounded-full text-[13px] text-muted-foreground">Disconnect</Button>
-        </div>
-      )}
+            {ghConnected ? (
+              <button type="button" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="pill pill-ink pill-xs">
+                <PlusIcon weight="bold" className="h-3.5 w-3.5" /> Import repo
+              </button>
+            ) : (
+              <a href={`${API}/api/v1/github/connect`} className="pill pill-ink pill-xs">
+                <GithubLogoIcon className="h-4 w-4" /> Connect GitHub
+              </a>
+            )}
+          </>
+        }
+      />
 
       {/* Repo picker modal */}
       {showRepoPicker && (
-        <Card className="mt-4">
+        <Card className="mt-6 rounded-[18px]">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Import a Repository</CardTitle>
+              <CardTitle className="text-[15px] font-semibold tracking-[-0.01em]">Import a repository</CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setShowRepoPicker(false)}>Cancel</Button>
             </div>
           </CardHeader>
           <CardContent>
             <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input placeholder="Search repos..." className="pl-9 h-9 text-sm" value={repoSearch} onChange={(e) => setRepoSearch(e.target.value)} />
             </div>
 
             {loadingRepos ? (
-              <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              <div className="flex items-center justify-center py-8"><CircleNotchIcon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-1">
                 {filteredRepos.map((repo) => (
@@ -370,7 +364,7 @@ function ProjectsContent() {
                       </div>
                     </div>
                     <Button size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0 ml-2" onClick={() => selectRepoForImport(repo)}>
-                      <Rocket className="h-3 w-3" /> Import
+                      <RocketLaunchIcon className="h-3 w-3" /> Import
                     </Button>
                   </div>
                 ))}
@@ -383,10 +377,10 @@ function ProjectsContent() {
 
       {/* Import customization modal */}
       {importRepo && (
-        <Card className="mt-4 border-primary/30">
+        <Card className="mt-6 rounded-[18px]">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Configure Project</CardTitle>
+              <CardTitle className="text-[15px] font-semibold tracking-[-0.01em]">Configure project</CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setImportRepo(null)}>Cancel</Button>
             </div>
           </CardHeader>
@@ -463,7 +457,7 @@ function ProjectsContent() {
             <div className="rounded-lg border border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-start gap-2">
-                  <Layers className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <StackSimpleIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
                   <div>
                     <span className="text-xs font-medium">Multiple Services</span>
                     <p className="text-[10px] text-muted-foreground">Deploy multiple directories from this repository as services inside one container.</p>
@@ -501,11 +495,11 @@ function ProjectsContent() {
             <div className="rounded-lg border border-border overflow-hidden">
               <button type="button" onClick={() => setImportShowAdvanced(!importShowAdvanced)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-accent/60 transition-colors">
                 <div className="flex items-center gap-2">
-                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  <SlidersHorizontalIcon className="h-4 w-4 text-muted-foreground" />
                   <span className="text-xs font-medium">Advanced Build &amp; Runtime Settings</span>
                   <span className="text-[10px] text-muted-foreground">(optional)</span>
                 </div>
-                {importShowAdvanced ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                {importShowAdvanced ? <CaretDownIcon className="h-4 w-4 text-muted-foreground" /> : <CaretRightIcon className="h-4 w-4 text-muted-foreground" />}
               </button>
               {importShowAdvanced && (
                 <div className="border-t border-border/40 p-4 space-y-3">
@@ -515,7 +509,7 @@ function ProjectsContent() {
                       <div className="relative">
                         <input type="text" placeholder="apps/web" value={importBuildCfg.root_dir} onChange={(e) => setImportBuildCfg({ ...importBuildCfg, root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                         <button type="button" title="Browse repository directories" disabled={!importRepo?.full_name} onClick={() => setDirPicker({ kind: "root" })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
-                          <Folder className="h-3.5 w-3.5" />
+                          <FolderIcon className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
@@ -579,7 +573,7 @@ function ProjectsContent() {
               onClick={createFromRepo}
               disabled={importing || !importName || !importSubdomain}
             >
-              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              {importing ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <RocketLaunchIcon className="h-4 w-4" />}
               Deploy Project
             </Button>
           </CardContent>
@@ -590,155 +584,49 @@ function ProjectsContent() {
       {loading ? (
         <p className="mt-8 text-sm text-muted-foreground animate-pulse">Loading projects…</p>
       ) : projects.length === 0 && !showRepoPicker ? (
-        <div className="relative mt-8 rounded-2xl border border-dashed border-border overflow-hidden">
-          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
-          <div className="relative flex flex-col items-center py-16 px-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
-              <Rocket className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+        <EmptyState
+          className="mt-8"
+          icon={RocketLaunchIcon}
+          title="No projects yet"
+          description={ghConnected ? "Import a repo from GitHub to deploy your first app." : "Connect GitHub to import a repo, or start from a folder or a template."}
+          action={ghConnected ? (
+            <button type="button" onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="pill pill-ink pill-sm"><PlusIcon weight="bold" className="h-4 w-4" /> Import repo</button>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-2">
+              <a href={`${API}/api/v1/github/connect`} className="pill pill-ink pill-sm"><GithubLogoIcon className="h-4 w-4" /> Connect GitHub</a>
+              <Link href="/new" className="pill pill-line pill-sm">Other ways to deploy</Link>
             </div>
-            <h3 className="mt-4 font-semibold">No projects yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
-              {ghConnected ? "Import a repo from GitHub to deploy your first app." : "Connect your GitHub account to import and deploy repos."}
-            </p>
-            {ghConnected ? (
-              <Button onClick={() => { setShowRepoPicker(true); loadRepos(); }} className="btn-shine mt-5 gap-1 rounded-full px-5"><Plus className="h-4 w-4" /> Import Repo</Button>
-            ) : (
-              <Button nativeButton={false} render={<a href={`${API}/api/v1/github/connect`} />} className="btn-shine mt-5 gap-1 rounded-full px-5">
-                <GitBranch className="h-4 w-4" /> Connect GitHub
-              </Button>
-            )}
-          </div>
-        </div>
+          )}
+        />
       ) : (
-        <div className="mt-6 space-y-3">
+        <div className="mt-7 space-y-3">
           {/* Label filter bar — only show once there are any labels across projects */}
           {(() => {
             const allLabels = Array.from(new Set(projects.flatMap((p) => p.labels || []))).sort();
             if (allLabels.length === 0) return null;
             return (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="eyebrow">Labels</span>
-                <button onClick={() => setLabelFilter("")} className={`h-7 rounded-full border px-3 text-[12.5px] transition-colors ${labelFilter === "" ? "border-foreground bg-foreground text-background" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground"}`}>All</button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="eyebrow mr-1">Labels</span>
+                <button onClick={() => setLabelFilter("")} className={cn("h-7 rounded-full border px-3 text-[12.5px] transition-colors", labelFilter === "" ? "border-foreground bg-foreground text-background" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground")}>All</button>
                 {allLabels.map((l) => (
-                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={`h-7 rounded-full border px-3 text-[12.5px] transition-colors ${labelFilter === l ? "border-brand/40 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  <button key={l} onClick={() => setLabelFilter(labelFilter === l ? "" : l)} className={cn("h-7 rounded-full border px-3 text-[12.5px] transition-colors", labelFilter === l ? "border-brand/40 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground")}>{l}</button>
                 ))}
               </div>
             );
           })()}
           <div className={viewMode === "grid"
-            ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
-            : "surface rounded-3xl divide-y divide-[var(--dz-hairline)] overflow-hidden"}>
-            {/* table header (list view only) */}
-            {viewMode === "list" && (
-              <div className="hidden md:flex items-center gap-3 px-5 py-3 eyebrow bg-foreground/[0.02]">
-                <span className="flex-1">Project</span>
-                <span className="w-44 text-right pr-2">Actions</span>
-              </div>
-            )}
-          {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => {
-            const isGrid = viewMode === "grid";
-            return (
-            <div
-              key={p.id}
-              id={`project-row-${p.id}`}
-              onClick={() => router.push(`/projects/${p.id}`)}
-              className={isGrid
-                ? `surface group cursor-pointer overflow-hidden rounded-3xl transition-all duration-300 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.35)]`
-                : `group cursor-pointer transition-colors hover:bg-foreground/[0.025]`}>
-              <div className={isGrid ? "p-5" : "px-4 py-3 sm:px-5"}>
-                <div className={isGrid ? "flex flex-col gap-3 items-stretch" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"}>
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]">
-                      <StackIcon stack={p.framework} className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-[15.5px] font-semibold tracking-tight">{p.name}</span>
-                        <StatusPill status={p.status} />
-                        {(p.labels || []).map((l) => (
-                          <span key={l} className="hidden h-[22px] shrink-0 items-center rounded-full border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-[12px] text-cyan-700 lg:inline-flex dark:text-brand-cyan">{l}</span>
-                        ))}
-                      </div>
-
-                      <div className="mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground font-mono min-w-0">
-                        <Globe className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{p.subdomain}.deployzy.app</span>
-                      </div>
-
-                      <div className="mt-1 flex items-center gap-2 text-[12.5px] text-muted-foreground min-w-0 flex-wrap">
-                        <span className="capitalize">{p.framework || "custom"}</span>
-                        {p.github_repo && (
-                          <>
-                            <span className="text-border">·</span>
-                            <span className="inline-flex items-center gap-1 min-w-0">
-                              <GitBranch className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{p.github_repo}</span>
-                            </span>
-                          </>
-                        )}
-                        <span className="text-border">·</span>
-                        <span className="whitespace-nowrap">{timeAgo(p.last_deploy_at)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Quick actions — stopPropagation so they don't navigate */}
-                  <div
-                    className={isGrid
-                      ? "flex items-center gap-1.5 flex-wrap pt-4 border-t border-[var(--dz-hairline)]"
-                      : "flex items-center gap-1 flex-wrap shrink-0"}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {p.status !== "running" && p.status !== "building" && (
-                      p.deploy_source === "upload" ? (
-                        <>
-                          <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Redeploy the last uploaded build" onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                            {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                            <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Redeploy"}</span>
-                          </Button>
-                          <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
-                        </>
-                      ) : (
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title={p.status === "stopped" ? "Start" : "Deploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                          {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                          <span className="hidden sm:inline">{p.status === "stopped" ? "Start" : "Deploy"}</span>
-                        </Button>
-                      )
-                    )}
-                    {p.status === "running" && (
-                      <>
-                        <Button variant={isGrid ? "default" : "outline"} size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Visit site" nativeButton={false} render={<a href={`https://${p.subdomain}.deployzy.app`} target="_blank" rel="noopener" />}>
-                          <ExternalLink className="h-3 w-3" /><span className="hidden sm:inline">Visit</span>
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title={p.deploy_source === "upload" ? "Redeploy the last uploaded build" : "Redeploy"} onClick={() => deploy(p.id)} disabled={deploying === p.id}>
-                          {deploying === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                          <span className="hidden sm:inline"> Redeploy</span>
-                        </Button>
-                        {p.deploy_source === "upload" && (
-                          <ReuploadButton projectId={p.id} onDeployed={() => router.push(`/projects/${p.id}/logs`)} />
-                        )}
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-full px-3 text-[13px]" title="Stop" onClick={() => stop(p.id)}>
-                          <Square className="h-3 w-3" /><span className="hidden sm:inline"> Stop</span>
-                        </Button>
-                      </>
-                    )}
-                    {p.status === "building" && <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-[13px] text-amber-700 dark:text-amber-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building…</span>}
-                    {/* Grid cards are clickable as a whole; only the list row needs the chevron. */}
-                    {!isGrid && (
-                      <Button
-                        variant="ghost" size="sm"
-                        className="ml-auto h-8 w-8 rounded-full p-0 text-muted-foreground hover:text-foreground"
-                        title="Open project"
-                        onClick={() => router.push(`/projects/${p.id}`)}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-          })}
+            ? "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+            : "surface divide-y divide-[var(--dz-hairline)] overflow-hidden rounded-[18px]"}>
+            {projects.filter((p) => labelFilter === "" || (p.labels || []).includes(labelFilter)).map((p) => (
+              <ProjectRow
+                key={p.id}
+                p={p}
+                grid={viewMode === "grid"}
+                deploying={deploying === p.id}
+                onDeploy={() => deploy(p.id)}
+                onStop={() => stop(p.id)}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -763,6 +651,133 @@ function ProjectsContent() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// One project as a list row or a grid card. One obvious action stays on the
+// row (Visit / Start / Deploy); everything else lives in the ⋯ menu.
+function ProjectRow({ p, grid, deploying, onDeploy, onStop }: {
+  p: Project;
+  grid: boolean;
+  deploying: boolean;
+  onDeploy: () => void;
+  onStop: () => void;
+}) {
+  const router = useRouter();
+  const upload = p.deploy_source === "upload";
+  const reup = useReupload(p.id, () => router.push(`/projects/${p.id}/logs`));
+  const url = `${p.subdomain}.deployzy.app`;
+  const running = p.status === "running";
+  const building = p.status === "building" || deploying;
+
+  const primary = building ? (
+    <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-amber-500/10 px-3 text-[12.5px] font-medium text-amber-700 dark:text-amber-400">
+      <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> {reup.phase || "Building…"}
+    </span>
+  ) : reup.busy ? (
+    <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-foreground/[0.05] px-3 text-[12.5px] text-muted-foreground">
+      <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> {reup.phase || "Uploading…"}
+    </span>
+  ) : running ? (
+    <a href={`https://${url}`} target="_blank" rel="noopener" className="pill pill-line pill-xs" title={`Open ${url}`}>
+      Visit <ArrowUpRightIcon className="h-3.5 w-3.5" />
+    </a>
+  ) : (
+    <button type="button" onClick={onDeploy} className="pill pill-line pill-xs" title={upload ? "Redeploy the last uploaded build" : undefined}>
+      <PlayIcon className="h-3.5 w-3.5" /> {p.status === "stopped" ? "Start" : "Deploy"}
+    </button>
+  );
+
+  const menu = (
+    <RowMenu
+      label={`Actions for ${p.name}`}
+      items={[
+        running && !building && { label: "Redeploy", icon: ArrowsClockwiseIcon, onSelect: onDeploy },
+        upload && !building && { label: "Re-upload folder", icon: FolderOpenIcon, onSelect: reup.start },
+        { label: "Deploy logs", icon: TerminalWindowIcon, href: `/projects/${p.id}/logs` },
+        { label: "Settings", icon: GearSixIcon, href: `/projects/${p.id}/settings` },
+        running && { label: "Stop", icon: StopIcon, onSelect: onStop, danger: true, divider: true },
+      ]}
+    />
+  );
+
+  const meta = (
+    <>
+      <span className="capitalize">{p.framework || "custom"}</span>
+      {p.github_repo && (
+        <>
+          <span aria-hidden className="text-foreground/20">·</span>
+          <span className="inline-flex min-w-0 items-center gap-1"><GitBranchIcon className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{p.github_repo}</span></span>
+        </>
+      )}
+      <span aria-hidden className="text-foreground/20">·</span>
+      <span className="whitespace-nowrap">{timeAgo(p.last_deploy_at)}</span>
+    </>
+  );
+
+  const open = () => router.push(`/projects/${p.id}`);
+  const tile = (
+    <IconTile size="md" className="text-foreground/75">
+      <StackIcon stack={p.framework} className="h-[18px] w-[18px]" />
+    </IconTile>
+  );
+  const labels = (p.labels || []).map((l) => (
+    <span key={l} className="hidden h-[20px] shrink-0 items-center rounded-full bg-brand-cyan/10 px-2 text-[11.5px] text-cyan-700 lg:inline-flex dark:text-brand-cyan">{l}</span>
+  ));
+
+  if (grid) {
+    return (
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={open}
+        onKeyDown={(e) => { if (e.key === "Enter") open(); }}
+        className="surface group flex cursor-pointer flex-col rounded-[18px] p-4 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-foreground/15 hover:shadow-[0_14px_36px_-22px_rgb(0_0_0/0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+      >
+        {reup.element}
+        <div className="flex items-start gap-3">
+          {tile}
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="truncate text-[14.5px] font-semibold tracking-[-0.01em]">{p.name}</p>
+            <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">{url}</p>
+          </div>
+          <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{menu}</div>
+        </div>
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-muted-foreground">{meta}</div>
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--dz-hairline)] pt-3">
+          <div className="flex min-w-0 items-center gap-1.5"><StatusPill status={p.status} />{labels}</div>
+          <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{primary}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => { if (e.key === "Enter") open(); }}
+      className="group flex cursor-pointer items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-foreground/[0.025] focus-visible:bg-foreground/[0.03] focus-visible:outline-none sm:px-5"
+    >
+      {reup.element}
+      {tile}
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[14px] font-semibold tracking-[-0.01em]">{p.name}</span>
+          <StatusPill status={p.status} />
+          {labels}
+        </div>
+        <div className="mt-0.5 flex min-w-0 items-center gap-x-1.5 text-[12.5px] text-muted-foreground">
+          <span className="truncate">{url}</span>
+          <span className="hidden min-w-0 items-center gap-x-1.5 md:inline-flex"><span aria-hidden className="text-foreground/20">·</span>{meta}</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <span className="hidden sm:inline-flex">{primary}</span>
+        {menu}
+      </div>
     </div>
   );
 }

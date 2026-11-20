@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, BookOpen, Menu, Search } from "lucide-react";
+import { BellSimpleIcon, BookOpenTextIcon, IconContext, ListIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { UpgradeDialogHost } from "@/components/upgrade-dialog";
 import { AuthGuard } from "@/components/dashboard/auth-guard";
 import { Sidebar } from "@/components/dashboard/sidebar";
@@ -32,7 +32,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       {/* Phones get "More" in the tab bar; full-height routes hide it, so the menu lives here. */}
       {!showsTabBar(pathname) && (
         <button type="button" onClick={onMenu} aria-label="Open menu" className={`${iconBtn} md:hidden`}>
-          <Menu className="h-[18px] w-[18px]" />
+          <ListIcon className="h-[18px] w-[18px]" />
         </button>
       )}
       <Link href="/overview" aria-label="Deployzy home" className="shrink-0 md:hidden">
@@ -47,21 +47,21 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         onClick={openCommandMenu}
         className="hidden h-9 w-[clamp(200px,24vw,300px)] items-center gap-2 rounded-xl border border-[var(--dz-hairline)] bg-background/70 px-3 text-[13.5px] text-muted-foreground transition-colors hover:border-foreground/15 hover:text-foreground md:flex dark:bg-white/[0.03]"
       >
-        <Search className="h-3.5 w-3.5" />
+        <MagnifyingGlassIcon className="h-3.5 w-3.5" />
         <span className="flex-1 text-left">Search or jump to…</span>
         <kbd className="rounded-md border px-1.5 font-mono text-[11px]">{mod}K</kbd>
       </button>
 
       <div className="flex items-center gap-0.5">
         <button type="button" onClick={openCommandMenu} aria-label="Search" className={`${iconBtn} md:hidden`}>
-          <Search className="h-[18px] w-[18px]" />
+          <MagnifyingGlassIcon className="h-[18px] w-[18px]" />
         </button>
         <a href="/docs" target="_blank" rel="noopener" className={`${iconBtn} hidden w-auto gap-1.5 px-2.5 text-[13.5px] lg:flex`}>
-          <BookOpen className="h-4 w-4" />
+          <BookOpenTextIcon className="h-4 w-4" />
           Docs
         </a>
         <Link href="/notifications" aria-label="Notifications" title="Notifications" className={iconBtn}>
-          <Bell className="h-[18px] w-[18px]" />
+          <BellSimpleIcon className="h-[18px] w-[18px]" />
         </Link>
         <Link
           href="/settings"
@@ -76,13 +76,24 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
   );
 }
 
+// Every Phosphor icon in the app defaults to duotone: an outline plus a soft
+// fill, which `.dz-ico` / `.dz-ico-on` in globals.css can recolour.
+const ICONS = { weight: "duotone" as const };
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The app's calmer type scale (globals.css) applies under html.dz-app, so
+  // sheets and menus portalled to <body> get it too.
+  useEffect(() => {
+    document.documentElement.classList.add("dz-app");
+    return () => document.documentElement.classList.remove("dz-app");
+  }, []);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
     <AuthGuard>
+      <IconContext.Provider value={ICONS}>
       <OnboardingProvider>
       <div className="flex h-[100dvh] overflow-hidden bg-background">
         <Sidebar className="hidden md:flex" />
@@ -94,9 +105,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-80 overflow-hidden">
               <div className="animate-aurora-a absolute -top-40 left-1/2 h-72 w-[720px] -translate-x-1/2 rounded-full bg-brand/[0.06] blur-[120px]" />
               <div className="animate-aurora-b absolute -top-24 right-[8%] h-48 w-[420px] rounded-full bg-brand-cyan/[0.045] blur-[110px]" />
-              <div className="mask-fade-b absolute inset-0 text-foreground/[0.03]">
-                <div className="bg-grid absolute inset-0" />
-              </div>
             </div>
 
             <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
@@ -110,6 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <SetupChecklist />
       </div>
       </OnboardingProvider>
+      </IconContext.Provider>
     </AuthGuard>
   );
 }

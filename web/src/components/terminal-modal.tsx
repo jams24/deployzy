@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, TerminalSquare, RotateCw } from "lucide-react";
+import { ArrowClockwiseIcon, TerminalWindowIcon, XIcon } from "@phosphor-icons/react";
 import "@xterm/xterm/css/xterm.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -259,7 +259,7 @@ export function TerminalModal({
               <span className="h-3 w-3 rounded-full bg-[#27c93f]" />
             </div>
             <div className="flex items-center gap-2 min-w-0 text-sm">
-              <TerminalSquare className="h-4 w-4 shrink-0 text-[#3fb950]" />
+              <TerminalWindowIcon className="h-4 w-4 shrink-0 text-[#3fb950]" />
               <span className="font-medium text-[#c9d1d9]">Terminal</span>
               <span className="truncate text-[#8b949e]">— {projectName}</span>
             </div>
@@ -286,7 +286,7 @@ export function TerminalModal({
                 className="flex items-center gap-1 rounded-md border border-[#30363d] px-2 py-1 text-xs text-[#c9d1d9] hover:bg-[#21262d]"
                 title="Reconnect"
               >
-                <RotateCw className="h-3 w-3" /> Reconnect
+                <ArrowClockwiseIcon className="h-3 w-3" /> Reconnect
               </button>
             )}
             <button
@@ -294,7 +294,7 @@ export function TerminalModal({
               className="rounded-md p-1 text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]"
               title="Close (Esc)"
             >
-              <X className="h-4 w-4" />
+              <XIcon className="h-4 w-4" />
             </button>
           </div>
         </div>

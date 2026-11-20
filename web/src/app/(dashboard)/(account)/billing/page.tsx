@@ -2,13 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  AlertTriangle, Crown, ExternalLink, Gauge, Loader2, PartyPopper,
-  Receipt, Rocket, X,
-} from "lucide-react";
+import { ArrowSquareOutIcon, CircleNotchIcon, ConfettiIcon, CrownIcon, GaugeIcon, ReceiptIcon, RocketLaunchIcon, WarningIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { PageHeader } from "@/components/dashboard/kit";
 import { DashMotion } from "@/components/admin/dash-kit";
 import { fetchPlanCards } from "@/lib/plans";
 import {
@@ -20,21 +16,24 @@ import { UsageMeters } from "@/components/billing/usage-meters";
 import { CreditsOverview, CreditsOverviewSkeleton } from "@/components/billing/credits-overview";
 import { Invoices, CreditsLedger } from "@/components/billing/billing-activity";
 import { PlansGrid } from "@/components/billing/plans-grid";
+import { CheckoutSheet, type CryptoPending } from "@/components/billing/checkout-sheet";
+import { isPaidPlan, type PaidPlan } from "@/lib/upgrade";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Billing — tabbed into three focused views:
 //   Overview  → current plan hero, plan-limit meters, AI balance & spend
-//   Plans     → payment method + tier comparison + upgrade CTAs
+//   Plans     → tier comparison; "Upgrade to X" opens the checkout sheet
 //   Activity  → subscription invoices + metered AI/email ledger
-// Data flows are unchanged from the previous single-scroll page.
+// /billing?checkout=pro opens the checkout sheet for that plan directly, so an
+// "Upgrade" link anywhere (pricing page included) is two clicks from paying.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type TabId = "overview" | "plans" | "activity";
 
-const TABS: { id: TabId; label: string; icon: typeof Gauge }[] = [
-  { id: "overview", label: "Overview", icon: Gauge },
-  { id: "plans", label: "Plans", icon: Crown },
-  { id: "activity", label: "Activity", icon: Receipt },
+const TABS: { id: TabId; label: string; icon: typeof GaugeIcon }[] = [
+  { id: "overview", label: "Overview", icon: GaugeIcon },
+  { id: "plans", label: "Plans", icon: CrownIcon },
+  { id: "activity", label: "Activity", icon: ReceiptIcon },
 ];
 
 // Static fallback for first paint / when /api/v1/plans is briefly unreachable.
@@ -113,10 +112,8 @@ export default function BillingPage() {
   const [pulse, setPulse] = useState(false);
   const prevSpend = useRef<number | null>(null);
 
-  // Checkout flow.
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
-  const [checkoutError, setCheckoutError] = useState("");
+  // Checkout flow: the sheet collects the pay method and starts checkout.
+  const [sheet, setSheet] = useState<{ plan: PaidPlan; renew: boolean } | null>(null);
   // Post-checkout celebration. The provider redirects here immediately, but
   // the plan only flips once the webhook lands — so we poll rather than
   // claiming success we haven't confirmed.
@@ -124,10 +121,7 @@ export default function BillingPage() {
   const [confirming, setConfirming] = useState(false);
   const [confirmedPlan, setConfirmedPlan] = useState<string | null>(null);
   const [pendingTimedOut, setPendingTimedOut] = useState(false);
-  const [pending, setPending] = useState<{
-    plan: string; method: string; url: string;
-    amount?: number; currency?: string; blocked: boolean;
-  } | null>(null);
+  const [pending, setPending] = useState<CryptoPending | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [tab, setTab] = useState<TabId>("overview");
@@ -169,49 +163,13 @@ export default function BillingPage() {
     } catch { /* ignore */ }
   }, []);
 
-  // Open the provider's hosted page in a NEW TAB and keep this page waiting on
-  // the webhook. Redirecting away meant the user lost their place, and for
-  // crypto (InventPay can't redirect back) they never returned at all — the
-  // upgrade appeared to do nothing until they refreshed manually.
-  async function checkout(plan: "hobby" | "pro" | "team", method: "crypto" | "card" = payMethod) {
-    setCheckoutLoading(true);
-    setCheckoutError("");
-    try {
-      const res = await fetch(`${API}/api/v1/billing/checkout`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ plan, method }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCheckoutError(data.error || "Failed to create checkout");
-        return;
-      }
-
-      // Popup blockers only allow this because it's inside the click handler's
-      // async chain from a user gesture; if it's still blocked the modal shows
-      // the link so the user can open it manually.
-      // No "noopener" in the features string: with it, window.open always
-      // returns null, so every checkout looked "blocked". Sever the opener by
-      // hand instead, which keeps the same protection.
-      const win = window.open(data.invoice_url, "_blank");
-      if (win) {
-        try { win.opener = null; } catch { /* cross-origin already */ }
-      }
-      setPending({
-        plan,
-        method,
-        url: data.invoice_url,
-        amount: data.amount,
-        currency: data.currency,
-        blocked: !win,
-      });
-      watchForActivation(plan);
-    } catch (e) {
-      setCheckoutError(e instanceof Error ? e.message : "Network error creating checkout");
-    } finally {
-      setCheckoutLoading(false);
-    }
+  // Crypto checkout started in a new tab: keep this page waiting on the
+  // webhook. (Card checkout redirects this tab and comes back with
+  // ?status=success instead.)
+  function cryptoStarted(p: CryptoPending) {
+    setSheet(null);
+    setPending(p);
+    watchForActivation(p.plan);
   }
 
   // Poll billing status until the provider's webhook flips the subscription
@@ -247,9 +205,19 @@ export default function BillingPage() {
   }
 
   useEffect(() => {
-    // Deep-link: ?tab=plans|activity
-    const t = new URLSearchParams(window.location.search).get("tab");
+    // Deep-links: ?tab=plans|activity, ?checkout=hobby|pro|team
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
     if (t === "plans" || t === "activity") setTab(t);
+    const want = params.get("checkout");
+    if (isPaidPlan(want)) {
+      setTab("plans");
+      setSheet({ plan: want, renew: false });
+      const url = new URL(window.location.href);
+      url.searchParams.delete("checkout");
+      url.searchParams.set("tab", "plans");
+      window.history.replaceState({}, "", url);
+    }
 
     loadStatus();
     loadCredits();
@@ -331,8 +299,8 @@ export default function BillingPage() {
         <div className="rise relative w-full max-w-md text-center">
           <span className={cn("mx-auto flex h-16 w-16 items-center justify-center rounded-[22px]", confirming ? "surface" : "bg-brand/15")}>
             {confirming
-              ? <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-              : <PartyPopper className="h-7 w-7 text-[var(--dz-green-strong)] dark:text-brand" />}
+              ? <CircleNotchIcon className="h-7 w-7 animate-spin text-muted-foreground" />
+              : <ConfettiIcon className="h-7 w-7 text-[var(--dz-green-strong)] dark:text-brand" />}
           </span>
 
           {confirming ? (
@@ -363,7 +331,7 @@ export default function BillingPage() {
                 </dl>
               )}
               <div className="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
-                <Link href="/new" className="pill pill-launch"><Rocket className="h-4 w-4" /> Deploy something</Link>
+                <Link href="/new" className="pill pill-launch"><RocketLaunchIcon className="h-4 w-4" /> Deploy something</Link>
                 <button type="button" onClick={back} className="pill pill-line">View billing</button>
               </div>
             </>
@@ -391,6 +359,18 @@ export default function BillingPage() {
     <div className="animate-fade-in-up">
       <DashMotion />
 
+      {sheet && (() => {
+        const card = planCards.find((p) => p.id === sheet.plan);
+        return card ? (
+          <CheckoutSheet
+            plan={{ ...card, id: sheet.plan }}
+            renew={sheet.renew}
+            onClose={() => setSheet(null)}
+            onCryptoStarted={cryptoStarted}
+          />
+        ) : null;
+      })()}
+
       {/* Payment-in-progress sheet. The provider's page is open in another tab;
           this stays put and waits for the webhook rather than navigating away.
           Portaled to <body> so the wrapper's entrance transform can't trap it. */}
@@ -410,7 +390,7 @@ export default function BillingPage() {
             <div className="p-5 sm:p-6">
               <div className="flex items-center gap-3.5">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand/10">
-                  <Loader2 className="h-5 w-5 animate-spin text-[var(--dz-green-strong)] dark:text-brand" />
+                  <CircleNotchIcon className="h-5 w-5 animate-spin text-[var(--dz-green-strong)] dark:text-brand" />
                 </span>
                 <div className="min-w-0">
                   <p className="eyebrow">Waiting for payment</p>
@@ -425,7 +405,7 @@ export default function BillingPage() {
                   ? "We haven't seen the confirmation yet. Your plan upgrades the moment it lands and we'll email you, so you can close this."
                   : pending.blocked
                     ? "Your browser blocked the payment window. Use the button below to open it."
-                    : `We opened the ${pending.method === "card" ? "card checkout" : "crypto invoice"} in a new tab. Finish there and this page updates on its own.`}
+                    : "We opened the crypto invoice in a new tab. Finish there and this page updates on its own."}
               </p>
 
               <dl className="mt-4 divide-y divide-[var(--dz-hairline)] rounded-2xl border border-[var(--dz-hairline)] text-[14px]">
@@ -441,11 +421,11 @@ export default function BillingPage() {
                 )}
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <dt className="text-muted-foreground">Method</dt>
-                  <dd className="font-medium">{pending.method === "card" ? "Card" : "Crypto"}</dd>
+                  <dd className="font-medium">Crypto</dd>
                 </div>
               </dl>
 
-              {pending.method === "crypto" && !pendingTimedOut && (
+              {!pendingTimedOut && (
                 <p className="mt-3 text-[13px] text-muted-foreground">Crypto payments confirm on-chain, which can take a few minutes.</p>
               )}
 
@@ -456,7 +436,7 @@ export default function BillingPage() {
                   rel="noopener noreferrer"
                   className={cn("pill pill-sm w-full", pending.blocked ? "pill-launch" : "pill-line")}
                 >
-                  <ExternalLink className="h-4 w-4" />
+                  <ArrowSquareOutIcon className="h-4 w-4" />
                   {pending.blocked ? "Open payment page" : "Reopen payment page"}
                 </a>
                 <button type="button" onClick={closePending} className="pill pill-sm w-full text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground">
@@ -473,14 +453,12 @@ export default function BillingPage() {
         document.body,
       )}
 
-      <PageHeader eyebrow="Account" title="Billing" description="Your plan, what you're using, and every payment, in one place." />
-
       {/* Grace period: the subscription lapsed but paid features stay on until
           access_ends. Renewing before then avoids the drop to Free. */}
       {status?.grace && (
-        <div className="mt-5 flex flex-col gap-3 rounded-[20px] border border-amber-500/30 bg-amber-500/[0.06] p-4 sm:flex-row sm:items-center">
+        <div className="mb-5 flex flex-col gap-3 rounded-[16px] border border-amber-500/30 bg-amber-500/[0.06] p-4 sm:flex-row sm:items-center">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="h-5 w-5" />
+            <WarningIcon className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[14.5px] font-semibold text-amber-800 dark:text-amber-300">
@@ -492,29 +470,20 @@ export default function BillingPage() {
               Renew before then to stay on {status.grace.plan}. Your projects keep running either way.
             </p>
           </div>
-          <button
-            type="button"
-            className="pill pill-ink pill-sm shrink-0 disabled:opacity-60"
-            disabled={checkoutLoading}
-            onClick={() => checkout(status.grace!.plan as "hobby" | "pro" | "team", payMethod)}
-          >
-            {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Renew now"}
-          </button>
-        </div>
-      )}
-
-      {checkoutError && (
-        <div role="alert" className="mt-5 flex items-start gap-3 rounded-[20px] border border-red-500/30 bg-red-500/[0.06] px-4 py-3.5 text-[14px] text-red-700 dark:text-red-400">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span className="flex-1">{checkoutError}</span>
-          <button type="button" onClick={() => setCheckoutError("")} className="-m-1 rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground" aria-label="Dismiss">
-            <X className="h-4 w-4" />
-          </button>
+          {isPaidPlan(status.grace.plan) && (
+            <button
+              type="button"
+              className="pill pill-ink pill-sm shrink-0"
+              onClick={() => setSheet({ plan: status.grace!.plan as PaidPlan, renew: true })}
+            >
+              Renew now
+            </button>
+          )}
         </div>
       )}
 
       {/* Section switch */}
-      <div role="tablist" aria-label="Billing sections" className="mt-6 flex h-11 w-full items-center gap-0.5 rounded-full bg-foreground/[0.05] p-1 sm:inline-flex sm:w-auto">
+      <div role="tablist" aria-label="Billing sections" className="flex h-9 w-full items-center gap-0.5 rounded-full border border-[var(--dz-hairline)] p-0.5 sm:inline-flex sm:w-auto">
         {TABS.map((t) => {
           const on = tab === t.id;
           return (
@@ -527,11 +496,11 @@ export default function BillingPage() {
               aria-controls={`billing-panel-${t.id}`}
               onClick={() => changeTab(t.id)}
               className={cn(
-                "flex h-full flex-1 items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-medium transition-colors sm:flex-none sm:px-5",
-                on ? "bg-background text-foreground shadow-sm dark:bg-white/[0.1]" : "text-muted-foreground hover:text-foreground",
+                "flex h-full flex-1 items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-colors sm:flex-none",
+                on ? "bg-foreground/[0.07] text-foreground dark:bg-white/[0.09]" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <t.icon className="h-4 w-4" /> {t.label}
+              <t.icon className={cn("dz-ico h-4 w-4", on && "dz-ico-on")} /> {t.label}
             </button>
           );
         })}
@@ -567,10 +536,7 @@ export default function BillingPage() {
             planCards={planCards}
             currentPlan={currentPlan}
             isAdmin={usage?.is_admin ?? false}
-            payMethod={payMethod}
-            onPayMethod={setPayMethod}
-            onCheckout={(plan) => checkout(plan, payMethod)}
-            checkoutLoading={checkoutLoading}
+            onCheckout={(plan) => setSheet({ plan, renew: false })}
           />
         )}
 

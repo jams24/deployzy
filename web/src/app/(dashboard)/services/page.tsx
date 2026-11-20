@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Database, Plus, Trash2, Eye, EyeOff, Copy, RefreshCw, Loader2, Clock, Download, Upload, Rocket, Table2, AlertTriangle, X, Server } from "lucide-react";
+import { ArrowsClockwiseIcon, CircleNotchIcon, ClockIcon, CopyIcon, DatabaseIcon, DownloadSimpleIcon, EyeIcon, EyeSlashIcon, HardDrivesIcon, MagnifyingGlassIcon, PlugIcon, PlusIcon, RocketLaunchIcon, TableIcon, TrashIcon, UploadSimpleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { regionName, regionFlag } from "@/lib/regions";
+import { EmptyState, IconTile, PageHeader, StackIcon, StatusPill } from "@/components/dashboard/kit";
+import { RowMenu } from "@/components/dashboard/row-menu";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -264,12 +265,6 @@ export default function ServicesPage() {
   const mask = (url: string, pw: string) => url.replace(`:${pw}@`, ":****@");
 
   const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
-  const typeColors = (t: string): { icon: string; badge: string } => ({
-    postgres: { icon: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20", badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40" },
-    redis:    { icon: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",               badge: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/40" },
-    mongodb:  { icon: "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20",       badge: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30" },
-    mysql:    { icon: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20",   badge: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/40" },
-  }[t] ?? { icon: "bg-zinc-500/10 text-muted-foreground border border-zinc-500/20", badge: "bg-zinc-500/10 text-muted-foreground border-zinc-500/20" });
   const urlEnvKey = (t: string) => ({ postgres: "DATABASE_URL", redis: "REDIS_URL", mongodb: "MONGO_URL", mysql: "MYSQL_URL" }[t] ?? "CONNECTION_URL");
   const isSQL = (t: string) => t === "postgres" || t === "mysql";
 
@@ -286,7 +281,7 @@ export default function ServicesPage() {
           <div className="w-full max-w-md rounded-xl border border-red-500/50 bg-card shadow-2xl p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-400 mt-0.5">
-                <AlertTriangle className="h-4.5 w-4.5" />
+                <WarningIcon className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-foreground">Delete database</h3>
@@ -295,7 +290,7 @@ export default function ServicesPage() {
                 </p>
               </div>
               <button className="ml-auto shrink-0 p-1 rounded text-muted-foreground hover:text-foreground" onClick={() => setDeleteTarget(null)}>
-                <X className="h-4 w-4" />
+                <XIcon className="h-4 w-4" />
               </button>
             </div>
 
@@ -333,7 +328,7 @@ export default function ServicesPage() {
                 disabled={!deleteConfirmReady}
                 onClick={confirmDelete}
               >
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {deleting ? <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> : <TrashIcon className="h-3.5 w-3.5" />}
                 Delete permanently
               </Button>
             </div>
@@ -341,38 +336,29 @@ export default function ServicesPage() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3 mb-6 animate-fade-in-up">
-        <div>
-          <p className="eyebrow">Deploy</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Databases</h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground hidden sm:block">Managed databases — PostgreSQL, Redis, MongoDB, and MySQL.</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={load} className="h-9 w-9 rounded-full p-0" title="Refresh" aria-label="Refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" className="h-9 gap-1.5 rounded-full px-3 text-[13.5px] sm:px-4" nativeButton={false} render={<Link href="/new?type=database" />}>
-            <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> New Database</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-7 animate-fade-in-up"
+        title="Databases"
+        description="Managed PostgreSQL, MySQL, MongoDB and Redis, with connection strings ready to paste."
+        actions={
+          <>
+            <button type="button" onClick={load} title="Refresh" aria-label="Refresh" className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--dz-hairline)] text-muted-foreground transition-colors hover:text-foreground">
+              <ArrowsClockwiseIcon className="h-4 w-4" />
+            </button>
+            <Link href="/new?type=database" className="pill pill-ink pill-xs"><PlusIcon weight="bold" className="h-3.5 w-3.5" /> New database</Link>
+          </>
+        }
+      />
 
       {loading ? (
         <p className="text-sm text-muted-foreground animate-pulse">Loading databases…</p>
       ) : rows.length === 0 ? (
-        <div className="relative rounded-2xl border border-dashed border-border overflow-hidden">
-          <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-emerald-500/[0.07] blur-[80px] dark:bg-emerald-400/[0.08]" />
-          <div className="relative flex flex-col items-center py-16 px-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
-              <Database className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <h3 className="mt-4 font-semibold">No databases yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
-              Create a standalone PostgreSQL, Redis, MongoDB, or MySQL database — or attach one automatically when deploying a project.
-            </p>
-            <Button className="btn-shine mt-5 gap-2 rounded-full px-5" nativeButton={false} render={<Link href="/new?type=database" />}>
-              <Database className="h-4 w-4" /> Create Database
-            </Button>
-          </div>
-        </div>
+        <EmptyState
+          icon={DatabaseIcon}
+          title="No databases yet"
+          description="Create a standalone PostgreSQL, MySQL, MongoDB or Redis database, or attach one when you deploy a project."
+          action={<Link href="/new?type=database" className="pill pill-ink pill-sm"><PlusIcon weight="bold" className="h-4 w-4" /> Create database</Link>}
+        />
       ) : (
         <>
         {(() => {
@@ -391,16 +377,16 @@ export default function ServicesPage() {
                   ["Largest", fmtMB(biggest), unlimited ? "no size cap" : `cap ${fmtMB(cap)} each`],
                   ["Size cap per DB", unlimited ? "Unlimited" : fmtMB(cap), `${myLimits?.plan ?? "…"} plan`],
                 ].map(([k, v, sub]) => (
-                  <div key={k} className="rounded-2xl border border-border/60 bg-card/60 p-4 dark:bg-[#0c0d0f]/40">
-                    <p className="text-[11px] text-muted-foreground">{k}</p>
-                    <p className="mt-1 text-xl font-semibold tabular-nums">{v}</p>
-                    <p className="mt-0.5 truncate text-[11px] capitalize text-muted-foreground">{sub}</p>
+                  <div key={k} className="surface rounded-[16px] px-4 py-3.5">
+                    <p className="text-[12px] text-muted-foreground">{k}</p>
+                    <p className="mt-1 text-[20px] font-semibold tracking-[-0.02em] tabular-nums">{v}</p>
+                    <p className="mt-0.5 truncate text-[12px] first-letter:uppercase text-muted-foreground">{sub}</p>
                   </div>
                 ))}
               </div>
               {over.length > 0 && (
                 <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-red-700 dark:text-red-400">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     <p className="font-medium">{over.map((r) => r.name).join(", ")} {over.length === 1 ? "is" : "are"} over your plan&apos;s {fmtMB(cap)} size cap and now read-only.</p>
                     <p className="mt-0.5 text-red-700/80 dark:text-red-400/80">Reads keep working. Delete data to get back under the cap (in a SQL session run <span className="font-mono">SET default_transaction_read_only = off;</span> first), or <Link href="/billing" className="font-medium underline">upgrade</Link> for more space. Writes re-enable automatically within 5 minutes.</p>
@@ -409,18 +395,19 @@ export default function ServicesPage() {
               )}
               {near.length > 0 && (
                 <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-800 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>{near.map((r) => r.name).join(", ")} {near.length === 1 ? "is" : "are"} above 80% of the {fmtMB(cap)} cap. Over the cap, a database becomes read-only.</p>
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-[12rem] flex-1">
-                  <Input value={dbSearch} onChange={(e) => setDbSearch(e.target.value)} placeholder="Search databases…" className="h-9 pl-3 text-sm" />
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={dbSearch} onChange={(e) => setDbSearch(e.target.value)} placeholder="Search databases" className="h-9 rounded-full pl-9 text-sm" />
                 </div>
-                <div className="flex flex-wrap rounded-lg border border-border/60 p-0.5">
+                <div className="flex flex-wrap rounded-full border border-[var(--dz-hairline)] p-0.5">
                   {["all", ...Array.from(new Set(rows.map((r) => r.type)))].map((t) => (
                     <button key={t} onClick={() => setDbType(t)}
-                      className={`rounded-md px-2.5 py-1 text-[11px] font-medium capitalize ${dbType === t ? "bg-accent text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                      className={`rounded-full px-3 py-1 text-[12px] font-medium ${dbType === t ? "bg-foreground/[0.08] text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                       {t === "all" ? `All ${rows.length}` : `${typeLabel(t).replace(/ \d+$/, "")} ${rows.filter((r) => r.type === t).length}`}
                     </button>
                   ))}
@@ -429,63 +416,57 @@ export default function ServicesPage() {
             </div>
           );
         })()}
-        <div className="rounded-2xl border border-border/60 divide-y divide-border/60 overflow-hidden bg-card/60 dark:bg-[#0c0d0f]/40">
-          {/* table header */}
-          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 eyebrow bg-muted/40">
-            <span className="flex-1">Database</span>
-            <span className="w-28 text-right pr-2">Actions</span>
-          </div>
+        <div className="surface divide-y divide-[var(--dz-hairline)] overflow-hidden rounded-[18px]">
           {rows.filter((r) => (dbType === "all" || r.type === dbType) &&
             (!dbSearch.trim() || [r.name, r.db_name, r.project_name ?? "", r.host].some((v) => v.toLowerCase().includes(dbSearch.trim().toLowerCase())))).map((s) => {
             const isProj = s.kind === "project" && !!s.project_id;
             const rowBackups = isProj && s.project_id ? (backups[s.project_id] || []) : [];
             const isOpen = !!expanded[s.id];
             return (
-              <div key={s.id} className={`transition-colors ${isOpen ? "bg-accent/50" : "hover:bg-accent/40"}`}>
-                <div className="px-4 py-3 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
-                    <div className="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${isProj ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20" : typeColors(s.type).icon}`}>
-                        <Database className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold truncate">{s.name}</span>
-                          <Badge variant="outline" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/40">{s.status}</Badge>
-                          <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors(s.type).badge}`}>{typeLabel(s.type)}</Badge>
-                          {isProj && s.project_subdomain && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-blue-600 dark:text-blue-400 border-blue-500/40 gap-1 hidden sm:inline-flex">
-                              <Rocket className="h-2.5 w-2.5" />
-                              {s.project_name}
-                            </Badge>
-                          )}
-                          {s.over_quota && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/40">read-only · over cap</Badge>
-                          )}
+              <div key={s.id} className={`transition-colors ${isOpen ? "bg-foreground/[0.02]" : "hover:bg-foreground/[0.02]"}`}>
+                <div className="space-y-3 px-4 py-3.5 sm:px-5">
+                  <div className="flex items-center gap-3.5">
+                    <button type="button" aria-expanded={isOpen} className="flex min-w-0 flex-1 items-center gap-3.5 text-left" onClick={() => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}>
+                      <IconTile size="md" className="text-foreground/75">
+                        <StackIcon stack={s.type} className="h-[18px] w-[18px]" />
+                      </IconTile>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[14px] font-semibold tracking-[-0.01em]">{s.name}</span>
+                          <StatusPill status={s.status} />
+                          {s.over_quota && <span className="inline-flex h-[22px] shrink-0 items-center rounded-full bg-red-500/10 px-2 text-[12px] font-medium text-red-600 dark:text-red-400">Read-only</span>}
                         </div>
-                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">{s.db_name} · {s.host}:{s.port}</p>
+                        <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                          <span className="shrink-0">{typeLabel(s.type)}</span>
+                          {isProj && s.project_name && (<><span aria-hidden className="text-foreground/20">·</span><span className="inline-flex min-w-0 items-center gap-1"><RocketLaunchIcon className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{s.project_name}</span></span></>)}
+                          <span aria-hidden className="hidden text-foreground/20 sm:inline">·</span>
+                          <span className="hidden truncate sm:inline">{s.host}:{s.port}</span>
+                        </p>
                         {(() => {
                           const cap = myLimits?.limits.max_db_size_mb ?? 0;
                           const unlimited = !!myLimits?.is_admin || cap <= 0;
                           const mb = s.size_mb ?? 0;
                           const pct = unlimited ? 0 : Math.min(100, (mb / cap) * 100);
                           return (
-                            <div className="mt-1.5 flex max-w-sm items-center gap-2" title={unlimited ? `${fmtMB(mb)} used` : `${fmtMB(mb)} of ${fmtMB(cap)} (${pct.toFixed(1)}%)`}>
-                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                                <div className={`h-full rounded-full transition-all duration-700 ${s.over_quota || pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            <div className="mt-2 flex max-w-xs items-center gap-2" title={unlimited ? `${fmtMB(mb)} used` : `${fmtMB(mb)} of ${fmtMB(cap)} (${pct.toFixed(1)}%)`}>
+                              <div className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/[0.07]">
+                                <div className={`h-full rounded-full transition-all duration-700 ${s.over_quota || pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-brand"}`}
                                   style={{ width: `${unlimited ? Math.min(100, mb > 0 ? 6 : 0) : Math.max(mb > 0 ? 1.5 : 0, pct)}%` }} />
                               </div>
-                              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                                {typeof s.size_mb === "number" ? fmtMB(mb) : "not measured"}{!unlimited && typeof s.size_mb === "number" ? ` / ${fmtMB(cap)}` : ""}
+                              <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
+                                {typeof s.size_mb === "number" ? fmtMB(mb) : "Not measured"}{!unlimited && typeof s.size_mb === "number" ? ` of ${fmtMB(cap)}` : ""}
                               </span>
                             </div>
                           );
                         })()}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
                       {(isSQL(s.type) || s.type === "redis" || s.type === "mongodb") && (
+                        // .pill is unlayered and beats `hidden`, so the wrapper hides it on phones.
+                        <span className="hidden sm:contents">
                         <Link
+                          className="pill pill-line pill-xs"
                           href={
                             s.type === "redis"
                               ? `/redis/${s.id}`
@@ -496,24 +477,24 @@ export default function ServicesPage() {
                                   : `/database/${s.id}?type=service`
                           }
                         >
-                          <Button variant="outline" size="sm" className="h-8 px-2.5 text-[10px] gap-1">
-                            <Table2 className="h-3 w-3" /><span className="hidden sm:inline"> Editor</span>
-                          </Button>
+                          <TableIcon className="h-3.5 w-3.5" /> Open
                         </Link>
+                        </span>
                       )}
-                      {!isProj && (s.type === "postgres" || s.type === "mysql") && (
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" title="Download a backup (dump)" onClick={() => downloadServiceBackup(s.id, s.name)} disabled={backingUp === s.id}>
-                          {backingUp === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        </Button>
-                      )}
-                      {!isProj && s.type !== "redis" && (
-                        <Button variant="ghost" size="sm" className={`h-8 w-8 p-0 ${moveOpen === s.id ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} title="Move to another server" onClick={() => openMove(s.id)}>
-                          <Server className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive h-8 w-8 p-0" title="Delete" onClick={() => promptDelete(s)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {backingUp === s.id && <CircleNotchIcon className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Preparing backup" />}
+                      <RowMenu
+                        label={`Actions for ${s.name}`}
+                        items={[
+                          (isSQL(s.type) || s.type === "redis" || s.type === "mongodb") && {
+                            label: "Open data editor", icon: TableIcon,
+                            href: s.type === "redis" ? `/redis/${s.id}` : s.type === "mongodb" ? `/mongo/${s.id}` : isProj && s.project_id ? `/database/${s.id}?type=project&projectId=${s.project_id}` : `/database/${s.id}?type=service`,
+                          },
+                          { label: isOpen ? "Hide connection details" : "Connection details", icon: PlugIcon, onSelect: () => setExpanded((prev) => ({ ...prev, [s.id]: !prev[s.id] })) },
+                          !isProj && (s.type === "postgres" || s.type === "mysql") && { label: "Download a backup", icon: DownloadSimpleIcon, onSelect: () => downloadServiceBackup(s.id, s.name), disabled: backingUp === s.id },
+                          !isProj && s.type !== "redis" && { label: "Move to another server", icon: HardDrivesIcon, onSelect: () => openMove(s.id) },
+                          { label: "Delete database", icon: TrashIcon, onSelect: () => promptDelete(s), danger: true, divider: true },
+                        ]}
+                      />
                     </div>
                   </div>
 
@@ -554,10 +535,10 @@ export default function ServicesPage() {
                               {showPass[s.id] ? s.connection_url : mask(s.connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
-                              {showPass[s.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showPass[s.id] ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
                             </Button>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => navigator.clipboard.writeText(s.connection_url)}>
-                              <Copy className="h-3.5 w-3.5" />
+                              <CopyIcon className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </div>
@@ -571,10 +552,10 @@ export default function ServicesPage() {
                               {showPass[s.id] ? s.external_connection_url : mask(s.external_connection_url, s.db_password)}
                             </code>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setShowPass((p) => ({ ...p, [s.id]: !p[s.id] }))}>
-                              {showPass[s.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showPass[s.id] ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
                             </Button>
                             <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => navigator.clipboard.writeText(s.external_connection_url)}>
-                              <Copy className="h-3.5 w-3.5" />
+                              <CopyIcon className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </div>
@@ -584,7 +565,7 @@ export default function ServicesPage() {
                       {isSQL(s.type) && <div className="border-t border-border/30 pt-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
-                            <Database className="h-3 w-3" /> SQL Console
+                            <DatabaseIcon className="h-3 w-3" /> SQL Console
                           </span>
                           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => {
                             setSqlOpen((o) => {
@@ -621,7 +602,7 @@ export default function ServicesPage() {
                             <div className="flex items-center justify-between">
                               <p className="text-[9px] text-muted-foreground">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
                               <Button size="sm" className="h-6 px-3 text-[10px] gap-1" disabled={sqlRunning[s.id] || !(sqlText[s.id] || "").trim()} onClick={() => runSQL(s)}>
-                                {sqlRunning[s.id] ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : null}
+                                {sqlRunning[s.id] ? <CircleNotchIcon className="h-2.5 w-2.5 animate-spin" /> : null}
                                 Run
                               </Button>
                             </div>
@@ -678,12 +659,12 @@ export default function ServicesPage() {
                         <div className="border-t border-border/30 pt-3 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
-                              <Clock className="h-3 w-3" /> Backups
+                              <ClockIcon className="h-3 w-3" /> Backups
                             </span>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => openSchedule(s.project_id!)}>Schedule</Button>
                               <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => createBackup(s.project_id!)} disabled={backingUp === s.project_id}>
-                                {backingUp === s.project_id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Database className="h-2.5 w-2.5" />}
+                                {backingUp === s.project_id ? <CircleNotchIcon className="h-2.5 w-2.5 animate-spin" /> : <DatabaseIcon className="h-2.5 w-2.5" />}
                                 Backup Now
                               </Button>
                             </div>
@@ -719,13 +700,13 @@ export default function ServicesPage() {
                               {rowBackups.map((b) => (
                                 <div key={b.id} className="flex items-center justify-between rounded-md bg-muted px-2.5 py-1.5 text-[10px]">
                                   <div className="flex items-center gap-2 font-mono text-muted-foreground">
-                                    <Database className="h-3 w-3 text-muted-foreground" />
+                                    <DatabaseIcon className="h-3 w-3 text-muted-foreground" />
                                     <span>{new Date(b.created_at).toLocaleString()}</span>
                                     <span className="text-muted-foreground/70">{(b.file_size / 1024).toFixed(1)} KB</span>
                                   </div>
                                   <div className="flex gap-1">
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1" onClick={() => downloadBackup(s.project_id!, b)}><Download className="h-2.5 w-2.5" /> Download</Button>
-                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1 text-blue-600 dark:text-blue-400" onClick={() => restoreBackup(s.project_id!, b.id)}><Upload className="h-2.5 w-2.5" /> Restore</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1" onClick={() => downloadBackup(s.project_id!, b)}><DownloadSimpleIcon className="h-2.5 w-2.5" /> Download</Button>
+                                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] gap-1 text-blue-600 dark:text-blue-400" onClick={() => restoreBackup(s.project_id!, b.id)}><UploadSimpleIcon className="h-2.5 w-2.5" /> Restore</Button>
                                     <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px] text-destructive" onClick={() => deleteBackup(s.project_id!, b.id)}>Delete</Button>
                                   </div>
                                 </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, type ClipboardEvent } from "react";
-import { Braces, Eye, EyeOff, FileCode2, KeyRound, Loader2, Plus, Rows3, Trash2, Wand2 } from "lucide-react";
+import { BracketsCurlyIcon, CircleNotchIcon, EyeIcon, EyeSlashIcon, FileCodeIcon, KeyIcon, MagicWandIcon, PlusIcon, RowsIcon, TrashIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { autoFormatEnvText, parseEnvText } from "@/lib/parseEnvText";
 import { FooterNote, SettingsSection, monoInputCls, type Note } from "@/components/dashboard/settings-kit";
@@ -109,16 +109,16 @@ export function EnvEditor({
   return (
     <SettingsSection
       id={id}
-      icon={KeyRound}
+      icon={KeyIcon}
       title="Environment variables"
       description={count ? `${count} variable${count === 1 ? "" : "s"}, available at build and run time.` : "Available to your app at build and run time."}
       action={
         <div className="flex h-8 items-center gap-0.5 rounded-full bg-foreground/[0.05] p-0.5" role="tablist" aria-label="Editor mode">
           <button type="button" role="tab" aria-selected={mode === "table"} className={seg(mode === "table")} onClick={() => switchMode("table")}>
-            <Rows3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Table</span>
+            <RowsIcon className="h-3.5 w-3.5" /><span className="hidden sm:inline">Table</span>
           </button>
           <button type="button" role="tab" aria-selected={mode === "raw"} className={seg(mode === "raw")} onClick={() => switchMode("raw")}>
-            <FileCode2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Raw</span>
+            <FileCodeIcon className="h-3.5 w-3.5" /><span className="hidden sm:inline">Raw</span>
           </button>
         </div>
       }
@@ -134,7 +134,7 @@ export function EnvEditor({
           ) : null}
           <button type="button" disabled={saving || !dirty || badKeys > 0} onClick={() => onSave(current, false)} className="pill pill-line pill-sm disabled:opacity-50">Save</button>
           <button type="button" disabled={saving || badKeys > 0} onClick={() => onSave(current, true)} className="pill pill-ink pill-sm disabled:opacity-50">
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; redeploy
+            {saving && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Save &amp; redeploy
           </button>
         </>
       }
@@ -149,7 +149,7 @@ export function EnvEditor({
                 onClick={() => { setRevealAll((v) => !v); setRevealed(new Set()); }}
                 className="ml-auto inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                {revealAll ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {revealAll ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
                 {revealAll ? "Hide values" : "Reveal values"}
               </button>
             </div>
@@ -157,10 +157,10 @@ export function EnvEditor({
 
           {rows.length === 0 ? (
             <div className="flex flex-col items-center rounded-2xl border border-dashed border-[var(--dz-hairline)] px-6 py-8 text-center">
-              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.05]"><Braces className="h-4 w-4 text-muted-foreground" /></span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/[0.05]"><BracketsCurlyIcon className="h-4 w-4 text-muted-foreground" /></span>
               <p className="mt-3 text-[14.5px] font-semibold">No variables yet</p>
               <p className="mt-1 max-w-xs text-[13.5px] text-muted-foreground">Add one, or paste a whole .env file into the name field.</p>
-              <button type="button" onClick={addRow} className="pill pill-line pill-sm mt-4"><Plus className="h-4 w-4" /> Add variable</button>
+              <button type="button" onClick={addRow} className="pill pill-line pill-sm mt-4"><PlusIcon className="h-4 w-4" /> Add variable</button>
             </div>
           ) : (
             <ul className="space-y-3 sm:space-y-2">
@@ -198,7 +198,7 @@ export function EnvEditor({
                           aria-label={show ? "Hide value" : "Show value"}
                           className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
                         >
-                          {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          {show ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
                         </button>
                       )}
                     </div>
@@ -208,7 +208,7 @@ export function EnvEditor({
                       aria-label={`Remove ${r.key || "variable"}`}
                       className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <TrashIcon className="h-4 w-4" />
                     </button>
                   </li>
                 );
@@ -219,7 +219,7 @@ export function EnvEditor({
           {rows.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <button type="button" onClick={addRow} className="inline-flex items-center gap-1.5 rounded-full px-1 text-[13.5px] font-medium text-[var(--dz-green-strong)] transition-opacity hover:opacity-80 dark:text-brand">
-                <Plus className="h-4 w-4" /> Add variable
+                <PlusIcon className="h-4 w-4" /> Add variable
               </button>
               {badKeys > 0 && (
                 <p className="text-[12.5px] text-red-600 dark:text-red-400">Names use letters, numbers and _ and can&apos;t start with a number.</p>
@@ -245,7 +245,7 @@ export function EnvEditor({
               title="Rewrite as one KEY=VALUE per line. Fixes pasted values that lost their line breaks."
               className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
             >
-              <Wand2 className="h-3.5 w-3.5" /> Tidy up
+              <MagicWandIcon className="h-3.5 w-3.5" /> Tidy up
             </button>
           </div>
         </div>

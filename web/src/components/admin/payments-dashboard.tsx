@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { DashMotion, KpiCard } from "@/components/admin/dash-kit";
 import { FilterChip, Pager, timeAgo } from "@/components/admin/pager";
-import { ChartTooltip, CYAN, GREEN, Segmented, axisProps, gridProps } from "@/components/project/charts";
+import { ChartTooltip, SERIES_2, SERIES_1, Segmented, axisProps, gridProps } from "@/components/project/charts";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 const AMBER = "#FBBF24";
@@ -166,8 +166,8 @@ function RevenueChart({ s }: { s: Summary }) {
     ...d, label: new Date(d.day + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" }),
   }));
   const legend = [
-    { k: "Card", c: GREEN, v: s.revenue_card },
-    { k: "Crypto", c: CYAN, v: s.revenue_crypto },
+    { k: "Card", c: SERIES_1, v: s.revenue_card },
+    { k: "Crypto", c: SERIES_2, v: s.revenue_crypto },
     { k: "AI credits", c: AMBER, v: s.revenue_credits },
   ];
   return (
@@ -194,8 +194,8 @@ function RevenueChart({ s }: { s: Summary }) {
               <YAxis {...axisProps} width={48} allowDecimals={false} tickFormatter={(v: number) => `$${v}`} />
               <Tooltip cursor={{ fill: "currentColor", className: "text-foreground/[0.04]" }}
                 content={<ChartTooltip format={(v) => usd(v)} />} />
-              <Bar dataKey="card" name="card" stackId="r" fill={GREEN} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="crypto" name="crypto" stackId="r" fill={CYAN} />
+              <Bar dataKey="card" name="card" stackId="r" fill={SERIES_1} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="crypto" name="crypto" stackId="r" fill={SERIES_2} />
               <Bar dataKey="credits" name="AI credits" stackId="r" fill={AMBER} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -220,7 +220,7 @@ function PlanMix({ s }: { s: Summary }) {
               <span className="tabular-nums text-muted-foreground"><span className="font-semibold text-foreground">{n}</span> {n === 1 ? "user" : "users"}</span>
             </div>
             <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
-              <div className="ov-grow h-full rounded-full" style={{ width: `${(n / max) * 100}%`, background: i === 0 ? GREEN : i === 1 ? CYAN : AMBER, animationDelay: `${i * 80}ms` }} />
+              <div className="ov-grow h-full rounded-full" style={{ width: `${(n / max) * 100}%`, background: i === 0 ? SERIES_1 : i === 1 ? SERIES_2 : AMBER, animationDelay: `${i * 80}ms` }} />
             </div>
           </div>
         ))}
@@ -586,14 +586,14 @@ export function PaymentsDashboard() {
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard icon={CircleDollarSign} label="Revenue" value={Math.round(s.revenue)} format={(n) => usd(n, false)}
-              sub={`${usd(s.revenue_prev, false)} the ${s.days} days before`} color={GREEN} delay={0} />
+              sub={`${usd(s.revenue_prev, false)} the ${s.days} days before`} color={SERIES_1} delay={0} />
             <KpiCard icon={Repeat} label="MRR" value={Math.round(s.mrr)} format={(n) => usd(n, false)}
-              sub={`${s.paying_users} paying ${s.paying_users === 1 ? "user" : "users"}`} color={CYAN} delay={60} />
+              sub={`${s.paying_users} paying ${s.paying_users === 1 ? "user" : "users"}`} color={SERIES_2} delay={60} />
             <KpiCard icon={ShoppingCart} label="Conversion" value={conv} format={(n) => `${n}%`}
               sub={`${s.checkouts_paid} of ${s.checkouts_started} paid${s.pending_stale ? ` · ${s.pending_stale} unpaid` : ""}`} color={AMBER} delay={120} />
             <KpiCard icon={s.problem_events > 0 || s.emails_failed > 0 ? AlertTriangle : Mail} label="Problems"
               value={s.problem_events} sub={`${s.emails_sent} ${s.emails_sent === 1 ? "email" : "emails"} sent · ${s.emails_failed} failed`}
-              color={s.problem_events > 0 || s.emails_failed > 0 ? "#EF4444" : GREEN} delay={180}
+              color={s.problem_events > 0 || s.emails_failed > 0 ? "#EF4444" : SERIES_1} delay={180}
               onClick={s.problem_events > 0 ? () => setView("events") : undefined} />
           </div>
 

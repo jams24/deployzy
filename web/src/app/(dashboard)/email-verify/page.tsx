@@ -1,11 +1,9 @@
 "use client";
 
+import { PageHeader } from "@/components/dashboard/kit";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Loader2, MailCheck, Search, ListChecks, Upload, Download, Copy, Check, X, ShieldCheck, Coins, Wand2,
-  CircleCheck, CircleX, CircleAlert, CircleHelp, Code2, CalendarDays,
-} from "lucide-react";
+import { CalendarBlankIcon, CheckCircleIcon, CheckIcon, CircleNotchIcon, CodeIcon, CoinsIcon, CopyIcon, DownloadSimpleIcon, ListChecksIcon, MagicWandIcon, MagnifyingGlassIcon, QuestionIcon, ShieldCheckIcon, UploadSimpleIcon, WarningCircleIcon, XCircleIcon, XIcon } from "@phosphor-icons/react";
 import { DashMotion, KpiCard } from "@/components/admin/dash-kit";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -24,11 +22,11 @@ interface Usage {
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem("sm_token")}`, "Content-Type": "application/json" });
 
-const SCORE: Record<Result["score"], { label: string; tone: string; icon: typeof CircleCheck; color: string }> = {
-  valid: { label: "Valid", tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30", icon: CircleCheck, color: "#10b981" },
-  risky: { label: "Risky", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30", icon: CircleAlert, color: "#f59e0b" },
-  invalid: { label: "Invalid", tone: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30", icon: CircleX, color: "#ef4444" },
-  unknown: { label: "Unknown", tone: "bg-muted text-muted-foreground border-border/60", icon: CircleHelp, color: "#a1a1aa" },
+const SCORE: Record<Result["score"], { label: string; tone: string; icon: typeof CheckCircleIcon; color: string }> = {
+  valid: { label: "Valid", tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30", icon: CheckCircleIcon, color: "#10b981" },
+  risky: { label: "Risky", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30", icon: WarningCircleIcon, color: "#f59e0b" },
+  invalid: { label: "Invalid", tone: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30", icon: XCircleIcon, color: "#ef4444" },
+  unknown: { label: "Unknown", tone: "bg-muted text-muted-foreground border-border/60", icon: QuestionIcon, color: "#a1a1aa" },
 };
 const REASON: Record<string, string> = {
   ok: "Domain accepts mail (mailbox not checked)", mailbox_exists: "Mailbox exists",
@@ -45,7 +43,7 @@ function CopyBtn({ text, label, small }: { text: string; label: string; small?: 
   return (
     <button type="button" onClick={() => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })}
       className={`inline-flex items-center gap-1.5 rounded-lg border border-border/60 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${small ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs"}`}>
-      {done ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}{label}
+      {done ? <CheckIcon className="h-3.5 w-3.5 text-emerald-500" /> : <CopyIcon className="h-3.5 w-3.5" />}{label}
     </button>
   );
 }
@@ -63,12 +61,12 @@ function Checklist({ r }: { r: Result }) {
     <div className="grid gap-1.5 sm:grid-cols-2">
       {items.map(([label, v]) => (
         <div key={label} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs">
-          {v === undefined ? <CircleHelp className="h-3.5 w-3.5 text-muted-foreground" /> : v ? <CircleCheck className="h-3.5 w-3.5 text-emerald-500" /> : <CircleX className="h-3.5 w-3.5 text-red-500" />}
+          {v === undefined ? <QuestionIcon className="h-3.5 w-3.5 text-muted-foreground" /> : v ? <CheckCircleIcon className="h-3.5 w-3.5 text-emerald-500" /> : <XCircleIcon className="h-3.5 w-3.5 text-red-500" />}
           <span className={v === undefined ? "text-muted-foreground" : ""}>{label}{v === undefined ? " (not checked)" : ""}</span>
         </div>
       ))}
-      {r.free_provider && <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><CircleHelp className="h-3.5 w-3.5" /> Free provider (Gmail, Yahoo…)</div>}
-      {r.catch_all && <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><CircleAlert className="h-3.5 w-3.5 text-amber-500" /> Catch-all domain</div>}
+      {r.free_provider && <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><QuestionIcon className="h-3.5 w-3.5" /> Free provider (Gmail, Yahoo…)</div>}
+      {r.catch_all && <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><WarningCircleIcon className="h-3.5 w-3.5 text-amber-500" /> Catch-all domain</div>}
     </div>
   );
 }
@@ -88,7 +86,7 @@ function SingleResult({ r, onFix }: { r: Result; onFix: (email: string) => void 
       </div>
       {fixed && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs">
-          <Wand2 className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+          <MagicWandIcon className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
           Did you mean <span className="font-mono font-medium">{fixed}</span>?
           <button onClick={() => onFix(fixed)} className="ml-auto font-medium text-sky-700 hover:underline dark:text-sky-400">Check that instead</button>
         </div>
@@ -190,35 +188,34 @@ export default function EmailVerifyPage() {
   return (
     <div className="@container animate-fade-in-up space-y-5">
       <DashMotion />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow">Network</p>
-          <h1 className="mt-1 flex items-center gap-2 text-[22px] font-bold tracking-[-0.02em] sm:text-[26px]"><MailCheck className="h-6 w-6" /> Email Verify</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Catch typos, dead domains, throwaway and role addresses before you send, one at a time or a whole list.</p>
-        </div>
-        <Link href="/billing" className="inline-flex items-center gap-2 rounded-xl surface px-3 py-2 text-xs hover:border-foreground/20">
-          <Coins className="h-4 w-4 text-amber-500" />
+      <PageHeader
+        title="Email Verify"
+        description="Catch typos, dead domains, throwaway and role addresses before you send, one at a time or a whole list."
+        actions={
+        <Link href="/billing" className="inline-flex items-center gap-2 rounded-full border border-[var(--dz-hairline)] px-3 py-1.5 text-[12.5px] transition-colors hover:border-foreground/20">
+          <CoinsIcon className="h-4 w-4 text-amber-500" />
           <span><span className="font-semibold tabular-nums">{credits ? (credits.unlimited ? "Unlimited" : credits.available.toLocaleString(undefined, { maximumFractionDigits: 2 })) : "…"}</span> credits</span>
           <span className="text-muted-foreground">· {cost} per check</span>
         </Link>
-      </div>
+        }
+      />
 
       {usage && usage.usage.all_time > 0 && (
         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @4xl:grid-cols-4">
-          <KpiCard icon={CalendarDays} label="Checks" period="30d" value={m?.total ?? 0} color="#8b5cf6" delay={0}
+          <KpiCard icon={CalendarBlankIcon} label="Checks" period="30d" value={m?.total ?? 0} color="#8b5cf6" delay={0}
             series={usage.usage.daily.map((d) => d.total)} sub={<>{usage.usage.today} today</>} />
-          <KpiCard icon={ShieldCheck} label="Deliverable" period="30d" value={deliverable} format={(n) => `${n}%`} color="#10b981" delay={40}
+          <KpiCard icon={ShieldCheckIcon} label="Deliverable" period="30d" value={deliverable} format={(n) => `${n}%`} color="#10b981" delay={40}
             sub={<>{m?.valid ?? 0} valid of {m?.total ?? 0}</>} />
-          <KpiCard icon={CircleX} label="Caught" period="30d" value={(m?.invalid ?? 0) + (m?.risky ?? 0)} color="#ef4444" delay={80}
+          <KpiCard icon={XCircleIcon} label="Caught" period="30d" value={(m?.invalid ?? 0) + (m?.risky ?? 0)} color="#ef4444" delay={80}
             sub={<>{m?.invalid ?? 0} invalid · {m?.risky ?? 0} risky</>} />
-          <KpiCard icon={Coins} label="Credits used" period="30d" value={Math.round((m?.total ?? 0) * cost * 100)} format={(n) => (n / 100).toLocaleString()} color="#f59e0b" delay={120}
+          <KpiCard icon={CoinsIcon} label="Credits used" period="30d" value={Math.round((m?.total ?? 0) * cost * 100)} format={(n) => (n / 100).toLocaleString()} color="#f59e0b" delay={120}
             sub={<>{usage.usage.all_time.toLocaleString()} checks all-time</>} />
         </div>
       )}
 
       <div className="ov-rise overflow-hidden rounded-2xl surface" style={{ animationDelay: "150ms" }}>
         <div className="flex border-b border-border/60 px-2">
-          {([["single", "Single address", Search], ["bulk", "Bulk list", ListChecks]] as const).map(([k, l, I]) => (
+          {([["single", "Single address", MagnifyingGlassIcon], ["bulk", "Bulk list", ListChecksIcon]] as const).map(([k, l, I]) => (
             <button key={k} onClick={() => { setTab(k); setErr(""); }}
               className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition-colors ${tab === k ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               <I className="h-4 w-4" />{l}
@@ -227,7 +224,7 @@ export default function EmailVerifyPage() {
         </div>
 
         <div className="p-4 sm:p-5">
-          {err && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5 text-sm text-red-600 dark:text-red-400"><X className="mt-0.5 h-4 w-4 shrink-0" />{err}</div>}
+          {err && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5 text-sm text-red-600 dark:text-red-400"><XIcon className="mt-0.5 h-4 w-4 shrink-0" />{err}</div>}
 
           {tab === "single" ? (
             <>
@@ -236,7 +233,7 @@ export default function EmailVerifyPage() {
                   className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-4 font-mono text-sm outline-none focus:border-foreground/30 focus:ring-4 focus:ring-emerald-500/10" />
                 <button type="submit" disabled={singleBusy || !single.trim()}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-foreground px-5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40">
-                  {singleBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Verify
+                  {singleBusy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <MagnifyingGlassIcon className="h-4 w-4" />} Verify
                 </button>
               </form>
               {singleRes && <SingleResult r={singleRes} onFix={(e) => verifyOne(e)} />}
@@ -249,14 +246,14 @@ export default function EmailVerifyPage() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/plain" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
                 <button type="button" onClick={() => fileRef.current?.click()}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-accent"><Upload className="h-3.5 w-3.5" /> Upload CSV / TXT</button>
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-accent"><UploadSimpleIcon className="h-3.5 w-3.5" /> Upload CSV / TXT</button>
                 <span className={`text-xs ${emails.length > batchMax ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
                   <span className="font-medium tabular-nums text-foreground">{emails.length}</span> unique address{emails.length === 1 ? "" : "es"} · max {batchMax}
                   {emails.length > 0 && <> · costs <span className="tabular-nums">{(emails.length * cost).toFixed(2)}</span> credits</>}
                 </span>
                 <button onClick={verifyList} disabled={listBusy || emails.length === 0 || emails.length > batchMax || insufficient}
                   className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40">
-                  {listBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListChecks className="h-4 w-4" />} Verify list
+                  {listBusy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <ListChecksIcon className="h-4 w-4" />} Verify list
                 </button>
               </div>
               {insufficient && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Not enough credits for this list. <Link href="/billing" className="font-medium underline">Top up</Link></p>}
@@ -277,12 +274,12 @@ export default function EmailVerifyPage() {
                       </button>
                     ))}
                     <div className="relative ml-auto w-full sm:w-48">
-                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none" />
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button onClick={download} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><Download className="h-3.5 w-3.5" /> Export CSV</button>
+                    <button onClick={download} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><DownloadSimpleIcon className="h-3.5 w-3.5" /> Export CSV</button>
                     <CopyBtn text={listRes.filter((r) => r.score === "valid").map((r) => r.email).join("\n")} label={`Copy ${counts.valid} valid`} />
                   </div>
                   <div className="mt-3 divide-y divide-border/50 rounded-xl border border-border/60">
@@ -308,7 +305,7 @@ export default function EmailVerifyPage() {
 
       <div className="ov-rise rounded-2xl surface p-4 sm:p-5" style={{ animationDelay: "220ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="flex items-center gap-2 text-sm font-semibold"><Code2 className="h-4 w-4 text-muted-foreground" /> Use it from your code</p>
+          <p className="flex items-center gap-2 text-sm font-semibold"><CodeIcon className="h-4 w-4 text-muted-foreground" /> Use it from your code</p>
           <Link href="/api-keys" className="text-xs font-medium hover:underline">Get an API key →</Link>
         </div>
         <div className="relative mt-3">

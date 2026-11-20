@@ -5,7 +5,7 @@
 // the motion keyframes. All motion is disabled under prefers-reduced-motion.
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 export const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 // Current half vs previous half of the 28-day window.
@@ -48,22 +48,29 @@ export function CountUp({ value, format }: { value: number; format?: (n: number)
   return <>{format ? format(n) : n.toLocaleString()}</>;
 }
 
-export function Delta({ cur, prev, span = 14 }: { cur: number; prev: number; span?: number }) {
-  if (prev === 0 && cur === 0) return <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Minus className="h-3 w-3" />flat</span>;
-  if (prev === 0) return <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"><ArrowUpRight className="h-3 w-3" />new</span>;
+// Change vs the previous period, as plain text. Colour says whether the move
+// is good (green) or bad (red): direction × upIsGood. No change, or nothing to
+// compare against, stays neutral; no change on both sides renders nothing.
+export function Delta({ cur, prev, span = 14, upIsGood = true }: { cur: number; prev: number; span?: number; upIsGood?: boolean }) {
+  if (prev === 0 && cur === 0) return null;
+  if (prev === 0) return <span className="text-[12px] text-muted-foreground">New</span>;
   const pct = Math.round(((cur - prev) / prev) * 100);
-  const up = pct >= 0;
+  const title = `${cur.toLocaleString()} vs ${prev.toLocaleString()} in the previous ${span === 1 ? "day" : `${span} days`}`;
+  if (pct === 0) return <span title={title} className="text-[12px] tabular-nums text-muted-foreground">No change</span>;
+  const up = pct > 0;
+  const good = up === upIsGood;
   return (
-    <span title={`${cur.toLocaleString()} vs ${prev.toLocaleString()} in the previous ${span === 1 ? "day" : `${span} days`}`}
-      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
-        up ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400"}`}>
-      {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}{Math.abs(pct)}%
+    <span title={title}
+      className={`inline-flex items-center gap-0.5 text-[12px] font-medium tabular-nums ${
+        good ? "text-[var(--dz-green-strong)] dark:text-[var(--dz-green)]" : "text-red-600 dark:text-red-400"}`}>
+      {up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}{Math.abs(pct)}%
     </span>
   );
 }
 
-// Sparkline that draws itself in (pathLength=1 + dash animation).
-export function Sparkline({ data, color }: { data: number[]; color: string }) {
+// Trend line for a stat tile. Drawn in muted ink, not a series colour: it shows
+// the shape of the period, and the number above it carries the meaning.
+export function Sparkline({ data }: { data: number[]; color?: string }) {
   const id = useId().replace(/:/g, "");
   const w = 120, h = 36;
   const max = Math.max(1, ...data);
@@ -71,46 +78,49 @@ export function Sparkline({ data, color }: { data: number[]; color: string }) {
   const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const area = `${line} L${w},${h} L0,${h} Z`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full overflow-visible" preserveAspectRatio="none" aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full overflow-visible text-foreground/35" preserveAspectRatio="none" aria-hidden>
       <defs>
         <linearGradient id={`g${id}`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={area} fill={`url(#g${id})`} className="ov-fade" />
-      <path d={line} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round"
+      <path d={line} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"
         pathLength={1} className="ov-draw" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
 
+// Stat tile: label, figure, optional change vs the previous period, a short
+// note, and an optional trend. Every tile looks the same; colour appears only
+// in the delta (good/bad), never as a per-tile accent. `color` is accepted for
+// older call sites and ignored.
 export function KpiCard({
-  icon: Icon, label, period, value, format, sub, series, color, cur, prev, span, delay, onClick,
+  icon: Icon, label, period, value, format, sub, series, cur, prev, span, upIsGood = true, delay, onClick,
 }: {
-  icon: React.ComponentType<{ className?: string }>; label: string; period?: string; value: number; format?: (n: number) => string;
-  sub: React.ReactNode; series?: number[]; color: string; cur?: number; prev?: number; span?: number; delay: number; onClick?: () => void;
+  icon?: React.ComponentType<{ className?: string }>; label: string; period?: string; value: number; format?: (n: number) => string;
+  sub: React.ReactNode; series?: number[]; color?: string; cur?: number; prev?: number; span?: number; upIsGood?: boolean;
+  delay: number; onClick?: () => void;
 }) {
+  const showTrend = !!series && series.length > 1 && series.some((v) => v > 0);
   return (
     <button onClick={onClick} disabled={!onClick}
-      className="ov-rise group relative overflow-hidden rounded-2xl surface p-4 text-left transition-all duration-300 enabled:hover:-translate-y-0.5 enabled:hover:border-border enabled:hover:shadow-lg enabled:hover:shadow-black/[0.04] disabled:cursor-default"
+      className="ov-rise group relative overflow-hidden rounded-[20px] surface p-4 text-left transition-colors duration-200 enabled:hover:border-foreground/20 disabled:cursor-default sm:p-5"
       style={{ animationDelay: `${delay}ms` }}>
-      <div className="absolute inset-x-0 top-0 h-px opacity-60" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md" style={{ background: `${color}1a`, color }}>
-            <Icon className="h-3.5 w-3.5" />
-          </span>
+        <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
+          {Icon && <Icon className="h-4 w-4 shrink-0 opacity-70" />}
           <span className="truncate">{label}</span>
-          {period && <span className="shrink-0 rounded bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wide">{period}</span>}
+          {period && <span className="shrink-0 opacity-80">· {period}</span>}
         </span>
-        {cur !== undefined && prev !== undefined && <span className="shrink-0"><Delta cur={cur} prev={prev} span={span} /></span>}
+        {cur !== undefined && prev !== undefined && <span className="shrink-0"><Delta cur={cur} prev={prev} span={span} upIsGood={upIsGood} /></span>}
       </div>
-      <div className="mt-3 truncate text-[28px] font-semibold leading-none tracking-tight tabular-nums">
+      <div className="mt-3 truncate text-[28px] font-semibold leading-none tracking-[-0.03em] tabular-nums">
         <CountUp value={value} format={format} />
       </div>
-      <div className="mt-1.5 min-h-[16px] truncate text-[11px] text-muted-foreground">{sub}</div>
-      {series && <div className="mt-2 -mx-1"><Sparkline data={series} color={color} /></div>}
+      <div className="mt-2 min-h-[18px] truncate text-[12.5px] text-muted-foreground">{sub}</div>
+      {showTrend && <div className="-mx-1 mt-3"><Sparkline data={series!} /></div>}
     </button>
   );
 }

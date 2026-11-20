@@ -5,10 +5,7 @@
 // team confirm inline.
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import {
-  ArrowRightLeft, Check, Clock, Copy, Crown, Loader2, LogOut, Mail, Plus, Send, Shield, Trash2, TriangleAlert,
-  UserRound, Users, X,
-} from "lucide-react";
+import { ArrowsLeftRightIcon, CheckIcon, CircleNotchIcon, ClockIcon, CopyIcon, CrownIcon, EnvelopeIcon, PaperPlaneTiltIcon, PlusIcon, ShieldIcon, SignOutIcon, TrashIcon, UserCircleIcon, UsersThreeIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { EmptyState, PageHeader, PanelHeader } from "@/components/dashboard/kit";
@@ -22,10 +19,10 @@ interface Member { user_id: string; email: string; name: string; role: string; j
 interface Invitation { id: string; email: string; role: string; token: string; created_at: string; expires_at?: string }
 interface TeamDetail { team: { id: string; name: string; owner_id: string; created_at?: string }; role: string; members: Member[]; invitations: Invitation[] }
 
-const ROLE: Record<string, { label: string; icon: typeof Crown; tone: string; desc: string }> = {
-  owner: { label: "Owner", icon: Crown, tone: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400", desc: "Full control and billing. Can delete the team." },
-  admin: { label: "Admin", icon: Shield, tone: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400", desc: "Invites and removes members, manages resources." },
-  member: { label: "Member", icon: UserRound, tone: "border-[var(--dz-hairline)] bg-foreground/[0.04] text-muted-foreground", desc: "Works on the team's projects, tunnels and databases." },
+const ROLE: Record<string, { label: string; icon: typeof CrownIcon; tone: string; desc: string }> = {
+  owner: { label: "Owner", icon: CrownIcon, tone: "border-transparent bg-foreground/[0.07] text-foreground/80 dark:bg-white/[0.08]", desc: "Full control and billing. Can delete the team." },
+  admin: { label: "Admin", icon: ShieldIcon, tone: "border-transparent bg-foreground/[0.05] text-foreground/70 dark:bg-white/[0.06]", desc: "Invites and removes members, manages resources." },
+  member: { label: "Member", icon: UserCircleIcon, tone: "border-[var(--dz-hairline)] text-muted-foreground", desc: "Works on the team's projects, tunnels and databases." },
 };
 const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—");
 const initials = (s: string) => s.split(/[\s@._-]+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -33,7 +30,7 @@ const initials = (s: string) => s.split(/[\s@._-]+/).filter(Boolean).map((p) => 
 function RoleBadge({ role, className }: { role: string; className?: string }) {
   const r = ROLE[role] ?? ROLE.member;
   return (
-    <span className={cn("inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] font-medium", r.tone, className)}>
+    <span className={cn("inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border px-2 text-[11.5px] font-medium", r.tone, className)}>
       <r.icon className="h-3 w-3" />{r.label}
     </span>
   );
@@ -49,7 +46,7 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
       aria-label={label}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
     >
-      {done ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+      {done ? <CheckIcon className="h-3.5 w-3.5 text-brand" /> : <CopyIcon className="h-3.5 w-3.5" />}
     </button>
   );
 }
@@ -57,10 +54,10 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
 function TeamMark({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
   return (
     <span className={cn(
-      "flex shrink-0 items-center justify-center bg-gradient-to-br from-brand to-brand-cyan font-semibold text-[#06281d]",
-      size === "sm" && "h-7 w-7 rounded-lg text-[11.5px]",
-      size === "md" && "h-9 w-9 rounded-xl text-[13px]",
-      size === "lg" && "h-14 w-14 rounded-2xl text-[18px] shadow-lg shadow-brand/20",
+      "flex shrink-0 items-center justify-center bg-foreground/[0.06] font-semibold text-foreground/75 ring-1 ring-inset ring-[var(--dz-hairline)] dark:bg-white/[0.07]",
+      size === "sm" && "h-6 w-6 rounded-[7px] text-[10.5px]",
+      size === "md" && "h-9 w-9 rounded-[10px] text-[12.5px]",
+      size === "lg" && "h-11 w-11 rounded-[13px] text-[14px]",
     )}>
       {initials(name)}
     </span>
@@ -188,7 +185,7 @@ export default function TeamPage() {
       <div className="flex gap-2">
         {teams && teams.length > 0 && <button type="button" onClick={() => { setShowCreate(false); setNewName(""); }} className="pill pill-line pill-sm flex-1 sm:flex-none">Cancel</button>}
         <button type="submit" disabled={!newName.trim() || creating} className="pill pill-ink pill-sm flex-1 disabled:opacity-50 sm:flex-none">
-          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create team
+          {creating ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <PlusIcon className="h-4 w-4" />} Create team
         </button>
       </div>
     </form>
@@ -197,24 +194,24 @@ export default function TeamPage() {
   return (
     <div className="animate-fade-in-up">
       <PageHeader
-        eyebrow="Account"
+        level={2}
         title="Teams"
         description="Share projects, tunnels and databases. Each team is its own workspace with roles."
         actions={teams && teams.length > 0 && !showCreate ? (
-          <button type="button" onClick={() => setShowCreate(true)} className="pill pill-line pill-sm"><Plus className="h-4 w-4" /> New team</button>
+          <button type="button" onClick={() => setShowCreate(true)} className="pill pill-line pill-sm"><PlusIcon className="h-4 w-4" /> New team</button>
         ) : undefined}
       />
 
       {err && (
-        <div role="alert" className="mt-5 flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/[0.05] px-3.5 py-3 text-[13.5px] text-red-600 dark:text-red-400">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 flex-1">{err}</span>
-          <button type="button" onClick={() => setErr("")} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>
+        <div role="alert" className="mt-5 flex items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/[0.05] px-3.5 py-3 text-[13px] text-red-600 dark:text-red-400">
+          <WarningIcon className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 flex-1">{err}</span>
+          <button type="button" onClick={() => setErr("")} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><XIcon className="h-4 w-4" /></button>
         </div>
       )}
 
       {showCreate && teams && teams.length > 0 && (
-        <div className="surface mt-5 rounded-[20px] p-4 sm:p-5">
-          <p className="mb-3 text-[14.5px] font-semibold tracking-tight">New team</p>
+        <div className="surface mt-5 rounded-[16px] p-4 sm:p-5">
+          <p className="mb-3 text-[14px] font-semibold tracking-tight">New team</p>
           {createForm}
         </div>
       )}
@@ -222,12 +219,12 @@ export default function TeamPage() {
       {teams === null ? (
         <div className="mt-6 space-y-4" aria-busy>
           <div className="h-10 w-72 animate-pulse rounded-full bg-foreground/[0.05]" />
-          <div className="h-40 animate-pulse rounded-[24px] bg-foreground/[0.05]" />
+          <div className="h-40 animate-pulse rounded-[18px] bg-foreground/[0.05]" />
         </div>
       ) : teams.length === 0 ? (
         <EmptyState
           className="mt-6"
-          icon={Users}
+          icon={UsersThreeIcon}
           title="No teams yet"
           description="Create a team, then invite people by email. Everyone works in a shared workspace with roles."
           action={createForm}
@@ -247,12 +244,12 @@ export default function TeamPage() {
                     aria-selected={on}
                     onClick={() => { setSelId(t.id); setConfirmMember(null); setLastInvite(""); }}
                     className={cn(
-                      "flex shrink-0 items-center gap-2.5 rounded-2xl border py-1.5 pl-1.5 pr-3 text-left transition-colors",
-                      on ? "border-foreground/25 bg-card shadow-sm" : "border-[var(--dz-hairline)] hover:border-foreground/20",
+                      "flex h-9 shrink-0 items-center gap-2 rounded-full border pl-1.5 pr-3 text-left transition-colors",
+                      on ? "border-foreground/20 bg-foreground/[0.05] dark:bg-white/[0.06]" : "border-[var(--dz-hairline)] text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <TeamMark name={t.name} size="sm" />
-                    <span className="text-[14px] font-medium">{t.name}</span>
+                    <span className="text-[13px] font-medium">{t.name}</span>
                     {activeWorkspace === t.id && <span className="h-2 w-2 rounded-full bg-brand" title="Current workspace" />}
                   </button>
                 );
@@ -262,42 +259,41 @@ export default function TeamPage() {
 
           {detail && (
             <div className="mt-5 space-y-4 sm:space-y-5">
-              {/* Team hero */}
-              <section className="dark grain relative isolate overflow-hidden rounded-[24px] bg-[#0b0c10] p-5 text-white sm:p-6">
-                <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 -z-10 h-72 w-72 rounded-full bg-brand/15 blur-3xl" />
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                  <div className="flex min-w-0 flex-1 items-center gap-4">
+              {/* Team summary */}
+              <section className="surface overflow-hidden rounded-[18px]">
+                <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+                  <div className="flex min-w-0 flex-1 items-center gap-3.5">
                     <TeamMark name={detail.team.name} size="lg" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-[22px] font-semibold tracking-[-0.03em]">{detail.team.name}</h2>
-                        <RoleBadge role={myRole} className="border-white/15 bg-white/[0.06] text-white/80" />
+                        <h2 className="truncate text-[17px] font-semibold tracking-[-0.015em]">{detail.team.name}</h2>
+                        <RoleBadge role={myRole} />
                       </div>
-                      <p className="mt-1 text-[13.5px] text-white/55">
-                        {activeWorkspace === teamId ? <span className="text-brand">Your current workspace · </span> : null}
+                      <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                        {activeWorkspace === teamId ? <span className="font-medium text-[var(--dz-green-strong)] dark:text-brand">Your current workspace · </span> : null}
                         Created {fmtDate(detail.team.created_at)}
                       </p>
                     </div>
                   </div>
                   {activeWorkspace === teamId ? (
-                    <button type="button" onClick={() => openWorkspace(null)} className="pill pill-sm border border-white/15 bg-white/[0.06] text-white hover:bg-white/[0.11]">
-                      <ArrowRightLeft className="h-4 w-4" /> Back to personal
+                    <button type="button" onClick={() => openWorkspace(null)} className="pill pill-line pill-sm">
+                      <ArrowsLeftRightIcon className="h-4 w-4" /> Back to personal
                     </button>
                   ) : (
-                    <button type="button" onClick={() => openWorkspace(teamId)} className="pill pill-launch pill-sm">
-                      <ArrowRightLeft className="h-4 w-4" /> Open workspace
+                    <button type="button" onClick={() => openWorkspace(teamId)} className="pill pill-ink pill-sm">
+                      <ArrowsLeftRightIcon className="h-4 w-4" /> Open workspace
                     </button>
                   )}
                 </div>
-                <div className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-white/[0.06]">
+                <div className="grid grid-cols-3 divide-x divide-[var(--dz-hairline)] border-t border-[var(--dz-hairline)]">
                   {[
                     { label: "Members", value: detail.members.length },
                     { label: "Owners & admins", value: detail.members.filter((m) => m.role === "admin" || m.role === "owner").length },
                     { label: "Pending invites", value: detail.invitations.length },
                   ].map((s) => (
-                    <div key={s.label} className="bg-[#0b0c10] px-4 py-3">
-                      <p className="text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums">{s.value}</p>
-                      <p className="mt-1.5 text-[12.5px] leading-tight text-white/50">{s.label}</p>
+                    <div key={s.label} className="px-5 py-3.5">
+                      <p className="text-[19px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{s.value}</p>
+                      <p className="mt-1.5 truncate text-[12px] text-muted-foreground">{s.label}</p>
                     </div>
                   ))}
                 </div>
@@ -305,7 +301,7 @@ export default function TeamPage() {
 
               <div className="grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
                 {/* Members */}
-                <section className="surface overflow-hidden rounded-[20px] lg:self-start">
+                <section className="surface overflow-hidden rounded-[16px] lg:self-start">
                   <PanelHeader title="Members" count={detail.members.length} />
                   <ul className="divide-y divide-[var(--dz-hairline)]">
                     {detail.members.map((m) => {
@@ -335,13 +331,13 @@ export default function TeamPage() {
                                 aria-label={self ? "Leave team" : `Remove ${m.email}`}
                                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                               >
-                                {self ? <LogOut className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                                {self ? <SignOutIcon className="h-4 w-4" /> : <XIcon className="h-4 w-4" />}
                               </button>
                             )}
                           </div>
                           {confirming && (
                             <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-red-500/[0.06] p-3 sm:flex-row sm:items-center">
-                              <p className="text-[13.5px] sm:mr-auto">
+                              <p className="text-[13px] sm:mr-auto">
                                 {self ? <>Leave <span className="font-semibold">{detail.team.name}</span>? You&apos;ll lose access to its resources.</> : <>Remove <span className="font-semibold">{m.name || m.email}</span> from the team?</>}
                               </p>
                               <div className="flex gap-2">
@@ -359,12 +355,12 @@ export default function TeamPage() {
                 <div className="min-w-0 space-y-4 sm:space-y-5">
                   {/* Invite */}
                   {canManage ? (
-                    <form onSubmit={invite} className="surface rounded-[20px] p-4 sm:p-5">
-                      <p className="text-[14.5px] font-semibold tracking-tight">Invite someone</p>
+                    <form onSubmit={invite} className="surface rounded-[16px] p-4 sm:p-5">
+                      <p className="text-[14px] font-semibold tracking-tight">Invite someone</p>
                       <p className="mt-0.5 text-[13px] text-muted-foreground">They get an email with a link to join. You can copy the link too.</p>
                       <div className="mt-3 space-y-2">
                         <div className="relative">
-                          <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <EnvelopeIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <input type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="teammate@company.com" aria-label="Email address" className={cn(inputCls, "pl-9")} />
                         </div>
                         <div className="flex gap-2">
@@ -372,34 +368,34 @@ export default function TeamPage() {
                             <option value="member">Member</option><option value="admin">Admin</option>
                           </select>
                           <button type="submit" disabled={inviting || !invEmail.trim()} className="pill pill-ink pill-sm shrink-0 disabled:opacity-50">
-                            {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Invite
+                            {inviting ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <PaperPlaneTiltIcon className="h-4 w-4" />} Invite
                           </button>
                         </div>
                       </div>
                       {lastInvite && (
                         <div className="mt-3 flex items-center gap-2 rounded-2xl border border-brand/30 bg-brand/[0.06] py-1.5 pl-3 pr-1.5">
-                          <Check className="h-4 w-4 shrink-0 text-brand" />
+                          <CheckIcon className="h-4 w-4 shrink-0 text-brand" />
                           <span className="min-w-0 flex-1 truncate text-[13px]">Invite sent · <span className="font-mono text-[12.5px] text-muted-foreground">{lastInvite}</span></span>
                           <CopyBtn text={lastInvite} label="Copy invite link" />
                         </div>
                       )}
                     </form>
                   ) : (
-                    <p className="rounded-[20px] border border-dashed border-[var(--dz-hairline)] p-4 text-[13.5px] text-muted-foreground">
+                    <p className="rounded-[16px] border border-dashed border-[var(--dz-hairline)] p-4 text-[13px] text-muted-foreground">
                       Only owners and admins can invite people. Ask {detail.members.find((m) => m.role === "owner")?.name || "the owner"} if you need someone added.
                     </p>
                   )}
 
                   {/* Pending invites */}
-                  <section className="surface overflow-hidden rounded-[20px]">
+                  <section className="surface overflow-hidden rounded-[16px]">
                     <PanelHeader title="Pending invites" count={detail.invitations.length} />
                     {detail.invitations.length === 0 ? (
-                      <p className="px-4 py-6 text-center text-[13.5px] text-muted-foreground">No pending invites.</p>
+                      <p className="px-4 py-6 text-center text-[13px] text-muted-foreground">No pending invites.</p>
                     ) : (
                       <ul className="divide-y divide-[var(--dz-hairline)]">
                         {detail.invitations.map((inv) => (
                           <li key={inv.id} className="flex items-center gap-2.5 px-4 py-3 sm:px-5">
-                            <Clock className="h-4 w-4 shrink-0 text-amber-500" />
+                            <ClockIcon className="h-4 w-4 shrink-0 text-amber-500" />
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-[14px]">{inv.email}</p>
                               <p className="truncate text-[12.5px] text-muted-foreground">{ROLE[inv.role]?.label ?? inv.role} · sent {fmtDate(inv.created_at)}{inv.expires_at ? ` · expires ${fmtDate(inv.expires_at)}` : ""}</p>
@@ -407,7 +403,7 @@ export default function TeamPage() {
                             {canManage && inv.token && <CopyBtn text={inviteLink(inv.token)} label="Copy invite link" />}
                             {canManage && (
                               <button type="button" onClick={() => cancelInvite(inv)} title="Cancel invite" aria-label={`Cancel invite for ${inv.email}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400">
-                                <X className="h-4 w-4" />
+                                <XIcon className="h-4 w-4" />
                               </button>
                             )}
                           </li>
@@ -417,8 +413,8 @@ export default function TeamPage() {
                   </section>
 
                   {/* Roles */}
-                  <section className="surface rounded-[20px] p-4 sm:p-5">
-                    <p className="text-[14.5px] font-semibold tracking-tight">Roles</p>
+                  <section className="surface rounded-[16px] p-4 sm:p-5">
+                    <p className="text-[14px] font-semibold tracking-tight">Roles</p>
                     <ul className="mt-3 space-y-3">
                       {(["owner", "admin", "member"] as const).map((r) => (
                         <li key={r} className="flex items-start gap-3">
@@ -432,13 +428,13 @@ export default function TeamPage() {
               </div>
 
               {isOwner && (
-                <section className="rounded-[20px] border border-red-500/30 bg-red-500/[0.025] p-4 sm:p-5">
-                  <p className="flex items-center gap-2 text-[15px] font-semibold text-red-600 dark:text-red-400"><TriangleAlert className="h-4 w-4" /> Delete team</p>
-                  <p className="mt-0.5 text-[13.5px] text-muted-foreground">Removes the team and everyone&apos;s access to it. Resources stay with the members who created them.</p>
+                <section className="rounded-[16px] border border-red-500/30 bg-red-500/[0.025] p-4 sm:p-5">
+                  <p className="flex items-center gap-2 text-[15px] font-semibold text-red-600 dark:text-red-400"><WarningIcon className="h-4 w-4" /> Delete team</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">Removes the team and everyone&apos;s access to it. Resources stay with the members who created them.</p>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input value={deleteText} onChange={(e) => setDeleteText(e.target.value)} placeholder={`Type "${detail.team.name}" to confirm`} aria-label="Confirm team name" autoComplete="off" className={cn(inputCls, "focus:border-red-500/60 focus:ring-red-500/10 sm:w-72")} />
                     <button type="button" onClick={deleteTeam} disabled={deleteText !== detail.team.name} className="pill pill-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-40">
-                      <Trash2 className="h-4 w-4" /> Delete team
+                      <TrashIcon className="h-4 w-4" /> Delete team
                     </button>
                   </div>
                 </section>

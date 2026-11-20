@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Check, ChevronDown, Sparkles } from "lucide-react";
+import { ArrowRightIcon, CaretDownIcon, CheckIcon, SparkleIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useConsent } from "@/lib/consent";
 import { checklistEligible, startTour, useOnboarding, type OnboardingState } from "@/lib/onboarding";
@@ -106,7 +106,7 @@ export function SetupChecklist() {
               aria-label="Minimise checklist"
               className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
             >
-              <ChevronDown className="h-4 w-4" />
+              <CaretDownIcon className="h-4 w-4" />
             </button>
           </header>
 
@@ -120,13 +120,13 @@ export function SetupChecklist() {
                       x.done ? "border-brand bg-brand text-[oklch(0.16_0.02_165)]" : "border-foreground/20",
                     )}
                   >
-                    {x.done && <Check className="h-3 w-3" strokeWidth={3} />}
+                    {x.done && <CheckIcon className="h-3 w-3" weight="bold" />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className={cn("block text-[13px] font-medium tracking-[-0.005em]", x.done && "text-muted-foreground")}>{x.title}</span>
                     {!x.done && <span className="block truncate text-[11.5px] text-muted-foreground">{x.hint}</span>}
                   </span>
-                  {!x.done && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />}
+                  {!x.done && <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />}
                 </>
               );
               const cls = cn(
@@ -150,7 +150,7 @@ export function SetupChecklist() {
           <footer className="flex items-center justify-between gap-3 border-t border-[var(--dz-hairline)] px-4 py-2.5">
             {all ? (
               <>
-                <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><Sparkles className="h-3.5 w-3.5 text-brand" /> Setup complete</span>
+                <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><SparkleIcon className="h-3.5 w-3.5 text-brand" /> Setup complete</span>
                 <button type="button" onClick={dismissChecklist} className="pill pill-ink pill-xs">Close checklist</button>
               </>
             ) : (

@@ -5,7 +5,7 @@
 // each call site.
 
 import { Button } from "@/components/ui/button";
-import { Folder, Plus, RefreshCw, X } from "lucide-react";
+import { ArrowsClockwiseIcon, FolderIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import { makeService, type ServiceCfg } from "./project-shared";
 
 export function ServiceCards({ services, onChange, subdomain, repoConnected, onBrowse, detectStack }: {
@@ -23,7 +23,7 @@ export function ServiceCards({ services, onChange, subdomain, repoConnected, onB
       {services.map((svc, i) => (
         <div key={i} className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3 relative">
           <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="absolute right-3 top-3 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-accent">
-            <X className="h-3.5 w-3.5" />
+            <XIcon className="h-3.5 w-3.5" />
           </button>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -39,7 +39,7 @@ export function ServiceCards({ services, onChange, subdomain, repoConnected, onB
               <div className="relative">
                 <input type="text" placeholder="apps/api" value={svc.root_dir} onChange={(e) => update(i, { root_dir: e.target.value })} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" />
                  <button type="button" title="Browse repository directories" disabled={!repoConnected} onClick={() => onBrowse(i)} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
-                  <Folder className="h-3.5 w-3.5" />
+                  <FolderIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -48,7 +48,7 @@ export function ServiceCards({ services, onChange, subdomain, repoConnected, onB
               <div className="relative">
                 <input type="text" readOnly placeholder="auto" value={svc.framework} className="w-full h-8 rounded-md border border-input bg-muted pl-2 pr-8 font-mono text-xs text-muted-foreground focus:outline-none" />
                  <button type="button" title="Re-detect stack" disabled={!repoConnected} onClick={async () => update(i, { framework: await detectStack(svc.root_dir) })} className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-violet-500 hover:bg-accent disabled:opacity-40">
-                  <RefreshCw className="h-3.5 w-3.5" />
+                  <ArrowsClockwiseIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -79,7 +79,7 @@ export function ServiceCards({ services, onChange, subdomain, repoConnected, onB
         </div>
       ))}
       <Button type="button" variant="outline" size="sm" className="gap-2" disabled={services.length >= 5} onClick={() => onChange([...services, makeService(services.length)])}>
-        <Plus className="h-4 w-4" /> Add Service
+        <PlusIcon className="h-4 w-4" /> Add Service
       </Button>
     </div>
   );

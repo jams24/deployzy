@@ -6,10 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Check, Copy, Eye, EyeOff, KeyRound, Loader2, Plus, Rocket, ShieldCheck, Sparkles, Terminal, Trash2, X,
-  type LucideIcon,
-} from "lucide-react";
+import { CheckIcon, CircleNotchIcon, CopyIcon, EyeIcon, EyeSlashIcon, type Icon as PhosphorIcon, KeyIcon, PlusIcon, RocketLaunchIcon, ShieldCheckIcon, SparkleIcon, TerminalWindowIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { api, type ApiKey } from "@/lib/api";
 import { EmptyState, PageHeader, PanelHeader } from "@/components/dashboard/kit";
@@ -22,10 +19,10 @@ const authHeaders = () => {
 };
 
 type Scope = "full" | "deploy" | "read";
-const SCOPES: { id: Scope; label: string; icon: LucideIcon; desc: string; tone: string }[] = [
-  { id: "deploy", label: "Deploy", icon: Rocket, desc: "Create, deploy and manage projects. Safe for CI.", tone: "border-brand/30 bg-brand/10 text-[var(--dz-green-strong)] dark:text-brand" },
-  { id: "read", label: "Read-only", icon: Eye, desc: "List and inspect. Can't change anything.", tone: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400" },
-  { id: "full", label: "Full access", icon: ShieldCheck, desc: "Everything, including account and key management.", tone: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+const SCOPES: { id: Scope; label: string; icon: PhosphorIcon; desc: string; tone: string }[] = [
+  { id: "deploy", label: "Deploy", icon: RocketLaunchIcon, desc: "Create, deploy and manage projects. Safe for CI.", tone: "border-transparent bg-foreground/[0.05] text-foreground/70 dark:bg-white/[0.06]" },
+  { id: "read", label: "Read-only", icon: EyeIcon, desc: "List and inspect. Can't change anything.", tone: "border-transparent bg-foreground/[0.05] text-foreground/70 dark:bg-white/[0.06]" },
+  { id: "full", label: "Full access", icon: ShieldCheckIcon, desc: "Everything, including account and key management.", tone: "border-transparent bg-foreground/[0.05] text-foreground/70 dark:bg-white/[0.06]" },
 ];
 const scopeOf = (s?: string) => SCOPES.find((x) => x.id === s) || SCOPES[2];
 
@@ -53,21 +50,21 @@ const SNIPPETS = (key: string) => [
   { id: "python", label: "Python", code: `from deployzy import Deployzy\n\ndz = Deployzy(authtoken="${key}")` },
 ];
 
-// Dark code card with language tabs.
+// Code sample card with language tabs.
 function Snippets({ apiKey, className }: { apiKey: string; className?: string }) {
   const [tab, setTab] = useState("cli");
   const { copied, copy } = useCopy();
   const list = SNIPPETS(apiKey);
   const cur = list.find((s) => s.id === tab) || list[0];
   return (
-    <div className={cn("dark overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#0b0c10] text-white", className)}>
-      <div className="flex items-center gap-1 border-b border-white/[0.07] px-2 py-2">
+    <div className={cn("overflow-hidden rounded-[16px] border border-[var(--dz-hairline)] bg-foreground/[0.02] dark:bg-white/[0.02]", className)}>
+      <div className="flex items-center gap-0.5 border-b border-[var(--dz-hairline)] px-1.5 py-1.5">
         {list.map((s) => (
           <button
             key={s.id}
             type="button"
             onClick={() => setTab(s.id)}
-            className={cn("h-7 rounded-full px-3 text-[12.5px] font-medium transition-colors", tab === s.id ? "bg-white/[0.1] text-white" : "text-white/50 hover:text-white/85")}
+            className={cn("h-7 rounded-full px-3 text-[12.5px] font-medium transition-colors", tab === s.id ? "bg-foreground/[0.07] text-foreground dark:bg-white/[0.09]" : "text-muted-foreground hover:text-foreground")}
           >
             {s.label}
           </button>
@@ -76,12 +73,12 @@ function Snippets({ apiKey, className }: { apiKey: string; className?: string })
           type="button"
           onClick={() => copy(cur.id, cur.code)}
           aria-label="Copy snippet"
-          className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
         >
-          {copied === cur.id ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied === cur.id ? <CheckIcon className="h-3.5 w-3.5 text-[var(--dz-green-strong)] dark:text-brand" /> : <CopyIcon className="h-3.5 w-3.5" />}
         </button>
       </div>
-      <pre className="overflow-x-auto px-4 py-3.5 font-mono text-[12.5px] leading-relaxed text-white/85">{cur.code}</pre>
+      <pre className="overflow-x-auto px-4 py-3.5 font-mono text-[12px] leading-relaxed text-foreground/85">{cur.code}</pre>
     </div>
   );
 }
@@ -133,12 +130,12 @@ function CreateKeySheet({ onClose, onCreated }: { onClose: () => void; onCreated
           <div>
             <p className="eyebrow">{secret ? "Key created" : "New API key"}</p>
             <h2 id="new-key-title" className="mt-1.5 text-[22px] font-semibold tracking-[-0.03em]">{secret ? "Copy it now" : "Create a key"}</h2>
-            <p className="mt-1 text-[13.5px] text-muted-foreground">
+            <p className="mt-1 text-[13px] text-muted-foreground">
               {secret ? "This is the only time the full key is shown." : "For the CLI, the SDKs and CI pipelines."}
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
-            <X className="h-4 w-4" />
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -146,11 +143,11 @@ function CreateKeySheet({ onClose, onCreated }: { onClose: () => void; onCreated
           <form onSubmit={(e) => { e.preventDefault(); create(); }}>
             <div className="space-y-5 px-5 sm:px-6">
               <label className="block">
-                <span className="mb-1.5 block text-[13.5px] font-medium">Name</span>
+                <span className="mb-1.5 block text-[13px] font-medium">Name</span>
                 <input autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="laptop, github-actions…" className={inputCls} />
               </label>
               <fieldset>
-                <legend className="mb-2 text-[13.5px] font-medium">Access</legend>
+                <legend className="mb-2 text-[13px] font-medium">Access</legend>
                 <div className="space-y-2">
                   {SCOPES.map((s) => {
                     const on = scope === s.id;
@@ -163,7 +160,7 @@ function CreateKeySheet({ onClose, onCreated }: { onClose: () => void; onCreated
                         )}
                       >
                         <input type="radio" name="scope" value={s.id} checked={on} onChange={() => setScope(s.id)} className="sr-only" />
-                        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border", s.tone)}><s.icon className="h-4 w-4" /></span>
+                        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border", s.tone)}><s.icon weight="duotone" className="dz-ico h-4 w-4" /></span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2 text-[14px] font-medium">
                             {s.label}
@@ -179,12 +176,12 @@ function CreateKeySheet({ onClose, onCreated }: { onClose: () => void; onCreated
                   })}
                 </div>
               </fieldset>
-              {err && <p className="text-[13.5px] text-red-600 dark:text-red-400">{err}</p>}
+              {err && <p className="text-[13px] text-red-600 dark:text-red-400">{err}</p>}
             </div>
             <div className="flex flex-col-reverse gap-2 p-5 sm:flex-row sm:justify-end sm:p-6">
               <button type="button" onClick={onClose} className="pill pill-line pill-sm">Cancel</button>
               <button type="submit" disabled={busy} className="pill pill-ink pill-sm disabled:opacity-50">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Create key
+                {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <KeyIcon className="h-4 w-4" />} Create key
               </button>
             </div>
           </form>
@@ -194,11 +191,11 @@ function CreateKeySheet({ onClose, onCreated }: { onClose: () => void; onCreated
               <div className="flex items-center gap-2 rounded-2xl border border-brand/40 bg-brand/[0.06] p-2 pl-3.5">
                 <code className="min-w-0 flex-1 break-all font-mono text-[13px]">{secret}</code>
                 <button type="button" onClick={() => copy("secret", secret)} className={cn("pill pill-sm shrink-0", copied === "secret" ? "pill-launch" : "pill-ink")}>
-                  {copied === "secret" ? <><Check className="h-4 w-4" /> Copied</> : <><Copy className="h-4 w-4" /> Copy</>}
+                  {copied === "secret" ? <><CheckIcon className="h-4 w-4" /> Copied</> : <><CopyIcon className="h-4 w-4" /> Copy</>}
                 </button>
               </div>
               <div>
-                <p className="mb-2 text-[13.5px] font-medium">Use it</p>
+                <p className="mb-2 text-[13px] font-medium">Use it</p>
                 <Snippets apiKey={secret} />
               </div>
               <p className="text-[12.5px] text-muted-foreground">Store it in a password manager or your CI secrets. If it leaks, revoke it here and create a new one.</p>
@@ -288,7 +285,7 @@ export default function ApiKeysPage() {
 
   const newKeyButton = (
     <button type="button" onClick={() => setCreating(true)} className="pill pill-ink pill-sm">
-      <Plus className="h-4 w-4" /> New key
+      <PlusIcon className="h-4 w-4" /> New key
     </button>
   );
 
@@ -297,7 +294,7 @@ export default function ApiKeysPage() {
       {creating && <CreateKeySheet onClose={() => setCreating(false)} onCreated={load} />}
 
       <PageHeader
-        eyebrow="Account"
+        level={2}
         title="API keys"
         description="Keys let the CLI, the SDKs and your CI act on your account. Give each machine its own key so you can revoke one without breaking the rest."
         actions={keys.length > 0 ? newKeyButton : undefined}
@@ -307,7 +304,7 @@ export default function ApiKeysPage() {
         <div className="min-w-0 space-y-4 sm:space-y-5">
           {/* Keys */}
           {loading ? (
-            <section className="surface rounded-[20px] p-5" aria-busy>
+            <section className="surface rounded-[16px] p-5" aria-busy>
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex items-center gap-3 py-3">
                   <div className="h-10 w-10 animate-pulse rounded-xl bg-foreground/[0.06]" />
@@ -320,13 +317,13 @@ export default function ApiKeysPage() {
             </section>
           ) : keys.length === 0 ? (
             <EmptyState
-              icon={KeyRound}
+              icon={KeyIcon}
               title="No API keys yet"
               description="Create one to use the deployzy CLI, the SDKs or a CI pipeline."
               action={newKeyButton}
             />
           ) : (
-            <section className="surface overflow-hidden rounded-[20px]">
+            <section className="surface overflow-hidden rounded-[16px]">
               <PanelHeader title="Your keys" count={keys.length} />
               <ul className="divide-y divide-[var(--dz-hairline)]">
                 {keys.map((k) => {
@@ -336,11 +333,11 @@ export default function ApiKeysPage() {
                   return (
                     <li key={k.id} className="px-4 py-3.5 sm:px-5">
                       <div className="flex items-center gap-3">
-                        <span className={cn("hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border sm:flex", sc.tone)}><sc.icon className="h-4 w-4" /></span>
+                        <span className={cn("hidden h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border sm:flex", sc.tone)}><sc.icon weight="duotone" className="dz-ico h-4 w-4" /></span>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <span className="truncate text-[14.5px] font-medium">{k.name}</span>
-                            <span className={cn("inline-flex h-[22px] items-center rounded-full border px-2 text-[12px] font-medium", sc.tone)}>{sc.label}</span>
+                            <span className="truncate text-[14px] font-medium">{k.name}</span>
+                            <span className={cn("inline-flex h-[22px] items-center rounded-full border px-2 text-[11.5px] font-medium", sc.tone)}>{sc.label}</span>
                           </div>
                           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
                             <code className="font-mono text-[12.5px]">{k.prefix}••••</code>
@@ -357,17 +354,17 @@ export default function ApiKeysPage() {
                             aria-label={`Revoke ${k.name}`}
                             className="inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                           >
-                            <Trash2 className="h-4 w-4" /><span className="hidden sm:inline">Revoke</span>
+                            <TrashIcon className="h-4 w-4" /><span className="hidden sm:inline">Revoke</span>
                           </button>
                         )}
                       </div>
                       {confirming && (
                         <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-red-500/[0.06] p-3 sm:flex-row sm:items-center">
-                          <p className="text-[13.5px] sm:mr-auto">Revoke <span className="font-semibold">{k.name}</span>? Anything using it stops working right away.</p>
+                          <p className="text-[13px] sm:mr-auto">Revoke <span className="font-semibold">{k.name}</span>? Anything using it stops working right away.</p>
                           <div className="flex gap-2">
                             <button type="button" onClick={() => setConfirmId(null)} className="pill pill-line pill-sm flex-1 sm:flex-none">Cancel</button>
                             <button type="button" disabled={revoking === k.id} onClick={() => revoke(k.id)} className="pill pill-sm flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 sm:flex-none">
-                              {revoking === k.id && <Loader2 className="h-4 w-4 animate-spin" />} Revoke
+                              {revoking === k.id && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Revoke
                             </button>
                           </div>
                         </div>
@@ -381,7 +378,7 @@ export default function ApiKeysPage() {
 
           {/* Bring your own AI key */}
           <SettingsSection
-            icon={Sparkles}
+            icon={SparkleIcon}
             title="Bring your own AI key"
             description={<>The Agent and AI builder use your provider key, so those calls don&apos;t count toward your plan.{byokMetering ? " Without one, usage is billed to your balance." : " AI usage is currently free here."}</>}
           >
@@ -401,11 +398,11 @@ export default function ApiKeysPage() {
                   className={cn(monoInputCls, "pr-10")}
                 />
                 <button type="button" onClick={() => setByokShow((v) => !v)} aria-label={byokShow ? "Hide key" : "Show key"} className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-                  {byokShow ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {byokShow ? <EyeSlashIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
                 </button>
               </div>
               <button type="submit" disabled={byokSaving || !byokInput.trim()} className="pill pill-ink pill-sm shrink-0 disabled:opacity-50">
-                {byokSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save key
+                {byokSaving ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <CheckIcon className="h-4 w-4" />} Save key
               </button>
             </form>
             {byokNote && <div className="mt-2.5"><FooterNote note={byokNote} /></div>}
@@ -419,7 +416,7 @@ export default function ApiKeysPage() {
                     <code className="min-w-0 truncate font-mono text-[12.5px] text-muted-foreground">{k.preview}</code>
                     <span className="ml-auto hidden text-[12.5px] text-muted-foreground sm:inline">In use</span>
                     <button type="button" onClick={() => removeByok(k.provider)} aria-label={`Remove ${providerLabel(k.provider)} key`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 sm:ml-0">
-                      <Trash2 className="h-4 w-4" />
+                      <TrashIcon className="h-4 w-4" />
                     </button>
                   </li>
                 ))}
@@ -430,19 +427,19 @@ export default function ApiKeysPage() {
 
         {/* Quick start */}
         <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <section className="surface rounded-[20px] p-4 sm:p-5">
-            <p className="flex items-center gap-2 text-[14.5px] font-semibold tracking-tight"><Terminal className="h-4 w-4 text-muted-foreground" /> Quick start</p>
-            <p className="mt-1 text-[13.5px] text-muted-foreground">Paste your key into one of these.</p>
+          <section className="surface rounded-[16px] p-4 sm:p-5">
+            <p className="flex items-center gap-2 text-[14px] font-semibold tracking-tight"><TerminalWindowIcon className="h-4 w-4 text-muted-foreground" /> Quick start</p>
+            <p className="mt-1 text-[13px] text-muted-foreground">Paste your key into one of these.</p>
             <Snippets apiKey="<your-key>" className="mt-3" />
           </section>
-          <section className="surface rounded-[20px] p-4 sm:p-5">
-            <p className="text-[14.5px] font-semibold tracking-tight">Which access?</p>
+          <section className="surface rounded-[16px] p-4 sm:p-5">
+            <p className="text-[14px] font-semibold tracking-tight">Which access?</p>
             <ul className="mt-3 space-y-3">
               {SCOPES.map((s) => (
                 <li key={s.id} className="flex gap-3">
-                  <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", s.tone)}><s.icon className="h-3.5 w-3.5" /></span>
+                  <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", s.tone)}><s.icon weight="duotone" className="dz-ico h-4 w-4" /></span>
                   <span className="min-w-0">
-                    <span className="block text-[13.5px] font-medium">{s.label}</span>
+                    <span className="block text-[13px] font-medium">{s.label}</span>
                     <span className="block text-[13px] leading-snug text-muted-foreground">{s.desc}</span>
                   </span>
                 </li>

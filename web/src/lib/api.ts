@@ -188,10 +188,14 @@ class ApiClient {
     return this.request<Domain[]>("/api/v1/domains");
   }
 
-  createDomain(domain: string) {
-    return this.request<{ domain: Domain; instructions: DnsInstructions }>(
+  /** Optional target: the domain routes there as soon as its DNS verifies. */
+  createDomain(domain: string, target?: { type: "tunnel" | "project"; subdomain: string }) {
+    return this.request<{ domain: Domain; note?: string; records: DnsRecord[]; instructions: DnsInstructions }>(
       "/api/v1/domains",
-      { method: "POST", body: JSON.stringify({ domain }) }
+      {
+        method: "POST",
+        body: JSON.stringify(target ? { domain, target_type: target.type, target_subdomain: target.subdomain } : { domain }),
+      }
     );
   }
 
@@ -390,6 +394,22 @@ export interface Domain {
   target_type: string;
   target_subdomain: string;
   created_at: string;
+  /** Last DNS check while unverified (background or manual) and what it found. */
+  last_checked_at?: string | null;
+  check_hint?: string;
+  /** Computed by the API: the records to create, relative to `zone`. */
+  apex?: boolean;
+  zone?: string;
+  live?: boolean;
+  records?: DnsRecord[];
+}
+
+export interface DnsRecord {
+  type: string;
+  host: string;
+  value: string;
+  required: boolean;
+  purpose: string;
 }
 
 export interface ProjectDatabase {

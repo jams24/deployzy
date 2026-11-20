@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Box, Globe, type LucideIcon } from "lucide-react";
+import { CubeIcon, GlobeSimpleIcon, type Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { STACK_LOGOS } from "@/lib/stack-logos";
 
-// Small shared kit for dashboard pages, so every page speaks the same visual
-// language as the marketing site: mono eyebrows, tight headlines, hairline
-// "surface" cards, one status vocabulary.
+// Small shared kit for dashboard pages, so every page speaks one calm visual
+// language: quiet headers, hairline "surface" cards, duotone icon tiles, one
+// status vocabulary.
 
 export function PageHeader({
   eyebrow,
@@ -15,19 +15,27 @@ export function PageHeader({
   description,
   actions,
   className,
+  level = 1,
 }: {
   eyebrow?: React.ReactNode;
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
+  /** 2 = a section header under a shared page header (e.g. Settings tabs). */
+  level?: 1 | 2;
 }) {
+  const H = level === 1 ? "h1" : "h2";
   return (
-    <div className={cn("flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between", className)}>
+    <div className={cn("flex flex-col gap-4 sm:flex-row sm:justify-between", level === 1 ? "sm:items-end" : "sm:items-center", className)}>
       <div className="min-w-0">
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-        <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">{title}</h1>
-        {description && <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">{description}</p>}
+        <H className={cn(
+          "font-semibold",
+          level === 1 ? "text-[22px] leading-[1.2] tracking-[-0.022em] sm:text-[24px]" : "text-[17px] leading-snug tracking-[-0.015em]",
+          eyebrow && "mt-1",
+        )}>{title}</H>
+        {description && <p className={cn("max-w-2xl leading-relaxed text-muted-foreground", level === 1 ? "mt-1 text-[13.5px]" : "mt-0.5 text-[13px]")}>{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -53,24 +61,64 @@ export function EmptyState({
   action,
   className,
 }: {
-  icon: LucideIcon;
+  icon: PhosphorIcon;
   title: string;
   description?: React.ReactNode;
   action?: React.ReactNode;
   className?: string;
 }) {
   return (
-    <div className={cn("relative flex flex-col items-center gap-4 overflow-hidden rounded-3xl border border-dashed border-[var(--dz-hairline)] px-6 py-14 text-center", className)}>
-      <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 h-48 w-[420px] -translate-x-1/2 rounded-full bg-brand/[0.08] blur-[80px]" />
-      <span className="surface relative flex h-12 w-12 items-center justify-center rounded-2xl">
-        <Icon className="h-5 w-5 text-brand" />
-      </span>
-      <div className="relative">
-        <p className="text-[15px] font-semibold">{title}</p>
-        {description && <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">{description}</p>}
+    <div className={cn("flex flex-col items-center gap-3.5 rounded-[18px] border border-dashed border-[var(--dz-hairline)] px-6 py-14 text-center", className)}>
+      <IconTile icon={Icon} size="lg" tone="brand" />
+      <div>
+        <p className="text-[15px] font-semibold tracking-[-0.01em]">{title}</p>
+        {description && <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
       </div>
-      {action && <div className="relative">{action}</div>}
+      {action && <div className="mt-1">{action}</div>}
     </div>
+  );
+}
+
+// A soft square holding one duotone icon: the dashboard's standard "this
+// thing" marker on cards, rows and empty states. Tones tint the icon and its
+// soft fill; "muted" is the resting grey.
+export type IconTone = "muted" | "brand" | "sky" | "violet" | "amber" | "rose" | "cyan" | "red";
+
+const TILE_TONE: Record<IconTone, string> = {
+  muted: "bg-foreground/[0.045] text-foreground/70",
+  brand: "bg-brand/[0.1] text-[var(--dz-green-strong)] dark:text-brand",
+  sky: "bg-sky-500/[0.1] text-sky-600 dark:text-sky-400",
+  violet: "bg-violet-500/[0.1] text-violet-600 dark:text-violet-400",
+  amber: "bg-amber-500/[0.12] text-amber-600 dark:text-amber-400",
+  rose: "bg-rose-500/[0.1] text-rose-600 dark:text-rose-400",
+  cyan: "bg-cyan-500/[0.1] text-cyan-600 dark:text-cyan-400",
+  red: "bg-red-500/[0.1] text-red-600 dark:text-red-400",
+};
+
+const TILE_SIZE = {
+  sm: "h-8 w-8 rounded-[9px] [&>svg]:h-4 [&>svg]:w-4",
+  md: "h-10 w-10 rounded-[11px] [&>svg]:h-5 [&>svg]:w-5",
+  lg: "h-12 w-12 rounded-[14px] [&>svg]:h-6 [&>svg]:w-6",
+};
+
+export function IconTile({
+  icon: Icon,
+  tone = "muted",
+  size = "md",
+  className,
+  children,
+}: {
+  icon?: PhosphorIcon;
+  tone?: IconTone;
+  size?: keyof typeof TILE_SIZE;
+  className?: string;
+  /** Custom content (e.g. a brand logo) instead of an icon. */
+  children?: React.ReactNode;
+}) {
+  return (
+    <span aria-hidden className={cn("dz-ico-tint flex shrink-0 items-center justify-center", TILE_SIZE[size], TILE_TONE[tone], className)}>
+      {Icon ? <Icon weight="duotone" /> : children}
+    </span>
   );
 }
 
@@ -163,6 +211,6 @@ export function StackIcon({ stack, className }: { stack?: string | null; classNa
       </svg>
     );
   }
-  const Fallback = key === "static" ? Globe : Box;
+  const Fallback = key === "static" ? GlobeSimpleIcon : CubeIcon;
   return <Fallback className={cn("h-4 w-4", className)} aria-hidden />;
 }

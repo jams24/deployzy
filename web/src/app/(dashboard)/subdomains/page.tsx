@@ -1,8 +1,9 @@
 "use client";
 
+import { PageHeader } from "@/components/dashboard/kit";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Globe, Plus, Trash2, Check, X, Crown, Search, Copy, Loader2, Radio, Rocket, ArrowRight, Terminal } from "lucide-react";
+import { ArrowRightIcon, BroadcastIcon, CheckIcon, CircleNotchIcon, CopyIcon, CrownIcon, GlobeSimpleIcon, MagnifyingGlassIcon, PlusIcon, RocketLaunchIcon, TerminalWindowIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { DashMotion } from "@/components/admin/dash-kit";
 import { timeAgo } from "@/components/admin/pager";
 
@@ -24,13 +25,13 @@ interface Data { subdomains: Sub[]; count: number; limit: number; plan: string; 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem("sm_token")}`, "Content-Type": "application/json" });
 const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, "");
 
-function CopyIcon({ text, label }: { text: string; label: string }) {
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
     <button title={label} aria-label={label}
       onClick={() => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })}
       className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-      {done ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      {done ? <CheckIcon className="h-3.5 w-3.5 text-emerald-500" /> : <CopyIcon className="h-3.5 w-3.5" />}
     </button>
   );
 }
@@ -108,11 +109,10 @@ export default function SubdomainsPage() {
   return (
     <div className="@container animate-fade-in-up space-y-5">
       <DashMotion />
-      <div>
-        <p className="eyebrow">Network</p>
-        <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Subdomains</h1>
-        <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Reserve names on <span className="font-mono">{domain}</span> so they&apos;re yours every time you start a tunnel. Nobody else can use a reserved name.</p>
-      </div>
+      <PageHeader
+        title="Subdomains"
+        description={<>Reserve names on <span className="font-medium text-foreground">{domain}</span> so they’re yours every time you start a tunnel. Nobody else can use a reserved name.</>}
+      />
 
       <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Reserve */}
@@ -120,7 +120,7 @@ export default function SubdomainsPage() {
           <p className="text-sm font-semibold">Reserve a subdomain</p>
           <div className={`mt-3 flex items-center overflow-hidden rounded-xl border bg-background shadow-sm transition-all focus-within:ring-4 ${
             check && !check.available ? "border-red-500/50 focus-within:ring-red-500/10" : check?.available ? "border-emerald-500/50 focus-within:ring-emerald-500/10" : "border-input focus-within:border-foreground/30 focus-within:ring-emerald-500/10"}`}>
-            <Globe className="ml-3.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <GlobeSimpleIcon className="ml-3.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <input value={newSub} onChange={(e) => setNewSub(e.target.value)} placeholder="myapp" disabled={atLimit} aria-label="Subdomain"
               className="h-11 min-w-0 flex-1 bg-transparent px-2.5 font-mono text-sm outline-none placeholder:text-muted-foreground/50 disabled:opacity-50" />
             <span className="shrink-0 pr-3 font-mono text-sm text-muted-foreground">.{domain}</span>
@@ -128,14 +128,14 @@ export default function SubdomainsPage() {
           <div className="mt-2 flex min-h-[20px] items-center justify-between gap-3">
             <p className="text-xs">
               {atLimit ? <span className="text-amber-700 dark:text-amber-400">You&apos;ve used all {data?.limit} reserved names on your plan.</span>
-                : checking ? <span className="flex items-center gap-1.5 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Checking…</span>
-                : check?.available ? <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><Check className="h-3.5 w-3.5" /><span className="font-mono">{sub}.{domain}</span> is available</span>
-                : check ? <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400"><X className="h-3.5 w-3.5" />{check.reason}</span>
+                : checking ? <span className="flex items-center gap-1.5 text-muted-foreground"><CircleNotchIcon className="h-3 w-3 animate-spin" /> Checking…</span>
+                : check?.available ? <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><CheckIcon className="h-3.5 w-3.5" /><span className="font-mono">{sub}.{domain}</span> is available</span>
+                : check ? <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400"><XIcon className="h-3.5 w-3.5" />{check.reason}</span>
                 : <span className="text-muted-foreground">Lowercase letters, numbers and hyphens.</span>}
             </p>
             <button type="submit" disabled={!canReserve}
               className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-sm font-medium text-background transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-              {reserving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Reserve
+              {reserving ? <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> : <PlusIcon className="h-3.5 w-3.5" />} Reserve
             </button>
           </div>
         </form>
@@ -155,9 +155,9 @@ export default function SubdomainsPage() {
           <p className="mt-2 text-xs text-muted-foreground">{usedCount} in use · {(data?.count ?? 0) - usedCount} idle</p>
           {(atLimit || data?.plan === "free") && upgradeTiers.length > 0 && (
             <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-              <p className="mb-1 flex items-center gap-1 font-medium text-foreground"><Crown className="h-3 w-3 text-amber-500" /> More with a bigger plan</p>
+              <p className="mb-1 flex items-center gap-1 font-medium text-foreground"><CrownIcon className="h-3 w-3 text-amber-500" /> More with a bigger plan</p>
               {upgradeTiers.map(([p, n]) => <span key={p} className="mr-3 capitalize">{p}: <span className="tabular-nums text-foreground">{n < 0 ? "∞" : n}</span></span>)}
-              <Link href="/billing" className="mt-1 block font-medium text-foreground hover:underline">Upgrade →</Link>
+              <Link href="/billing?tab=plans" className="mt-1 block font-medium text-foreground hover:underline">Upgrade →</Link>
             </div>
           )}
         </div>
@@ -173,7 +173,7 @@ export default function SubdomainsPage() {
             ))}
           </div>
           <div className="relative w-full sm:w-56">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none focus:border-foreground/30" />
           </div>
         </div>
@@ -182,7 +182,7 @@ export default function SubdomainsPage() {
           <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-muted/50" />)}</div>
         ) : data.subdomains.length === 0 ? (
           <div className="flex flex-col items-center px-6 py-12 text-center">
-            <Globe className="h-6 w-6 text-muted-foreground/50" />
+            <GlobeSimpleIcon className="h-6 w-6 text-muted-foreground/50" />
             <p className="mt-2 text-sm font-medium">No reserved subdomains yet</p>
             <p className="mt-1 max-w-sm text-xs text-muted-foreground">Reserve one above, then start a tunnel on it with <span className="font-mono">deployzy http 3000 --subdomain myapp</span>.</p>
           </div>
@@ -198,14 +198,14 @@ export default function SubdomainsPage() {
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
                     s.tunnel ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                     : s.project ? "border-orange-500/20 bg-orange-500/10 text-orange-600 dark:text-orange-400" : "border-border/60 bg-muted/40 text-muted-foreground"}`}>
-                    {s.tunnel ? <Radio className="h-4 w-4" /> : s.project ? <Rocket className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                    {s.tunnel ? <BroadcastIcon className="h-4 w-4" /> : s.project ? <RocketLaunchIcon className="h-4 w-4" /> : <GlobeSimpleIcon className="h-4 w-4" />}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm font-medium">{s.subdomain}<span className="text-muted-foreground">.{domain}</span></p>
+                    <p className="truncate text-sm font-medium">{s.subdomain}<span className="text-muted-foreground">.{domain}</span></p>
                     <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                       {s.tunnel ? (
                         <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live tunnel <span className="font-mono text-muted-foreground">{s.tunnel.local_addr}</span><ArrowRight className="h-2.5 w-2.5" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live tunnel <span className="font-mono text-muted-foreground">{s.tunnel.local_addr}</span><ArrowRightIcon className="h-2.5 w-2.5" />
                         </span>
                       ) : null}
                       {s.project ? <Link href={`/projects/${s.project.id}`} className="hover:underline">App: <span className="text-foreground">{s.project.name}</span> · {s.project.status}</Link> : null}
@@ -214,15 +214,15 @@ export default function SubdomainsPage() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {!s.tunnel && !s.project && <CopyIcon text={cmd} label={`Copy: ${cmd}`} />}
-                    <CopyIcon text={url} label="Copy URL" />
+                    {!s.tunnel && !s.project && <CopyButton text={cmd} label={`Copy: ${cmd}`} />}
+                    <CopyButton text={url} label="Copy URL" />
                     {(s.tunnel || s.project) && (
                       <a href={url} target="_blank" rel="noopener" title="Open" aria-label="Open"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:bg-accent hover:text-foreground"><ArrowRight className="h-3.5 w-3.5 -rotate-45" /></a>
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:bg-accent hover:text-foreground"><ArrowRightIcon className="h-3.5 w-3.5 -rotate-45" /></a>
                     )}
                     <button onClick={() => release(s)} disabled={releasing === s.subdomain} title="Release" aria-label={`Release ${s.subdomain}`}
                       className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 disabled:opacity-50">
-                      {releasing === s.subdomain ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      {releasing === s.subdomain ? <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> : <TrashIcon className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -233,7 +233,7 @@ export default function SubdomainsPage() {
       </div>
 
       <div className="ov-rise flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-xs text-muted-foreground" style={{ animationDelay: "200ms" }}>
-        <Terminal className="mt-0.5 h-4 w-4 shrink-0" />
+        <TerminalWindowIcon className="mt-0.5 h-4 w-4 shrink-0" />
         <p>Start a tunnel on a reserved name with <span className="font-mono text-foreground">deployzy http 3000 --subdomain NAME</span>. Use the copy button on an idle row to grab the exact command.</p>
       </div>
     </div>

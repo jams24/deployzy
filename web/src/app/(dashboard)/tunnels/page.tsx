@@ -1,10 +1,9 @@
 "use client";
 
-import { StackIcon } from "@/components/dashboard/kit";
+import { StackIcon, PageHeader } from "@/components/dashboard/kit";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Waypoints, Globe, Terminal as TermIcon, ArrowUpRight, Copy, Check, Eye, Moon, ArrowRight, Clock } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRightIcon, ArrowsClockwiseIcon, ArrowUpRightIcon, CheckIcon, ClockIcon, CopyIcon, EyeIcon, GlobeSimpleIcon, MoonIcon, PlugsConnectedIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import { DashMotion } from "@/components/admin/dash-kit";
 import { fmtBytes } from "@/components/admin/pager";
@@ -37,19 +36,19 @@ function CopyButton({ text, label = "Copy URL" }: { text: string; label?: string
     <button type="button" title={label} aria-label={label}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); }); }}
       className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-      {done ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      {done ? <CheckIcon className="h-3.5 w-3.5 text-emerald-500" /> : <CopyIcon className="h-3.5 w-3.5" />}
     </button>
   );
 }
 
-const PROTO: Record<string, { icon: typeof Globe; tone: string; label: string }> = {
-  http: { icon: Globe, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20", label: "HTTP" },
-  tls: { icon: Globe, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20", label: "TLS" },
-  tcp: { icon: TermIcon, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20", label: "TCP" },
+const PROTO: Record<string, { icon: typeof GlobeSimpleIcon; tone: string; label: string }> = {
+  http: { icon: GlobeSimpleIcon, tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20", label: "HTTP" },
+  tls: { icon: GlobeSimpleIcon, tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20", label: "TLS" },
+  tcp: { icon: TerminalWindowIcon, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20", label: "TCP" },
 };
 
 function TunnelCard({ t, i }: { t: Item; i: number }) {
-  const p = PROTO[t.protocol] ?? { icon: Waypoints, tone: "bg-muted text-muted-foreground border-border", label: t.protocol.toUpperCase() };
+  const p = PROTO[t.protocol] ?? { icon: PlugsConnectedIcon, tone: "bg-muted text-muted-foreground border-border", label: t.protocol.toUpperCase() };
   const host = t.url.replace(/^[a-z]+:\/\//, "");
   return (
     <div className="ov-rise group relative overflow-hidden rounded-2xl surface p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-lg hover:shadow-black/[0.04]"
@@ -63,7 +62,7 @@ function TunnelCard({ t, i }: { t: Item; i: number }) {
               <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70 motion-reduce:hidden" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span>
               Live · {p.label}{t.name ? <span className="truncate">· {t.name}</span> : null}
             </p>
-            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> up {uptime(t.created_at)}</p>
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground"><ClockIcon className="h-3 w-3" /> up {uptime(t.created_at)}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -71,7 +70,7 @@ function TunnelCard({ t, i }: { t: Item; i: number }) {
           {t.protocol !== "tcp" && (
             <a href={t.url} target="_blank" rel="noopener" title="Open" aria-label="Open"
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-              <ArrowUpRight className="h-3.5 w-3.5" />
+              <ArrowUpRightIcon className="h-3.5 w-3.5" />
             </a>
           )}
         </div>
@@ -80,7 +79,7 @@ function TunnelCard({ t, i }: { t: Item; i: number }) {
       {/* local → public */}
       <div className="mt-4 flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5 font-mono text-[12.5px]">
         <span className="shrink-0 text-muted-foreground">{t.local_addr || "local"}</span>
-        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+        <ArrowRightIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
         <span className="min-w-0 truncate text-foreground" title={t.url}>{host}</span>
       </div>
 
@@ -88,7 +87,7 @@ function TunnelCard({ t, i }: { t: Item; i: number }) {
         <span><span className="font-medium tabular-nums text-foreground">{(t.requests ?? 0).toLocaleString()}</span> requests</span>
         <span><span className="font-medium tabular-nums text-foreground">{fmtBytes(t.bytes ?? 0)}</span> transferred</span>
         {t.inspect ? (
-          <Link href="/inspector" className="inline-flex items-center gap-1 text-violet-600 hover:underline dark:text-violet-400"><Eye className="h-3 w-3" /> inspecting</Link>
+          <Link href="/inspector" className="inline-flex items-center gap-1 text-violet-600 hover:underline dark:text-violet-400"><EyeIcon className="h-3 w-3" /> inspecting</Link>
         ) : null}
       </div>
     </div>
@@ -104,7 +103,7 @@ function StartTunnel() {
     <div className="ov-rise relative overflow-hidden rounded-2xl border border-dashed border-border px-5 py-8 sm:px-8">
       <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-sky-500/[0.08] blur-[80px]" />
       <div className="relative flex flex-col items-center text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><Waypoints className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface"><PlugsConnectedIcon className="h-5 w-5 text-sky-600 dark:text-sky-400" /></div>
         <h3 className="mt-4 font-semibold">No tunnels running</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">Run one of these in your terminal. The tunnel appears here the moment it connects.</p>
         <div className="mt-5 grid w-full max-w-lg gap-2">
@@ -149,17 +148,15 @@ export default function TunnelsPage() {
   return (
     <div className="@container animate-fade-in-up space-y-6">
       <DashMotion />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="eyebrow">Network</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Tunnels</h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">Your live localhost tunnels, plus the apps you have deployed.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} className="h-8 shrink-0 gap-1.5 rounded-full" title="Refresh">
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </Button>
-      </div>
+      <PageHeader
+        title="Tunnels"
+        description="Your live localhost tunnels, plus the apps you’ve deployed."
+        actions={
+          <button type="button" onClick={load} title="Refresh" aria-label="Refresh" className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--dz-hairline)] text-muted-foreground transition-colors hover:text-foreground">
+            <ArrowsClockwiseIcon className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        }
+      />
 
       {items === null ? (
         <div className="grid gap-3 @2xl:grid-cols-2">
@@ -200,14 +197,14 @@ export default function TunnelsPage() {
                     return (
                       <div key={a.url} className="ov-rise flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
                         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${asleep ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" : "border-[var(--dz-hairline)] bg-background text-foreground/80 dark:bg-white/[0.03]"}`}>
-                          {asleep ? <Moon className="h-3.5 w-3.5" /> : <StackIcon stack={a.framework} />}
+                          {asleep ? <MoonIcon className="h-3.5 w-3.5" /> : <StackIcon stack={a.framework} />}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             {a.id ? <Link href={`/projects/${a.id}`} className="truncate text-sm font-medium hover:underline">{a.name}</Link> : <span className="truncate text-sm font-medium">{a.name}</span>}
                             {a.framework && <span className="hidden rounded border border-border/60 px-1.5 text-[10px] text-muted-foreground sm:inline">{a.framework}</span>}
                           </div>
-                          <p className="truncate font-mono text-[11px] text-muted-foreground">{a.url.replace(/^https?:\/\//, "")}</p>
+                          <p className="truncate text-[12px] text-muted-foreground">{a.url.replace(/^https?:\/\//, "")}</p>
                         </div>
                         <span className={`hidden shrink-0 items-center gap-1.5 text-[11px] font-medium sm:flex ${asleep ? "text-indigo-600 dark:text-indigo-400" : "text-emerald-600 dark:text-emerald-400"}`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${asleep ? "bg-indigo-500" : "bg-emerald-500"}`} />{asleep ? "Sleeping" : "Running"}
@@ -215,7 +212,7 @@ export default function TunnelsPage() {
                         <CopyButton text={a.url} />
                         <a href={a.url} target="_blank" rel="noopener" title="Open app" aria-label="Open app"
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-                          <ArrowUpRight className="h-3.5 w-3.5" />
+                          <ArrowUpRightIcon className="h-3.5 w-3.5" />
                         </a>
                       </div>
                     );

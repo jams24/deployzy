@@ -7,10 +7,8 @@
 // scrollable chip row of the same sections.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  ArrowRight, ArrowUpRight, Check, Clock, Copy, Folder, GitPullRequest, Globe, Hammer,
-  KeyRound, Layers, Loader2, Plus, Settings2, Tag, Trash2, TriangleAlert, X,
-} from "lucide-react";
+import { DnsRecords, recordsFor } from "@/components/domains/dns-records";
+import { ArrowUpRightIcon, CircleNotchIcon, ClockIcon, FolderIcon, GitPullRequestIcon, GlobeSimpleIcon, HammerIcon, KeyIcon, PlusIcon, SlidersHorizontalIcon, StackIcon, TagIcon, TrashIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "@/components/DirectoryPicker";
 import { StatusPill } from "@/components/dashboard/kit";
@@ -53,19 +51,6 @@ function Chip({ children, tone }: { children: ReactNode; tone?: "ok" | "warn" | 
   );
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={() => { navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); }).catch(() => {}); }}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-    >
-      {done ? <Check className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
-  );
-}
 
 const CRON_PRESETS = [
   { label: "Hourly", value: "0 * * * *" },
@@ -219,46 +204,41 @@ export default function ProjectSettingsPage() {
     return () => clearTimeout(t);
   }, [loadDomains]);
 
+  // Adds the domain already pointed at this project, so it goes live here as
+  // soon as its DNS verifies (the API re-checks pending domains itself).
   async function addProjectDomain() {
-    const d = newDomain.trim().toLowerCase();
+    const d = newDomain.trim();
     if (!d) return;
     setAddingDomain(true); setDomainNote(null); setPendingDns(null);
     try {
-      // 1) Register domain
-      const regRes = await fetch(`${API}/api/v1/domains`, {
-        method: "POST", headers: headers(), body: JSON.stringify({ domain: d }),
+      const res = await fetch(`${API}/api/v1/domains`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ domain: d, target_type: "project", target_subdomain: p.subdomain }),
       });
-      if (!regRes.ok && regRes.status !== 409) {
-        const err = await regRes.json().catch(() => ({ error: "Failed to add domain" }));
-        setDomainNote({ kind: "err", text: err.error || "Failed to add domain" });
-        setAddingDomain(false);
-        return;
-      }
-      // 2) Fetch domain list to find the one we just added (or existing)
-      const listRes = await fetch(`${API}/api/v1/domains`, { headers: headers() });
-      const list: Domain[] = listRes.ok ? await listRes.json() : [];
-      const row = list.find((x) => x.domain === d);
-      if (!row) {
-        setDomainNote({ kind: "err", text: "Domain registered but not found in your list. Try again." });
-        setAddingDomain(false);
-        return;
-      }
-      // 3) Not verified yet: show the CNAME to set, verify from /domains.
-      if (!row.verified) {
-        setPendingDns(row);
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        // Already added: if it's ours, point it at this project instead.
+        const mine = allDomains.find((x) => x.domain === d.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]);
+        if (!mine) {
+          setDomainNote({ kind: "err", text: data.error || "That domain is already in use" });
+        } else {
+          await fetch(`${API}/api/v1/domains/${mine.id}/bind`, {
+            method: "PUT", headers: headers(),
+            body: JSON.stringify({ target_type: "project", target_subdomain: p.subdomain }),
+          });
+          setNewDomain("");
+          if (mine.verified) setDomainNote({ kind: "ok", text: `${mine.domain} now points to this project.` });
+          else setPendingDns(mine);
+          loadDomains();
+        }
+      } else if (!res.ok) {
+        setDomainNote({ kind: "err", text: data.error || "Failed to add domain" });
+      } else {
         setNewDomain("");
+        if (data.note) setDomainNote({ kind: "ok", text: data.note });
+        if (!data.domain?.verified) setPendingDns(data.domain as Domain);
         loadDomains();
-        setAddingDomain(false);
-        return;
       }
-      // 4) Already verified — bind it to this project.
-      await fetch(`${API}/api/v1/domains/${row.id}/bind`, {
-        method: "PUT", headers: headers(),
-        body: JSON.stringify({ target_type: "project", target_subdomain: p.subdomain }),
-      });
-      setNewDomain("");
-      setDomainNote({ kind: "ok", text: `${d} now points to this project.` });
-      loadDomains();
     } catch {
       setDomainNote({ kind: "err", text: "Failed to add domain" });
     }
@@ -384,13 +364,13 @@ export default function ProjectSettingsPage() {
   const buildCustomized = !!(p.install_cmd || p.build_cmd || p.start_cmd || p.root_dir || p.node_version || p.port_override || p.memory_mb || p.cpus || p.health_check_path || p.release_cmd || p.dockerfile_path);
 
   const navItems = useMemo<SettingsNavItem[]>(() => [
-    { id: "general", label: "General", icon: Settings2 },
-    { id: "env", label: "Environment", icon: KeyRound },
-    { id: "build", label: "Build & runtime", icon: Hammer },
-    { id: "domains", label: "Domains", icon: Globe },
-    ...(p.github_repo ? [{ id: "previews", label: "PR previews", icon: GitPullRequest }] : []),
-    { id: "jobs", label: "Scheduled jobs", icon: Clock },
-    { id: "danger", label: "Danger zone", icon: TriangleAlert, tone: "danger" as const },
+    { id: "general", label: "General", icon: SlidersHorizontalIcon },
+    { id: "env", label: "Environment", icon: KeyIcon },
+    { id: "build", label: "Build & runtime", icon: HammerIcon },
+    { id: "domains", label: "Domains", icon: GlobeSimpleIcon },
+    ...(p.github_repo ? [{ id: "previews", label: "PR previews", icon: GitPullRequestIcon }] : []),
+    { id: "jobs", label: "Scheduled jobs", icon: ClockIcon },
+    { id: "danger", label: "Danger zone", icon: WarningIcon, tone: "danger" as const },
   ], [p.github_repo]);
 
   return (
@@ -441,7 +421,7 @@ export default function ProjectSettingsPage() {
         </nav>
 
         {/* General */}
-        <SettingsSection id="general" icon={Settings2} title="General" description="How this project deploys and how it's organised.">
+        <SettingsSection id="general" icon={SlidersHorizontalIcon} title="General" description="How this project deploys and how it's organised.">
           <div className="divide-y divide-[var(--dz-hairline)]">
             {p.github_repo && (
               <SettingRow
@@ -462,7 +442,7 @@ export default function ProjectSettingsPage() {
                     onClick={() => { setEditingLabels(true); setLabelDraft(p.labels || []); setLabelInput(""); setLabelNote(null); }}
                     className={cn(textBtn, "border border-[var(--dz-hairline)] hover:bg-foreground/[0.04]")}
                   >
-                    <Tag className="h-3.5 w-3.5" /> {(p.labels || []).length ? "Edit" : "Add"}
+                    <TagIcon className="h-3.5 w-3.5" /> {(p.labels || []).length ? "Edit" : "Add"}
                   </button>
                 )}
               </div>
@@ -473,7 +453,7 @@ export default function ProjectSettingsPage() {
                       <span key={l} className="inline-flex h-7 items-center gap-1 rounded-full bg-foreground/[0.06] pl-2.5 pr-1 text-[13px] font-medium">
                         {l}
                         <button type="button" aria-label={`Remove ${l}`} onClick={() => setLabelDraft((d) => d.filter((x) => x !== l))} className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground">
-                          <X className="h-3 w-3" />
+                          <XIcon className="h-3 w-3" />
                         </button>
                       </span>
                     ))}
@@ -498,7 +478,7 @@ export default function ProjectSettingsPage() {
                     <span className="mr-auto text-[12.5px] text-muted-foreground">Press Enter or comma to add.</span>
                     <button type="button" onClick={() => setEditingLabels(false)} className="pill pill-line pill-sm">Cancel</button>
                     <button type="button" onClick={saveLabels} disabled={savingLabels} className="pill pill-ink pill-sm disabled:opacity-50">
-                      {savingLabels && <Loader2 className="h-4 w-4 animate-spin" />} Save labels
+                      {savingLabels && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Save labels
                     </button>
                   </div>
                 </div>
@@ -524,7 +504,7 @@ export default function ProjectSettingsPage() {
         {/* Build & runtime */}
         <SettingsSection
           id="build"
-          icon={Hammer}
+          icon={HammerIcon}
           title="Build & runtime"
           description="Leave any field blank to use what we detect from your repo."
           action={buildCustomized ? <Chip tone="ok">Customized</Chip> : undefined}
@@ -533,7 +513,7 @@ export default function ProjectSettingsPage() {
               <FooterNote note={buildNote} />
               <button type="button" onClick={() => saveBuildConfig(false)} disabled={savingBuild} className="pill pill-line pill-sm disabled:opacity-50">Save</button>
               <button type="button" onClick={() => saveBuildConfig(true)} disabled={savingBuild} className="pill pill-ink pill-sm disabled:opacity-50">
-                {savingBuild && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; redeploy
+                {savingBuild && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Save &amp; redeploy
               </button>
             </>
           }
@@ -568,7 +548,7 @@ export default function ProjectSettingsPage() {
                     onClick={() => setDirPicker({ kind: "root" })}
                     className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-40"
                   >
-                    <Folder className="h-4 w-4" />
+                    <FolderIcon className="h-4 w-4" />
                   </button>
                 </div>
               </Field>
@@ -621,7 +601,7 @@ export default function ProjectSettingsPage() {
             <div className="overflow-hidden rounded-2xl border border-[var(--dz-hairline)]">
               <div className="flex items-center justify-between gap-4 px-4 py-3.5">
                 <div className="flex min-w-0 items-start gap-3">
-                  <Layers className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <StackIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0">
                     <p className="text-[14px] font-medium">Multiple services</p>
                     <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">Run several folders of this repo as services in one container.</p>
@@ -655,12 +635,12 @@ export default function ProjectSettingsPage() {
         {/* Domains */}
         <SettingsSection
           id="domains"
-          icon={Globe}
+          icon={GlobeSimpleIcon}
           title="Custom domains"
           description={<>Your app is always live at <code className="font-mono text-[12.5px] text-foreground">{p.subdomain}.deployzy.app</code>.</>}
           action={
             <a href="/domains" className={cn(textBtn, "text-muted-foreground hover:text-foreground")}>
-              All domains <ArrowUpRight className="h-3.5 w-3.5" />
+              All domains <ArrowUpRightIcon className="h-3.5 w-3.5" />
             </a>
           }
         >
@@ -669,10 +649,15 @@ export default function ProjectSettingsPage() {
               {boundDomains.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 rounded-2xl border border-[var(--dz-hairline)] px-3.5 py-2.5">
                   <span className={cn("h-2 w-2 shrink-0 rounded-full", d.verified ? "bg-brand" : "bg-amber-500")} aria-hidden />
-                  <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="min-w-0 flex-1 truncate font-mono text-[13.5px] hover:underline">{d.domain}</a>
-                  {d.verified ? <Chip tone="ok">Verified</Chip> : <Chip tone="warn">Needs DNS</Chip>}
+                  <a href={`https://${d.domain}`} target="_blank" rel="noopener" className="min-w-0 flex-1 truncate text-[13.5px] hover:underline">{d.domain}</a>
+                  {d.verified ? <Chip tone="ok">Live</Chip> : <Chip tone="warn">Waiting for DNS</Chip>}
+                  {!d.verified && (
+                    <button type="button" onClick={() => setPendingDns(d)} className={cn(textBtn, "h-7 px-2 text-muted-foreground hover:text-foreground")}>
+                      DNS
+                    </button>
+                  )}
                   <button type="button" onClick={() => unbindDomain(d.id)} className={cn(textBtn, "h-7 px-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400")}>
-                    Unbind
+                    Disconnect
                   </button>
                 </li>
               ))}
@@ -680,25 +665,17 @@ export default function ProjectSettingsPage() {
           )}
 
           {pendingDns && (
-            <div className="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+            <div className="mb-3 rounded-2xl border border-[var(--dz-hairline)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[14px] font-semibold">Point {pendingDns.domain} at Deployzy</p>
-                  <p className="mt-0.5 text-[13px] text-muted-foreground">Add this record at your DNS provider, then verify it on the Domains page.</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">Create this record at your DNS provider. The domain starts serving this project on its own once the record is visible.</p>
                 </div>
                 <button type="button" aria-label="Dismiss" onClick={() => setPendingDns(null)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
+                  <XIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="mt-3 grid gap-2 rounded-xl border border-[var(--dz-hairline)] bg-background p-3 font-mono text-[13px] sm:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1.3fr)] sm:items-center">
-                <span className="eyebrow">CNAME</span>
-                <span className="flex min-w-0 items-center gap-1"><span className="truncate">{pendingDns.domain}</span><CopyButton text={pendingDns.domain} label="Copy name" /></span>
-                <ArrowRight className="hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
-                <span className="flex min-w-0 items-center gap-1"><span className="truncate">{pendingDns.cname_target}</span><CopyButton text={pendingDns.cname_target} label="Copy target" /></span>
-              </div>
-              <a href="/domains" className="mt-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--dz-green-strong)] hover:opacity-80 dark:text-brand">
-                Verify on the Domains page <ArrowRight className="h-3.5 w-3.5" />
-              </a>
+              <DnsRecords records={recordsFor(pendingDns)} zone={pendingDns.zone} className="mt-3" />
             </div>
           )}
 
@@ -717,7 +694,7 @@ export default function ProjectSettingsPage() {
               className={monoInputCls}
             />
             <button type="submit" disabled={addingDomain || !newDomain.trim()} className="pill pill-ink pill-sm shrink-0 disabled:opacity-50">
-              {addingDomain ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add domain
+              {addingDomain ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <PlusIcon className="h-4 w-4" />} Add domain
             </button>
           </form>
           {(domainNote || (unverifiedCount > 0 && !pendingDns)) && (
@@ -725,7 +702,7 @@ export default function ProjectSettingsPage() {
               <FooterNote note={domainNote} />
               {unverifiedCount > 0 && !pendingDns && (
                 <p className="text-[12.5px] text-muted-foreground">
-                  {unverifiedCount} domain{unverifiedCount === 1 ? "" : "s"} waiting for DNS. <a href="/domains" className="font-medium text-foreground underline-offset-2 hover:underline">Verify them</a>
+                  {unverifiedCount} unconnected domain{unverifiedCount === 1 ? "" : "s"} waiting for DNS. <a href="/domains" className="font-medium text-foreground underline-offset-2 hover:underline">Manage domains</a>
                 </p>
               )}
             </div>
@@ -736,7 +713,7 @@ export default function ProjectSettingsPage() {
         {p.github_repo && (
           <SettingsSection
             id="previews"
-            icon={GitPullRequest}
+            icon={GitPullRequestIcon}
             title="Pull request previews"
             description={<>Every open PR gets its own URL like <code className="font-mono text-[12.5px] text-foreground">{previewSubdomainExample(p.subdomain)}</code>. Closed PRs are removed.</>}
             action={<Switch checked={!!p.preview_enabled} disabled={togglingPreview} onChange={togglePreviewEnabled} label="Deploy pull request previews" />}
@@ -755,7 +732,7 @@ export default function ProjectSettingsPage() {
                     <StatusPill status={pv.status} />
                     {pv.status === "running" && (
                       <a href={`https://${pv.subdomain}.deployzy.app`} target="_blank" rel="noopener" aria-label={`Open preview for PR #${pv.pr_number}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground">
-                        <ArrowUpRight className="h-4 w-4" />
+                        <ArrowUpRightIcon className="h-4 w-4" />
                       </a>
                     )}
                   </li>
@@ -768,12 +745,12 @@ export default function ProjectSettingsPage() {
         {/* Scheduled jobs */}
         <SettingsSection
           id="jobs"
-          icon={Clock}
+          icon={ClockIcon}
           title="Scheduled jobs"
           description="Commands that run on a schedule in a fresh container with this project's env vars."
           action={!editingCron ? (
             <button type="button" onClick={() => { setEditingCron(true); setCronNote(null); }} className={cn(textBtn, "border border-[var(--dz-hairline)] hover:bg-foreground/[0.04]")}>
-              <Plus className="h-3.5 w-3.5" /> New job
+              <PlusIcon className="h-3.5 w-3.5" /> New job
             </button>
           ) : undefined}
         >
@@ -807,7 +784,7 @@ export default function ProjectSettingsPage() {
                         onClick={() => setConfirmCron(confirmCron === c.id ? null : c.id)}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <TrashIcon className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
@@ -859,7 +836,7 @@ export default function ProjectSettingsPage() {
                 <FooterNote note={cronNote} />
                 <button type="button" onClick={() => { setEditingCron(false); setCronNote(null); }} className="pill pill-line pill-sm">Cancel</button>
                 <button type="submit" disabled={savingCron} className="pill pill-ink pill-sm disabled:opacity-50">
-                  {savingCron && <Loader2 className="h-4 w-4 animate-spin" />} Create job
+                  {savingCron && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Create job
                 </button>
               </div>
             </form>
@@ -867,7 +844,7 @@ export default function ProjectSettingsPage() {
         </SettingsSection>
 
         {/* Danger zone */}
-        <SettingsSection id="danger" tone="danger" icon={TriangleAlert} title="Danger zone" description="These change where the project runs or remove it for good.">
+        <SettingsSection id="danger" tone="danger" icon={WarningIcon} title="Danger zone" description="These change where the project runs or remove it for good.">
           <div className="divide-y divide-red-500/15">
             {canMove && (
               <div className="py-4 first:pt-0">
@@ -901,7 +878,7 @@ export default function ProjectSettingsPage() {
                         onClick={() => { const v = moveTo; setMoveTo(""); move(v); }}
                         className="pill pill-sm flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 sm:flex-none"
                       >
-                        {deploying && <Loader2 className="h-4 w-4 animate-spin" />} Move project
+                        {deploying && <CircleNotchIcon className="h-4 w-4 animate-spin" />} Move project
                       </button>
                     </div>
                   </div>
@@ -921,7 +898,7 @@ export default function ProjectSettingsPage() {
                     onClick={() => { setConfirmDelete(true); setDeleteText(""); }}
                     className="pill pill-sm shrink-0 border border-red-500/40 text-red-600 hover:bg-red-500/10 dark:text-red-400"
                   >
-                    <Trash2 className="h-4 w-4" /> Delete project
+                    <TrashIcon className="h-4 w-4" /> Delete project
                   </button>
                 )}
               </div>
@@ -948,7 +925,7 @@ export default function ProjectSettingsPage() {
                       onClick={() => remove()}
                       className="pill pill-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
                     >
-                      {deleting ? <><Loader2 className="h-4 w-4 animate-spin" /> Deleting…</> : <><Trash2 className="h-4 w-4" /> Delete forever</>}
+                      {deleting ? <><CircleNotchIcon className="h-4 w-4 animate-spin" /> Deleting…</> : <><TrashIcon className="h-4 w-4" /> Delete forever</>}
                     </button>
                   </div>
                 </div>

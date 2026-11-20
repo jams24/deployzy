@@ -6,16 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ConsoleFrame, ConsoleHeader, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
-import {
-  RefreshCw, Loader2, Trash2, Plus, Search,
-  Terminal, Database, Check, X, ChevronDown, ChevronRight,
-} from "lucide-react";
+import { ArrowsClockwiseIcon, CaretDownIcon, CaretRightIcon, CheckIcon, CircleNotchIcon, DatabaseIcon, MagnifyingGlassIcon, PlusIcon, TerminalWindowIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 const REDIS_TABS: ConsoleTab<"keys" | "cli">[] = [
-  { id: "keys", label: "Data", icon: Database },
-  { id: "cli", label: "CLI", icon: Terminal },
+  { id: "keys", label: "Data", icon: DatabaseIcon },
+  { id: "cli", label: "CLI", icon: TerminalWindowIcon },
 ];
 
 interface KeyInfo {
@@ -301,7 +298,7 @@ export default function RedisEditorPage() {
       <ConsoleHeader
         kind="Redis"
         title={dbName || "Database"}
-        icon={Database}
+        icon={DatabaseIcon}
         tone="redis"
         onBack={() => router.push("/services")}
         tabs={REDIS_TABS}
@@ -315,7 +312,7 @@ export default function RedisEditorPage() {
           {/* Toolbar */}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--dz-hairline)] px-3 py-2 sm:px-4">
             <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
@@ -325,11 +322,11 @@ export default function RedisEditorPage() {
               />
             </div>
             <Button size="sm" className="h-8 gap-1 text-[11px]" onClick={() => loadKeys(true)} disabled={loading}>
-              {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              {loading ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <ArrowsClockwiseIcon className="h-3 w-3" />}
               Scan
             </Button>
             <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={() => { setAddingKey(true); setInsertError(""); }}>
-              <Plus className="h-3 w-3" /> New Key
+              <PlusIcon className="h-3 w-3" /> New Key
             </Button>
             <span className="figure ml-auto text-[12px] text-muted-foreground">{keys.length} key{keys.length === 1 ? "" : "s"}{!done && " · partial"}</span>
           </div>
@@ -353,10 +350,10 @@ export default function RedisEditorPage() {
                 </div>
                 <div className="flex items-end gap-1 pb-0.5">
                   <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={inserting} onClick={saveNewKey}>
-                    {inserting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Insert
+                    {inserting ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <CheckIcon className="h-3 w-3" />} Insert
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => { setAddingKey(false); setInsertError(""); }}>
-                    <X className="h-3 w-3" />
+                    <XIcon className="h-3 w-3" />
                   </Button>
                 </div>
               </div>
@@ -376,10 +373,10 @@ export default function RedisEditorPage() {
             </div>
 
             {loading && keys.length === 0 ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              <div className="flex justify-center py-12"><CircleNotchIcon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
             ) : keys.length === 0 ? (
               <div className="flex flex-col items-center py-12 text-muted-foreground">
-                <Database className="h-8 w-8 opacity-30 mb-2" />
+                <DatabaseIcon className="h-8 w-8 opacity-30 mb-2" />
                 <p className="text-sm">No keys match <span className="font-mono">{pattern}</span></p>
               </div>
             ) : (
@@ -393,8 +390,8 @@ export default function RedisEditorPage() {
                     >
                       <div className="flex items-center gap-1.5 flex-1 min-w-0">
                         {expandedKey === k.key
-                          ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-                          : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                          ? <CaretDownIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+                          : <CaretRightIcon className="h-3 w-3 text-muted-foreground shrink-0" />}
                         <span className="font-mono text-[12px] text-foreground truncate">{k.key}</span>
                       </div>
                       <div className="w-20 flex justify-center hidden sm:flex">
@@ -408,14 +405,14 @@ export default function RedisEditorPage() {
                       </div>
                       <div className="w-8 flex justify-end">
                         {deletingKey === k.key
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          ? <CircleNotchIcon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                           : (
                             <button
                               onClick={(e) => deleteKey(k.key, e)}
                               className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors"
                               style={{ opacity: deletingKey ? 0 : undefined }}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <TrashIcon className="h-3.5 w-3.5" />
                             </button>
                           )
                         }
@@ -426,7 +423,7 @@ export default function RedisEditorPage() {
                     {expandedKey === k.key && (
                       <div className="px-4 pb-4 pt-2 border-t border-border/20 bg-muted/30">
                         {loadingDetail ? (
-                          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                          <div className="flex justify-center py-4"><CircleNotchIcon className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                         ) : keyDetail ? (
                           <div className="space-y-3">
                             {/* Meta row */}
@@ -465,10 +462,10 @@ export default function RedisEditorPage() {
                                   <label className="text-[10px] text-muted-foreground">TTL (sec, -1=∞)</label>
                                   <Input type="number" value={editTtl} onChange={(e) => setEditTtl(parseInt(e.target.value) || -1)} className="h-7 w-24 text-[11px] font-mono" />
                                   <Button size="sm" className="h-7 px-3 text-[11px] gap-1" disabled={saving} onClick={saveEdit}>
-                                    {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
+                                    {saving ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <CheckIcon className="h-3 w-3" />} Save
                                   </Button>
                                   <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setEditingKey(null)}>
-                                    <X className="h-3 w-3" />
+                                    <XIcon className="h-3 w-3" />
                                   </Button>
                                 </div>
                               </div>
@@ -481,7 +478,7 @@ export default function RedisEditorPage() {
                             {/* Delete */}
                             <div className="flex justify-end">
                               <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive gap-1" onClick={(e) => deleteKey(k.key, e)}>
-                                <Trash2 className="h-3 w-3" /> Delete key
+                                <TrashIcon className="h-3 w-3" /> Delete key
                               </Button>
                             </div>
                           </div>
@@ -495,7 +492,7 @@ export default function RedisEditorPage() {
                 {!done && (
                   <div className="px-4 py-3 text-center">
                     <Button size="sm" variant="outline" className="text-[11px]" onClick={() => loadKeys(false)} disabled={loading}>
-                      {loading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                      {loading ? <CircleNotchIcon className="h-3 w-3 animate-spin mr-1" /> : null}
                       Load more
                     </Button>
                   </div>
@@ -539,7 +536,7 @@ export default function RedisEditorPage() {
               spellCheck={false}
               autoComplete="off"
             />
-            {cliRunning && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+            {cliRunning && <CircleNotchIcon className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
           </div>
         </div>
       )}

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, X } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, XIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/lib/onboarding";
 import { useModKey } from "@/lib/use-me";
@@ -183,7 +183,7 @@ function Tour() {
         <div key={i} className="dz-tour-step">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <p className="eyebrow !text-[10px]">Tour · {i + 1} of {steps.length}</p>
+              <p className="eyebrow !text-[11.5px]">Tour · {i + 1} of {steps.length}</p>
               <h2 id="dz-tour-title" className="mt-1.5 text-[14.5px] font-semibold tracking-[-0.015em]">{step.title}</h2>
             </div>
             <button
@@ -192,7 +192,7 @@ function Tour() {
               aria-label="Close tour"
               className="-mr-1.5 -mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
             >
-              <X className="h-3.5 w-3.5" />
+              <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
           <p id="dz-tour-body" className="mt-1.5 text-[12.5px] leading-[1.6] text-muted-foreground">{step.body}</p>
@@ -217,11 +217,11 @@ function Tour() {
           <div className="ml-auto flex items-center gap-1.5">
             {i > 0 && (
               <button type="button" onClick={back} className="pill pill-line pill-xs">
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
+                <ArrowLeftIcon className="h-3.5 w-3.5" /> Back
               </button>
             )}
             <button ref={nextRef} type="button" onClick={next} className="pill pill-ink pill-xs">
-              {last ? "Finish" : "Next"} {!last && <ArrowRight className="h-3.5 w-3.5" />}
+              {last ? "Finish" : "Next"} {!last && <ArrowRightIcon className="h-3.5 w-3.5" />}
             </button>
           </div>
         </div>

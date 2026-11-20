@@ -1,11 +1,12 @@
 "use client";
 
+import { PageHeader } from "@/components/dashboard/kit";
 import { useEffect, useState } from "react";
 import { showPlanLimit } from "@/components/upgrade-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Server, Plus, Trash2, CheckCircle2, AlertCircle, Loader2, Wifi } from "lucide-react";
+import { CheckCircleIcon, CircleNotchIcon, HardDrivesIcon, PlusIcon, TrashIcon, WarningCircleIcon, WifiHighIcon } from "@phosphor-icons/react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Servers (BYOC) — connect your own VPS over SSH. Flow unchanged;
@@ -145,16 +146,16 @@ export default function ServersPage() {
           <button onClick={() => setNotice("")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
         </div>
       )}
-      <div className="flex items-start justify-between gap-3 mb-6">
-        <div>
-          <p className="eyebrow">Deploy</p>
-          <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">My Servers</h1>
-          <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground hidden sm:block">Bring your own compute — deploy projects to your own servers via SSH.</p>
-        </div>
-        <Button size="sm" onClick={() => (byocAllowed === false ? byocUpsell() : setShowAdd(true))} className="btn-shine gap-1 h-8 shrink-0 px-2.5 sm:px-3 rounded-full">
-          <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Add Server</span>
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-7"
+        title="Servers"
+        description="Bring your own compute. Deploy projects to your own servers over SSH."
+        actions={
+          <button type="button" onClick={() => (byocAllowed === false ? byocUpsell() : setShowAdd(true))} className="pill pill-ink pill-xs">
+            <PlusIcon weight="bold" className="h-3.5 w-3.5" /> Add server
+          </button>
+        }
+      />
 
       {byocAllowed === false && (
         <div className="mb-6 rounded-2xl surface p-5">
@@ -200,7 +201,7 @@ export default function ServersPage() {
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={addServer} disabled={adding || !form.label || !form.host || !form.ssh_password} className="btn-shine gap-1 rounded-full">
-                {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />} Connect & Add
+                {adding ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <WifiHighIcon className="h-3 w-3" />} Connect & Add
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
             </div>
@@ -215,7 +216,7 @@ export default function ServersPage() {
           <div aria-hidden className="pointer-events-none absolute -top-20 left-1/2 h-40 w-[380px] -translate-x-1/2 rounded-full bg-brand/[0.08] blur-[80px]" />
           <div className="relative flex flex-col items-center py-16 px-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
-              <Server className="h-5 w-5 text-brand" />
+              <HardDrivesIcon className="h-5 w-5 text-brand" />
             </div>
             <h3 className="mt-4 font-semibold">No servers yet</h3>
             <p className="mt-2 text-sm text-muted-foreground text-center max-w-sm">
@@ -234,7 +235,7 @@ export default function ServersPage() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--dz-hairline)] bg-background text-foreground/80 shrink-0 dark:bg-white/[0.03]">
-                    <Server className="h-5 w-5" />
+                    <HardDrivesIcon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -243,15 +244,15 @@ export default function ServersPage() {
                         {s.status}
                       </Badge>
                       {s.docker_installed ? (
-                        <Badge variant="outline" className="text-[10px] gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> Docker</Badge>
+                        <Badge variant="outline" className="text-[10px] gap-0.5"><CheckCircleIcon className="h-2.5 w-2.5" /> Docker</Badge>
                       ) : s.docker_install_status === "installing" ? (
                         <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 dark:text-blue-400 border-blue-500/40">
-                          <Loader2 className="h-2.5 w-2.5 animate-spin" /> Installing Docker…
+                          <CircleNotchIcon className="h-2.5 w-2.5 animate-spin" /> Installing Docker…
                         </Badge>
                       ) : (
                         <>
                           <Badge variant="outline" className={`text-[10px] gap-0.5 ${s.docker_install_status === "failed" ? "text-red-600 dark:text-red-400 border-red-500/40" : "text-amber-600 dark:text-amber-400 border-amber-500/40"}`}>
-                            <AlertCircle className="h-2.5 w-2.5" /> {s.docker_install_status === "failed" ? "Install failed" : "No Docker"}
+                            <WarningCircleIcon className="h-2.5 w-2.5" /> {s.docker_install_status === "failed" ? "Install failed" : "No Docker"}
                           </Badge>
                           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] rounded-md" onClick={() => installDocker(s.id)}>
                             {s.docker_install_status === "failed" ? "Retry install" : "Install Docker"}
@@ -290,7 +291,7 @@ export default function ServersPage() {
                     )}
                   </div>
                   <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => removeServer(s.id)}>
-                    <Trash2 className="h-4 w-4" />
+                    <TrashIcon className="h-4 w-4" />
                   </Button>
                 </div>
               </div>

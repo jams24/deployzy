@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Check, TriangleAlert, type LucideIcon } from "lucide-react";
+import { CheckIcon, type Icon as PhosphorIcon, WarningIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 // Inline result line for a section footer ("Saved", or an error) instead of alert().
@@ -18,7 +18,7 @@ export function FooterNote({ note }: { note: Note }) {
         note.kind === "err" ? "text-red-600 dark:text-red-400" : "text-[var(--dz-green-strong)] dark:text-brand",
       )}
     >
-      {note.kind === "err" ? <TriangleAlert className="h-3.5 w-3.5 shrink-0" /> : <Check className="h-3.5 w-3.5 shrink-0" />}
+      {note.kind === "err" ? <WarningIcon className="h-3.5 w-3.5 shrink-0" /> : <CheckIcon className="h-3.5 w-3.5 shrink-0" />}
       {note.text}
     </span>
   );
@@ -29,8 +29,8 @@ export function FooterNote({ note }: { note: Note }) {
 // fields, a switch, and a sticky in-page section nav with scroll-spy.
 
 export const inputCls =
-  "h-10 w-full rounded-xl border border-[var(--dz-hairline)] bg-background px-3 text-[14px] outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 focus:border-brand/60 focus:ring-4 focus:ring-brand/10 disabled:opacity-60 dark:bg-white/[0.02]";
-export const monoInputCls = cn(inputCls, "font-mono text-[13.5px]");
+  "h-9 w-full rounded-[10px] border border-[var(--dz-hairline)] bg-background px-3 text-[13.5px] outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 focus:border-brand/60 focus:ring-4 focus:ring-brand/10 disabled:opacity-60 dark:bg-white/[0.02]";
+export const monoInputCls = cn(inputCls, "font-mono text-[12.5px]");
 export const selectCls = cn(inputCls, "pr-8");
 
 export function SettingsSection({
@@ -48,7 +48,7 @@ export function SettingsSection({
   id?: string;
   title: React.ReactNode;
   description?: React.ReactNode;
-  icon?: LucideIcon;
+  icon?: PhosphorIcon;
   action?: React.ReactNode;
   footer?: React.ReactNode;
   tone?: "danger";
@@ -61,7 +61,7 @@ export function SettingsSection({
     <section
       id={id}
       className={cn(
-        "scroll-mt-28 overflow-hidden rounded-[20px]",
+        "scroll-mt-28 overflow-hidden rounded-[16px]",
         danger ? "border border-red-500/30 bg-red-500/[0.025]" : "surface",
         className,
       )}
@@ -69,16 +69,16 @@ export function SettingsSection({
       <div className={cn("flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5", !children && !footer && "pb-4 sm:pb-5")}>
         <div className="flex min-w-0 items-start gap-3">
           {Icon && (
-            <span className={cn(
-              "hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:flex",
-              danger ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-foreground/[0.05] text-foreground/70",
+            <span aria-hidden className={cn(
+              "hidden h-8 w-8 shrink-0 items-center justify-center rounded-[10px] sm:flex",
+              danger ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-foreground/[0.045] text-foreground/70 dark:bg-white/[0.06]",
             )}>
-              <Icon className="h-4 w-4" />
+              <Icon weight="duotone" className={cn("h-[17px] w-[17px]", !danger && "dz-ico")} />
             </span>
           )}
           <div className="min-w-0">
-            <h2 className={cn("text-[15px] font-semibold tracking-tight", danger && "text-red-600 dark:text-red-400")}>{title}</h2>
-            {description && <p className="mt-0.5 text-[13.5px] leading-snug text-muted-foreground">{description}</p>}
+            <h2 className={cn("text-[14.5px] font-semibold tracking-[-0.01em]", danger && "text-red-600 dark:text-red-400")}>{title}</h2>
+            {description && <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">{description}</p>}
           </div>
         </div>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
@@ -87,7 +87,7 @@ export function SettingsSection({
       {footer && (
         <div className={cn(
           "flex flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5",
-          danger ? "border-red-500/20" : "border-[var(--dz-hairline)] bg-foreground/[0.015]",
+          danger ? "border-red-500/20" : "border-[var(--dz-hairline)]",
         )}>
           {footer}
         </div>
@@ -111,7 +111,7 @@ export function Field({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <label htmlFor={htmlFor} className="mb-1.5 block text-[13.5px] font-medium">{label}</label>
+      <label htmlFor={htmlFor} className="mb-1.5 block text-[13px] font-medium">{label}</label>
       {children}
       {hint && <p className="mt-1.5 text-[12.5px] leading-snug text-muted-foreground">{hint}</p>}
     </div>
@@ -167,7 +167,7 @@ export function SettingRow({ title, description, control, className }: {
   );
 }
 
-export type SettingsNavItem = { id: string; label: string; icon: LucideIcon; tone?: "danger" };
+export type SettingsNavItem = { id: string; label: string; icon: PhosphorIcon; tone?: "danger" };
 
 // Sticky in-page nav for desktop. Highlights the section in view.
 export function SettingsNav({ items, className }: { items: SettingsNavItem[]; className?: string }) {

@@ -5,8 +5,10 @@ import { cn } from "@/lib/utils";
 
 // Shared chart bits for the project Overview / Metrics / Analytics tabs.
 
-export const GREEN = "#34D399";
-export const CYAN = "#22D3EE";
+// Series colours, as CSS variables so each theme gets its own validated step
+// (see --dz-series-* in globals.css). SERIES_1 is the primary measure.
+export const SERIES_1 = "var(--dz-series-1)";
+export const SERIES_2 = "var(--dz-series-2)";
 
 export function ChartTooltip({ active, payload, label, format }: {
   active?: boolean;
@@ -16,7 +18,7 @@ export function ChartTooltip({ active, payload, label, format }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-[var(--dz-hairline)] bg-popover px-3 py-2 text-[12.5px] shadow-xl">
+    <div className="rounded-[12px] border border-[var(--dz-hairline)] bg-popover px-3 py-2 text-[12.5px] shadow-xl">
       <p className="mb-1 text-muted-foreground">{label}</p>
       {payload.map((p) => (
         <p key={p.name} className="flex items-center gap-2">
@@ -30,11 +32,19 @@ export function ChartTooltip({ active, payload, label, format }: {
 }
 
 // Tiny trend line for stat strips. Flat data still draws a calm baseline.
-export function Sparkline({ values, color = GREEN, className }: { values: number[]; color?: string; className?: string }) {
+export function Sparkline({ values, color = SERIES_1, className }: { values: number[]; color?: string; className?: string }) {
   const id = `spark-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
-  if (values.length < 2) return <div className={cn("h-7", className)} />;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+  // No data, or perfectly flat data: draw one calm centred baseline so an empty
+  // stat tile still reads as intentional, not unfinished.
+  const max = values.length ? Math.max(...values) : 0;
+  const min = values.length ? Math.min(...values) : 0;
+  if (values.length < 2 || max === min) {
+    return (
+      <svg viewBox="0 0 100 28" preserveAspectRatio="none" className={cn("h-7 w-full", className)} aria-hidden>
+        <line x1="0" y1="20" x2="100" y2="20" stroke="currentColor" className="text-foreground/15" strokeWidth={1.5} strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+      </svg>
+    );
+  }
   const span = max - min || 1;
   const pts = values.map((v, i) => [(i / (values.length - 1)) * 100, 26 - ((v - min) / span) * 22]);
   const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
@@ -61,7 +71,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, c
   className?: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className={cn("flex h-9 items-center gap-0.5 rounded-full bg-foreground/[0.05] p-0.5", className)}>
+    <div role="tablist" aria-label={label} className={cn("flex h-9 items-center gap-0.5 rounded-full border border-[var(--dz-hairline)] p-0.5", className)}>
       {options.map((o) => {
         const on = o.id === value;
         return (
@@ -73,7 +83,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, c
             onClick={() => onChange(o.id)}
             className={cn(
               "flex h-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-medium transition-colors",
-              on ? "bg-background text-foreground shadow-sm dark:bg-white/[0.1]" : "text-muted-foreground hover:text-foreground",
+              on ? "bg-foreground/[0.07] text-foreground dark:bg-white/[0.09]" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {o.label}
@@ -90,12 +100,12 @@ export function StatCell({ icon: Icon, label, value, unit, extra, children }: {
 }) {
   return (
     <div className="flex min-w-0 flex-col bg-card p-4 sm:p-5">
-      <p className="flex items-center gap-1.5 text-[13.5px] text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+      <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+        <Icon className="dz-ico h-4 w-4 shrink-0" />
         <span className="truncate">{label}</span>
       </p>
-      <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-        <span className="text-[28px] font-semibold leading-none tracking-[-0.035em] tabular-nums">{value}</span>
+      <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+        <span className="text-[27px] font-semibold leading-none tracking-[-0.03em] tabular-nums">{value}</span>
         {unit && <span className="text-[13.5px] tabular-nums text-muted-foreground">{unit}</span>}
         {extra}
       </p>

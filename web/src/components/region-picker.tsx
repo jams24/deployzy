@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Server, Loader2, Check, ChevronDown } from "lucide-react";
+import { CaretDownIcon, CheckIcon, CircleNotchIcon, HardDrivesIcon } from "@phosphor-icons/react";
 import { regionFlag, regionName } from "@/lib/regions";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
@@ -72,7 +72,7 @@ export function RegionPicker({
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</label>
         <div className="flex h-10 items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading regions…
+          <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> Loading regions…
         </div>
       </div>
     );
@@ -99,13 +99,13 @@ export function RegionPicker({
       >
         <span className="flex items-center gap-2 min-w-0">
           {selected?.is_byoc ? (
-            <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <HardDrivesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           ) : (
             <span className="text-base leading-none">{regionFlag(selected?.region || "")}</span>
           )}
           <span className="truncate">{selected ? serverLabel(selected) : "Select a region"}</span>
         </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        <CaretDownIcon className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -130,7 +130,7 @@ export function RegionPicker({
                   } ${isSel ? "bg-muted/40" : ""}`}
                 >
                   {s.is_byoc ? (
-                    <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <HardDrivesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
                     <span className="text-base leading-none">{regionFlag(s.region)}</span>
                   )}
@@ -144,7 +144,7 @@ export function RegionPicker({
                           : "Available"}
                     </span>
                   </span>
-                  {isSel && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                  {isSel && <CheckIcon className="h-4 w-4 shrink-0 text-primary" />}
                 </button>
               );
             })}

@@ -5,17 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConsoleFrame, ConsoleHeader, ConsolePicker, useDatabaseName, type ConsoleTab } from "@/components/dashboard/console";
-import {
-  Database, Table2, Play, Loader2, ChevronLeft, ChevronRight,
-  ArrowUpDown, Columns3, Trash2, Plus, Check, X,
-} from "lucide-react";
+import { ArrowsDownUpIcon, CaretLeftIcon, CaretRightIcon, CheckIcon, CircleNotchIcon, ColumnsIcon, DatabaseIcon, PlayIcon, PlusIcon, TableIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 const PG_TABS: ConsoleTab<"browse" | "columns" | "sql">[] = [
-  { id: "browse", label: "Browse", icon: Table2 },
-  { id: "columns", label: "Columns", icon: Columns3 },
-  { id: "sql", label: "SQL", icon: Play },
+  { id: "browse", label: "Browse", icon: TableIcon },
+  { id: "columns", label: "Columns", icon: ColumnsIcon },
+  { id: "sql", label: "SQL", icon: PlayIcon },
 ];
 
 interface TableInfo { name: string; row_estimate: number; size_bytes: number; size_pretty: string; }
@@ -331,7 +328,7 @@ export default function DatabaseEditorPage() {
       <ConsoleHeader
         kind="PostgreSQL"
         title={dbName || "Database"}
-        icon={Database}
+        icon={DatabaseIcon}
         tone="postgres"
         onBack={() => router.push("/services")}
         tabs={PG_TABS}
@@ -355,14 +352,14 @@ export default function DatabaseEditorPage() {
         <div className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--dz-hairline)] py-2 md:block">
           <p className="eyebrow px-4 pb-2 pt-1">Tables · {tables.length}</p>
           {loadingTables ? (
-            <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+            <div className="flex justify-center py-4"><CircleNotchIcon className="h-4 w-4 animate-spin text-muted-foreground" /></div>
           ) : tables.length === 0 ? (
             <p className="px-4 text-[13px] text-muted-foreground">No tables found</p>
           ) : tables.map(t => (
             <button key={t.name} onClick={() => setSelectedTable(t.name)}
               className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${selectedTable === t.name ? "bg-foreground/[0.07] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"}`}>
               <span className="flex min-w-0 items-center gap-2">
-                <Table2 className={`h-3.5 w-3.5 shrink-0 ${selectedTable === t.name ? "text-sky-500" : "opacity-50"}`} />
+                <TableIcon className={`h-3.5 w-3.5 shrink-0 ${selectedTable === t.name ? "text-sky-500" : "opacity-50"}`} />
                 <span className="truncate font-mono text-[12.5px]">{t.name}</span>
               </span>
               <span className="figure shrink-0 text-[11px] text-muted-foreground/70">{t.size_pretty}</span>
@@ -387,14 +384,14 @@ export default function DatabaseEditorPage() {
                 <div className="flex items-center gap-1.5">
                   {hasPK && !addingRow && (
                     <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300" onClick={openAddRow}>
-                      <Plus className="h-3 w-3" />Add Row
+                      <PlusIcon className="h-3 w-3" />Add Row
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" className="h-6 px-1.5" disabled={page === 0} onClick={() => handlePage(-1)}><ChevronLeft className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="sm" className="h-6 px-1.5" disabled={page === 0} onClick={() => handlePage(-1)}><CaretLeftIcon className="h-3 w-3" /></Button>
                   <span className="whitespace-nowrap">Page {page + 1}</span>
                   <Button variant="ghost" size="sm" className="h-6 px-1.5"
                     disabled={!browseData || browseData.offset + browseData.rows.length >= browseData.total_rows}
-                    onClick={() => handlePage(1)}><ChevronRight className="h-3 w-3" /></Button>
+                    onClick={() => handlePage(1)}><CaretRightIcon className="h-3 w-3" /></Button>
                 </div>
               </div>
 
@@ -402,7 +399,7 @@ export default function DatabaseEditorPage() {
               {saveError && (
                 <div className="mx-3 mt-1.5 rounded border border-red-500/50 bg-red-500/20 px-2.5 py-1.5 text-[10px] text-red-600 dark:text-red-400 font-mono flex items-center gap-2 shrink-0">
                   <span className="flex-1">{saveError}</span>
-                  <button onClick={() => setSaveError("")}><X className="h-3 w-3" /></button>
+                  <button onClick={() => setSaveError("")}><XIcon className="h-3 w-3" /></button>
                 </div>
               )}
 
@@ -437,7 +434,7 @@ export default function DatabaseEditorPage() {
                   {insertError && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400 font-mono">{insertError}</p>}
                   <div className="flex gap-1.5 mt-3">
                     <Button size="sm" className="h-6 px-3 text-[10px] gap-1" disabled={inserting} onClick={saveNewRow}>
-                      {inserting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      {inserting ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <CheckIcon className="h-3 w-3" />}
                       Insert
                     </Button>
                     <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => { setAddingRow(false); setInsertError(""); }}>
@@ -450,7 +447,7 @@ export default function DatabaseEditorPage() {
               {/* Data table */}
               <div className="flex-1 overflow-auto">
                 {browseLoading ? (
-                  <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                  <div className="flex justify-center py-12"><CircleNotchIcon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
                 ) : browseData && browseData.columns.length > 0 ? (
                   <table className="w-full text-[11px] font-mono">
                     <thead className="sticky top-0 bg-background border-b border-border/30 z-10">
@@ -461,7 +458,7 @@ export default function DatabaseEditorPage() {
                             className="px-2 py-1.5 text-left text-muted-foreground font-medium whitespace-nowrap cursor-pointer hover:text-foreground select-none">
                             {c}
                             <span className="ml-0.5 text-[9px] text-muted-foreground/60">{browseData.types[i]}</span>
-                            {orderBy === c && <ArrowUpDown className="inline h-2.5 w-2.5 ml-0.5 text-muted-foreground" />}
+                            {orderBy === c && <ArrowsDownUpIcon className="inline h-2.5 w-2.5 ml-0.5 text-muted-foreground" />}
                           </th>
                         ))}
                         {hasPK && <th className="w-8 px-1" />}
@@ -491,11 +488,11 @@ export default function DatabaseEditorPage() {
                                         NULL
                                       </button>
                                       <Button size="sm" className="h-5 px-2 text-[9px] gap-0.5" disabled={saving} onClick={saveEdit}>
-                                        {saving ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}
+                                        {saving ? <CircleNotchIcon className="h-2.5 w-2.5 animate-spin" /> : <CheckIcon className="h-2.5 w-2.5" />}
                                         Save
                                       </Button>
                                       <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[9px]" onClick={cancelEdit}>
-                                        <X className="h-2.5 w-2.5" />
+                                        <XIcon className="h-2.5 w-2.5" />
                                       </Button>
                                     </div>
                                   </div>
@@ -517,8 +514,8 @@ export default function DatabaseEditorPage() {
                                 <button onClick={() => deleteRow(rowIdx)} disabled={deletingRow === rowIdx}
                                   className="p-0.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors">
                                   {deletingRow === rowIdx
-                                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                                    : <Trash2 className="h-3 w-3" />}
+                                    ? <CircleNotchIcon className="h-3 w-3 animate-spin" />
+                                    : <TrashIcon className="h-3 w-3" />}
                                 </button>
                               )}
                             </td>
@@ -529,7 +526,7 @@ export default function DatabaseEditorPage() {
                   </table>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <Table2 className="h-8 w-8 opacity-30 mb-2" />
+                    <TableIcon className="h-8 w-8 opacity-30 mb-2" />
                     <p className="text-sm">{selectedTable ? "No rows" : "Select a table"}</p>
                   </div>
                 )}
@@ -585,7 +582,7 @@ export default function DatabaseEditorPage() {
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] text-muted-foreground">⌘/Ctrl+Enter to run · 10s timeout · 1000-row cap</p>
                   <Button size="sm" className="h-7 px-4 text-[11px] gap-1.5" disabled={sqlRunning || !sql.trim()} onClick={runSQL}>
-                    {sqlRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                    {sqlRunning ? <CircleNotchIcon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
                     Run query
                   </Button>
                 </div>

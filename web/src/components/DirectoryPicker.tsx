@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Folder, File as FileIcon, ChevronRight, X, Loader2, Home } from "lucide-react";
+import { CaretRightIcon, CircleNotchIcon, FileIcon, FolderIcon, HouseSimpleIcon, XIcon } from "@phosphor-icons/react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
@@ -68,11 +68,11 @@ export function DirectoryPicker({ repo, branch, initialPath = "", title = "Selec
             onClick={onClose}
             className="h-8 w-8 rounded-md bg-white/5 hover:bg-white/10 flex items-center justify-center mb-4"
           >
-            <X className="h-4 w-4" />
+            <XIcon className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-md bg-violet-500/15 flex items-center justify-center">
-              <Folder className="h-4 w-4 text-violet-400" />
+              <FolderIcon className="h-4 w-4 text-violet-400" />
             </div>
             <h2 className="text-base font-semibold">{title}</h2>
           </div>
@@ -86,13 +86,13 @@ export function DirectoryPicker({ repo, branch, initialPath = "", title = "Selec
             onClick={() => setPath("")}
             className={`flex items-center gap-1 px-1.5 py-1 rounded hover:bg-white/5 ${path === "" ? "text-violet-400" : "text-muted-foreground"}`}
           >
-            <Home className="h-3 w-3" /> root
+            <HouseSimpleIcon className="h-3 w-3" /> root
           </button>
           {crumbs.map((c, i) => {
             const upto = crumbs.slice(0, i + 1).join("/");
             return (
               <span key={upto} className="flex items-center gap-1">
-                <ChevronRight className="h-3 w-3 text-zinc-700" />
+                <CaretRightIcon className="h-3 w-3 text-zinc-700" />
                 <button
                   type="button"
                   onClick={() => setPath(upto)}
@@ -109,7 +109,7 @@ export function DirectoryPicker({ repo, branch, initialPath = "", title = "Selec
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading && (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <CircleNotchIcon className="h-5 w-5 animate-spin" />
             </div>
           )}
           {!loading && error && (
@@ -124,7 +124,7 @@ export function DirectoryPicker({ repo, branch, initialPath = "", title = "Selec
               className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5"
             >
               <div className="flex items-center gap-2 min-w-0">
-                <Folder className="h-4 w-4 text-violet-400 shrink-0" />
+                <FolderIcon className="h-4 w-4 text-violet-400 shrink-0" />
                 <span className="text-sm truncate">{d.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">

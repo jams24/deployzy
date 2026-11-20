@@ -6,13 +6,16 @@ import { cn } from "@/lib/utils";
 
 /**
  * Pricing-card CTA that routes based on auth state: logged-in users go
- * straight to the dashboard billing page (or overview for the free plan)
+ * straight to checkout for the chosen plan (or the overview for Free)
  * instead of being bounced through sign-up.
  */
 export function PlanCta({ planId, cta, popular }: { planId: string; cta: string; popular: boolean }) {
   const loggedIn = useSignedIn();
 
-  const href = loggedIn ? (planId === "free" ? "/overview" : "/billing") : "/sign-up";
+  // Paid plans open the checkout sheet for that plan directly; signed-out
+  // visitors come back to it after signing up.
+  const target = planId === "free" ? "/overview" : `/billing?checkout=${planId}`;
+  const href = loggedIn ? target : planId === "free" ? "/sign-up" : `/sign-up?redirect=${encodeURIComponent(target)}`;
   const label = loggedIn && planId === "free" ? "Go to dashboard" : cta;
 
   return (

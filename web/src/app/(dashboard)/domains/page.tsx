@@ -1,252 +1,389 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Globe, CheckCircle2, AlertCircle, RefreshCw, Link2, Rocket, Waypoints } from "lucide-react";
-import { api, type Domain } from "@/lib/api";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  ArrowRightIcon, ArrowSquareOutIcon, ArrowsClockwiseIcon, CircleNotchIcon, GlobeSimpleIcon, LinkBreakIcon, LinkSimpleIcon,
+  ListBulletsIcon, PlusIcon, TrashIcon, XIcon,
+} from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
+import { api, ApiError, type DnsRecord, type Domain } from "@/lib/api";
+import { EmptyState, PageHeader } from "@/components/dashboard/kit";
+import { RowMenu } from "@/components/dashboard/row-menu";
+import { DnsRecords, recordsFor } from "@/components/domains/dns-records";
+import { DomainStatus, checkedAgo, domainState } from "@/components/domains/domain-status";
+import { upgradeHref } from "@/lib/upgrade";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Custom Domains — add, verify, bind. Flow unchanged; presentation rebuilt
-// with the Deployzy 2.0 card language (both themes).
+// Custom domains. Add a domain (optionally choosing the app it serves), create
+// the DNS record shown, and it goes live by itself: the API re-checks pending
+// domains every 2 minutes and this page refreshes while any are pending.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Target {
   type: "tunnel" | "project";
   subdomain: string;
-  label: string;
+  name: string;
 }
 
-function Panel({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
+const APP_DOMAIN = "deployzy.app";
+const targetKey = (t: { type: string; subdomain: string }) => `${t.type}:${t.subdomain}`;
+
+async function fetchTargets(): Promise<Target[]> {
+  try {
+    const list = await api.listTunnels();
+    return (list as unknown as { name: string; subdomain?: string; protocol: string; type?: string }[])
+      .map((t) => t.type === "project"
+        ? { type: "project" as const, subdomain: t.subdomain || t.name || "", name: t.name || t.subdomain || "" }
+        : { type: "tunnel" as const, subdomain: t.name || "", name: `${t.name} (${t.protocol})` })
+      .filter((t) => t.subdomain);
+  } catch {
+    return [];
+  }
+}
+
+// Mirrors the API's clean-up so the user sees what will be added.
+function previewDomain(raw: string): string {
+  let d = raw.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  d = d.split(/[/?#]/)[0].replace(/^.*@/, "").replace(/:\d+$/, "").replace(/^\.+|\.+$/g, "");
+  if (d.startsWith("www.") && d.split(".").length >= 3) d = d.slice(4);
+  return d;
+}
+
+function TargetSelect({ targets, value, onChange, optional }: {
+  targets: Target[] | null; value: string; onChange: (v: string) => void; optional?: boolean;
+}) {
+  const projects = (targets ?? []).filter((t) => t.type === "project");
+  const tunnels = (targets ?? []).filter((t) => t.type === "tunnel");
   return (
-    <div className={`rounded-2xl surface overflow-hidden ${className}`}>
-      <div className="px-4 py-3 border-b border-border/60">
-        <p className="eyebrow">{title}</p>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={targets === null}
+      aria-label="Connect to"
+      className="h-10 w-full rounded-xl border border-[var(--dz-hairline)] bg-background px-3 text-[14px] outline-none transition-colors focus:border-foreground/30 disabled:opacity-60"
+    >
+      <option value="">{targets === null ? "Loading…" : optional ? "Choose later" : "Choose an app or tunnel"}</option>
+      {projects.length > 0 && (
+        <optgroup label="Apps">
+          {projects.map((t) => <option key={targetKey(t)} value={targetKey(t)}>{t.name} · {t.subdomain}.{APP_DOMAIN}</option>)}
+        </optgroup>
+      )}
+      {tunnels.length > 0 && (
+        <optgroup label="Tunnels">
+          {tunnels.map((t) => <option key={targetKey(t)} value={targetKey(t)}>{t.name}</option>)}
+        </optgroup>
+      )}
+    </select>
+  );
+}
+
+// ── Add-domain sheet: name + optional target, then the DNS records to create ──
+function AddDomainSheet({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [raw, setRaw] = useState("");
+  const [targets, setTargets] = useState<Target[] | null>(null);
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<{ text: string; upgrade?: boolean } | null>(null);
+  const [done, setDone] = useState<{ domain: Domain; records: DnsRecord[]; note?: string } | null>(null);
+
+  useEffect(() => { fetchTargets().then(setTargets); }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const preview = previewDomain(raw);
+  const changed = raw.trim() !== "" && preview !== raw.trim().toLowerCase();
+
+  const add = async () => {
+    if (!preview) return;
+    setBusy(true); setErr(null);
+    const t = targets?.find((x) => targetKey(x) === target);
+    try {
+      const res = await api.createDomain(raw, t ? { type: t.type, subdomain: t.subdomain } : undefined);
+      setDone({ domain: res.domain, records: res.records?.length ? res.records : recordsFor(res.domain), note: res.note });
+      onAdded();
+    } catch (e) {
+      const status = e instanceof ApiError ? e.status : 0;
+      setErr({ text: e instanceof Error ? e.message : "Couldn't add the domain", upgrade: status === 402 });
+    }
+    setBusy(false);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:px-4"
+      style={{ animation: "dz-fade .2s ease both" }} onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="add-domain-title"
+        className="w-full max-w-lg rounded-t-[26px] border border-[var(--dz-hairline)] bg-background pb-[env(safe-area-inset-bottom)] shadow-2xl sm:rounded-[26px]"
+        style={{ animation: "dz-pop .25s cubic-bezier(.2,.7,.2,1) both" }} onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-foreground/15 sm:hidden" aria-hidden />
+        <div className="flex items-start justify-between gap-3 p-5 pb-4 sm:p-6 sm:pb-4">
+          <div className="min-w-0">
+            <p className="eyebrow">{done ? "Step 2 of 2" : "Step 1 of 2"}</p>
+            <h2 id="add-domain-title" className="mt-1.5 truncate text-[20px] font-semibold tracking-[-0.03em]">
+              {done ? `Point ${done.domain.domain} at Deployzy` : "Add a domain"}
+            </h2>
+            {!done && <p className="mt-1 text-[13.5px] text-muted-foreground">A domain or subdomain you own, like app.example.com.</p>}
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground">
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="space-y-4 px-5 pb-5 sm:px-6 sm:pb-6">
+            {done.note && <p className="text-[13px] text-muted-foreground">{done.note}</p>}
+            <DnsRecords records={done.records} zone={done.domain.zone} />
+            <button type="button" onClick={onClose} className="pill pill-ink w-full">Done</button>
+          </div>
+        ) : (
+          <form className="space-y-4 px-5 pb-5 sm:px-6 sm:pb-6" onSubmit={(e) => { e.preventDefault(); add(); }}>
+            <label className="block">
+              <span className="text-[13px] font-medium text-muted-foreground">Domain</span>
+              <input autoFocus value={raw} onChange={(e) => { setRaw(e.target.value); setErr(null); }}
+                placeholder="app.example.com" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                className="mt-1.5 h-11 w-full rounded-xl border border-[var(--dz-hairline)] bg-background px-3.5 text-[15px] outline-none transition-colors focus:border-foreground/30" />
+              {changed && preview && <span className="mt-1.5 block text-[12.5px] text-muted-foreground">We&rsquo;ll add <span className="font-medium text-foreground">{preview}</span>{raw.trim().toLowerCase().includes("www.") ? "; www redirects to it." : "."}</span>}
+            </label>
+            <label className="block">
+              <span className="text-[13px] font-medium text-muted-foreground">Connect to <span className="font-normal">(optional)</span></span>
+              <div className="mt-1.5"><TargetSelect targets={targets} value={target} onChange={setTarget} optional /></div>
+            </label>
+            {err && (
+              <p role="alert" className="text-[13px] text-red-600 dark:text-red-400">
+                {err.text}{" "}
+                {err.upgrade && <Link href={upgradeHref()} className="font-medium text-foreground underline underline-offset-2">See plans</Link>}
+              </p>
+            )}
+            <button type="submit" disabled={!preview || busy} className="pill pill-ink w-full disabled:opacity-50">
+              {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : <>Continue <ArrowRightIcon className="h-4 w-4" /></>}
+            </button>
+          </form>
+        )}
       </div>
-      <div className="p-4">{children}</div>
-    </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── One domain row ──
+function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
+  const state = domainState(d);
+  const pending = !d.verified;
+  const [showDns, setShowDns] = useState(pending);
+  const [connecting, setConnecting] = useState(false);
+  const [targets, setTargets] = useState<Target[] | null>(null);
+  const [target, setTarget] = useState(d.target_subdomain ? targetKey({ type: d.target_type, subdomain: d.target_subdomain }) : "");
+  const [checking, setChecking] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const check = async () => {
+    setChecking(true); setMsg(null);
+    try {
+      const r = await api.verifyDomain(d.id);
+      setMsg(r.verified ? { ok: true, text: "DNS verified. HTTPS is issued on the first visit." } : { ok: false, text: r.hint || "Not visible yet." });
+      onChanged();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Check failed" });
+    }
+    setChecking(false);
+  };
+
+  const openConnect = async () => {
+    setConnecting(true);
+    if (!targets) setTargets(await fetchTargets());
+  };
+
+  const connect = async () => {
+    const t = targets?.find((x) => targetKey(x) === target);
+    if (!t) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api.bindDomain(d.id, t.type, t.subdomain);
+      setConnecting(false);
+      onChanged();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't connect the domain" });
+    }
+    setBusy(false);
+  };
+
+  const disconnect = async () => {
+    setMsg(null);
+    try {
+      await api.bindDomain(d.id, d.target_type || "project", "");
+      onChanged();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't disconnect the domain" });
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.deleteDomain(d.id);
+      onChanged();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't remove the domain" });
+      setBusy(false);
+      setConfirmRemove(false);
+    }
+  };
+
+  const targetHost = d.target_subdomain ? `${d.target_subdomain}.${APP_DOMAIN}` : "";
+
+  return (
+    <li className="px-4 py-4 sm:px-5">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            {state === "live" ? (
+              <a href={`https://${d.domain}`} target="_blank" rel="noopener noreferrer"
+                className="group inline-flex min-w-0 items-center gap-1 text-[14.5px] font-medium tracking-[-0.01em] hover:underline">
+                <span className="truncate">{d.domain}</span>
+                <ArrowSquareOutIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </a>
+            ) : (
+              <span className="min-w-0 truncate text-[14.5px] font-medium tracking-[-0.01em]">{d.domain}</span>
+            )}
+            <DomainStatus domain={d} />
+          </div>
+          <p className="mt-1 truncate text-[13px] text-muted-foreground">
+            {targetHost ? <>Serves <span className="text-foreground/80">{d.target_type === "tunnel" ? `tunnel ${d.target_subdomain}` : targetHost}</span></> : "Not connected to an app yet"}
+            {pending && d.last_checked_at && <> · checked {checkedAgo(d.last_checked_at)}</>}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {pending ? (
+            <button type="button" onClick={check} disabled={checking} className="pill pill-line pill-xs disabled:opacity-60">
+              {checking ? <CircleNotchIcon className="h-3.5 w-3.5 animate-spin" /> : <ArrowsClockwiseIcon className="h-3.5 w-3.5" />} Check now
+            </button>
+          ) : !d.target_subdomain && !connecting ? (
+            <button type="button" onClick={openConnect} className="pill pill-ink pill-xs"><LinkSimpleIcon className="h-3.5 w-3.5" /> Connect</button>
+          ) : null}
+          <RowMenu items={[
+            { label: showDns ? "Hide DNS records" : "DNS records", icon: ListBulletsIcon, onSelect: () => setShowDns((v) => !v) },
+            { label: d.target_subdomain ? "Change app" : "Connect to an app", icon: LinkSimpleIcon, onSelect: openConnect },
+            !!d.target_subdomain && { label: "Disconnect", icon: LinkBreakIcon, onSelect: disconnect },
+            { label: "Remove domain", icon: TrashIcon, danger: true, divider: true, onSelect: () => setConfirmRemove(true) },
+          ]} />
+        </div>
+      </div>
+
+      {pending && d.check_hint && state === "attention" && !msg && (
+        <p className="mt-3 text-[13px] text-amber-700 dark:text-amber-400">{d.check_hint}</p>
+      )}
+      {msg && <p role="status" className={cn("mt-3 text-[13px]", msg.ok ? "text-[var(--dz-green-strong)] dark:text-brand" : "text-amber-700 dark:text-amber-400")}>{msg.text}</p>}
+
+      {connecting && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1"><TargetSelect targets={targets} value={target} onChange={setTarget} /></div>
+          <div className="flex gap-2">
+            <button type="button" onClick={connect} disabled={!target || busy} className="pill pill-ink pill-sm disabled:opacity-50">
+              {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : "Connect"}
+            </button>
+            <button type="button" onClick={() => setConnecting(false)} className="pill pill-sm text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {confirmRemove && (
+        <div className="mt-3 flex flex-col gap-2 rounded-[14px] border border-red-500/25 bg-red-500/[0.04] px-3.5 py-3 sm:flex-row sm:items-center">
+          <p className="flex-1 text-[13px]">Remove <span className="font-medium">{d.domain}</span>? Visitors stop reaching your app on this domain.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={remove} disabled={busy} className="pill pill-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">
+              {busy ? <CircleNotchIcon className="h-4 w-4 animate-spin" /> : "Remove"}
+            </button>
+            <button type="button" onClick={() => setConfirmRemove(false)} className="pill pill-sm text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground">Keep</button>
+          </div>
+        </div>
+      )}
+
+      {showDns && <DnsRecords records={recordsFor(d)} zone={d.zone} className="mt-4" />}
+    </li>
   );
 }
 
 export default function DomainsPage() {
-  const [domains, setDomains] = useState<Domain[]>([]);
-  const [newDomain, setNewDomain] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [instructions, setInstructions] = useState<{ name: string; target: string } | null>(null);
-  const [bindingId, setBindingId] = useState<string | null>(null);
-  const [targets, setTargets] = useState<Target[]>([]);
-  const [selectedTarget, setSelectedTarget] = useState("");
+  const [domains, setDomains] = useState<Domain[] | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [adding, setAdding] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setDomains(await api.listDomains());
-    } catch {}
-    setLoading(false);
-  }
-
-  async function loadTargets() {
-    try {
-      const tunnels = await api.listTunnels();
-      const t: Target[] = tunnels.map((tun: { name: string; subdomain?: string; protocol: string; type?: string }) => {
-        if (tun.type === "project") {
-          const sub = tun.subdomain || tun.name || "";
-          return { type: "project" as const, subdomain: sub, label: `Project: ${tun.name || sub}` };
-        }
-        const sub = tun.name || "";
-        return { type: "tunnel" as const, subdomain: sub, label: `Tunnel: ${sub} (${tun.protocol})` };
-      }).filter((t: Target) => t.subdomain);
-      setTargets(t);
-    } catch {}
-  }
-
-  useEffect(() => { load(); }, []);
-
-  async function addDomain() {
-    if (!newDomain.trim()) return;
-    try {
-      const data = await api.createDomain(newDomain);
-      setInstructions({ name: data.instructions.name, target: data.instructions.target });
-      setNewDomain("");
-      load();
-    } catch {}
-  }
-
-  async function verify(id: string) {
-    try {
-      const result = await api.verifyDomain(id);
-      if (result.verified) {
-        load();
-      } else {
-        // The backend returns a specific hint — e.g. the very common case where
-        // the CNAME is proxied through Cloudflare (orange cloud) and must be set
-        // to DNS only. Show it instead of a generic message.
-        alert(result.hint || "DNS verification failed. Make sure your CNAME record is set to DNS only (not proxied) and has propagated.");
-      }
-    } catch {}
-  }
-
-  async function remove(id: string) {
-    try {
-      await api.deleteDomain(id);
-      load();
-    } catch {}
-  }
-
-  async function startBinding(id: string) {
-    setBindingId(id);
-    setSelectedTarget("");
-    await loadTargets();
-  }
-
-  async function bind(id: string) {
-    if (!selectedTarget) return;
-    const target = targets.find(t => `${t.type}:${t.subdomain}` === selectedTarget);
-    if (!target) return;
-    try {
-      await api.bindDomain(id, target.type, target.subdomain);
-      setBindingId(null);
-      load();
-    } catch {
-      alert("Failed to bind domain. Make sure the domain is verified.");
+      setLoadErr("");
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : "Couldn't load domains");
+      setDomains((prev) => prev ?? []);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  // While anything is waiting for DNS, pick up the background verifier's
+  // results without a manual refresh (only while the tab is visible).
+  const anyPending = !!domains?.some((d) => !d.verified);
+  useEffect(() => {
+    if (!anyPending) return;
+    const id = setInterval(() => { if (document.visibilityState === "visible") load(); }, 20000);
+    return () => clearInterval(id);
+  }, [anyPending, load]);
+
+  const addButton = (
+    <button type="button" onClick={() => setAdding(true)} className="pill pill-ink pill-sm">
+      <PlusIcon className="h-4 w-4" /> Add domain
+    </button>
+  );
 
   return (
-    <div className="animate-fade-in-up">
-      <p className="eyebrow">Network</p>
-      <h1 className="mt-2 text-[28px] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[34px]">Custom Domains</h1>
-      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
-        Bring your own domain for tunnels and deployed projects.
-      </p>
+    <div className="animate-fade-in-up space-y-5">
+      <PageHeader
+        title="Domains"
+        description="Serve your apps and tunnels on your own domain, with HTTPS set up for you."
+        actions={domains && domains.length > 0 ? addButton : undefined}
+      />
 
-      <Panel title="Add Domain" className="mt-6">
-        <div className="flex gap-3">
-          <Input
-            placeholder="api.example.com"
-            value={newDomain}
-            onChange={(e) => setNewDomain(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addDomain()}
-          />
-          <Button onClick={addDomain} className="btn-shine gap-2 shrink-0 rounded-full">
-            <Plus className="h-4 w-4" /> Add
-          </Button>
+      {loadErr && <p role="alert" className="text-[13.5px] text-red-600 dark:text-red-400">{loadErr}</p>}
+
+      {domains === null ? (
+        <div className="surface divide-y divide-[var(--dz-hairline)] rounded-[20px]">
+          {[0, 1].map((i) => (
+            <div key={i} className="px-5 py-4">
+              <div className="h-4 w-48 animate-pulse rounded bg-foreground/[0.06]" />
+              <div className="mt-2 h-3 w-64 animate-pulse rounded bg-foreground/[0.04]" />
+            </div>
+          ))}
         </div>
+      ) : domains.length === 0 ? (
+        <EmptyState
+          icon={GlobeSimpleIcon}
+          title="Use your own domain"
+          description={
+            <span className="mt-1 block space-y-1 text-left">
+              <span className="block"><span className="font-medium text-foreground">1.</span> Add a domain you own and pick the app it should serve.</span>
+              <span className="block"><span className="font-medium text-foreground">2.</span> Create the one DNS record we show you.</span>
+              <span className="block"><span className="font-medium text-foreground">3.</span> It goes live with HTTPS on its own, usually within minutes.</span>
+            </span>
+          }
+          action={addButton}
+        />
+      ) : (
+        <ul className="surface divide-y divide-[var(--dz-hairline)] overflow-hidden rounded-[20px]">
+          {domains.map((d) => <DomainRow key={`${d.id}:${d.verified}:${d.target_subdomain}`} d={d} onChanged={load} />)}
+        </ul>
+      )}
 
-        {instructions && (
-          <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 text-sm space-y-3">
-            <p className="font-medium text-blue-600 dark:text-blue-400">Add these DNS records:</p>
-            <div className="rounded-lg bg-background border border-border/60 p-3 font-mono text-xs space-y-1">
-              <p className="text-[10px] text-muted-foreground font-sans font-semibold uppercase tracking-[0.14em] mb-1">Required — points your domain to Deployzy</p>
-              <span className="text-muted-foreground">Type:</span> CNAME<br />
-              <span className="text-muted-foreground">Name:</span> {instructions.name}<br />
-              <span className="text-muted-foreground">Target:</span> {instructions.target}
-            </div>
-            <div className="rounded-lg bg-background border border-border/60 p-3 font-mono text-xs space-y-1">
-              <p className="text-[10px] text-muted-foreground font-sans font-semibold uppercase tracking-[0.14em] mb-1">Recommended — so www.yourdomain.com also works</p>
-              <span className="text-muted-foreground">Type:</span> CNAME<br />
-              <span className="text-muted-foreground">Name:</span> www<br />
-              <span className="text-muted-foreground">Target:</span> {instructions.target}
-            </div>
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-400">
-              <p className="font-medium">Using Cloudflare? Set the record to <span className="font-semibold">DNS only</span> (grey cloud), not Proxied (orange cloud).</p>
-              <p className="mt-1 opacity-90">A proxied record hides the CNAME behind Cloudflare&apos;s IPs, so verification can&apos;t see it and TLS won&apos;t issue. Click the orange cloud to turn it grey.</p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              After adding the records, click Verify on your domain below. Then bind it to a tunnel or project. Visitors using www. will be automatically redirected.
-            </p>
-          </div>
-        )}
-      </Panel>
-
-      <Panel title="Your Domains" className="mt-4">
-        {loading ? (
-          <p className="text-sm text-muted-foreground animate-pulse">Loading domains…</p>
-        ) : domains.length === 0 ? (
-          <div className="flex flex-col items-center py-10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl surface">
-              <Globe className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">No custom domains yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {domains.map((d) => (
-              <div key={d.id} className="rounded-xl border border-border/60 bg-background/50 p-4 space-y-3 transition-colors hover:border-foreground/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground shrink-0">
-                      <Globe className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="font-mono text-sm font-medium truncate">{d.domain}</p>
-                      <p className="text-[11px] text-muted-foreground">CNAME &rarr; {d.cname_target}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {d.verified ? (
-                      <Badge className="gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-                        <CheckCircle2 className="h-3 w-3" /> Verified
-                      </Badge>
-                    ) : (
-                      <>
-                        <Badge variant="outline" className="gap-1 text-amber-600 dark:text-amber-400 border-amber-500/40">
-                          <AlertCircle className="h-3 w-3" /> Pending
-                        </Badge>
-                        <Button variant="outline" size="sm" onClick={() => verify(d.id)} className="gap-1 rounded-full">
-                          <RefreshCw className="h-3 w-3" /> Verify
-                        </Button>
-                      </>
-                    )}
-                    <Button variant="ghost" size="sm" onClick={() => remove(d.id)} className="text-destructive hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Binding status */}
-                {d.verified && bindingId === d.id ? (
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs"
-                      value={selectedTarget}
-                      onChange={(e) => setSelectedTarget(e.target.value)}
-                    >
-                      <option value="">Select a target...</option>
-                      {targets.map((t) => (
-                        <option key={`${t.type}:${t.subdomain}`} value={`${t.type}:${t.subdomain}`}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                    <Button size="sm" className="h-8 text-xs gap-1 rounded-full" onClick={() => bind(d.id)} disabled={!selectedTarget}>
-                      <Link2 className="h-3 w-3" /> Bind
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setBindingId(null)}>Cancel</Button>
-                  </div>
-                ) : d.verified && d.target_subdomain ? (
-                  <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                    <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Routes to</span>
-                    {d.target_type === "project" ? (
-                      <Badge variant="outline" className="gap-1 text-[10px]"><Rocket className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.app</Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1 text-[10px]"><Waypoints className="h-2.5 w-2.5" /> {d.target_subdomain}.deployzy.app</Badge>
-                    )}
-                    <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground ml-auto" onClick={() => startBinding(d.id)}>
-                      Change
-                    </Button>
-                  </div>
-                ) : d.verified ? (
-                  <Button variant="outline" size="sm" className="gap-1 text-xs rounded-full" onClick={() => startBinding(d.id)}>
-                    <Link2 className="h-3 w-3" /> Bind to Tunnel or Project
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
+      {adding && <AddDomainSheet onClose={() => setAdding(false)} onAdded={load} />}
     </div>
   );
 }
