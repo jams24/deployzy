@@ -1,5 +1,16 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
+export interface OnboardingState {
+  created_at: string;
+  tour_done: boolean;
+  checklist_dismissed: boolean;
+  github_connected: boolean;
+  deployed: boolean;
+  database: boolean;
+  tunnel: boolean;
+  domain: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
   data: Record<string, unknown>;
@@ -113,6 +124,18 @@ class ApiClient {
   // User
   getMe() {
     return this.request<User>("/api/v1/users/me");
+  }
+
+  /** Product tour + setup checklist state (steps are derived server-side). */
+  getOnboarding() {
+    return this.request<OnboardingState>("/api/v1/onboarding");
+  }
+
+  updateOnboarding(patch: { tour_done?: boolean; checklist_dismissed?: boolean }) {
+    return this.request<OnboardingState>("/api/v1/onboarding", {
+      method: "POST",
+      body: JSON.stringify(patch),
+    });
   }
 
   updateProfile(name: string) {

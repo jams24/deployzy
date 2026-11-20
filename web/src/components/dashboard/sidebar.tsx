@@ -27,6 +27,7 @@ function NavLink({ item, active, lid, onNavigate }: { item: NavItem; active: boo
     <Link
       href={item.href}
       onClick={onNavigate}
+      data-tour={item.href.slice(1)}
       aria-current={active ? "page" : undefined}
       className={cn(
         "group relative flex h-9 items-center gap-3 rounded-xl px-3 text-[14px] transition-colors duration-200 md:h-[34px] md:text-[13.5px]",
@@ -215,7 +216,7 @@ export function Sidebar({ onNavigate, onClose, className }: { onNavigate?: () =>
             <span className="flex-1 truncate text-left">Search</span>
             <kbd className="hidden rounded-md border px-1.5 font-mono text-[11px] md:inline">{mod}K</kbd>
           </button>
-          <Link href="/new" onClick={onNavigate} title="New project" aria-label="New project" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition-transform hover:opacity-90 active:scale-95">
+          <Link href="/new" onClick={onNavigate} data-tour="new" title="New project" aria-label="New project" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background transition-transform hover:opacity-90 active:scale-95">
             <Plus className="h-4 w-4" />
           </Link>
         </div>

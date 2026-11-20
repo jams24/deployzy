@@ -11,6 +11,9 @@ import { CommandMenu, openCommandMenu } from "@/components/dashboard/command-men
 import { MobileDrawer, MobileTabBar, showsTabBar } from "@/components/dashboard/mobile-nav";
 import { pageTitle } from "@/components/dashboard/nav-config";
 import { initials, useModKey, useSession } from "@/lib/use-me";
+import { OnboardingProvider } from "@/lib/onboarding";
+import { ProductTour } from "@/components/onboarding/product-tour";
+import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 
 // Dashboard shell: sidebar on desktop; topbar + bottom tab bar + drawer on
 // phones; ⌘K command menu everywhere. Decoration is pointer-events-none and
@@ -80,6 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
+      <OnboardingProvider>
       <div className="flex h-[100dvh] overflow-hidden bg-background">
         <Sidebar className="hidden md:flex" />
         <MobileDrawer open={drawerOpen} onClose={closeDrawer} />
@@ -102,7 +106,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <CommandMenu />
+        <ProductTour />
+        <SetupChecklist />
       </div>
+      </OnboardingProvider>
     </AuthGuard>
   );
 }

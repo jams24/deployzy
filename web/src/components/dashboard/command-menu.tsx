@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ArrowRight, BookOpen, CornerDownLeft, Database, LogOut, Moon, Plus, Rocket, Search, Sun, type LucideIcon } from "lucide-react";
+import { ArrowRight, BookOpen, Compass, CornerDownLeft, Database, LogOut, Moon, Plus, Rocket, Search, Sun, type LucideIcon } from "lucide-react";
+import { startTour } from "@/lib/onboarding";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { API, headers } from "@/components/project/project-shared";
@@ -128,6 +129,7 @@ export function CommandMenu() {
     const list: Entry[] = [
       { id: "a-new", group: "Actions", label: "New project", keywords: "deploy create app", icon: Plus, run: () => go("/new") },
       { id: "a-db", group: "Actions", label: "New database", keywords: "postgres redis mongo mysql create", icon: Database, run: () => go("/new?type=database") },
+      { id: "a-tour", group: "Actions", label: "Take the product tour", keywords: "help onboarding guide walkthrough tour", icon: Compass, run: () => { setOpen(false); startTour(); } },
       {
         id: "a-theme",
         group: "Actions",

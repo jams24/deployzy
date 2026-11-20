@@ -621,7 +621,8 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
 /* Cookie notice: on phones it sits above the dashboard's bottom tab bar
    (MobileNav carries data-bottom-nav) instead of covering it. */
 @media (max-width: 767px) {
-  html:has([data-bottom-nav]) .dz-cookie { bottom: calc(4rem + env(safe-area-inset-bottom) + 0.625rem); }
+  html:has([data-bottom-nav]) .dz-cookie,
+  html:has([data-bottom-nav]) .dz-float { bottom: calc(4rem + env(safe-area-inset-bottom) + 0.625rem); }
 }
 /* Section rhythm for the landing page. */
 .home-section { padding-block: 5rem; }
@@ -731,3 +732,12 @@ html:not(.dark) .gradient-border { --gb-bg: #ffffff; }
 @keyframes dz-notice-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .dz-cookie { animation: dz-notice-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both; }
 @media (prefers-reduced-motion: reduce) { .dz-cookie { animation: none; } }
+
+/* Product tour: spotlight + popover glide between steps; step text fades in.
+   The dim is stronger in dark mode, where a light veil barely reads. */
+:root { --dz-tour-dim: rgb(10 12 16 / 0.42); }
+.dark { --dz-tour-dim: rgb(0 0 0 / 0.66); }
+.dz-tour-glide { transition: left 0.38s var(--ease-out-expo), top 0.38s var(--ease-out-expo), width 0.38s var(--ease-out-expo), height 0.38s var(--ease-out-expo); }
+@keyframes dz-tour-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.dz-tour-step { animation: dz-tour-in 0.32s var(--ease-out-expo) both; }
+@media (prefers-reduced-motion: reduce) { .dz-tour-glide { transition: none; } .dz-tour-step { animation: none; } }

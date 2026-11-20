@@ -34,6 +34,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
       <Link
         key={t.href}
         href={t.href}
+        data-tour={t.href.slice(1)}
         aria-current={active ? "page" : undefined}
         className={cn(
           "relative flex flex-1 flex-col items-center justify-center gap-1 text-[11.5px] font-medium transition-colors",
@@ -55,6 +56,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
         <div className="flex flex-1 items-center justify-center">
           <Link
             href="/new"
+            data-tour="new"
             aria-label="New project"
             className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background shadow-[0_10px_30px_-10px_color-mix(in_oklch,var(--dz-green)_70%,transparent)] transition-transform active:scale-95"
           >
@@ -62,7 +64,7 @@ export function MobileTabBar({ onMore }: { onMore: () => void }) {
           </Link>
         </div>
         {tab(TABS[2])}
-        <button type="button" onClick={onMore} className="flex flex-1 flex-col items-center justify-center gap-1 text-[11.5px] font-medium text-muted-foreground">
+        <button type="button" onClick={onMore} data-tour="more" className="flex flex-1 flex-col items-center justify-center gap-1 text-[11.5px] font-medium text-muted-foreground">
           <Menu className="h-5 w-5" />
           More
         </button>

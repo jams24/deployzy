@@ -155,6 +155,10 @@ func NewRouter(database *db.DB, jwtMgr *auth.JWTManager, registry *tunnel.Regist
 			r.With(fullScope).Delete("/users/me", s.handleDeleteMe)
 			r.With(fullScope).Post("/users/me/password", s.handleChangePassword)
 
+			// Dashboard onboarding (product tour + setup checklist)
+			r.Get("/onboarding", s.handleGetOnboarding)
+			r.With(fullScope).Post("/onboarding", s.handleUpdateOnboarding)
+
 			// Referrals
 			r.Get("/referrals", s.handleGetReferrals)
 
