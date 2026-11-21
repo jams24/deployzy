@@ -151,6 +151,46 @@ func (d *DB) CreateBYOCService(ctx context.Context, userID, name, serviceType, w
 	return &svc, err
 }
 
+// InsertProvisioningService writes a service row before its container exists,
+// with status "provisioning". Every connection detail (name, credentials, port,
+// container name, host) is generated before the image is pulled, so the row is
+// already complete — only the status later flips to "active" (or "error") once
+// the background docker pull+run finishes. workerServerID is nil for a
+// platform-local container. This lets the create request return immediately
+// instead of being held open behind the 30s request timeout / Cloudflare's 100s
+// cap while a large image (e.g. mongo:7 ~700MB) pulls.
+func (d *DB) InsertProvisioningService(ctx context.Context, userID, name, serviceType string, workerServerID *string, containerName, host string, port int, publicHost string, publicPort int, dbName, dbUser, dbPassword string) (*Service, error) {
+	var svc Service
+	err := d.Pool.QueryRow(ctx,
+		`INSERT INTO services (user_id, name, type, db_name, db_user, db_password, host, port, worker_server_id, container_name, public_host, public_port, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'provisioning')
+		 RETURNING id, user_id, name, type, status, db_name, db_user, db_password, host, port, container_id, created_at, COALESCE(size_mb, 0), COALESCE(over_quota, false), worker_server_id, container_name, public_host, public_port`,
+		userID, name, serviceType, dbName, dbUser, dbPassword, host, port, workerServerID, containerName, publicHost, publicPort,
+	).Scan(&svc.ID, &svc.UserID, &svc.Name, &svc.Type, &svc.Status, &svc.DBName, &svc.DBUser, &svc.DBPassword, &svc.Host, &svc.Port, &svc.ContainerID, &svc.CreatedAt, &svc.SizeMB, &svc.OverQuota, &svc.WorkerServerID, &svc.ContainerName, &svc.PublicHost, &svc.PublicPort)
+	return &svc, err
+}
+
+// UpdateServiceStatus flips a service's lifecycle status (e.g. provisioning →
+// active, or provisioning → error) once background provisioning finishes.
+func (d *DB) UpdateServiceStatus(ctx context.Context, id, status string) error {
+	_, err := d.Pool.Exec(ctx, `UPDATE services SET status = $2 WHERE id = $1`, id, status)
+	return err
+}
+
+// FailStaleProvisioningServices marks any service stuck in "provisioning" for
+// longer than olderThan as "error" — covers rows orphaned when the server
+// restarts mid-provision (the background goroutine dies with it).
+func (d *DB) FailStaleProvisioningServices(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE services SET status = 'error'
+		 WHERE status = 'provisioning' AND created_at < now() - $1::interval`,
+		fmt.Sprintf("%d seconds", int(olderThan.Seconds())))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // ListServices returns all services for a user.
 func (d *DB) ListServices(ctx context.Context, userID string) ([]Service, error) {
 	rows, err := d.Pool.Query(ctx,

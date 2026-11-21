@@ -135,6 +135,8 @@ export function statusTone(status: string): Tone {
     case "deploying":
     case "pending":
     case "starting":
+    case "provisioning":
+    case "creating":
       return "busy";
     case "failed":
     case "crashed":

@@ -63,6 +63,15 @@ type dbRow struct {
 }
 
 func (s *DBQuotaSweeper) sweep(ctx context.Context) {
+	// Rescue rows orphaned when the server restarted mid-provision: their
+	// background docker-run goroutine died, so they'd otherwise sit on
+	// "provisioning" forever. 15 min is well past any real image pull.
+	if n, err := s.db.FailStaleProvisioningServices(ctx, 15*time.Minute); err != nil {
+		s.log.Warn().Err(err).Msg("fail-stale-provisioning sweep failed")
+	} else if n > 0 {
+		s.log.Warn().Int64("count", n).Msg("marked stale provisioning services as error")
+	}
+
 	rows, err := s.db.Pool.Query(ctx, `
 		SELECT svc.id, svc.db_name, svc.db_user, u.plan, svc.over_quota,
 		       CASE WHEN COALESCE(u.is_admin, false) THEN -1 ELSE COALESCE(pl.max_db_size_mb, 1024) END AS plan_max_mb

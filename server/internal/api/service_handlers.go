@@ -87,7 +87,7 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "that server isn't available to you")
 			return
 		}
-		svc, err := s.provisionServiceContainerOn(r.Context(), u.ID, req.Name, req.Type, server)
+		svc, err := s.startServiceProvision(u.ID, req.Name, req.Type, server, false)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to create service on that server: "+err.Error())
 			return
@@ -112,7 +112,10 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		svc, err = s.provisionPlatformContainer(r.Context(), u.ID, req.Name, req.Type)
+		server, _ := s.db.PickPlatformServerForService(r.Context())
+		isLocal := server == nil || server.IsLocal ||
+			server.Host == "" || server.Host == "localhost" || server.Host == "127.0.0.1"
+		svc, err = s.startServiceProvision(u.ID, req.Name, req.Type, server, isLocal)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to provision "+req.Type+": "+err.Error())
 			return
@@ -126,6 +129,136 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		"connection_url":          svc.ConnectionURL(),
 		"external_connection_url": svc.ExternalConnectionURL(s.resolveServicePublicHost()),
 	})
+}
+
+// buildServiceDockerRun returns the `docker pull … && docker run …` command for a
+// database service container plus the container's standard internal port. Same
+// recipe for platform and BYOC/region placements; the caller prepends
+// dockerFirewallPrefix and runs it locally or over SSH.
+func buildServiceDockerRun(serviceType, containerName string, publicPort int, dbUser, dbPassword, dbName string) (string, int, bool) {
+	switch serviceType {
+	case "postgres":
+		return fmt.Sprintf(
+			`docker pull postgres:16-alpine >/dev/null 2>&1 && `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
+				`-p %d:5432 `+
+				`-e POSTGRES_USER=%s -e POSTGRES_PASSWORD=%s -e POSTGRES_DB=%s `+
+				`-v sm-svc-%s-data:/var/lib/postgresql/data `+
+				`postgres:16-alpine`,
+			containerName, publicPort, dbUser, dbPassword, dbName, dbName), 5432, true
+	case "redis":
+		return fmt.Sprintf(
+			`docker pull redis:7-alpine >/dev/null 2>&1 && `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
+				`-p %d:6379 `+
+				`-v sm-svc-%s-data:/data `+
+				`redis:7-alpine redis-server --requirepass %s`,
+			containerName, publicPort, dbName, dbPassword), 6379, true
+	case "mongodb":
+		return fmt.Sprintf(
+			`docker pull mongo:7 >/dev/null 2>&1 && `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
+				`-p %d:27017 `+
+				`-e MONGO_INITDB_ROOT_USERNAME=%s -e MONGO_INITDB_ROOT_PASSWORD=%s -e MONGO_INITDB_DATABASE=%s `+
+				`-v sm-svc-%s-data:/data/db `+
+				`mongo:7`,
+			containerName, publicPort, dbUser, dbPassword, dbName, dbName), 27017, true
+	case "mysql":
+		return fmt.Sprintf(
+			`docker pull mysql:8 >/dev/null 2>&1 && `+
+				`docker run -d --name %s --restart unless-stopped `+deploy.DockerLogFlags+` `+
+				`-p %d:3306 `+
+				`-e MYSQL_ROOT_PASSWORD=%s -e MYSQL_DATABASE=%s -e MYSQL_USER=%s -e MYSQL_PASSWORD=%s `+
+				`-v sm-svc-%s-data:/var/lib/mysql `+
+				`mysql:8`,
+			containerName, publicPort, dbPassword, dbName, dbUser, dbPassword, dbName), 3306, true
+	}
+	return "", 0, false
+}
+
+// startServiceProvision writes the service row as "provisioning", returns it
+// immediately, and runs the docker pull+run on the target in the background —
+// flipping the row to "active" (or "error") when done. The create request must
+// not block on the pull: a cold mongo:7/mysql:8 (or any image under load) takes
+// far longer than the 30s request timeout and Cloudflare's 100s cap, which used
+// to kill the request and leave the dashboard spinning forever even though the
+// container eventually came up. The Databases page polls the row to "active".
+//
+// server is the already-validated target (region pick or platform pick, may be
+// nil for local); isLocal means run Docker on this box instead of over SSH.
+func (s *Server) startServiceProvision(userID, name, serviceType string, server *db.WorkerServer, isLocal bool) (*db.Service, error) {
+	if !isLocal {
+		if server == nil {
+			return nil, fmt.Errorf("no server available to host the database")
+		}
+		if !server.DockerInstalled {
+			return nil, fmt.Errorf("docker not installed on that server — click Install Docker first")
+		}
+	}
+
+	dbName, password := db.NewServiceCredentials()
+	dbUser := dbName
+	if serviceType == "redis" {
+		dbUser = "" // Redis has no username concept
+	}
+	containerName := "sm-svc-" + dbName
+	// 20000–39999: the published-port window UFW allows for co-located apps.
+	publicPort := int(20000 + (time.Now().UnixNano() % 20000))
+
+	dockerRun, internalPort, ok := buildServiceDockerRun(serviceType, containerName, publicPort, dbUser, password, dbName)
+	if !ok {
+		return nil, fmt.Errorf("unsupported type: %s", serviceType)
+	}
+	// Ensure a co-located app can reach this DB's published port on UFW-hardened hosts.
+	dockerRun = dockerFirewallPrefix + dockerRun
+
+	// External connection address: prefer the server's DNS-only service_host,
+	// never a Cloudflare-proxied host that blocks raw TCP.
+	publicHost := s.resolveServicePublicHost()
+	if server != nil && server.ServiceHost != "" {
+		publicHost = server.ServiceHost
+	} else if server != nil && !isLocal && server.Host != "" {
+		publicHost = server.Host
+	}
+
+	// The stored host/port: local containers are reached in-cluster via the
+	// docker bridge; remote ones via their public host:published-port.
+	host, port := publicHost, publicPort
+	var wsID *string
+	if isLocal {
+		host, port = "172.17.0.1", internalPort
+	} else {
+		wsID = &server.ID
+	}
+
+	svc, err := s.db.InsertProvisioningService(context.Background(), userID, name, serviceType,
+		wsID, containerName, host, port, publicHost, publicPort, dbName, dbUser, password)
+	if err != nil {
+		return nil, err
+	}
+
+	go func(svcID string, srv *db.WorkerServer) {
+		var out []byte
+		var rerr error
+		if isLocal {
+			bg, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+			defer cancel()
+			out, rerr = exec.CommandContext(bg, "bash", "-c", dockerRun).CombinedOutput()
+		} else {
+			out, rerr = runRemoteSSH(srv, dockerRun, 8*time.Minute)
+		}
+		status := "active"
+		if rerr != nil {
+			status = "error"
+			s.log.Error().Err(rerr).Str("service", svcID).Str("type", serviceType).
+				Msg("service provision failed: " + lastLine(string(out)))
+		}
+		if uerr := s.db.UpdateServiceStatus(context.Background(), svcID, status); uerr != nil {
+			s.log.Error().Err(uerr).Str("service", svcID).Msg("failed to update service status after provision")
+		}
+	}(svc.ID, server)
+
+	return svc, nil
 }
 
 // provisionBYOCService runs a database container on the user's own worker server

@@ -262,6 +262,16 @@ export default function ServicesPage() {
 
   useEffect(() => { load(); }, []);
 
+  // While any database is still provisioning (container pull+run happens in the
+  // background now, so the row lands as "provisioning"), poll until it flips to
+  // active/error so the pill updates without a manual refresh.
+  useEffect(() => {
+    const anyProvisioning = rows.some((r) => r.status === "provisioning" || r.status === "creating");
+    if (!anyProvisioning) return;
+    const t = setTimeout(load, 4000);
+    return () => clearTimeout(t);
+  }, [rows]);
+
   const mask = (url: string, pw: string) => url.replace(`:${pw}@`, ":****@");
 
   const typeLabel = (t: string) => ({ postgres: "PostgreSQL 16", redis: "Redis 7", mongodb: "MongoDB 7", mysql: "MySQL 8" }[t] ?? t);
